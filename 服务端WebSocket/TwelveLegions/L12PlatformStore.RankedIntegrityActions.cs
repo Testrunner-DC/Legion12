@@ -12,7 +12,9 @@ public sealed record L12RankedIntegrityActionInput(
     int? RestrictionDays,
     string Evidence,
     string Reason,
-    string? RevokesDecisionId = null);
+    string? RevokesDecisionId = null,
+    string Scope = "match",
+    IReadOnlyList<string>? TargetAccountIds = null);
 
 public sealed record L12RankedIntegrityAccountEffectView(
     string AccountId,
@@ -32,6 +34,8 @@ public sealed record L12RankedIntegrityActionPreviewView(
     IReadOnlyList<L12RankedIntegrityAccountEffectView> AccountEffects)
 {
     public IReadOnlyList<string> PlayerNotificationAccountIds { get; init; } = [];
+    public string Scope { get; init; } = "match";
+    public IReadOnlyList<string> TargetAccountIds { get; init; } = [];
 }
 
 public sealed record L12RankedIntegrityDecisionView(
@@ -53,6 +57,8 @@ public sealed record L12RankedIntegrityDecisionView(
     IReadOnlyList<L12RankedIntegrityAccountEffectView> AccountEffects)
 {
     public IReadOnlyList<string> PlayerNotificationAccountIds { get; init; } = [];
+    public string Scope { get; init; } = "match";
+    public IReadOnlyList<string> TargetAccountIds { get; init; } = [];
 }
 
 public sealed record L12RankedIntegrityDecisionPageView(
@@ -123,6 +129,8 @@ public sealed partial class L12PlatformStore
         public string RequestFingerprint { get; set; } = string.Empty;
         public long Revision { get; set; }
         public string Disposition { get; set; } = string.Empty;
+        public string Scope { get; set; } = "match";
+        public List<string> TargetAccountIds { get; set; } = [];
         public List<string> MatchIds { get; set; } = [];
         public List<string> RestrictedAccountIds { get; set; } = [];
         public int? RestrictionDays { get; set; }
@@ -256,7 +264,9 @@ public sealed partial class L12PlatformStore
         int? RestrictionDays,
         string Evidence,
         string Reason,
-        string? RevokesDecisionId);
+        string? RevokesDecisionId,
+        string Scope,
+        IReadOnlyList<string> TargetAccountIds);
 
     private sealed record RankedProfileTransition(
         string AccountId,
@@ -293,6 +303,8 @@ public sealed partial class L12PlatformStore
                     replay.AccountEffects.Select(AccountEffectViewWithName).ToArray())
                 {
                     PlayerNotificationAccountIds = RankedIntegrityNotifiedAccountIdsLocked(replay.Id),
+                    Scope = replay.Scope,
+                    TargetAccountIds = replay.TargetAccountIds.ToArray(),
                 };
             }
             var plan = BuildRankedIntegrityActionPlanLocked(normalized, DateTimeOffset.UtcNow);
@@ -330,6 +342,8 @@ public sealed partial class L12PlatformStore
                 RequestFingerprint = normalized.RequestFingerprint,
                 Revision = checked(_data.RankedIntegrityRevision + 1),
                 Disposition = normalized.Disposition,
+                Scope = normalized.Scope,
+                TargetAccountIds = normalized.TargetAccountIds.ToList(),
                 MatchIds = normalized.MatchIds.ToList(),
                 RestrictedAccountIds = normalized.RestrictedAccountIds.ToList(),
                 RestrictionDays = normalized.RestrictionDays,
@@ -637,11 +651,30 @@ public sealed partial class L12PlatformStore
                 StringComparer.OrdinalIgnoreCase))
             .SelectMany(row => new[] { row.FirstAccountId, row.SecondAccountId })
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var scope = input.Scope?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (scope is not ("match" or "account") || scope == "account" && disposition is not ("confirmed" or "revoked"))
+            throw new L12RankedIntegrityActionException("ranked_integrity_scope_invalid",
+                "按账号处罚仅支持确认违规及撤销原处罚；其他复核与整场纠正保留原入口");
+        var targets = (input.TargetAccountIds ?? []).Select(value => value?.Trim() ?? string.Empty).ToArray();
+        if (targets.Any(string.IsNullOrWhiteSpace)
+            || targets.Distinct(StringComparer.OrdinalIgnoreCase).Count() != targets.Length
+            || targets.Any(id => !participants.Contains(id))
+            || scope == "match" && targets.Length != 0
+            || scope == "account" && (targets.Length == 0 || matchIds.Any(matchId =>
+                !_data.RankedIntegrityAudits.Any(audit => audit.MatchId.Equals(matchId,
+                        StringComparison.OrdinalIgnoreCase)
+                    && (targets.Contains(audit.FirstAccountId, StringComparer.OrdinalIgnoreCase)
+                        || targets.Contains(audit.SecondAccountId, StringComparer.OrdinalIgnoreCase))))))
+            throw new L12RankedIntegrityActionException("ranked_integrity_target_scope_invalid",
+                "按账号处置须选择不重复的真实参赛者，且每场至少关联一名所选账号；整场处置不能带个人目标");
+        targets = targets.Select(id => participants.Single(account => account.Equals(id,
+            StringComparison.OrdinalIgnoreCase))).OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray();
         var restricted = (input.RestrictedAccountIds ?? []).Select(value => value?.Trim() ?? string.Empty)
             .ToArray();
         if (restricted.Any(string.IsNullOrWhiteSpace)
             || restricted.Distinct(StringComparer.OrdinalIgnoreCase).Count() != restricted.Length
-            || restricted.Any(accountId => !participants.Contains(accountId)))
+            || restricted.Any(accountId => !participants.Contains(accountId)
+                || scope == "account" && !targets.Contains(accountId, StringComparer.OrdinalIgnoreCase)))
             throw new L12RankedIntegrityActionException("ranked_integrity_restriction_scope_invalid",
                 "限制账号必须是不重复的所选对局参与者账号 ID");
         Array.Sort(restricted, StringComparer.OrdinalIgnoreCase);
@@ -676,9 +709,10 @@ public sealed partial class L12PlatformStore
                 throw new L12RankedIntegrityActionException("ranked_integrity_revoke_target_invalid",
                     "只能撤销尚未撤销的 confirmed 或 system-error 处置");
             if (!target.MatchIds.ToHashSet(StringComparer.OrdinalIgnoreCase)
-                    .SetEquals(matchIds))
+                    .SetEquals(matchIds) || target.Scope != scope
+                || !target.TargetAccountIds.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(targets))
                 throw new L12RankedIntegrityActionException("ranked_integrity_revoke_scope_mismatch",
-                    "撤销处置的 matchId 必须与原处置完全一致");
+                    "撤销处置的范围、目标账号及 matchId 必须与原处置完全一致");
             revokesDecisionId = target.Id;
         }
         else if (revokesDecisionId is not null)
@@ -687,7 +721,8 @@ public sealed partial class L12PlatformStore
                 "只有 revoked 处置可以引用原处置");
         }
 
-        var fingerprintPayload = JsonSerializer.Serialize(new
+        // Keep the original match-scope payload byte-for-byte compatible with old request fingerprints.
+        var legacyFingerprintPayload = new
         {
             requestId,
             disposition,
@@ -697,9 +732,11 @@ public sealed partial class L12PlatformStore
             evidence,
             reason,
             revokesDecisionId,
-        });
+        };
+        var fingerprintPayload = scope == "match" ? JsonSerializer.Serialize(legacyFingerprintPayload)
+            : JsonSerializer.Serialize(new { legacy = legacyFingerprintPayload, scope, targetAccountIds = targets });
         return new(requestId, RankedIntegrityFingerprint(fingerprintPayload), disposition, matchIds, restricted,
-            input.RestrictionDays, evidence, reason, revokesDecisionId);
+            input.RestrictionDays, evidence, reason, revokesDecisionId, scope, targets);
     }
 
     private RankedIntegrityActionPlan BuildRankedIntegrityActionPlanLocked(
@@ -716,11 +753,16 @@ public sealed partial class L12PlatformStore
 
         foreach (var matchId in input.MatchIds)
         {
-            var latest = _data.RankedIntegrityDecisions.Where(row => row.MatchIds.Contains(matchId,
-                    StringComparer.OrdinalIgnoreCase) && !IsDecisionRevokedLocked(row.Id))
-                .OrderByDescending(row => row.Revision).FirstOrDefault();
-            if (latest is not null && latest.Disposition is not "review")
-                plan.BlockingReasons.Add($"对局 {matchId} 已有生效终局处置 {latest.Disposition}");
+            var audit = _data.RankedIntegrityAudits.Single(row => row.MatchId.Equals(matchId,
+                StringComparison.OrdinalIgnoreCase));
+            foreach (var accountId in new[] { audit.FirstAccountId, audit.SecondAccountId }
+                         .Where(id => input.Scope == "match" || input.TargetAccountIds.Contains(id,
+                             StringComparer.OrdinalIgnoreCase)))
+            {
+                var latest = LatestRankedIntegrityDecisionLocked(matchId, accountId);
+                if (latest is not null && latest.Disposition is not "review")
+                    plan.BlockingReasons.Add($"对局 {matchId} 的账号 {AccountName(accountId)} 已有生效终局处置 {latest.Disposition}");
+            }
         }
         if (plan.BlockingReasons.Count > 0) return plan;
 
@@ -734,8 +776,34 @@ public sealed partial class L12PlatformStore
     private void BuildVoidAppliedRewardsPlanLocked(RankedIntegrityActionPlan plan)
     {
         var selected = plan.Input.MatchIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (plan.Input.Scope == "account")
+        {
+            foreach (var matchId in selected)
+            foreach (var accountId in plan.Input.TargetAccountIds)
+            {
+                var audit = _data.RankedIntegrityAudits.Single(row => row.MatchId.Equals(matchId,
+                    StringComparison.OrdinalIgnoreCase));
+                if (!audit.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
+                    && !audit.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)) continue;
+                var settlement = _data.RankedSettlements.SingleOrDefault(row => row.MatchId.Equals(matchId,
+                    StringComparison.OrdinalIgnoreCase) && row.AccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase));
+                if (settlement is not null && !IsRankedAccountRewardAppliedLocked(matchId, accountId))
+                {
+                    plan.BlockingReasons.Add($"对局 {matchId} 的账号 {AccountName(accountId)} 奖励仍暂扣或未实际应用；请按原整场复核处理，不能执行个人收益处罚");
+                    continue;
+                }
+                // A personal sanction withdraws benefits. Reverting a loss would refund the punished
+                // player; that is a different operation from the legacy whole-match correction.
+                if (settlement is null || settlement.Outcome != "win" || settlement.Delta < 0)
+                    plan.BlockingReasons.Add($"对局 {matchId} 的账号 {AccountName(accountId)} 没有可安全撤回的胜局收益；不能以个人处罚退还原扣分或隐藏分损失");
+            }
+            if (plan.BlockingReasons.Count > 0) return;
+        }
         var appliedRows = _data.RankedSettlements.Where(row => selected.Contains(row.MatchId)
-                && row.Outcome is "win" or "loss" && IsRankedMatchCurrentlyAppliedLocked(row.MatchId))
+                && row.Outcome is "win" or "loss"
+                && (plan.Input.Scope == "match" || plan.Input.TargetAccountIds.Contains(row.AccountId,
+                    StringComparer.OrdinalIgnoreCase))
+                && IsRankedAccountRewardAppliedLocked(row.MatchId, row.AccountId))
             .ToArray();
         var accountPlans = new List<(string AccountId, RankedProfileRow Profile,
             RankedSettlementRow[] Rows, RankedSettlementRow[] Segment, bool IsLatestSuffix)>();
@@ -772,7 +840,7 @@ public sealed partial class L12PlatformStore
 
             var effective = _data.RankedSettlements.Where(row =>
                     row.AccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
-                    && row.Outcome is "win" or "loss" && IsRankedMatchCurrentlyAppliedLocked(row.MatchId)
+                    && row.Outcome is "win" or "loss" && IsRankedAccountRewardAppliedLocked(row.MatchId, accountId)
                     && row.Faction.Equals(profile.Faction, StringComparison.OrdinalIgnoreCase)
                     && _data.RankedIntegrityAudits.Any(audit => audit.MatchId.Equals(row.MatchId,
                             StringComparison.OrdinalIgnoreCase)
@@ -805,6 +873,12 @@ public sealed partial class L12PlatformStore
         }
         if (plan.BlockingReasons.Count > 0) return;
 
+        if (plan.Input.Scope == "account" && accountPlans.Any(item => !item.IsLatestSuffix))
+        {
+            plan.BlockingReasons.Add("个人收益之后已有结算，不能猜测单边后继档案或隐藏分；本次不执行");
+            return;
+        }
+
         // 历史对局后面已经存在正常结算时，继续倒推会连带改写后续对手和整条排位链。
         // 此时只作废所选对局、执行限制并保存证据，当前档案保持不变；最新连续后缀仍精确回滚。
         plan.PreservesProfilesForDownstreamSettlements = accountPlans.Any(item => !item.IsLatestSuffix);
@@ -826,6 +900,11 @@ public sealed partial class L12PlatformStore
                         StringComparison.OrdinalIgnoreCase)))
                 .ToArray();
             RankedProfileSnapshotRow after;
+            if (plan.Input.Scope == "account" && exactFacts.Any(fact => fact is null))
+            {
+                plan.BlockingReasons.Add($"账号 {AccountName(accountId)} 缺少完整结算前后事实，不能安全单边撤回收益");
+                continue;
+            }
             if (exactFacts.All(fact => fact is not null))
             {
                 var firstFact = exactFacts[0]!;
@@ -834,6 +913,26 @@ public sealed partial class L12PlatformStore
                 after = CloneRankedProfileSnapshot(exactBefore);
                 // 称号选择是结算外的玩家偏好，不随积分处置回滚。
                 after.SelectedMasterTitle = before.SelectedMasterTitle;
+                if (plan.Input.Scope == "account")
+                {
+                    var expected = CloneRankedProfileSnapshot(firstFact.FirstAccountId.Equals(accountId,
+                        StringComparison.OrdinalIgnoreCase) ? firstFact.FirstBefore : firstFact.SecondBefore);
+                    foreach (var fact in exactFacts)
+                    {
+                        var ownBefore = fact!.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
+                            ? fact.FirstBefore : fact.SecondBefore;
+                        var ownAfter = fact.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
+                            ? fact.FirstAfter : fact.SecondAfter;
+                        expected.SelectedMasterTitle = ownBefore.SelectedMasterTitle;
+                        if (!RankedProfileSnapshotsEqual(expected, ownBefore))
+                            plan.BlockingReasons.Add($"账号 {AccountName(accountId)} 的完整结算事实不连续");
+                        expected = CloneRankedProfileSnapshot(ownAfter);
+                    }
+                    expected.SelectedMasterTitle = before.SelectedMasterTitle;
+                    if (!RankedProfileSnapshotsEqual(before, expected)
+                        || after.SevenValue > before.SevenValue || after.HiddenRating > before.HiddenRating)
+                        plan.BlockingReasons.Add($"账号 {AccountName(accountId)} 的当前档案与完整收益事实不一致，或撤回会使被处罚者获利");
+                }
             }
             else
             {
@@ -853,7 +952,7 @@ public sealed partial class L12PlatformStore
                 .Select(row => row.MatchId).ToArray()));
             foreach (var row in rows) plan.VoidedAppliedMatchIds.Add(row.MatchId);
         }
-        if (!plan.PreservesProfilesForDownstreamSettlements
+        if (plan.Input.Scope == "match" && !plan.PreservesProfilesForDownstreamSettlements
             && plan.BlockingReasons.Count == 0 && appliedRows.Length > 0
             && !TryApplyHistoricalHiddenRatingRollbackLocked(plan, appliedRows, out var ratingReason))
             plan.BlockingReasons.Add(ratingReason);
@@ -1016,7 +1115,8 @@ public sealed partial class L12PlatformStore
 
         var releasedOriginally = corrections.SelectMany(row => row.MatchIds)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var heldToRelease = original.MatchIds.Where(matchId => _data.RankedHeldRewards.Any(row =>
+        var heldToRelease = original.MatchIds.Where(matchId => original.Scope == "match"
+            && _data.RankedHeldRewards.Any(row =>
                 row.MatchId.Equals(matchId, StringComparison.OrdinalIgnoreCase))
             && !releasedOriginally.Contains(matchId)).ToArray();
         if (heldToRelease.Length > 0) BuildHeldReleasePlanLocked(plan, heldToRelease);
@@ -1046,7 +1146,8 @@ public sealed partial class L12PlatformStore
         }
 
         if (plan.Input.Disposition is "confirmed" or "system-error")
-            AdjustRankedMasterAggregatesLocked(plan.VoidedAppliedMatchIds, -1);
+            AdjustRankedMasterAggregatesLocked(plan.VoidedAppliedMatchIds, -1,
+                plan.Input.Scope == "account" ? plan.Input.TargetAccountIds : null);
         if (plan.ReleasedHeldMatchIds.Count > 0)
         {
             AdjustRankedMasterAggregatesLocked(plan.ReleasedHeldMatchIds, 1);
@@ -1058,7 +1159,8 @@ public sealed partial class L12PlatformStore
                     row.DecisionId.Equals(plan.RevokedDecision.Id, StringComparison.OrdinalIgnoreCase)
                     && row.Kind == "void-applied")
                 .SelectMany(row => row.MatchIds).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            AdjustRankedMasterAggregatesLocked(originallyVoided, 1);
+            AdjustRankedMasterAggregatesLocked(originallyVoided, 1,
+                plan.RevokedDecision.Scope == "account" ? plan.RevokedDecision.TargetAccountIds : null);
         }
     }
 
@@ -1069,6 +1171,8 @@ public sealed partial class L12PlatformStore
                 row.MatchId.Equals(matchId, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
         var participants = audits.SelectMany(row => new[] { row.FirstAccountId, row.SecondAccountId })
+            .Where(id => plan.Input.Scope == "match" || plan.Input.TargetAccountIds.Contains(id,
+                StringComparer.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return participants.Select(accountId =>
@@ -1086,6 +1190,8 @@ public sealed partial class L12PlatformStore
                     (audit.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
                      || audit.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase))
                     && plan.ReleasedHeldMatchIds.Contains(audit.MatchId)) => "released",
+                "revoked" when plan.Input.Scope == "account" && plan.Input.MatchIds.Any(matchId =>
+                    RankedRewardStatusLocked(matchId) == "held") => "held",
                 "revoked" => "restored",
                 // A manual review registers evidence; it does not impose another automatic hold.
                 _ => "unchanged",
@@ -1111,6 +1217,8 @@ public sealed partial class L12PlatformStore
             blocked.Length == 0, blocked, plan.Input.MatchIds,
             effects.Select(AccountEffectViewWithName).ToArray())
         {
+            Scope = plan.Input.Scope,
+            TargetAccountIds = plan.Input.TargetAccountIds.ToArray(),
             PlayerNotificationAccountIds = blocked.Length == 0
                 ? effects.Where(ShouldNotifyRankedIntegrityEffect).Select(effect => effect.AccountId).ToArray()
                 : [],
@@ -1197,12 +1305,55 @@ public sealed partial class L12PlatformStore
     private bool IsRankedMatchCurrentlyAppliedLocked(string matchId)
         => !IsRankedMatchExcludedLocked(matchId);
 
+    private bool IsRankedAccountRewardAppliedLocked(string matchId, string accountId)
+        => RankedRewardStatusLocked(matchId, accountId) is "applied" or "released";
+
+    private RankedIntegrityDecisionRow? LatestRankedIntegrityDecisionLocked(string matchId, string? accountId = null,
+        bool includeMatchRevocations = false)
+        => _data.RankedIntegrityDecisions.Where(row => (row.Disposition != "revoked"
+                    || includeMatchRevocations && row.Scope == "match")
+                && row.MatchIds.Contains(matchId, StringComparer.OrdinalIgnoreCase)
+                && (row.Scope == "match" || accountId is not null
+                    && row.TargetAccountIds.Contains(accountId, StringComparer.OrdinalIgnoreCase))
+                && !IsDecisionRevokedLocked(row.Id))
+            .OrderByDescending(row => row.Revision).FirstOrDefault();
+
+    private sealed class RankedParticipantKeyComparer : IEqualityComparer<(string MatchId, string AccountId)>
+    {
+        internal static readonly RankedParticipantKeyComparer Instance = new();
+        public bool Equals((string MatchId, string AccountId) first, (string MatchId, string AccountId) second)
+            => StringComparer.OrdinalIgnoreCase.Equals(first.MatchId, second.MatchId)
+                && StringComparer.OrdinalIgnoreCase.Equals(first.AccountId, second.AccountId);
+        public int GetHashCode((string MatchId, string AccountId) key)
+            => HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(key.MatchId),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(key.AccountId));
+    }
+
+    // A derived participant-level view of the existing decision ledger, never a second ledger or
+    // a global exclusion of that account's other matches. Whole-match facts keep their old meaning.
+    private static HashSet<(string MatchId, string AccountId)> ProjectRankedPersonalRewardExclusions(DataFile data)
+    {
+        var revoked = data.RankedIntegrityDecisions.Where(row => row.Disposition == "revoked")
+            .Select(row => row.RevokesDecisionId).Where(id => id is not null)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var result = new HashSet<(string, string)>(RankedParticipantKeyComparer.Instance);
+        var personal = data.RankedIntegrityDecisions.Where(row => row.Scope == "account"
+            && row.Disposition == "confirmed" && !revoked.Contains(row.Id)).ToArray();
+        if (personal.Length == 0) return result;
+        var audits = data.RankedIntegrityAudits.ToLookup(row => row.MatchId, StringComparer.OrdinalIgnoreCase);
+        foreach (var row in personal)
+        foreach (var matchId in row.MatchIds)
+        foreach (var accountId in row.TargetAccountIds)
+            if (audits[matchId].Any(audit => audit.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
+                || audit.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)))
+                result.Add((matchId, accountId));
+        return result;
+    }
+
     private bool IsRankedMatchExcludedLocked(string matchId)
     {
         if (IsT01TransitionWaivedMatchLocked(matchId)) return true;
-        var latest = _data.RankedIntegrityDecisions.Where(row => row.MatchIds.Contains(matchId,
-                StringComparer.OrdinalIgnoreCase) && !IsDecisionRevokedLocked(row.Id))
-            .OrderByDescending(row => row.Revision).FirstOrDefault();
+        var latest = LatestRankedIntegrityDecisionLocked(matchId, includeMatchRevocations: true);
         if (latest is not null)
             return latest.Disposition is "confirmed" or "system-error"
                 || latest.Disposition == "review" && _data.RankedHeldRewards.Any(row =>
@@ -1211,13 +1362,11 @@ public sealed partial class L12PlatformStore
             StringComparison.OrdinalIgnoreCase));
     }
 
-    private string RankedRewardStatusLocked(string matchId)
+    private string RankedRewardStatusLocked(string matchId, string? accountId = null)
     {
         var hasHold = _data.RankedHeldRewards.Any(row => row.MatchId.Equals(matchId,
             StringComparison.OrdinalIgnoreCase));
-        var latest = _data.RankedIntegrityDecisions.Where(row => row.MatchIds.Contains(matchId,
-                StringComparer.OrdinalIgnoreCase) && !IsDecisionRevokedLocked(row.Id))
-            .OrderByDescending(row => row.Revision).FirstOrDefault();
+        var latest = LatestRankedIntegrityDecisionLocked(matchId, accountId, includeMatchRevocations: true);
         return ProjectRankedRewardStatus(IsT01TransitionWaivedMatchLocked(matchId), hasHold, latest?.Disposition);
     }
 
@@ -1420,7 +1569,8 @@ public sealed partial class L12PlatformStore
            && string.Equals(first.SelectedMasterTitle, second.SelectedMasterTitle,
                StringComparison.Ordinal);
 
-    private void AdjustRankedMasterAggregatesLocked(IEnumerable<string> matchIds, int direction)
+    private void AdjustRankedMasterAggregatesLocked(IEnumerable<string> matchIds, int direction,
+        IReadOnlyList<string>? targetAccountIds = null)
     {
         foreach (var matchId in matchIds.Distinct(StringComparer.OrdinalIgnoreCase))
         {
@@ -1434,6 +1584,8 @@ public sealed partial class L12PlatformStore
 
         void Adjust(string accountId, string seasonId, string masterId, bool won)
         {
+            if (targetAccountIds is not null && !targetAccountIds.Contains(accountId,
+                    StringComparer.OrdinalIgnoreCase)) return;
             if (string.IsNullOrWhiteSpace(masterId)) return;
             var row = _data.RankedMasterRecords.FirstOrDefault(item =>
                 item.AccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
@@ -1554,6 +1706,8 @@ public sealed partial class L12PlatformStore
             row.ActorId, row.ActorName, row.CreatedAt, row.RevokesDecisionId, revokedBy?.Id,
             row.AccountEffects.Select(AccountEffectViewWithName).ToArray())
         {
+            Scope = row.Scope,
+            TargetAccountIds = row.TargetAccountIds.ToArray(),
             PlayerNotificationAccountIds = RankedIntegrityNotifiedAccountIdsLocked(row.Id),
         };
     }
@@ -1660,6 +1814,64 @@ public sealed partial class L12PlatformStore
         var accountIds = data.Accounts.Select(row => row.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var decisionIds = data.RankedIntegrityDecisions.Select(row => row.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var decisionById = new Dictionary<string, RankedIntegrityDecisionRow>(StringComparer.OrdinalIgnoreCase);
+        foreach (var decision in data.RankedIntegrityDecisions)
+            if (!string.IsNullOrWhiteSpace(decision.Id)) decisionById.TryAdd(decision.Id, decision);
+
+        bool InvalidPersonalCorrection(RankedIntegrityCorrectionRow correction)
+        {
+            if (!decisionById.TryGetValue(correction.DecisionId, out var decision)) return true;
+            if (decision.Scope != "account") return false;
+            if (!decision.TargetAccountIds.Contains(correction.AccountId, StringComparer.OrdinalIgnoreCase)
+                || correction.MatchIds.Count == 0
+                || correction.MatchIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != correction.MatchIds.Count
+                || correction.MatchIds.Any(id => !decision.MatchIds.Contains(id, StringComparer.OrdinalIgnoreCase)))
+                return true;
+            if (decision.Disposition == "confirmed") return correction.Kind != "void-applied";
+            if (decision.Disposition != "revoked" || correction.Kind != "revoke"
+                || string.IsNullOrWhiteSpace(decision.RevokesDecisionId)
+                || !decisionById.TryGetValue(decision.RevokesDecisionId, out var original)
+                || original.Scope != "account" || original.Disposition != "confirmed") return true;
+            // A personal revocation can only invert that account's actual original correction,
+            // never an unrelated account/match or a newly fabricated before/after snapshot.
+            return !data.RankedIntegrityCorrections.Any(source => source.Kind == "void-applied"
+                && source.DecisionId.Equals(original.Id, StringComparison.OrdinalIgnoreCase)
+                && source.AccountId.Equals(correction.AccountId, StringComparison.OrdinalIgnoreCase)
+                && source.MatchIds.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(correction.MatchIds)
+                && RankedProfileSnapshotsEqual(source.Before, correction.After)
+                && RankedProfileSnapshotsEqual(source.After, correction.Before));
+        }
+
+        bool IncompletePersonalCorrectionSets()
+        {
+            var personal = decisionById.Values.Where(decision => decision.Scope == "account").ToArray();
+            if (personal.Length == 0) return false;
+            var correctionsByDecision = data.RankedIntegrityCorrections.ToLookup(
+                correction => correction.DecisionId, StringComparer.OrdinalIgnoreCase);
+            var auditsByMatch = data.RankedIntegrityAudits.ToLookup(audit => audit.MatchId, StringComparer.OrdinalIgnoreCase);
+            foreach (var decision in personal)
+            {
+                var corrections = correctionsByDecision[decision.Id].ToArray();
+                if (corrections.Length != decision.TargetAccountIds.Count) return true;
+                foreach (var target in decision.TargetAccountIds)
+                {
+                    var own = corrections.Where(correction => correction.AccountId.Equals(target,
+                        StringComparison.OrdinalIgnoreCase)).ToArray();
+                    if (own.Length != 1) return true;
+                    if (decision.Disposition == "confirmed")
+                    {
+                        var actualMatches = decision.MatchIds.Where(matchId => auditsByMatch[matchId].Any(audit =>
+                            audit.FirstAccountId.Equals(target, StringComparison.OrdinalIgnoreCase)
+                            || audit.SecondAccountId.Equals(target, StringComparison.OrdinalIgnoreCase)));
+                        if (!own[0].MatchIds.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(actualMatches))
+                            return true;
+                    }
+                    // Revoked decisions and their originals both have exactly one row per target;
+                    // InvalidPersonalCorrection additionally binds the exact original inverse.
+                }
+            }
+            return false;
+        }
         return data.RankedIntegrityRevision < 0
             || data.RankedIntegrityDecisions.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
@@ -1668,10 +1880,32 @@ public sealed partial class L12PlatformStore
             || data.RankedIntegrityDecisions.GroupBy(row => row.Revision)
                 .Any(group => group.Key <= 0 || group.Count() > 1)
             || data.RankedIntegrityDecisions.Any(row => !RankedIntegrityDispositions.Contains(row.Disposition)
+                || row.Scope is not ("match" or "account") || row.TargetAccountIds is null
+                || row.Scope == "match" && row.TargetAccountIds.Count != 0
+                || row.Scope == "account" && (row.Disposition is not ("confirmed" or "revoked")
+                    || row.TargetAccountIds.Count == 0 || row.MatchIds is null || row.RestrictedAccountIds is null
+                    || row.TargetAccountIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != row.TargetAccountIds.Count
+                    || row.TargetAccountIds.Any(id => !accountIds.Contains(id))
+                    || row.TargetAccountIds.Any(id => !data.RankedIntegrityAudits.Any(audit =>
+                        row.MatchIds.Contains(audit.MatchId, StringComparer.OrdinalIgnoreCase)
+                        && (audit.FirstAccountId.Equals(id, StringComparison.OrdinalIgnoreCase)
+                            || audit.SecondAccountId.Equals(id, StringComparison.OrdinalIgnoreCase))))
+                    || row.RestrictedAccountIds.Any(id => !row.TargetAccountIds.Contains(id, StringComparer.OrdinalIgnoreCase))
+                    || row.Disposition == "revoked" && !data.RankedIntegrityDecisions.Any(original =>
+                        original.Id.Equals(row.RevokesDecisionId, StringComparison.OrdinalIgnoreCase)
+                        && original.Scope == "account" && original.Disposition == "confirmed"
+                        && original.MatchIds.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(row.MatchIds)
+                        && original.TargetAccountIds.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(row.TargetAccountIds))
+                    || row.MatchIds.Any(matchId => !data.RankedIntegrityAudits.Any(audit =>
+                        audit.MatchId.Equals(matchId, StringComparison.OrdinalIgnoreCase)
+                        && (row.TargetAccountIds.Contains(audit.FirstAccountId, StringComparer.OrdinalIgnoreCase)
+                            || row.TargetAccountIds.Contains(audit.SecondAccountId, StringComparer.OrdinalIgnoreCase)))))
                 || InvalidHash(row.RequestFingerprint) || row.MatchIds is null
                 || row.MatchIds.Count is < 1 or > 50
                 || row.MatchIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != row.MatchIds.Count
                 || row.AccountEffects is null || row.AccountEffects.Any(effect => !accountIds.Contains(effect.AccountId))
+                || row.Scope == "account" && !row.AccountEffects.Select(effect => effect.AccountId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(row.TargetAccountIds)
                 || !accountIds.Contains(row.ActorId) && row.ActorId != "$system")
             || data.RankedIntegrityDecisions.Any() && data.RankedIntegrityRevision
                 < data.RankedIntegrityDecisions.Max(row => row.Revision)
@@ -1694,7 +1928,8 @@ public sealed partial class L12PlatformStore
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
             || data.RankedIntegrityCorrections.Any(row => !decisionIds.Contains(row.DecisionId)
                 || !accountIds.Contains(row.AccountId) || row.Before.AccountId != row.AccountId
-                || row.After.AccountId != row.AccountId || row.MatchIds is null)
+                || row.After.AccountId != row.AccountId || row.MatchIds is null || InvalidPersonalCorrection(row))
+            || IncompletePersonalCorrectionSets()
             || data.RankedIntegrityNotifications.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
             || data.RankedIntegrityNotifications.Any(row => !accountIds.Contains(row.AccountId)

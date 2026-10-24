@@ -1,5 +1,23 @@
 # Legion12 Bug 修复记录
 
+## ADMIN-20261024-SINGLE-PARTY｜个人收益处罚、恢复完备与旧端隔离
+
+- 人类明确可选“仅撤回收益／禁赛＋撤回收益”，而非只禁赛；新增显式account范围、参赛目标及按天限制。个人聚合／称号／结算投影按match＋account键处理，不把另一方或整场放进统计排除，不改原始winner、录像、公共牌库样本。仅支持完整当前档案事实的最新连续胜局后缀；败方损失不退、后继或缺事实不猜，预览说明限制；撤销须原范围／对象／场次完全相同，旧整场请求指纹字节兼容。
+- 独审补3共享风险：held不能伪称已撤回且堵住另一方释放；持久correction不能跨账号／跨场或缺失／重复／部分子集，个人每target恰一且精确对应实际参赛交集、撤销为完整精确逆；个人双POST与客户端scope/targets echo隔离旧DTO静默降级，404绝不退到整场。权限、同一Store／审计／通知／保存回滚沿旧链，不另造处罚权威。扫描全部处置／奖励状态／主宰聚合及committed读消费者与确认、恢复、撤销入口。
+- 真实旧DTO6例5RED＋1控制、候选13＋1分开保留；新held／有效SHA主镜像8RED，HTTP12例10RED＋2旧路由兼容壳控制（非历史binary），集合5例4RED＋1交集正控。最终25具名25过、零失败跳过及监督清退；真实内存SFC4／API8已接标准链，Main前端有效前缀＋26原步骤／类型双构建过。Core3DCA61／HTTP F56BFF／TS65A9CA冻结；Main完整平台84450实际exit0、2377/2377零失败跳过，FFD991D6完整TRX、固定0307D05A程序集／11源前后同、147153059B监督临时树清退。本地接受未上线；唯一ranked-integrity-single-party-20261024/main-review.json及synchronization.json；个人限制只排位，另一方不连带。
+
+## UI-20261024-MATCH-OPENING｜开局演出生命周期与独立结果交接
+
+- 原需求为对阵／权威骰点／原先后攻选择／短结果，不增加向玩家区飞行标记。共享22主宰Banner白名单移到specialAssets供DeckCover与开局复用，失图保既有头像；不改规则、发送、计时、卡效或数据库。扫描PromptOverlay的initiative入口、骰点修订、match变化、阶段变化、skip、off／fast／reduce与卸载，统一一个生命周期，先清旧局再开新局，避免另一watch清掉新timer；初次打开后期局不补演出。
+- 650ms结果独立于条件遮罩与移动dock，局部pointer-events:none!important避免landscape容器ID样式盖过；不借超32位z测假点穿。真实动态helper及实际SFC检查保权威骰点未到不伪定、重复revision不重入、fast真正使用缩短duration、off／reduce无随机转骰。r3复用17未受修正影响项，r5定向3过与r6三图补拍分列，不拼成新单轮19/19；所有中间失败保留，清洗fixture不是服务器ACK／真机／卡牌资料证据。
+- Main已读最终源／报告并看桌面、旋转竖屏与结果图；原正文AST合同仅精确适配promptSituation && !isInitiative，保唯一完整正文在滚动区及4原破坏反例，加3错误条件拒绝。标准前端有效前缀＋原失败点后26步骤，23900实际exit0，类型与双Vite过、源码稳定；无新完整Batch exit0或规则／30＋10重跑。唯一match-opening-presentation-20261024/main-acceptance.json；产品416EDF／preview4FFED／QA2DF2／正文守卫527536，尚未人类视觉批准，正式部署禁止，不影响其他已验产品同步。
+
+## UI-20261024-GALLERY-RIGHTS-PAGE｜派发分页与账号读取生命周期
+
+- 人类直接需求为派发记录分页／赛季目录下拉。复用PagedCollection每页10条，搜索／来源／撤回状态筛选；原API只取最近1000条，明确是本次读取集合，不冒全库总数或服务端分页。赛季来自既有current／next／archives，目录外旧规则保留兼容，失败不编造目录。
+- Main独读发现本片账号watch只在rights内刷新：A加载权益后切出再换B，缓存未失效；A迟到读取也能写回。真实当前SFC合成场景RED（等B十二条超时）后，所有账号变化清旧权益／规则／目录／表单／预览并失效请求代际，仅有新账号且当前rights时读，退出不请求，卸载废旧回调。扫描本组件loadRights／reload／账号watch／卸载与原四列表变更，沿同一读取身份修，不推测其他后台也有同Bug。
+- 最终A34EC1F9产品／A59CED6专项，原7源与实际编译合同、1440×900／390×844／844×390真实SFC分页、筛选收敛、赛季旧值、目录失败、A迟到拒绝、B十二条及退出无新请求通过；纯内存API，不冒HTTP持久化／真机。Main完整读源／runner／核raw哈希，另2视口visual-only补赛季与第2页分页；顶端筛选仍受fixture滚动截屏限制，只复用真实交互，不冒完整AdminShell整页可达。标准前端有效前缀＋26原步骤续验23900实际exit0，类型和双Vite过；本地接受，未上线／线上关单。唯一gallery-dispatch-pagination-browser-20261024/main-acceptance.json，初缺包启动失败与实际RED分别保留；回滚不动权益数据／API／卡图。
+
 ## OPS-20261024-BACKUP-EVIDENCE-CLASSIFICATION｜诊断证据保全与备份消费者分类
 
 - 后续实际调用链发现发布后总清理先核程序依赖并可能提前返回，故计划通过仍不能独立轮转。只在同一工具原plan旁补rotate，严格单参数／显式opt-in，部署flock内再核人工阻断，复用同一备份函数，不进入程序／素材／服务或发布入口。新增13真实CLI含默认拒绝、仅一组、额外参数、人工阻断、锁、keep／flag非法、坏归档、PINNED、失败绑定、完整／不完整诊断及未知失败；原57保留，总70原生Linux及标准Batch91461实际exit0，初始RED58保留。人类长期测试规则授权后最终5E081506安装并真实轮转一组2eda，最新两组及全部诊断证据、两服服务身份保留；3468.79ms／17826835B。首次元数据断言在写前因JS纳秒精度拒绝，改精确字符串重新绑定，源守卫不变，不重复授权或覆失败。唯一standalone-rotation-acceptance.json及authorized-test-rotation.json；不含正式策略、新调度或产品部署。

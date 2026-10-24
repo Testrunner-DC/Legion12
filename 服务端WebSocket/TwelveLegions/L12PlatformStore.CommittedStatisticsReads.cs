@@ -25,7 +25,7 @@ public sealed partial class L12PlatformStore
         var revoked = data.RankedIntegrityDecisions.Where(row => row.Disposition == "revoked")
             .Select(row => row.RevokesDecisionId).Where(id => id is not null).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var latest = new Dictionary<string, RankedIntegrityDecisionRow>(StringComparer.OrdinalIgnoreCase);
-        foreach (var row in data.RankedIntegrityDecisions.Where(row => !revoked.Contains(row.Id))
+        foreach (var row in data.RankedIntegrityDecisions.Where(row => row.Scope == "match" && !revoked.Contains(row.Id))
             .OrderByDescending(row => row.Revision))
             foreach (var matchId in row.MatchIds) latest.TryAdd(matchId, row);
         var matches = data.RankedIntegrityAudits.Select(row => row.MatchId)

@@ -1,5 +1,16 @@
 # 十二军团任务台账
 
+## 2026-10-24 并行续办｜两写者、共享重型串行
+
+- 人类要求及时并行，复用既有来源，不新建审批链、不重开正式3a部署／沙盒退出／本次维护。Main负责独验、记录与Git；真实物理设备按人类答复保留未验，费用可用性共享修复仍待原批准，均只挂该项。
+- 单方判罚B（P2/P3）：人类call_052415d98ab64087ae1a42a751bf643b明确两档“禁赛＋撤回收益／仅撤回收益”；只改变所选参赛者，不采用“仅禁赛”简化，不改原始winner／录像／公共牌库样本。完整事实、最新连续胜局后缀才可精确撤回；败方扣分／后继／缺事实拒绝。账号管理独立按天禁赛C仍为后续片。
+- B真实证据：旧DTO6例5失败1控制通过；初候选14例13过1夹具误进automatic-held，改meaningful前置后只续1过，不冒单轮14绿。独审三P1均纳原范围：held个人处置须applied/released；恢复correction须绑定目标、完整匹配及精确逆集合；account preview/confirm使用专用双POST，旧服404不回退，客户端验证scope/targets echo。原E0D002的held2＋有效SHA恢复6真实8RED；旧HTTP F491的12例10RED／2兼容壳控制过，兼容壳不是历史binary；实际SFC4＋API8及标准接线轻量过。集合5例实际4RED／1正控后修完整集合，最终25具名25过；Main唯一完整平台84450实际2377/2377零失败跳过、FFD991D6 TRX、0307D05A固定程序集与11源前后同、147153059B监督临时树清退。本地接受未部署；唯一ranked-integrity-single-party-20261024/main-review.json及synchronization.json。
+- 画廊派发（P4）本地接受：两叶A34EC1F9／最终QA A59CED6，现有PagedCollection每页10、筛选仅现最近最多1000条，非全历史总数／服务端流量优化；现有赛季目录及旧规则缺目录选项保留。真实三尺寸SFC RED→GREEN覆盖分页／筛选／目录失败／账号迟到／退出不重读；2视口visual-only补赛季与第2页分页图。截图上方筛选区未完整捕获，不冒整页滚动，原真实交互独立有效。唯一gallery-dispatch-pagination-browser-20261024/main-acceptance.json；无真实HTTP持久化／真机／部署。
+- 开局展示（P4）本地源码接受：权威骰点／22Banner唯一来源／真实viewer左右／跳过不造结果，清理换局timer后再启动新局，结果独立650ms点穿Teleport。r3中17项未受后续变更影响的证据复用；r5真实result/off/reduce 3过，off/reduce 39／41ms且无随机动画；r6仅3张干净尺寸截图，非新全矩阵。产品416EDF，preview4FFED，QA2DF2冻结；清洗fixture阵营文案不作卡牌资料证据。人类视觉确认前禁止正式部署；唯一match-opening-presentation-20261024/main-acceptance.json。
+- Main一次映射前端已完成：初CMD继承超长PATH致npm未启动，保原失败，按已有规范本进程缩短完整工具PATH并真实CMD预检，未改全局。随后标准有效前缀含性能／361 UI／两档SFC与API8，旧正文合同只认promptSituation而未认开局独立区而失败；Main仅精确改成promptSituation && !isInitiative，保唯一完整正文、滚动归属及4原负例，加3错误条件反例。从实际失败点续原26步骤，23900实际exit0、类型和双Vite通过、16前端叶运行前后SHA稳定；不冒新单轮Batch exit0，transcript只包装器非完整native stdout。不重做未变规则／30＋10。
+- 当前B全冻结并本地接受，画廊16c1349f／开局21b0e464已本地分族提交，统一同步不等CI。下一两writer仅QA：Bug83e新同状态对照叶／天灾现preview与专项两叶，产品ZoneMovement仍BD1AC503不改；Main独读显式disaster-chain差异后授权BugQA整preview pin精确重绑DAE786。Main完整平台已返窗，先Bug桌面两分支一次，随后天灾三具名RED；不混下一草稿进已验提交。C只读方案需可靠平台镜像／旧端拒退边界，schema10仅SQLite拒退不冒覆盖独立JSON，未实施。
+- Bug只读来源4个已知非终态，最新intake是10月23日06:09北京时间，不冒今日无新增；2份限定未复现拒绝准备、83eac06e同状态玩家UI／GM对照、1治理事实核查，实际关单0、已证fixed0。83e窄方案已定位既有合成depth6／prompt-20真实接收者投影与真实SFC点击QA，但无同状态完整checkpoint／真ACK；先可用单QA叶做有限当前UI分流，不为旧笼统报告扩恢复桥，不冒原故障修复。最终15字段／现场版本与单次preview-CAS-readback仍由Main完成；不新增玩家记忆问题。
+
 目标5轮转尾项完成：同一工具独立rotate入口显式opt-in，原flock内人工阻断，原校验／每轮一组／最新两组保护，不调用程序／素材／服务清理。70原生Linux及五叶标准Batch91461 exit0；人类call_1761ca532bb649bcabaf9cad6506bd40长期批准测试规则并录入SERVER-STORAGE-MAINTENANCE。最终5E081506已实际安装，旧工具保留；真实3468.79ms仅移2eda最旧归档＋sha共17826835B，最新两组／全部诊断证据／两服服务身份保留，无正式备份／库／维护／调度写。初HOME写法被拦未执行、首次真实清单因JS纳秒精度拒绝均保失败，后者改字符串精确绑定、不减断言。唯一restore-business-20261024/standalone-rotation-acceptance.json及authorized-test-rotation.json；默认仍不自行删，已授权同规则操作不再问。
 
 目标5首轮真实自动包完成：c112的run40069700811／job120800287167于07:02:27Z success，唯一canonical及3天三文件限定上传均过，附件12552245351／360610785B／10月27日到期元数据独读；未额外下载解包，不冒后续HEAD或未知原生测试计数。唯一canonical-ci-20261024/linux-ci-c112d764-success.json。只收本族同步，其他未验项另列，不再拿周边治理阻塞常规流程或等待已终止任务。

@@ -4,6 +4,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 const read = file => fs.readFileSync(new URL(file, import.meta.url), 'utf8')
 const admin = read('../src/l12/site/RankedIntegrityActions.vue')
+const panel = read('../src/l12/site/AdminRankedIntegrityPanel.vue')
 const notice = read('../src/l12/site/RankedIntegrityNotice.vue')
 const history = read('../src/l12/site/RankedPenaltyHistory.vue')
 const appeal = read('../src/l12/site/RankedAppealForm.vue')
@@ -29,6 +30,12 @@ assert.ok(admin.includes('integrityNotificationMessage(preview.playerNotificatio
   'preview and confirmation must use server notification recipients, not disposition or score heuristics')
 assert.ok(!admin.includes('对应玩家将收到结果通知') && !admin.includes('确认后会保存处置证据并通知相关玩家'),
   'no-impact decisions must not promise a player notification')
+assert.ok(admin.includes('name="integrity-scope"') && admin.includes('name="target-account"')
+  && admin.includes('仅撤回收益') && admin.includes('撤回收益＋按天禁赛')
+  && admin.includes('targetAccountIds: scope') && admin.includes('decision.targetAccountIds'),
+  'individual targets, both penalty degrees and exact revocation scope must stay explicit')
+assert.ok(panel.includes("row.effectiveDisposition === 'partial'")
+  && panel.includes('部分账号已处置，其他账号未作结论'), 'one personal finding cannot close or clear the other participant')
 const messageSource = api.match(/export function integrityNotificationMessage\([\s\S]*?\n\}/)?.[0]
 assert.ok(messageSource, 'shared notification message must remain testable')
 const context = { exports: {} }
@@ -42,3 +49,4 @@ assert.equal(message(['private-a', 'private-b']), '确认后将为 2 名受影�
 assert.equal(message(['private-a'], true), '已为 1 名受影响玩家生成结果通知。')
 assert.equal(message(undefined), '仅在实际影响排位资格或收益时通知相关玩家。', 'old responses must not claim zero notifications')
 console.log('Ranked integrity contracts passed: permission, immutable preview, configurable days, private persistent notices/history/appeals and 5 recipient-based message cases.')
+await import('./test-ranked-integrity-single-party.mjs')

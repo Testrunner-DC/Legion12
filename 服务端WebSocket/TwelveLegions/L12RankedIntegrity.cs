@@ -565,14 +565,14 @@ public sealed partial class L12PlatformStore
     }
 
     private string RankedIntegrityDispositionLocked(string matchId)
-        => IsT01TransitionWaivedMatchLocked(matchId) ? "system-error"
-            : _data.RankedIntegrityDecisions
-            .Where(row => row.Disposition != "revoked"
-                && row.MatchIds.Contains(matchId, StringComparer.OrdinalIgnoreCase)
-                && !IsDecisionRevokedLocked(row.Id))
-            .OrderByDescending(row => row.Revision)
-            .Select(row => row.Disposition)
-            .FirstOrDefault() ?? "unreviewed";
+    {
+        if (IsT01TransitionWaivedMatchLocked(matchId)) return "system-error";
+        // A finding against one participant is not a judgment clearing or punishing the other.
+        if (_data.RankedIntegrityDecisions.Any(row => row.Scope == "account"
+                && row.Disposition == "confirmed" && row.MatchIds.Contains(matchId, StringComparer.OrdinalIgnoreCase)
+                && !IsDecisionRevokedLocked(row.Id))) return "partial";
+        return LatestRankedIntegrityDecisionLocked(matchId)?.Disposition ?? "unreviewed";
+    }
 
     private static bool IsTerminalRankedIntegrityDisposition(string disposition)
         => disposition is "normal" or "insufficient" or "system-error" or "confirmed";

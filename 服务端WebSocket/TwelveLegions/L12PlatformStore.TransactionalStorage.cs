@@ -1213,6 +1213,7 @@ public sealed partial class L12PlatformStore
         foreach (var decision in data.RankedIntegrityDecisions)
         {
             decision.MatchIds ??= [];
+            decision.TargetAccountIds ??= [];
             decision.RestrictedAccountIds ??= [];
             decision.AccountEffects ??= [];
         }

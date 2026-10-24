@@ -66,11 +66,11 @@ function duration(ms: number) {
 
 function dispositionLabel(value: RankedIntegrityAudit['effectiveDisposition']) {
   return ({ unreviewed: '待处理', review: '复核中', normal: '正常', insufficient: '证据不足',
-    'system-error': '系统异常', confirmed: '已确认违规' } as Record<string, string>)[value] || value
+    'system-error': '系统异常', confirmed: '已确认违规', partial: '部分账号已处置，其他账号未作结论' } as Record<string, string>)[value] || value
 }
 
 function selectable(row: RankedIntegrityAudit) {
-  return row.effectiveDisposition === 'unreviewed' || row.effectiveDisposition === 'review'
+  return row.effectiveDisposition === 'unreviewed' || row.effectiveDisposition === 'review' || row.effectiveDisposition === 'partial'
 }
 
 async function load() {

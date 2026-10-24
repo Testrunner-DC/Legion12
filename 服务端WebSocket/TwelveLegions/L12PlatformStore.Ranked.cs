@@ -923,7 +923,8 @@ public sealed partial class L12PlatformStore
                 var facts = settlements[$"{matchId}\u001f{accountId}"].ToArray();
                 if (facts.Length != 1 || facts[0].Delta != facts[0].After - facts[0].Before)
                     player.SevenIncomplete = true;
-                else player.SevenDelta += facts[0].Delta;
+                else if (IsRankedAccountRewardAppliedLocked(matchId, accountId))
+                    player.SevenDelta += facts[0].Delta;
             }
         }
     }
@@ -2322,7 +2323,7 @@ public sealed partial class L12PlatformStore
                 tier.RatingGapCap, tier.StreakTerminationReward)).ToArray()));
     private L12RankedSettlementView ToView(RankedSettlementRow row)
     {
-        var rewardStatus = RankedRewardStatusLocked(row.MatchId);
+        var rewardStatus = RankedRewardStatusLocked(row.MatchId, row.AccountId);
         return ProjectRankedSettlement(row, FactionFor(row.Faction).Name, rewardStatus, row.Components.ToArray());
     }
 

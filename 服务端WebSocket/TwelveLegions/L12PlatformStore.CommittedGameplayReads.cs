@@ -65,9 +65,10 @@ public sealed partial class L12PlatformStore
             .Select(row => row.RevokesDecisionId).Where(id => id is not null)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var decisions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var personalExclusions = ProjectRankedPersonalRewardExclusions(data);
         foreach (var decision in data.RankedIntegrityDecisions.OrderByDescending(row => row.Revision))
         {
-            if (revoked.Contains(decision.Id)) continue;
+            if (revoked.Contains(decision.Id) || decision.Scope != "match") continue;
             foreach (var matchId in decision.MatchIds) decisions.TryAdd(matchId, decision.Disposition);
         }
         var factions = data.RankedConfig.Factions.ToDictionary(row => row.Id, row => row.Name,
@@ -85,7 +86,7 @@ public sealed partial class L12PlatformStore
                 throw new InvalidDataException("已提交结算派系无法投影");
             decisions.TryGetValue(row.MatchId, out var disposition);
             var reward = ProjectRankedRewardStatus(waived.Contains(row.MatchId),
-                held.Contains(row.MatchId), disposition);
+                held.Contains(row.MatchId), personalExclusions.Contains(key) ? "confirmed" : disposition);
             if (oldSettlements.TryGetValue(key, out var old)
                 && UnchangedCommittedSettlement(row, faction, reward, old)) continue;
             changedSettlements ??= new(oldSettlements);

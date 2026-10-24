@@ -132,7 +132,7 @@ public sealed partial class L12PlatformStore
         var eligible = _data.Accounts.Where(item => !item.Disabled && !item.Deleted).Select(item => item.Id)
             .ToHashSet(StringComparer.Ordinal);
         var projected = ProjectRankedMasterTitleChampions(index, index.FactsByMaster.Keys,
-            excluded, inactive, eligible, selectable, utcNow);
+            excluded, inactive, eligible, selectable, utcNow, ProjectRankedPersonalRewardExclusions(_data));
         var seasonId = RequireOperationsConfig().Season.Id;
         return projected.ToDictionary(item => item.Key, item => new RankedMasterRecordRow
         {
@@ -152,7 +152,8 @@ public sealed partial class L12PlatformStore
             IReadOnlySet<string> knownInactiveAccountIds,
             IReadOnlySet<string> championEligibleAccountIds,
             IReadOnlySet<string> selectableMasterIds,
-            DateTimeOffset utcNow)
+            DateTimeOffset utcNow,
+            IReadOnlySet<(string MatchId, string AccountId)>? excludedParticipants = null)
     {
         var now = utcNow.ToUniversalTime();
         var cutoff = now - RankedMasterTitleWindow;
@@ -176,7 +177,9 @@ public sealed partial class L12PlatformStore
             var allServerGames = masterMatches.Select(item => item.MatchId)
                 .Distinct(StringComparer.OrdinalIgnoreCase).Count();
             var personalMinimum = allServerGames < 200 ? 20 : 40;
-            var appearances = MasterAppearances(masterMatches, masterId).ToArray();
+            var appearances = MasterAppearances(masterMatches, masterId)
+                .Where(item => excludedParticipants?.Contains((item.Match.MatchId, item.AccountId)) != true)
+                .ToArray();
             var candidates = new List<RankedMasterTitleCandidate>();
             foreach (var group in appearances.GroupBy(item => item.AccountId,
                          StringComparer.OrdinalIgnoreCase))
@@ -250,7 +253,7 @@ public sealed partial class L12PlatformStore
         var revoked = data.RankedIntegrityDecisions.Where(row => row.Disposition == "revoked"
                 && !string.IsNullOrWhiteSpace(row.RevokesDecisionId))
             .Select(row => row.RevokesDecisionId!).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var activeDecisions = data.RankedIntegrityDecisions.Where(row => !revoked.Contains(row.Id))
+        var activeDecisions = data.RankedIntegrityDecisions.Where(row => row.Scope == "match" && !revoked.Contains(row.Id))
             .ToArray();
         var held = data.RankedHeldRewards.Select(row => row.MatchId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);

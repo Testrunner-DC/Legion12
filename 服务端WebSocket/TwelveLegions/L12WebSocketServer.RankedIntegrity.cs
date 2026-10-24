@@ -20,14 +20,23 @@ public sealed partial class L12WebSocketServer
     private void MapRankedIntegrityEndpoints()
     {
         var app = _app ?? throw new InvalidOperationException("WebSocket server app is not initialized");
-        app.MapPost("/api/admin/ranked/integrity/preview", (HttpRequest request, L12RankedIntegrityActionInput input) =>
+        // Account-specific routes are a protocol boundary: an older server does not know these
+        // paths, so a cached newer client cannot silently fall through its legacy match-only DTO.
+        bool InvalidAccountScope(L12RankedIntegrityActionInput? input)
+            => input is null || input.Scope != "account" || input.TargetAccountIds is not { Count: > 0 };
+
+        IResult Preview(HttpRequest request, L12RankedIntegrityActionInput input, bool accountOnly)
         {
             if (!TryAuthorize(request, L12Permission.AdminMatchGovernanceWrite, out var auth, out var failure)) return failure;
+            if (accountOnly && InvalidAccountScope(input))
+                return ApiError(request, "integrity_account_scope_required", "个人处置必须明确指定 account 范围及目标账号", 400);
             return IntegrityRequest(request, () => _platform.PreviewRankedIntegrityAction(auth.Account, input));
-        });
-        app.MapPost("/api/admin/ranked/integrity/decisions", (HttpRequest request, IntegrityConfirmRequest body) =>
+        }
+        IResult Confirm(HttpRequest request, IntegrityConfirmRequest body, bool accountOnly)
         {
             if (!TryAuthorize(request, L12Permission.AdminMatchGovernanceWrite, out var auth, out var failure)) return failure;
+            if (accountOnly && InvalidAccountScope(body.Input))
+                return ApiError(request, "integrity_account_scope_required", "个人处置必须明确指定 account 范围及目标账号", 400);
             return IntegrityRequest(request, () =>
             {
                 var decision = _platform.ConfirmRankedIntegrityAction(auth.Account, body.Input,
@@ -38,7 +47,11 @@ public sealed partial class L12WebSocketServer
                     NotifyIntegrityChanged(decision.PlayerNotificationAccountIds);
                 return decision;
             });
-        });
+        }
+        app.MapPost("/api/admin/ranked/integrity/preview", (HttpRequest request, L12RankedIntegrityActionInput input) => Preview(request, input, false));
+        app.MapPost("/api/admin/ranked/integrity/decisions", (HttpRequest request, IntegrityConfirmRequest body) => Confirm(request, body, false));
+        app.MapPost("/api/admin/ranked/integrity/account/preview", (HttpRequest request, L12RankedIntegrityActionInput input) => Preview(request, input, true));
+        app.MapPost("/api/admin/ranked/integrity/account/decisions", (HttpRequest request, IntegrityConfirmRequest body) => Confirm(request, body, true));
         app.MapGet("/api/admin/ranked/integrity/decisions", (HttpRequest request, string? cursor, int? limit) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminAuditRead, out var auth, out var failure)) return failure;

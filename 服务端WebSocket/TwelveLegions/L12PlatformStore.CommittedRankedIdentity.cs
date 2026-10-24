@@ -42,6 +42,7 @@ public sealed partial class L12PlatformStore
         FrozenDictionary<string, CommittedRankedProfile> Profiles,
         RankedMasterTitleFactIndex? MasterTitleIndex,
         FrozenSet<string> ExcludedMatchIds,
+        FrozenSet<(string MatchId, string AccountId)> ExcludedParticipants,
         FrozenSet<string> KnownInactiveAccountIds,
         FrozenSet<string> ChampionEligibleAccountIds,
         FrozenSet<string> SelectableMasterIds,
@@ -52,7 +53,7 @@ public sealed partial class L12PlatformStore
         FrozenDictionary<string, CommittedRankedAccount>.Empty,
         FrozenDictionary<string, CommittedRankedProfile>.Empty,
         null,
-        FrozenSet<string>.Empty, FrozenSet<string>.Empty, FrozenSet<string>.Empty,
+        FrozenSet<string>.Empty, FrozenSet<(string, string)>.Empty, FrozenSet<string>.Empty, FrozenSet<string>.Empty,
         FrozenSet<string>.Empty, []);
 
     private CommittedRankedIdentity PrepareCommittedRankedIdentity(DataFile data)
@@ -130,7 +131,8 @@ public sealed partial class L12PlatformStore
         var prepared = new CommittedRankedIdentity(true,
             NormalizeSeasonIdentity(data.OperationsConfig.Season.Id),
             new CommittedRankedConfig(ranked.PlacementMatches, sharedTierMinimums, factions, masters),
-            accounts, profiles, factIndex, excluded, inactive, eligible,
+            accounts, profiles, factIndex, excluded,
+            ProjectRankedPersonalRewardExclusions(data).ToFrozenSet(RankedParticipantKeyComparer.Instance), inactive, eligible,
             masters.Keys.ToFrozenSet(StringComparer.OrdinalIgnoreCase), facts);
         StorageFailureInjector?.Invoke("after-ranked-identity-index-build");
         return prepared;
@@ -272,7 +274,7 @@ public sealed partial class L12PlatformStore
         // full server population needed by the sparse threshold and leave-one-player-out baseline.
         var champions = ProjectRankedMasterTitleChampions(index, requestedMasterIds,
             identity.ExcludedMatchIds, identity.KnownInactiveAccountIds,
-            identity.ChampionEligibleAccountIds, identity.SelectableMasterIds, utcNow);
+            identity.ChampionEligibleAccountIds, identity.SelectableMasterIds, utcNow, identity.ExcludedParticipants);
         var available = champions.Values.Where(row => row.AccountId == profile.AccountId)
             .Select(row => (row.MasterId, Master: identity.Config!.Masters[row.MasterId]))
             .OrderBy(row => row.Master.Name, StringComparer.OrdinalIgnoreCase)

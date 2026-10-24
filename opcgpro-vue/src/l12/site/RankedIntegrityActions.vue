@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { platformState, type RankedIntegrityAudit } from '../platform'
-import { integrityApi, integrityLabel, integrityNotificationMessage, integrityRequestId, type IntegrityAction, type IntegrityPreview, type IntegrityDecision, type IntegrityAppeal, type IntegrityDisposition } from '../rankedIntegrity'
+import { integrityApi, integrityLabel, integrityNotificationMessage, integrityRequestId, type IntegrityAction, type IntegrityPreview, type IntegrityDecision, type IntegrityAppeal, type IntegrityDisposition, type IntegrityScope } from '../rankedIntegrity'
 const props = defineProps<{ rows: RankedIntegrityAudit[]; selected: string[] }>()
 const emit = defineEmits<{ refresh: [] }>()
-const form = reactive({ disposition: 'review' as IntegrityDisposition, days: 7, restricted: [] as string[], reason: '', evidence: '', revoke: '' })
+const form = reactive({ disposition: 'review' as IntegrityDisposition, scope: 'match' as IntegrityScope,
+  accountTargets: [] as string[], penalty: 'withdraw' as 'withdraw' | 'withdraw-ban',
+  days: 7, restricted: [] as string[], reason: '', evidence: '', revoke: '' })
 const preview = ref<IntegrityPreview | null>(null); const frozenInput = ref<IntegrityAction | null>(null)
 const busy = ref(false); const notice = ref(''); const decisions = ref<IntegrityDecision[]>([]); const appeals = ref<IntegrityAppeal[]>([])
 const decisionCursor = ref<string | null>(); const appealCursor = ref<string | null>()
@@ -18,7 +20,7 @@ const participants = computed(() => {
 })
 const targets = computed(() => form.revoke ? decisions.value.find(row => row.decisionId === form.revoke)?.matchIds || [] : props.selected)
 watch([() => JSON.stringify(form), () => props.selected.join('|'), () => platformState.account?.id], () => { formGeneration++; preview.value = null; frozenInput.value = null }, { flush: 'sync' })
-watch(() => props.selected.join('|'), () => { form.restricted = form.restricted.filter(id => participants.value.some(p => p.id === id)); form.revoke = '' })
+watch(() => props.selected.join('|'), () => { form.restricted = form.restricted.filter(id => participants.value.some(p => p.id === id)); form.accountTargets = form.accountTargets.filter(id => participants.value.some(p => p.id === id)); form.revoke = '' })
 async function loadHistory() {
   try {
     const [history, incoming] = await Promise.all([integrityApi.decisions(), integrityApi.adminAppeals()])
@@ -30,10 +32,13 @@ async function makePreview() {
   if (busy.value || !canWrite.value) return
   busy.value = true; notice.value = ''; preview.value = null
   const generation = formGeneration
+  const scope = form.revoke || form.disposition === 'confirmed' ? form.scope : 'match'
+  const restricted = scope === 'account' ? (form.penalty === 'withdraw-ban' ? form.accountTargets : []) : form.restricted
   const input: IntegrityAction = {
     requestId: integrityRequestId(), disposition: form.revoke ? 'revoked' : form.disposition,
-    matchIds: [...targets.value], restrictedAccountIds: !form.revoke && form.disposition === 'confirmed' ? [...form.restricted] : [],
-    restrictionDays: !form.revoke && form.disposition === 'confirmed' && form.restricted.length ? Number(form.days) : null,
+    scope, targetAccountIds: scope === 'account' ? [...form.accountTargets] : [],
+    matchIds: [...targets.value], restrictedAccountIds: !form.revoke && form.disposition === 'confirmed' ? [...restricted] : [],
+    restrictionDays: !form.revoke && form.disposition === 'confirmed' && restricted.length ? Number(form.days) : null,
     evidence: form.evidence.trim(), reason: form.reason.trim(), revokesDecisionId: form.revoke || null,
   }
   try { const result = await integrityApi.preview(input); if (generation === formGeneration) { frozenInput.value = input; preview.value = result } }
@@ -50,7 +55,7 @@ async function confirm() {
   } catch (cause) { notice.value = cause instanceof Error ? cause.message : '确认失败；请核对状态后重试' }
   finally { busy.value = false }
 }
-function prepareRevoke(decision: IntegrityDecision) { form.revoke = decision.decisionId; form.disposition = 'revoked'; form.reason = ''; form.evidence = ''; form.restricted = []; notice.value = '请填写撤销理由与复核证据，再预览影响。' }
+function prepareRevoke(decision: IntegrityDecision) { form.revoke = decision.decisionId; form.disposition = 'revoked'; form.scope = decision.scope || 'match'; form.accountTargets = [...(decision.targetAccountIds || [])]; form.reason = ''; form.evidence = ''; form.restricted = []; notice.value = '请填写撤销理由与复核证据，再预览影响。撤销范围与原处置完全一致。' }
 async function reply(appeal: IntegrityAppeal, status: string) {
   if (busy.value || !canWrite.value || !replies[appeal.id]?.trim()) return
   busy.value = true; notice.value = ''
@@ -73,22 +78,25 @@ onMounted(loadHistory)
 </script>
 <template>
   <section class="integrity-actions" data-ui-contract="ranked-integrity-disposition">
-    <h3>复核与处置</h3><p>选中具体对局后按证据处置。风险信号不等于违规；同IP不单独作为处罚依据。所选对局是当前连续最新结算后缀时会精确回滚排位档案；历史对局之后已有正常结算时只作废所选结果并保持当前档案，结算链本身不一致时仍会拒绝确认。</p>
+    <h3>复核与处置</h3><p>选中具体对局后按证据处置。风险信号不等于违规；同IP不单独作为处罚依据。按账号处罚仅撤回所选账号可安全确认的收益，不改变对手收益，也不对对手作正常结论。败方扣分不能作为收益退还；个人收益之后已有结算或缺少完整事实时拒绝执行。整场纠正保留原有最新后缀回滚及历史保档规则，原始赛果与录像不改写。</p>
     <p v-if="!canWrite">当前账号仅可查看；处置需要对局治理写入权限。</p>
     <form v-if="canWrite" @submit.prevent="makePreview"><fieldset :disabled="busy">
       <p>本次关联 {{ targets.length }} 场（最多50场）<span v-if="form.revoke"> · 撤销原处置 {{ form.revoke }}</span></p>
       <label>结论<select v-model="form.disposition" :disabled="!!form.revoke"><option value="review">待复核</option><option value="normal">复核正常</option><option value="insufficient">证据不足，不处罚</option><option value="system-error">系统异常，纠正结果</option><option value="confirmed">确认违规，撤销相关收益</option><option v-if="form.revoke" value="revoked">撤销原处置</option></select></label>
-      <div v-if="form.disposition === 'confirmed' && !form.revoke" class="restriction"><b>另行限制排位的账号（不勾选则不封禁）：</b><label v-for="player in participants" :key="player.id"><input v-model="form.restricted" type="checkbox" :value="player.id"/>{{ player.name }}<small>{{ player.id }}</small></label><label v-if="form.restricted.length">封禁天数<input v-model.number="form.days" type="number" min="1" max="3650" step="1" required/><small>按完整天数设置；预览显示确切解禁时间。只限制排位，不阻断登录及申诉。</small></label></div>
+      <label v-if="form.disposition === 'confirmed' || form.revoke">处置范围<select v-model="form.scope" name="integrity-scope" :disabled="!!form.revoke"><option value="match">整场收益纠正（双方）</option><option value="account">按所选账号处罚（不改变对手收益）</option></select></label>
+      <div v-if="form.disposition === 'confirmed' && form.scope === 'account' && !form.revoke" class="restriction account-targets"><b>明确选择被处罚的参赛者：</b><label v-for="player in participants" :key="player.id"><input v-model="form.accountTargets" name="target-account" type="checkbox" :value="player.id"/>{{ player.name }}<small>{{ player.id }}</small></label><label>判罚程度<select v-model="form.penalty" name="integrity-penalty"><option value="withdraw">仅撤回收益</option><option value="withdraw-ban">撤回收益＋按天禁赛</option></select></label><label v-if="form.penalty === 'withdraw-ban'">封禁天数<input v-model.number="form.days" type="number" min="1" max="3650" step="1" required/><small>仅限制所选账号的排位资格，不影响登录、非排位或申诉。</small></label></div>
+      <div v-if="form.disposition === 'confirmed' && form.scope === 'match' && !form.revoke" class="restriction"><b>另行限制排位的账号（不勾选则不封禁）：</b><label v-for="player in participants" :key="player.id"><input v-model="form.restricted" type="checkbox" :value="player.id"/>{{ player.name }}<small>{{ player.id }}</small></label><label v-if="form.restricted.length">封禁天数<input v-model.number="form.days" type="number" min="1" max="3650" step="1" required/><small>按完整天数设置；预览显示确切解禁时间。只限制排位，不阻断登录及申诉。</small></label></div>
+      <p v-if="form.revoke">原处置范围：{{ form.scope === 'account' ? '所选账号' : '整场双方' }}<span v-if="form.scope === 'account'"> · {{ form.accountTargets.join('、') }}</span></p>
       <label>核查证据<textarea v-model="form.evidence" required maxlength="2000" rows="3" placeholder="填写服务器记录、结算及对局证据，不以玩家猜测直接判罚。"/></label>
       <label>复核或处置原因<textarea v-model="form.reason" required maxlength="1000" rows="3" placeholder="说明违规事实或复核结论；实际影响排位资格或收益时会告知玩家，不包含IP、设备标识、其他玩家隐私。"/></label>
-      <button :disabled="!targets.length || targets.length > 50">预览影响</button><button v-if="form.revoke" type="button" @click="form.revoke = ''; form.disposition = 'review'">取消撤销操作</button>
+      <button :disabled="!targets.length || targets.length > 50 || (form.disposition === 'confirmed' && form.scope === 'account' && !form.accountTargets.length)">预览影响</button><button v-if="form.revoke" type="button" @click="form.revoke = ''; form.disposition = 'review'">取消撤销操作</button>
     </fieldset></form>
     <div v-if="preview" class="preview"><h4>确认前预览</h4><p v-for="reason in preview.blockingReasons" :key="reason" class="error">{{ reason }}</p><article v-for="effect in preview.accountEffects" :key="effect.accountId"><b>{{ effect.username }}</b><span>七曜值调整 {{ effect.scoreDelta > 0 ? '+' : '' }}{{ effect.scoreDelta }}</span><span>{{ integrityLabel(effect.rewardOutcome) }}</span><span v-if="effect.restrictionUntil">排位限制截至 {{ new Date(effect.restrictionUntil).toLocaleString() }}</span><span v-if="effect.blockedReason" class="error">{{ effect.blockedReason }}</span></article><p v-if="preview.canConfirm">{{ integrityNotificationMessage(preview.playerNotificationAccountIds) }}处置证据会保存在后台，无需第二名管理员批准。</p><p v-else>本次暂不能执行，不会保存处置或发送通知。</p><button :disabled="busy || !preview.canConfirm" @click="confirm">{{ busy ? '处理中…' : '确认执行本次处置' }}</button></div>
     <p v-if="notice" role="status" class="notice">{{ notice }}</p>
     <h3>处置历史 <button :disabled="busy" @click="loadHistory">刷新</button></h3>
     <div class="history"><article v-for="decision in decisions" :key="decision.decisionId">
       <h4>{{ integrityLabel(decision.effectiveDisposition) }} · {{ new Date(decision.createdAt).toLocaleString() }}</h4>
-      <p>{{ decision.reason }}</p><small>{{ decision.actorName }} · {{ decision.matchIds.length }}场 · {{ decision.decisionId }}</small>
+      <p>{{ decision.reason }}</p><small>{{ decision.actorName }} · {{ decision.scope === 'account' ? '按账号处罚：' + decision.accountEffects.map(effect => effect.username).join('、') : '整场双方' }} · {{ decision.matchIds.length }}场 · {{ decision.decisionId }}</small>
       <details><summary>证据及调整详情</summary><p>{{ decision.evidence }}</p><p v-for="effect in decision.accountEffects" :key="effect.accountId">{{ effect.username }}：七曜值 {{ effect.scoreDelta > 0 ? '+' : '' }}{{ effect.scoreDelta }}；{{ integrityLabel(effect.rewardOutcome) }}</p></details>
       <button v-if="canWrite && ['confirmed', 'system-error'].includes(decision.disposition) && !decision.revokedByDecisionId" :disabled="busy" @click="prepareRevoke(decision)">复核撤销</button>
     </article></div><button v-if="decisionCursor" :disabled="busy" @click="more('decisions')">加载更多处置</button>
