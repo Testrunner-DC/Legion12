@@ -406,7 +406,7 @@ const contracts = [
   [actionAudio.includes('createOscillator()') && actionAudio.includes('useAudioStore.getState()') && !actionAudio.includes('playBgm') && !actionAudio.includes('new Audio('), '基础动作音效必须使用本地程序化短音效、遵循音效设置且不得增加 BGM 或远程音频依赖'],
   [actionLayer.includes('pointer-events:none') && actionLayer.includes('@media(prefers-reduced-motion:reduce)') && !actionLayer.includes('action-mask'), '基础动作动画必须无蒙版、不可阻塞操作并遵循减少动态效果偏好'],
   [gamePage.includes("import OsirisVictorySequence from './game/OsirisVictorySequence.vue'") && gamePage.includes("item.type === 'special-victory'") && gamePage.includes("card.cardId === 'S01-02M2'") && gamePage.includes("game.phase === 'GameOver' && gameOverPresentationReady && !osirisSequencePlaying") && osirisVictory.includes('data-ui-contract="osiris-special-victory-sequence"') && osirisVictory.includes("['S01-0216', 'S01-0217', 'S01-0218', 'S01-0219', 'S01-0220']") && osirisVictory.includes('<CardImage :card-id="cardId"') && osirisVictory.includes('points="50,92 20,18 92,56 8,56 80,18 50,92"') && osirisVictory.includes('setTimeout(() => emit(\'complete\'), 7000)') && osirisVictory.includes('card-id="S01-02M2"'), '奥西里斯特殊胜利必须以金色七秒序列沿倒五角星路径显示五张完整圣物卡，再显示中央奥西里斯与闪光'],
-  [board.includes('function activateOsirisVictory()') && board.includes("command('activateAbility', { cardInstanceId: osiris.instanceId, ability: 'isisVictory' })") && board.includes("if (ability === 'isisVictory')") && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null') && playerMat.includes('canActivateOsiris') && playerMat.includes("emit('ability', masterCard, 'isisVictory')") && graveyardOverlay.includes("emit('ability', card, 'isisVictory')"), '点击伊西斯效果、五个卡诺匹斯区域或墓地奥西里斯必须共用同一权威奥西里斯实例命令与可用性，并在发送前关闭墓地、主宰弹框和详情'],
+  [board.includes('function activateOsirisVictory()') && board.includes("freeCommand('activateAbility', { cardInstanceId: osiris.instanceId, ability: 'isisVictory' })") && board.includes("if (ability === 'isisVictory')") && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null') && playerMat.includes('canActivateOsiris') && playerMat.includes("emit('ability', masterCard, 'isisVictory')") && graveyardOverlay.includes("emit('ability', card, 'isisVictory')"), '点击伊西斯效果、五个卡诺匹斯区域或墓地奥西里斯必须共用同一权威奥西里斯实例命令与可用性，并在发送前关闭墓地、主宰弹框和详情'],
   [gamePage.includes('lastOsirisVictorySequence') && gamePage.includes('osirisSequenceMatchId') && gamePage.includes('lastOsirisVictorySequence = highest') && gamePage.includes('lastOsirisVictorySequence = Math.max(lastOsirisVictorySequence, highest)') && gamePage.includes('event.sequence > lastOsirisVictorySequence') && gamePage.includes('osirisSequenceKey.value =') && !gamePage.includes("const osirisSequenceKey = computed(() =>"), '奥西里斯胜利事件必须按 matchId+sequence 只消费一次，首快照只建立基线，重连或事件窗口截断后不得倒退序号并重播'],
   [osirisVictory.includes('playL12OsirisVictorySound()') && actionAudio.includes('playL12OsirisVictorySound') && actionAudio.includes('[196, 220, 247, 294, 330]') && actionAudio.includes('isMuted || sfxVolume <= 0'), '奥西里斯特殊胜利必须使用本地轻量专属音效并遵循静音与音效音量设置'],
   [Object.entries(confirmedS1DisasterLevels).every(([id, level]) => s1Cards.find(card => card.id === id)?.disasterLevel === level), '第一季补充天灾等级必须进入前端卡牌目录'],
@@ -602,7 +602,7 @@ const contracts = [
     && playerMat.includes("Boolean(card && instanceId && card.instanceId === instanceId)")
     && playerMat.includes("'combat-target': isCombatCard(player.field[row][slot], combatTargetId)")
     && playerMat.includes("available: promptSlotIds?.includes(`${row}:${slot}`) || (placementMode && isPlacementDestination")
-    && (boardComponent.match(/\(!combat && isMyMain && isControlledPlayer/g) ?? []).length === 2
+    && (boardComponent.match(/\(!freeActionBusy && !combat && isMyMain && isControlledPlayer/g) ?? []).length === 2
     && boardComponent.includes('if (props.game.pendingDefense) playArmed.value = false'), '进攻结算中的发光动画只能落在真实被攻击对象；进攻来源、空格、支援候选及其他可交互对象不得复用目标发光；战斗期间必须关闭普通布阵高亮'],
   [playerMat.includes('temporaryMoraleCount') && playerMat.includes('data-ui-contract="temporary-morale-selectable-site-logo"')
     && (playerMat.match(/data-ui-contract="temporary-morale-selectable-site-logo"/g) ?? []).length === 1
@@ -721,7 +721,7 @@ const contracts = [
     && playerMat.indexOf("if (props.promptSlotIds?.includes(`${row}:${slot}`))") < playerMat.indexOf("if (card && props.paymentChoiceIds?.includes(card.instanceId))")
     && playerMat.includes("available: promptSlotIds?.includes(`${row}:${slot}`) || (placementMode && isPlacementDestination")
     && board.includes('function resolveBoardSlotPrompt(playerIndex: number, row: number, slot: number)')
-    && board.includes("if (prompt.validChoices.includes(choice)) command('resolvePrompt', { promptId: prompt.promptId, choice })")
+    && board.includes("if (prompt.validChoices.includes(choice)) continuePrompt(prompt, { choice })")
     && board.includes('if (resolveBoardSlotPrompt(me.value.playerIndex, row, slot)) return')
     && board.includes('if (resolveBoardSlotPrompt(enemy.value.playerIndex, row, slot)) return'), '场面槽位Prompt必须以目标玩家和权威validChoices为准，已被声明费用军团占据的候选格仍可高亮点击并优先于资源支付路由；普通放置移动不得放宽'],
   [!board.includes('房间 {{ game.roomCode }}') && !board.includes('MATCH {{ game.matchId.slice')
