@@ -81,7 +81,16 @@ assert.equal(model.effectResultPresentationFactContinuation({ ...factResult, pla
   'malformed duplicate references fail safe instead of changing presentation')
 assert.equal(model.effectResultPresentationFactContinuation({ ...factResult, type:'effect-trigger' }, () => true), null,
   'non-terminal presentation events do not borrow result fact references')
-assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'artifact' }] }, 'hand', 'relic', 'cursor'), null, 'artifact hand-to-relic movement never owns a battlefield entry continuation')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'artifact' }] }, 'hand', 'relic', 'cursor'), entryKey,
+  'an ordinary public artifact hand-to-relic movement owns the same entry transaction as its effect result')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'artifact' }] }, 'hand', 'relic', 'play-contract'), entryKey,
+  'an opponent projection without private hand instances retains the public artifact play contract')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'artifact' }], type:'put' }, 'hand', 'relic', 'cursor'), null,
+  'an artifact put does not borrow the ordinary hand-play transaction')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'artifact' }] }, 'graveyard', 'relic', 'cursor'), null,
+  'a graveyard artifact play retains a separate effect presentation')
+assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'artifact' }] }, 'hand', 'relic', 'fallback'), null,
+  'an unproven artifact source cannot suppress its full-card fallback')
 assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'master' }] }, 'hand', 'field', 'cursor'), null, 'master movement never owns a legion entry continuation')
 assert.equal(model.entryMovementTransactionKey({ ...entryPlay, cards:[{ ...sourceCard, cardType:'' }] }, 'hand', 'field', 'cursor'), null, 'missing card type keeps the existing full-card effect presentation')
 assert.equal(model.entryMovementTransactionKey({ ...entryPlay, type:'put' }, 'graveyard', 'field', 'cursor'), null, 'graveyard put retains a separate effect presentation')
@@ -322,4 +331,4 @@ assert.deepEqual([...interleavedBatch.cursor.entries()].sort(), [['other-unit', 
 model.finalizeMovementTransactionBatch(interleavedClaims, interleavedBatch, new Map([['returning-unit', 'field'], ['other-unit', 'field']]))
 assert.equal(interleavedClaims.zoneRevision, 81, 'finalization commits the batch revision only after ordered claims finish')
 
-console.log('Battle visual transition projection passed: 103/103 assertions')
+console.log('Battle visual transition projection passed: 107/107 assertions')

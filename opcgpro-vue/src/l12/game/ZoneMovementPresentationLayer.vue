@@ -1018,8 +1018,8 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
       })
       if (claimed) {
         // Opponent/spectator projections deliberately omit private hand
-        // instances. A public legion `play` with a stable enter identity and an
-        // actual field destination is itself an authoritative movement
+        // instances. A public legion/artifact `play` with a stable enter identity
+        // and its matching public destination is itself an authoritative movement
         // contract; generic `put` layout fallbacks never receive this evidence.
         const entrySourceEvidence = draft.sourceEvidence === 'fallback' && event.type === 'play'
           ? 'play-contract'

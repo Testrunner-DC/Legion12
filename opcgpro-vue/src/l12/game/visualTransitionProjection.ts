@@ -80,12 +80,16 @@ export function entryMovementTransactionKey(event: ActionEvent, from: VisualZone
   sourceEvidence: MovementSourceEvidence) {
   const transactionKey = entryPresentationTransactionKey(event)
   const source = entryPresentationSource(event)
-  if (!transactionKey || !source || source.cardType !== 'legion'
+  const ordinaryLegionEntry = source?.cardType === 'legion'
+    && (event.type === 'play' || event.type === 'put')
+    && (from === 'hand' || from === 'resolving') && to === 'field'
+  const ordinaryArtifactEntry = source?.cardType === 'artifact'
+    && event.type === 'play' && from === 'hand' && to === 'relic'
+  if (!transactionKey || !source || (!ordinaryLegionEntry && !ordinaryArtifactEntry)
     || (event.type !== 'play' && event.type !== 'put')
     || sourceEvidence === 'fallback'
     || (sourceEvidence === 'play-contract'
-      && (event.type !== 'play' || event.playerLogTiming !== 'enter'))
-    || (from !== 'hand' && from !== 'resolving') || to !== 'field') return null
+      && (event.type !== 'play' || event.playerLogTiming !== 'enter'))) return null
   return transactionKey
 }
 

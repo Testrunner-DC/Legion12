@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-play-presentation-owner",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "打出卡牌呈现",
+  "changes": [{
+    "category": "battle",
+    "text": "圣物从手牌打出落位后，同次登场效果的结果不再重复展示第二张完整卡图；保留结果说明和后续独立效果。",
+    "paths": ["opcgpro-vue/src/l12/game/visualTransitionProjection.ts", "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue"]
+  }]
+}

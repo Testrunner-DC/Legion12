@@ -192,11 +192,14 @@ const checks = [
     && movement.includes('timer = setTimeout(finish')],
   ['entry effects continue one stable movement transaction without a second full card',
     visualProjection.includes('playerLogGroupId') && visualProjection.includes("timing !== 'enter' && timing !== 'promotion-enter'")
-    && visualProjection.includes("source.cardType !== 'legion'")
+    && visualProjection.includes("const ordinaryLegionEntry = source?.cardType === 'legion'")
+    && visualProjection.includes("(from === 'hand' || from === 'resolving') && to === 'field'")
+    && visualProjection.includes("const ordinaryArtifactEntry = source?.cardType === 'artifact'")
+    && visualProjection.includes("event.type === 'play' && from === 'hand' && to === 'relic'")
+    && visualProjection.includes('(!ordinaryLegionEntry && !ordinaryArtifactEntry)')
     && visualProjection.includes("sourceEvidence === 'fallback'")
     && visualProjection.includes("sourceEvidence === 'play-contract'")
     && visualProjection.includes("event.playerLogTiming !== 'enter'")
-    && visualProjection.includes("from !== 'hand' && from !== 'resolving'")
     && movement.includes('draft.sourceEvidence')
     && movement.includes("event.type === 'play'")
     && movement.includes('draft.entryTransactionKey = entryTransactionKey ?? undefined')

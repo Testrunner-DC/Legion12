@@ -15,6 +15,9 @@ const worktree = path.resolve(front, '..')
 const output = process.env.L12_LEGION_ENTRY_OUT
 const cache = process.env.L12_WORK_CACHE || 'D:/GPT/Legion12/cache/primary'
 const temp = path.join(cache, 'temp', 'legion-entry-presentation-20261024')
+const singleOwnerOnly = process.env.L12_SINGLE_OWNER_ONLY === '1'
+const frameTimelineOnly = process.env.L12_FRAME_TIMELINE_ONLY === '1'
+const naturalFrameTimelineOnly = process.env.L12_NATURAL_FRAME_TIMELINE_ONLY === '1'
 
 if (!output || !path.isAbsolute(output)) throw new Error('L12_LEGION_ENTRY_OUT must be an absolute controlled path')
 if (!path.isAbsolute(cache)) throw new Error('L12_WORK_CACHE must be an absolute controlled path')
@@ -424,6 +427,141 @@ async function coreChoreography(profile) {
   } finally { await context.close() }
 }
 
+async function visibleTransactionSurfaces(page, instanceId) {
+  return page.evaluate(instanceId => {
+    const visible = node => {
+      if (!(node instanceof HTMLElement)) return false
+      const style = getComputedStyle(node)
+      const rect = node.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && Number.parseFloat(style.opacity || '1') > 0 && rect.width > 0 && rect.height > 0
+    }
+    const movementRoots = [...document.querySelectorAll(
+      `.l12-zone-flight-ghost[data-movement-instance-id="${CSS.escape(instanceId)}"],.zone-card-movement[data-movement-instance-id="${CSS.escape(instanceId)}"]`,
+    )].filter(root => visible(root.classList.contains('zone-card-movement')
+      ? root.querySelector('.moving-card') : root))
+    const authority = [...document.querySelectorAll(
+      `[data-l12-game-stage] [data-card-instance-id="${CSS.escape(instanceId)}"]`,
+    )].filter(visible)
+    const reveal = document.querySelector('.public-reveal-animation')
+    const revealCards = reveal ? [...reveal.querySelectorAll('.public-reveal-cards .l12-card-image')].filter(visible) : []
+    return {
+      movementCount:movementRoots.length,
+      authorityCount:authority.length,
+      revealVisible:visible(reveal),
+      revealCardCount:revealCards.length,
+      revealKind:reveal?.getAttribute('data-presentation-kind') ?? '',
+      visibleCardFaces:movementRoots.length + authority.length + revealCards.length,
+    }
+  }, instanceId)
+}
+
+async function startTransactionFrameTimeline(page, instanceId, cardName) {
+  await page.evaluate(({ instanceId, cardName }) => {
+    const visible = node => {
+      if (!(node instanceof HTMLElement)) return false
+      const style = getComputedStyle(node)
+      const rect = node.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && Number.parseFloat(style.opacity || '1') > 0 && rect.width > 0 && rect.height > 0
+    }
+    const frames = []
+    let running = true
+    const sample = now => {
+      const movement = [...document.querySelectorAll(
+        `.l12-zone-flight-ghost[data-movement-instance-id="${CSS.escape(instanceId)}"],.zone-card-movement[data-movement-instance-id="${CSS.escape(instanceId)}"]`,
+      )].filter(root => visible(root.classList.contains('zone-card-movement')
+        ? root.querySelector('.moving-card') : root)).length
+      const authority = [...document.querySelectorAll(
+        `[data-l12-game-stage] [data-card-instance-id="${CSS.escape(instanceId)}"]`,
+      )].filter(visible).length
+      const reveal = [...document.querySelectorAll('.public-reveal-cards .l12-card-image')]
+        .filter(root => {
+          const image = root.matches('img') ? root : root.querySelector('img')
+          return visible(root) && image?.getAttribute('alt') === cardName
+        }).length
+      frames.push({ at:now, movement, authority, reveal, total:movement + authority + reveal })
+      if (running) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+    window.__l12TransactionFrameTimeline = {
+      stop() { running = false; return frames.map(frame => ({ ...frame })) },
+    }
+  }, { instanceId, cardName })
+}
+
+async function stopTransactionFrameTimeline(page) {
+  return page.evaluate(() => window.__l12TransactionFrameTimeline?.stop() ?? [])
+}
+
+async function waitForNaturalMovementMidpoint(page, instanceId) {
+  await page.waitForFunction(selector => {
+    const root = document.querySelector(selector)
+    const animated = root?.classList.contains('zone-card-movement') ? root.querySelector('.moving-card') : root
+    if (!(animated instanceof HTMLElement)) return false
+    const progress = animated.getAnimations()[0]?.effect?.getComputedTiming().progress
+    return typeof progress === 'number' && progress >= .35 && progress <= .8
+  }, movementSelector(instanceId), { timeout:5_000 })
+}
+
+async function singleOwnerScenario(profile, kind, options = {}) {
+  const { context, page, errors } = await openProfile(profile)
+  const instanceId = kind === 'artifact' ? 'entry-artifact' : 'triggered-entrant'
+  const cardName = kind === 'artifact' ? '登场圣物' : '加拉哈德'
+  try {
+    await invoke(page, 'setReplay', options.naturalTimeline ? null : .5)
+    await observeMovementStarts(page)
+    if (options.frameTimeline) await startTransactionFrameTimeline(page, instanceId, cardName)
+    stage(`${kind}-movement`)
+    await invoke(page, kind === 'artifact' ? 'playEntryArtifact' : 'playTriggeredEntrant')
+    await waitForVisibleMovement(page, instanceId)
+    const moving = options.naturalTimeline ? null : await sampleFrame(page, instanceId, .45)
+    if (options.naturalTimeline) await waitForNaturalMovementMidpoint(page, instanceId)
+    const movementSurfaces = await visibleTransactionSurfaces(page, instanceId)
+    equal(options.naturalTimeline ? movementSurfaces.authorityCount : moving.targetVisibility,
+      options.naturalTimeline ? 0 : 'hidden',
+      `${profile.name}/${kind}: authority destination stays hidden during movement ownership`)
+    equal(movementSurfaces.visibleCardFaces, 1,
+      `${profile.name}/${kind}: hand-to-destination movement exposes exactly one card face`, movementSurfaces, 'one visible face')
+    if (options.naturalTimeline && kind === 'legion') await shot(page, 'natural-single-owner-self-legion-midflight')
+    else if (options.frameTimeline && kind === 'legion') await shot(page, 'single-owner-self-legion-center-frame')
+
+    stage(`${kind}-effect-result`)
+    if (!options.naturalTimeline) await resumeMovement(page, instanceId)
+    await page.waitForSelector('.public-reveal-animation', { state:'visible', timeout:5_000 })
+    const continuation = await visibleTransactionSurfaces(page, instanceId)
+    equal(continuation.authorityCount, 1,
+      `${profile.name}/${kind}: settled authority card is visible during result text`)
+    equal(continuation.revealCardCount, 0,
+      `${profile.name}/${kind}: the same play transaction must not present a second full card`, continuation, 'text-only continuation')
+    equal(continuation.revealKind, 'entry-continuation',
+      `${profile.name}/${kind}: the result is classified as the movement transaction continuation`)
+    if (options.naturalTimeline && kind === 'artifact') await shot(page, 'natural-single-owner-self-artifact-result')
+    else if (options.frameTimeline && kind === 'artifact') await shot(page, 'single-owner-self-artifact-result-frame')
+    if (options.frameTimeline) {
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      const frames = await stopTransactionFrameTimeline(page)
+      const occupiedFrames = frames.filter(frame => frame.total > 0)
+      const elapsedMs = frames.length > 1 ? frames.at(-1).at - frames[0].at : 0
+      ok(frames.length >= 3, `${profile.name}/${kind}: frame timeline spans the authority snapshot through handoff`, frames.length, '>= 3')
+      if (options.naturalTimeline) ok(elapsedMs >= 300,
+        `${profile.name}/${kind}: natural timeline spans real elapsed animation time without seeking`,
+        { elapsedMs, samples:frames.length }, 'elapsed >= 300ms')
+      ok(occupiedFrames.some(frame => frame.movement === 1)
+        && occupiedFrames.some(frame => frame.authority === 1),
+      `${profile.name}/${kind}: timeline observes both movement ownership and settled authority`, occupiedFrames, 'movement then authority')
+      ok(occupiedFrames.every(frame => frame.total <= 1),
+        `${profile.name}/${kind}: every rendered frame has at most one face for the exact instance`,
+        occupiedFrames.filter(frame => frame.total > 1), [])
+    }
+    await waitForIdle(page)
+    const starts = await page.evaluate(instanceId => window.__legionEntryStarts
+      .filter(item => item.instanceId === instanceId).length, instanceId)
+    equal(starts, 1, `${profile.name}/${kind}: one transaction starts exactly one movement owner`)
+    ok(errors.length === 0, `${profile.name}/${kind}: page errors`, errors, [])
+  } finally { await context.close() }
+}
+
 async function strengthScenario(tier) {
   const profile = { name:`strength-${tier}`, viewer:1, interactive:true, viewport:{ width:1366, height:768 } }
   const { context, page, errors } = await openProfile(profile)
@@ -591,24 +729,45 @@ try {
   await server.listen()
   port = server.httpServer.address().port
   browser = await chromium.launch({ channel:'msedge', headless:true })
-  for (const profile of coreProfiles)
-    await run(profile.name, 'core-choreography', () => coreChoreography(profile))
-  let lightStrength
-  let heavyStrength
-  await run('strength-light', 'troop-impact', async () => { lightStrength = await strengthScenario('light') })
-  await run('strength-heavy', 'troop-impact', async () => { heavyStrength = await strengthScenario('heavy') })
-  current = { profile:'strength-comparison', scenario:'troop-impact', stage:'cross-tier' }
-  ok(Number.isFinite(lightStrength) && Number.isFinite(heavyStrength) && heavyStrength > lightStrength,
-    'troop-impact: heavy public troop tier must produce a stronger local impact than light tier',
-    { lightStrength, heavyStrength }, 'heavy > light')
-  await run('template-fallback', 'template-render-path', templateFallbackScenario)
-  await run('delayed-preparation', 'preparation', preparationScenario)
-  await run('system-reduce-standard', 'animation-preference', () => accessibilityScenario('system-reduce-standard', { reducedMotion:'reduce' }))
-  await run('system-reduce-fast', 'animation-preference', () => accessibilityScenario('system-reduce-fast', { reducedMotion:'reduce', animation:'fast' }))
-  await run('system-reduce-off', 'animation-preference', () => accessibilityScenario('system-reduce-off', { reducedMotion:'reduce', animation:'off' }))
-  await run('animation-off', 'accessibility', () => accessibilityScenario('animation-off', { animation:'off' }))
-  await run('retransmit', 'dedupe', retransmitScenario)
-  await run('match-switch', 'authority-boundary', matchSwitchScenario)
+  if (naturalFrameTimelineOnly) {
+    const profile = coreProfiles.find(profile => profile.name === 'self-desktop')
+    await run('self-desktop', 'natural-single-owner-legion-frame-timeline',
+      () => singleOwnerScenario(profile, 'legion', { frameTimeline:true, naturalTimeline:true }))
+    await run('self-desktop', 'natural-single-owner-artifact-frame-timeline',
+      () => singleOwnerScenario(profile, 'artifact', { frameTimeline:true, naturalTimeline:true }))
+  } else if (frameTimelineOnly) {
+    const profile = coreProfiles.find(profile => profile.name === 'self-desktop')
+    await run('self-desktop', 'single-owner-legion-frame-timeline',
+      () => singleOwnerScenario(profile, 'legion', { frameTimeline:true }))
+    await run('self-desktop', 'single-owner-artifact-frame-timeline',
+      () => singleOwnerScenario(profile, 'artifact', { frameTimeline:true }))
+  } else if (singleOwnerOnly) {
+    const focusedProfiles = coreProfiles.filter(profile =>
+      ['self-desktop', 'opponent-desktop', 'spectator-desktop'].includes(profile.name))
+    for (const profile of focusedProfiles) {
+      await run(profile.name, 'single-owner-legion', () => singleOwnerScenario(profile, 'legion'))
+      await run(profile.name, 'single-owner-artifact', () => singleOwnerScenario(profile, 'artifact'))
+    }
+  } else {
+    for (const profile of coreProfiles)
+      await run(profile.name, 'core-choreography', () => coreChoreography(profile))
+    let lightStrength
+    let heavyStrength
+    await run('strength-light', 'troop-impact', async () => { lightStrength = await strengthScenario('light') })
+    await run('strength-heavy', 'troop-impact', async () => { heavyStrength = await strengthScenario('heavy') })
+    current = { profile:'strength-comparison', scenario:'troop-impact', stage:'cross-tier' }
+    ok(Number.isFinite(lightStrength) && Number.isFinite(heavyStrength) && heavyStrength > lightStrength,
+      'troop-impact: heavy public troop tier must produce a stronger local impact than light tier',
+      { lightStrength, heavyStrength }, 'heavy > light')
+    await run('template-fallback', 'template-render-path', templateFallbackScenario)
+    await run('delayed-preparation', 'preparation', preparationScenario)
+    await run('system-reduce-standard', 'animation-preference', () => accessibilityScenario('system-reduce-standard', { reducedMotion:'reduce' }))
+    await run('system-reduce-fast', 'animation-preference', () => accessibilityScenario('system-reduce-fast', { reducedMotion:'reduce', animation:'fast' }))
+    await run('system-reduce-off', 'animation-preference', () => accessibilityScenario('system-reduce-off', { reducedMotion:'reduce', animation:'off' }))
+    await run('animation-off', 'accessibility', () => accessibilityScenario('animation-off', { animation:'off' }))
+    await run('retransmit', 'dedupe', retransmitScenario)
+    await run('match-switch', 'authority-boundary', matchSwitchScenario)
+  }
 } catch (error) {
   current = { profile:'runner', scenario:'infrastructure', stage:'top-level' }
   record(false, 'legion entry runner must complete without infrastructure error', error?.stack || String(error), 'no error')
