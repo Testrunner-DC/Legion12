@@ -34,6 +34,7 @@ type Movement = {
   preparedFaceGhost?: HTMLElement
   preparedImageUrl?: string
   disasterReveal?: boolean
+  disasterSimplified?: boolean
   caption?: string
   attachment?: boolean
   entryTransactionKey?: string
@@ -404,6 +405,7 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
     fromRect,
     toRect,
     disasterReveal: event.type === 'disaster-reveal',
+    disasterSimplified:event.type === 'disaster-reveal' && simplifiedEntryMotion(),
     caption: event.type === 'reveal' && card ? publicHandAddCaption(event, card) : undefined,
     attachment: event.type === 'attach',
     legionEntry,
@@ -441,8 +443,14 @@ function attachmentElement(instanceId?: string) {
   return [...(root?.querySelectorAll<HTMLElement>('[data-attached-card-instance-ids]') ?? [])]
     .find(element => (element.dataset.attachedCardInstanceIds ?? '').split(/\s+/).includes(instanceId)) ?? null
 }
+function disasterDestinationElement() {
+  const root = document.querySelector('[data-l12-battle-layout]')
+  const targets = root?.querySelectorAll<HTMLElement>('button.current-disaster-card[data-l12-zone="disaster"]')
+  return targets?.length === 1 ? targets[0] ?? null : null
+}
 function destinationElement(movement: Movement) {
-  return movement.attachment ? attachmentElement(movement.card?.instanceId)
+  return movement.disasterReveal ? disasterDestinationElement()
+    : movement.attachment ? attachmentElement(movement.card?.instanceId)
     : cardElementInZone(movement.card?.instanceId, movement.to)
 }
 function elementRotation(element: Element | null) {
@@ -476,6 +484,16 @@ function genericPublicSourceGhost(zone: Zone) {
   ghost.setAttribute('aria-hidden', 'true')
   return ghost
 }
+function disasterPublicSourceGhost() {
+  const ghost = document.createElement('span')
+  ghost.className = 'disaster-reveal-card'
+  const back = document.createElement('img')
+  back.className = 'disaster-reveal-back'
+  back.src = '/assets/l12/card-back-disaster.png'
+  back.alt = ''
+  ghost.appendChild(back)
+  return ghost
+}
 function fallbackRect(zone: Zone, playerIndex: number): AnchorRect {
   const { width: innerWidth, height: innerHeight } = visibleViewport()
   if (zone === 'center') return { x: innerWidth / 2, y: innerHeight / 2, width: 72, height: 101 }
@@ -496,6 +514,14 @@ function legionEntryFocusRect(): AnchorRect {
   const viewport = visibleViewport()
   const width = Math.max(96, Math.min(132, viewport.width * .12, viewport.height * .28))
   return { x:viewport.width / 2, y:viewport.height / 2, width, height:width * 7 / 5 }
+}
+
+function disasterRevealFocusRect(): AnchorRect {
+  // Anchors stay in the logical landscape canvas. Keep the horizontal 8:5
+  // reveal fully inside low-height phones as well as wide desktop boards.
+  const viewport = visibleViewport()
+  const width = Math.max(180, Math.min(360, viewport.width * .42, viewport.height * .72))
+  return { x:viewport.width / 2, y:viewport.height / 2, width, height:width * 5 / 8 }
 }
 
 function entryTransform(dx: number, dy: number, scaleX: number, scaleY: number, rotation: number) {
@@ -533,7 +559,38 @@ function legionEntryFrames(movement: Movement): Keyframe[] {
   ]
 }
 
+function disasterRevealFrames(movement: Movement): Keyframe[] {
+  const source = movement.fromRect
+  const target = movement.toRect
+  const focus = disasterRevealFocusRect()
+  const centerDx = focus.x - source.x
+  const centerDy = focus.y - source.y
+  const targetDx = target.x - source.x
+  const targetDy = target.y - source.y
+  const sourceScaleX = Math.max(.12, Math.min(1.2, source.width / Math.max(1, focus.width)))
+  const sourceScaleY = Math.max(.12, Math.min(1.2, source.height / Math.max(1, focus.height)))
+  const targetScaleX = Math.max(.12, Math.min(1.2, target.width / Math.max(1, focus.width)))
+  const targetScaleY = Math.max(.12, Math.min(1.2, target.height / Math.max(1, focus.height)))
+  if (movement.disasterSimplified) return [
+    { transform:entryTransform(0, 0, sourceScaleX, sourceScaleY, 0), opacity:1 },
+    { transform:entryTransform(targetDx, targetDy, targetScaleX, targetScaleY, 0), opacity:1 },
+  ]
+  return [
+    { transform:entryTransform(0, 0, sourceScaleX, sourceScaleY, 0), opacity:1, offset:0 },
+    { transform:entryTransform(centerDx, centerDy, .96, .96, 0), opacity:1,
+      easing:'cubic-bezier(.22,1,.36,1)', offset:.26 },
+    { transform:entryTransform(centerDx, centerDy, 1, 1, 0), opacity:1, offset:.38 },
+    { transform:entryTransform(centerDx, centerDy, 1, 1, 0), opacity:1,
+      easing:'cubic-bezier(.4,0,1,1)', offset:.72 },
+    { transform:entryTransform(targetDx, targetDy, targetScaleX * 1.04, targetScaleY * 1.04, 0),
+      opacity:1, offset:.90 },
+    { transform:entryTransform(targetDx, targetDy, targetScaleX, targetScaleY, 0), opacity:1, offset:1 },
+  ]
+}
+
 function movementDuration(movement: Movement) {
+  if (movement.disasterReveal)
+    return movement.disasterSimplified ? replayDuration(130, 80, 60) : replayDuration(1040, 520, 260)
   if (movement.legionEntry) {
     if (movement.entrySimplified) return replayDuration(130, 80, 60)
     return replayDuration(820, 320, 160)
@@ -653,26 +710,39 @@ function createMovementHolder(movement: Movement, sourceGhost: HTMLElement) {
   sourceGhost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
   sourceGhost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
   const source = movement.fromRect
+  const disasterFocus = movement.disasterReveal ? disasterRevealFocusRect() : null
+  const holderWidth = disasterFocus?.width ?? source.width
+  const holderHeight = disasterFocus?.height ?? source.height
   const wrapper = document.createElement('div')
-  wrapper.className = 'l12-zone-flight-ghost'
+  wrapper.className = movement.disasterReveal
+    ? 'l12-zone-flight-ghost l12-disaster-reveal-holder'
+    : 'l12-zone-flight-ghost'
   wrapper.dataset.movementKey = movement.key
   wrapper.dataset.movementInstanceId = movement.card?.instanceId ?? ''
   wrapper.dataset.movementFrom = movement.from
   wrapper.dataset.movementTo = movement.to
   wrapper.dataset.movementFromX = `${source.x}`
   wrapper.dataset.movementFromY = `${source.y}`
+  if (movement.disasterReveal) {
+    wrapper.dataset.disasterReveal = 'true'
+    wrapper.dataset.disasterMotion = movement.disasterSimplified ? 'handoff' : 'center-hold'
+    wrapper.dataset.uiContract = 'authoritative-zone-card-movement'
+  }
   if (movement.legionEntry) {
     wrapper.dataset.entryPresentation = 'legion-center-land'
     if (movement.entryImpactTier) wrapper.dataset.entryImpactTier = movement.entryImpactTier
     wrapper.style.setProperty('--entry-impact-strength', `${movement.entryImpactStrength}`)
   }
   Object.assign(wrapper.style, {
-    position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
-    width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
+    position: 'fixed', left: `${source.x - holderWidth / 2}px`, top: `${source.y - holderHeight / 2}px`,
+    width: `${holderWidth}px`, height: `${holderHeight}px`, zIndex: '902', pointerEvents: 'none',
     visibility: 'hidden', transformOrigin: 'center', willChange: 'transform, opacity',
-    transform: `rotate(${movement.fromRotation ?? 0}deg)`,
+    transform: movement.disasterReveal
+      ? `scale(${Math.max(.12, Math.min(1.2, source.width / Math.max(1, holderWidth)))},${Math.max(.12, Math.min(1.2, source.height / Math.max(1, holderHeight)))})`
+      : `rotate(${movement.fromRotation ?? 0}deg)`,
     filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
   })
+  if (movement.disasterReveal) wrapper.style.setProperty('--move-duration', `${movementDuration(movement)}ms`)
   const impactNode = createEntryImpactNode(movement)
   if (impactNode) wrapper.appendChild(impactNode)
   sourceGhost.style.position = 'relative'
@@ -807,11 +877,14 @@ function showNext() {
         const lift = -Math.min(40, Math.hypot(dx, dy) * .08)
         const tilt = Math.max(-3, Math.min(3, dx * .01))
         const duration = movementDuration(movement)
+        wrapper.style.setProperty('--move-duration', `${duration}ms`)
         const directFrames = [
           { transform: `translate3d(0,0,0) scale(1) rotate(${movement.fromRotation ?? 0}deg)`, opacity:1 },
           { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(${movement.toRotation ?? 0}deg)`, opacity:1 },
         ]
-        const frames = movement.legionEntry
+        const frames = movement.disasterReveal
+          ? disasterRevealFrames(movement)
+          : movement.legionEntry
           ? movement.entrySimplified ? directFrames : legionEntryFrames(movement)
           : [
               { transform: `translate3d(0,0,0) scale(1) rotate(${movement.fromRotation ?? 0}deg)`, opacity: 1 },
@@ -819,8 +892,9 @@ function showNext() {
               { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * 1.04},${scaleY * 1.04}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1, offset: .85 },
               { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1 },
             ]
+        if (movement.disasterReveal) wrapper.classList.add('zone-card-movement', 'movement-ready')
         activeGhostAnimation = wrapper.animate(frames,
-          { duration, easing: movement.legionEntry ? 'linear' : 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
+          { duration, easing: movement.legionEntry || movement.disasterReveal ? 'linear' : 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
         startEntryImpact(movement, duration)
         movement.presentationStarted = true
         registerStartedPresentation(movement)
@@ -981,15 +1055,17 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     const source = draft.disasterReveal || draft.authoritativeFace ? null
       : draft.from === 'attached' ? attachmentElement(draft.card?.instanceId)
       : cardElementInZone(draft.card?.instanceId, draft.from)
-    const publicHolder = source instanceof HTMLElement ? source : publicSourceHolder(draft.from, draft.playerIndex)
+    const publicHolder = draft.disasterReveal ? disasterDestinationElement()
+      : source instanceof HTMLElement ? source : publicSourceHolder(draft.from, draft.playerIndex)
     const usesGraveyardAnchor = !(source instanceof HTMLElement) && draft.from === 'graveyard'
       && publicHolder instanceof HTMLElement
     // A closed graveyard only exposes its current pile top, which may be a
     // different instance. Borrow that node's public geometry, never its face.
-    const sourceGhost = publicHolder instanceof HTMLElement
+    const sourceGhost = draft.disasterReveal ? disasterPublicSourceGhost()
+      : publicHolder instanceof HTMLElement
       ? usesGraveyardAnchor ? genericPublicSourceGhost(draft.from) : publicHolder.cloneNode(true) as HTMLElement
       : undefined
-    if (sourceGhost && publicHolder instanceof HTMLElement && !usesGraveyardAnchor)
+    if (sourceGhost && publicHolder instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal)
       snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)
     const start = {
       rect: elementRect(publicHolder) ?? resolveRect(draft.from, draft.playerIndex,
@@ -999,13 +1075,13 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
       // Any zone-level fallback is only an anchor, even when the pile happens
       // to expose a public face: the pile top may be a different grave card.
       // Replace it with the authority event card before motion starts.
-      genericBack: !(source instanceof HTMLElement) && publicHolder instanceof HTMLElement,
+      genericBack: !draft.disasterReveal && !(source instanceof HTMLElement) && publicHolder instanceof HTMLElement,
     }
     draft.fromRect = start.rect
     draft.fromRotation = start.rotation
     draft.sourceGhost = start.ghost
     draft.sourceWasGenericBack = start.genericBack
-    if (start.ghost) createMovementHolder(draft, start.ghost)
+    if (start.ghost && !draft.disasterReveal) createMovementHolder(draft, start.ghost)
     return start
   })
   try {
@@ -1021,7 +1097,7 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
       const destination = destinationElement(draft)
     // An attach event may contain host and source in either order. Only cards that
     // actually became attached receive a movement; the host keeps its stable DOM.
-      if (draft.attachment && !destination) {
+      if ((draft.attachment || draft.disasterReveal) && !destination) {
         reservations[index]?.cancel()
         if (reservations[index]) pendingReservations.delete(reservations[index]!)
         continue
@@ -1039,13 +1115,21 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
         movement.toRotation = movementTerminalTapped(movement.to, movement.card,
           movement.publicPlacement, elementRotation(destination) === 90) ? 90 : 0
       }
+      if (movement?.disasterReveal && movement.sourceGhost && !movement.holderWrapper) {
+        if (!await waitForDecodedMovementFace(movement.sourceGhost)
+          || !createMovementHolder(movement, movement.sourceGhost)) {
+          reservations[index]?.cancel()
+          if (reservations[index]) pendingReservations.delete(reservations[index]!)
+          continue
+        }
+      }
       // Destination DOM only exists after the authoritative snapshot render.
       // Refreshing the already-bound owner acquires the visibility lease only
       // when this reservation is the current, unpaused visual owner.  An inline
       // choice therefore keeps the real card visible and clickable.
       if (movement?.holderWrapper && movement.visualOwner)
         movement.presentationReservation?.prepareVisualOwner(movement.visualOwner)
-      if (movement && (!movement.sourceGhost || movement.sourceWasGenericBack)
+      if (movement && (movement.disasterReveal || !movement.sourceGhost || movement.sourceWasGenericBack)
         && !movement.concealed && movement.card && preparation) {
         movement.preparedImageUrl = await prepareMovementImage(movement.card, preparation.controller.signal)
         if (generation !== viewportGeneration || preparation.controller.signal.aborted) {
@@ -1066,7 +1150,13 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
           if (movement.card.instanceId) sourceZoneHints.delete(movement.card.instanceId)
           continue
         }
-        if (movement.sourceWasGenericBack && movement.sourceGhost) {
+        if (movement.disasterReveal && movement.sourceGhost) {
+          const front = document.createElement('img')
+          front.className = 'disaster-reveal-front'
+          front.src = movement.preparedImageUrl
+          front.alt = movement.card.name ?? ''
+          movement.sourceGhost.appendChild(front)
+        } else if (movement.sourceWasGenericBack && movement.sourceGhost) {
           const preparedFace = movement.sourceGhost.cloneNode(false) as HTMLElement
           preparedFace.classList.remove('card-back', 'tapped', 'selected')
           Object.assign(preparedFace.style, {
@@ -1183,7 +1273,13 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 .legion-entry-impact{position:absolute;inset:-18%;z-index:-1;border:2px solid rgba(222,191,104,.9);border-radius:50%;box-shadow:0 0 16px rgba(222,191,104,.72);opacity:0;pointer-events:none;transform:scale(.45);transform-origin:center;animation:l12-legion-entry-impact var(--move-duration,.82s) linear both}
 .zone-card-movement:not(.movement-ready) .legion-entry-impact{animation-play-state:paused}.zone-card-movement.movement-ready .legion-entry-impact{animation-play-state:running}
 .movement-caption{position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);width:max-content;max-width:240px;transform:translateX(-50%);padding:3px 7px;border:1px solid #8cc6d2;background:rgba(7,16,20,.94);color:#eef6f5;font-size:12px;line-height:1.35;text-align:center;white-space:normal;overflow-wrap:anywhere}
-.disaster-reveal-card{position:relative;display:block;width:100%;height:100%;perspective:800px;transform-style:preserve-3d}.disaster-reveal-card>img{position:absolute;inset:0;width:100%;height:100%;backface-visibility:hidden}.disaster-reveal-back{object-fit:cover;animation:l12-disaster-card-back var(--move-duration,.44s) ease-in both}.disaster-reveal-front{animation:l12-disaster-card-front var(--move-duration,.44s) ease-out both}
+.disaster-reveal-card{position:relative;display:block;width:100%;height:100%;perspective:800px;transform-style:preserve-3d}.disaster-reveal-card>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;backface-visibility:hidden}.disaster-reveal-back{animation:l12-disaster-card-back var(--move-duration,.44s) ease-in both}.disaster-reveal-front{animation:l12-disaster-card-front var(--move-duration,.44s) ease-out both}
+:global(.l12-disaster-reveal-holder .disaster-reveal-card){position:relative;display:block;width:100%!important;height:100%!important;perspective:900px;transform-style:preserve-3d}
+:global(.l12-disaster-reveal-holder .disaster-reveal-card>img){position:absolute!important;inset:0;width:100%!important;height:100%!important;margin:0!important;object-fit:contain!important;backface-visibility:hidden;animation-play-state:paused!important}
+:global(.l12-disaster-reveal-holder:not(.movement-ready) .disaster-reveal-back){opacity:1;transform:rotateY(0)}
+:global(.l12-disaster-reveal-holder:not(.movement-ready) .disaster-reveal-front){opacity:0;transform:rotateY(-90deg)}
+:global(.l12-disaster-reveal-holder.movement-ready .disaster-reveal-back){animation:l12-disaster-card-back var(--move-duration,1.04s) linear both!important}
+:global(.l12-disaster-reveal-holder.movement-ready .disaster-reveal-front){animation:l12-disaster-card-front var(--move-duration,1.04s) linear both!important}
 @keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}85%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(calc(var(--move-to-scale) * 1.04)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
 @keyframes l12-legion-entry-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}30%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(calc(var(--move-center-scale) * .96)) rotate(0)}40%,55%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(var(--move-center-scale)) rotate(0)}90%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-scale)) rotate(var(--move-to-rotation,0deg))}96%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-settle-scale)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
 @keyframes l12-legion-entry-handoff{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}

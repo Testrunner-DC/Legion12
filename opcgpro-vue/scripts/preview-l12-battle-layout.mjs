@@ -14,7 +14,7 @@ if (fixtureStart < 'const entry = `'.length || fixtureEnd < fixtureStart)
   throw new Error('Unable to locate the sanitized GamePage fixture in verify-batch253-visual.mjs')
 
 const fixtureSetup = fixtureSource.slice(fixtureStart, fixtureEnd)
-const entry = "import '/src/l12/mobileViewport.css';\nimport GlobalBugFeedback from '/src/l12/site/GlobalBugFeedback.vue';\nimport { useLandscapeViewport } from '/src/l12/mobileViewport.ts';\nimport { audioPreferences, syncAudioStore } from '/src/l12/audioPreferences.ts';\nimport { ref as viewportRef } from 'vue';\n" + fixtureSetup + `
+const entry = "import '/src/l12/mobileViewport.css';\nimport '/src/l12/motion.css';\nimport GlobalBugFeedback from '/src/l12/site/GlobalBugFeedback.vue';\nimport { useLandscapeViewport } from '/src/l12/mobileViewport.ts';\nimport { audioPreferences, syncAudioStore } from '/src/l12/audioPreferences.ts';\nimport { ref as viewportRef } from 'vue';\n" + fixtureSetup + `
 // Visual QA may run in a desktop browser with a phone-sized viewport.  This flag
 // only affects the synthetic preview, allowing it to exercise the production
 // touch-landscape branch without changing application runtime detection.
@@ -222,10 +222,18 @@ if(params.has('action-fixture')){
  l12State.game.legalAttackTargets=attacker&&target?{[attacker.instanceId]:[target.instanceId,'master']}:{ }
 }
 if(params.has('disaster-chain')){
+ const disasterViewer=Math.max(0,Math.min(1,Number(params.get('disaster-viewer')||0)))
+ const disasterRole=params.get('disaster-role')==='spectator'?'spectator':'player'
+ const disasterMotion=params.get('motion')||'standard'
+ audioPreferences.animation=['standard','fast','off'].includes(disasterMotion)?disasterMotion:'standard';syncAudioStore()
+ l12State.game.you=disasterViewer;l12State.game.activePlayer=disasterViewer;l12State.game.phase='Main';l12State.game.prompts=[]
+ if(disasterRole==='spectator'){l12State.spectating=true;l12State.observerView='player'}
  const current={...card(disasters[0],'fixture-disaster-current'),name:'黯陨晨星灾变',hidden:false}
- const incoming={...card(disasters[1]||disasters[0],'fixture-disaster-incoming'),hidden:false}
+ const incoming={...card(disasters[1]||disasters[0],'fixture-disaster-incoming'),hidden:false,
+  ...(params.has('disaster-delayed-face')?{cardId:'QA-DISASTER-DELAY',imageUrl:'/api/site/media/disaster-visual/QA-DISASTER-DELAY.png'}:{})}
+ const incomingHidden={...incoming,cardId:'',name:'',imageUrl:undefined,hidden:true}
  l12State.game.activeDisaster=current
- l12State.game.sessionDisasters=[current,incoming,...disasters.slice(2,4).map((definition,index)=>({...card(definition,'fixture-disaster-rest-'+index),hidden:false}))]
+ l12State.game.sessionDisasters=[current,incomingHidden,...disasters.slice(2,4).map((definition,index)=>({...card(definition,'fixture-disaster-rest-'+index),hidden:false}))]
  l12State.game.removedDisasters=[]
  let disasterSequence=Math.max(0,...l12State.game.recentEvents.map(event=>event.sequence))
  const setPrompt=visible=>{
@@ -237,16 +245,28 @@ if(params.has('disaster-chain')){
  window.__disasterFixture={
   currentId:current.instanceId,
   incomingId:incoming.instanceId,
+  state(){return {matchId:l12State.game.matchId,revision:l12State.game.revision,you:l12State.game.you,
+   activeDisasterId:l12State.game.activeDisaster?.instanceId,events:(l12State.game.recentEvents||[]).map(event=>({sequence:event.sequence,type:event.type}))}},
   openPrompt(){setPrompt(true)},
   closePrompt(){setPrompt(false)},
   emitReveal(triggered=false){
    l12State.game.activeDisaster=incoming
+   l12State.game.sessionDisasters=(l12State.game.sessionDisasters||[]).map(card=>card?.instanceId===incoming.instanceId?incoming:card)
    const reveal={sequence:++disasterSequence,type:'disaster-reveal',playerIndex:null,text:'公开天灾〈'+incoming.name+'〉',cards:[incoming]}
    const events=[reveal]
    if(triggered)events.push({sequence:++disasterSequence,type:'effect-trigger',playerIndex:null,text:'〈'+incoming.name+'〉的天灾效果触发',effectText:'天灾效果开始结算。',cards:[incoming],effectAbilityId:'S01-DS02:ability:disaster:4548c9e0f724c914',effectSceneId:'S01-DS02:ability:disaster:4548c9e0f724c914:presentation:disaster',effectResultStatus:'resolved'})
    l12State.game.recentEvents=[...l12State.game.recentEvents,...events]
     l12State.game.revision=(Number(l12State.game.revision)||0)+1
    return events.map(event=>event.sequence)
+  },
+  rematerialize(){l12State.game.recentEvents=(l12State.game.recentEvents||[]).map(event=>({...event,cards:event.cards?.map(card=>({...card}))}))},
+  revise(){l12State.game.revision=(Number(l12State.game.revision)||0)+1;l12State.game.recentEvents=[...(l12State.game.recentEvents||[])]},
+  switchMatch(){
+   disasterSequence=1
+   l12State.game={...l12State.game,matchId:'fixture-disaster-next-'+performance.now().toFixed(0),revision:1,
+    activeDisaster:incoming,sessionDisasters:[current,incoming,...(l12State.game.sessionDisasters||[]).slice(2)],prompts:[],
+    recentEvents:[{sequence:1,type:'disaster-reveal',playerIndex:null,text:'新对局历史天灾',cards:[incoming]}]}
+   previewState.game=l12State.game
   },
  }
 }

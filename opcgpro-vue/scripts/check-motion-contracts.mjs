@@ -95,12 +95,27 @@ const checks = [
     && zonePreparation.includes("sourceGhost.classList.remove('tapped', 'selected')")
     && zonePreparation.indexOf("visibility: 'visible'") < zonePreparation.indexOf('wrapper.appendChild(sourceGhost)')
     && zonePreparation.includes("visibility: 'hidden'")
-    && movement.includes('const sourceGhost = publicHolder instanceof HTMLElement')
+    && movement.includes('const sourceGhost = draft.disasterReveal ? disasterPublicSourceGhost()')
+    && movement.includes(': publicHolder instanceof HTMLElement')
     && movement.includes('usesGraveyardAnchor ? genericPublicSourceGhost(draft.from) : publicHolder.cloneNode(true)')
-    && movement.includes('publicHolder instanceof HTMLElement && !usesGraveyardAnchor')
+    && movement.includes('publicHolder instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal')
     && movement.includes('snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)')
     && movement.indexOf('snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)')
-      < movement.indexOf('if (start.ghost) createMovementHolder(draft, start.ghost)')],
+      < movement.indexOf('if (start.ghost && !draft.disasterReveal) createMovementHolder(draft, start.ghost)')
+    && movement.includes('if (movement?.disasterReveal && movement.sourceGhost && !movement.holderWrapper)')
+    && movement.includes('|| !createMovementHolder(movement, movement.sourceGhost)')],
+  ['disaster reveal owns an official back before decoded face and releases the exact current slot',
+    movement.includes("back.src = '/assets/l12/card-back-disaster.png'")
+    && movement.includes("document.querySelector('[data-l12-battle-layout]')")
+    && movement.includes('button.current-disaster-card[data-l12-zone="disaster"]')
+    && movement.includes('movement.disasterReveal ? disasterDestinationElement()')
+    && movement.includes('movement.preparedImageUrl = await prepareMovementImage(movement.card, preparation.controller.signal)')
+    && movement.indexOf('createMovementHolder(movement, movement.sourceGhost)')
+      < movement.indexOf('movement.preparedImageUrl = await prepareMovementImage')
+    && movement.indexOf('movement.preparedImageUrl = await prepareMovementImage')
+      < movement.indexOf('front.src = movement.preparedImageUrl')
+    && zonePreparation.includes('if (destination instanceof HTMLElement) coverTarget(movement, destination)')
+    && zonePreparation.includes("wrapper.style.visibility = 'hidden'\n      revealTarget(movement)")],
   ['ready and rest never clone hidden target state', !stateTransition.includes('source: HTMLElement')
     && stateTransition.includes("sourceGhost.style.visibility = 'visible'")
     && cloneStyleIsVisible(statePreparation)
@@ -152,7 +167,8 @@ const checks = [
     && combat.includes('const owner = defeatOwner(event, captured.card, index)')],
   ['combat layer cannot replay a second ordinary attack animation', !combat.includes('function animateAttack(')
     && combat.includes('state layer owns a normal attack as one combined lunge/rest')],
-  ['attachment target uses stable instance identity', tile.includes('data-attached-card-instance-ids') && movement.includes('attachmentElement') && movement.includes('draft.attachment && !destination')],
+  ['attachment target uses stable instance identity', tile.includes('data-attached-card-instance-ids') && movement.includes('attachmentElement')
+    && movement.includes('(draft.attachment || draft.disasterReveal) && !destination')],
   ['private-zone source hints survive prompt removal', movement.includes('sourceZoneHints') && movement.includes('collectPromptSourceZoneHints') && visualProjection.includes("key.endsWith(':zone')")],
   ['effect card art includes authority source only', board.includes('isCardEffectPresentationEvent(event)') && board.includes('presentationCards(event)') && visualProjection.includes('event.effectSceneId') && visualProjection.includes('event.cards?.slice(0, 1)')],
   ['overlapping presentation layers share one visibility lease', movement.includes("from './authoritativeCardVisibility'")

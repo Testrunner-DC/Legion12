@@ -3,17 +3,30 @@ import { readFileSync } from 'node:fs'
 import { parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 
-// Keep the old single-entity/source-pixel contract. The only staged route is
-// the explicitly approved public legion entry; it is not a generic mid-flight
-// enlargement exception for other moves or concealed cards.
+// Keep the old single-entity/source-pixel contract. The only staged routes are
+// the explicitly approved public legion entry and public disaster reveal; they
+// are not a generic mid-flight enlargement exception for other moves or concealed cards.
 export function hasScopedZoneMovementMotion(source) {
   try {
     source = source.replace(/\r\n?/g, '\n')
     for (const required of ['publicHolder.cloneNode(true)',
       'snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)',
-      'genericPublicSourceGhost(draft.from)', 'activeGhostAnimation = wrapper.animate(frames,'])
+      'genericPublicSourceGhost(draft.from)', 'activeGhostAnimation = wrapper.animate(frames,',
+      'disasterPublicSourceGhost()', 'disasterRevealFrames(movement)',
+      "back.src = '/assets/l12/card-back-disaster.png'",
+      "document.querySelector('[data-l12-battle-layout]')",
+      'button.current-disaster-card[data-l12-zone="disaster"]',
+      'publicHolder instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal'])
       assert(source.includes(required), required)
     assert(!source.includes('--move-mid-x') && !source.includes('l12-zone-card-pulse'))
+    const holderStart = source.indexOf('function createMovementHolder(')
+    const holderEnd = source.indexOf('\nfunction showNext(', holderStart)
+    const holder = source.slice(holderStart, holderEnd)
+    assert(holder.includes('if (destination instanceof HTMLElement) coverTarget(movement, destination)'))
+    assert(holder.includes("wrapper.style.visibility = 'hidden'\n      revealTarget(movement)"))
+    assert(source.includes('if (start.ghost && !draft.disasterReveal) createMovementHolder(draft, start.ghost)'))
+    assert(source.includes('if (movement?.disasterReveal && movement.sourceGhost && !movement.holderWrapper)'))
+    assert(source.includes('|| !createMovementHolder(movement, movement.sourceGhost)'))
     const setup = parse(source).descriptor.scriptSetup?.content
     assert(setup)
     const tree = ts.createSourceFile('movement.ts', setup, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
@@ -68,15 +81,30 @@ export function hasScopedZoneMovementMotion(source) {
     const frames = declarations.get('frames')
     const direct = declarations.get('directFrames')
     assert(ts.isArrayLiteralExpression(direct) && direct.elements.length === 2)
-    assert(ts.isConditionalExpression(frames) && frames.condition.getText(tree) === 'movement.legionEntry')
-    const entryFrames = frames.whenTrue
+    assert(ts.isConditionalExpression(frames) && frames.condition.getText(tree) === 'movement.disasterReveal')
+    assert.equal(frames.whenTrue.getText(tree), 'disasterRevealFrames(movement)')
+    const ordinaryFrames = frames.whenFalse
+    assert(ts.isConditionalExpression(ordinaryFrames) && ordinaryFrames.condition.getText(tree) === 'movement.legionEntry')
+    const entryFrames = ordinaryFrames.whenTrue
     assert(ts.isConditionalExpression(entryFrames) && entryFrames.condition.getText(tree) === 'movement.entrySimplified')
     assert.equal(entryFrames.whenTrue.getText(tree), 'directFrames')
     assert.equal(entryFrames.whenFalse.getText(tree), 'legionEntryFrames(movement)')
-    assert(ts.isArrayLiteralExpression(frames.whenFalse) && frames.whenFalse.elements.length === 4)
-    for (const regular of [direct, frames.whenFalse]) {
+    assert(ts.isArrayLiteralExpression(ordinaryFrames.whenFalse) && ordinaryFrames.whenFalse.elements.length === 4)
+    for (const regular of [direct, ordinaryFrames.whenFalse]) {
       assert(!/center|focus|legionEntryFrames|impactScale/.test(regular.getText(tree)))
     }
+    const disasterFrames = tree.statements.find(node => ts.isFunctionDeclaration(node)
+      && node.name?.text === 'disasterRevealFrames')
+    assert(disasterFrames?.body)
+    const simplifiedDisaster = disasterFrames.body.statements.find(node => ts.isIfStatement(node))
+    assert(ts.isIfStatement(simplifiedDisaster)
+      && simplifiedDisaster.expression.getText(tree) === 'movement.disasterSimplified')
+    assert(ts.isReturnStatement(simplifiedDisaster.thenStatement)
+      && ts.isArrayLiteralExpression(simplifiedDisaster.thenStatement.expression)
+      && simplifiedDisaster.thenStatement.expression.elements.length === 2)
+    const fullDisaster = disasterFrames.body.statements.at(-1)
+    assert(ts.isReturnStatement(fullDisaster) && ts.isArrayLiteralExpression(fullDisaster.expression)
+      && fullDisaster.expression.elements.length === 6)
     for (const css of [
       '.moving-card.legion-entry:not(.entry-simplified){animation-name:l12-legion-entry-flight;',
       '.moving-card.legion-entry.entry-simplified{animation-name:l12-legion-entry-handoff;',
@@ -100,7 +128,15 @@ const mutations = [
   ['decoded source pixels', 'snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)', 'unverifiedSourcePixels(publicHolder, sourceGhost)'],
   ['unknown-zone card back', 'genericPublicSourceGhost(draft.from)', 'guessedSourceFace(draft.from)'],
   ['single WAAPI path', 'activeGhostAnimation = wrapper.animate(frames,', 'activeGhostAnimation = wrapper.animate([],'],
-  ['unscoped staged animation', 'const frames = movement.legionEntry', 'const frames = true'],
+  ['unscoped staged animation', 'const frames = movement.disasterReveal', 'const frames = true'],
+  ['generic disaster staging', 'const frames = movement.disasterReveal', 'const frames = movement.disasterReveal || movement.legionEntry'],
+  ['disaster uses legion choreography', '? disasterRevealFrames(movement)', '? legionEntryFrames(movement)'],
+  ['disaster loses essential handoff', 'if (movement.disasterSimplified) return [', 'if (false) return ['],
+  ['disaster back guessed from authority face', "back.src = '/assets/l12/card-back-disaster.png'", "back.src = movement.card.imageUrl"],
+  ['disaster pixels snapshot from settled face', '&& !usesGraveyardAnchor && !draft.disasterReveal)', '&& !usesGraveyardAnchor)'],
+  ['disaster target leaves battle layout', "document.querySelector('[data-l12-battle-layout]')", 'document'],
+  ['disaster target widened to a zone', 'button.current-disaster-card[data-l12-zone="disaster"]', '[data-l12-zone="disaster"]'],
+  ['disaster owner skips release', "wrapper.style.visibility = 'hidden'\n      revealTarget(movement)", "wrapper.style.visibility = 'hidden'"],
   ['reduced animation central flight', '? movement.entrySimplified ? directFrames : legionEntryFrames(movement)', '? movement.entrySimplified ? legionEntryFrames(movement) : legionEntryFrames(movement)'],
   ['regular move central flight', ': [\n              { transform:', ': legionEntryFrames(movement) || [\n              { transform:'],
   ['off preference', "dataset.l12Animation === 'off'", "dataset.l12Animation === 'unsupported'"],
