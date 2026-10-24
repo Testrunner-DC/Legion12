@@ -4,8 +4,10 @@ const mobileDock = useMobileBattleDock()
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { Card, DisasterCardView, GameState, Prompt } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
+import { l12AnimationDuration } from '../audioPreferences'
 import { gameAction, l12State, sandboxAction } from '../net'
-import { masterProfileUrl } from '../specialAssets'
+import { masterDeckBannerUrl, masterProfileUrl } from '../specialAssets'
+import { getFactionPresentation } from '../factionPresentation'
 import CardImage from '../CardImage.vue'
 import PromptCardCandidate from './PromptCardCandidate.vue'
 import SetupDecisionClock from './SetupDecisionClock.vue'
@@ -52,7 +54,11 @@ const sandboxActorIndex = computed(() => {
   return props.game.activePlayer
 })
 const me = computed(() => props.game.players[sandboxActorIndex.value] ?? props.game.players[props.game.you] ?? props.game.players[0])
-const initiativePlayers = computed(() => [me.value, ...props.game.players.filter(player => player.playerIndex !== me.value.playerIndex)])
+const initiativeViewer = computed(() => props.game.players.find(player => player.playerIndex === props.game.you) ?? me.value)
+const initiativePlayers = computed(() => [
+  ...props.game.players.filter(player => player.playerIndex !== initiativeViewer.value.playerIndex),
+  initiativeViewer.value,
+])
 const isMulliganPhase = computed(() => props.game.phase === 'Mulligan')
 const isMulligan = computed(() => !props.readOnly && isMulliganPhase.value && !me.value.mulliganDone)
 const waitingDefense = computed(() => !l12State.gmEnabled && !props.suppressDefenseWait && props.game.phase === 'Defense' && props.game.pendingDefense?.attackerPlayer === props.game.you)
@@ -98,6 +104,9 @@ const draggedChoice = ref<string | null>(null)
 const placementOrder = ref<string[]>([])
 const animatedRolls = ref([1, 1])
 const diceSettled = ref(false)
+const diceAnimationReadyToSettle = ref(false)
+const openingIntroSkipped = ref(false)
+const initiativeResolutionMessage = ref('')
 let diceTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 const autoCloseRemainingMs = ref(0)
@@ -130,19 +139,140 @@ function startInitiativeDice() {
   if (diceTimer) clearInterval(diceTimer)
   if (diceSettleTimer) clearTimeout(diceSettleTimer)
   diceSettled.value = false
+  diceAnimationReadyToSettle.value = false
+  openingIntroSkipped.value = false
+  const duration = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ? 0 : l12AnimationDuration(1250)
+  if (duration <= 0) {
+    openingIntroSkipped.value = true
+    diceAnimationReadyToSettle.value = true
+    settleInitiativeDice()
+    return
+  }
   diceTimer = setInterval(() => { animatedRolls.value = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)] }, 90)
   diceSettleTimer = setTimeout(() => {
-    if (diceTimer) clearInterval(diceTimer)
-    diceTimer = null
-    animatedRolls.value = [...props.game.initiativeRolls]
-    diceSettled.value = true
-  }, 1250)
+    diceSettleTimer = null
+    diceAnimationReadyToSettle.value = true
+    settleInitiativeDice()
+  }, duration)
 }
 
-watch(() => `${isInitiative.value}:${props.game.matchId}:${props.game.initiativeRolls.join(',')}`, () => {
-  if (isInitiative.value) startInitiativeDice()
+function hasAuthoritativeInitiativeRolls() {
+  return props.game.players.length > 0 && props.game.players.every(player => {
+    const value = props.game.initiativeRolls[player.playerIndex]
+    return Number.isInteger(value) && value >= 1 && value <= 6
+  })
+}
+function settleInitiativeDice() {
+  if (!hasAuthoritativeInitiativeRolls()) return false
+  if (diceTimer) clearInterval(diceTimer)
+  if (diceSettleTimer) clearTimeout(diceSettleTimer)
+  diceTimer = null
+  diceSettleTimer = null
+  animatedRolls.value = [...props.game.initiativeRolls]
+  diceSettled.value = true
+  return true
+}
+function skipOpeningIntro() {
+  openingIntroSkipped.value = true
+  diceAnimationReadyToSettle.value = true
+  settleInitiativeDice()
+}
+function hideBrokenBanner(event: Event) {
+  if (event.currentTarget instanceof HTMLImageElement) event.currentTarget.hidden = true
+}
+function initiativePlayerStyle(faction: string) {
+  return { '--initiative-accent': getFactionPresentation(faction).color }
+}
+function initiativeFactionLabel(faction: string) {
+  return getFactionPresentation(faction).label
+}
+function initiativeWinnerText() {
+  if (!diceSettled.value) return '双方掷骰中'
+  const winner = props.game.players.find(player => player.playerIndex === props.game.diceWinner)
+  if (props.game.diceWinner === props.game.you) return '你取得先后攻选择权'
+  return `${props.readOnly ? (winner?.name || `玩家 ${props.game.diceWinner + 1}`) : '对手'}取得先后攻选择权`
+}
+function initiativeResultText() {
+  const chooser = props.game.players.find(player => player.playerIndex === props.game.diceWinner)
+  const role = props.game.firstPlayer === props.game.diceWinner ? '先攻' : '后攻'
+  const actor = props.readOnly ? (chooser?.name || `玩家 ${props.game.diceWinner + 1}`)
+    : props.game.diceWinner === props.game.you ? '你' : '对手'
+  return `${actor}选择${role}`
+}
+
+type InitiativeLifecycleSnapshot = { matchId: string; phase: GameState['phase'] }
+type InitiativeLifecycleCallbacks = {
+  clearResult: () => void
+  showResult: () => void
+  stopDice: () => void
+  startEntry: () => void
+}
+type InitiativeLifecycleTimers = {
+  set: (callback: () => void, delay: number) => unknown
+  clear: (handle: unknown) => void
+}
+function createInitiativeLifecycle(callbacks: InitiativeLifecycleCallbacks, timers: InitiativeLifecycleTimers) {
+  let resultTimer: unknown = null
+  function clearResult() {
+    if (resultTimer !== null) timers.clear(resultTimer)
+    resultTimer = null
+    callbacks.clearResult()
+  }
+  function transition(next: InitiativeLifecycleSnapshot, previous?: InitiativeLifecycleSnapshot) {
+    const matchChanged = Boolean(previous && next.matchId !== previous.matchId)
+    if (!previous || matchChanged) {
+      clearResult()
+      callbacks.stopDice()
+      if (next.phase === 'Initiative') callbacks.startEntry()
+      return
+    }
+    if (previous.phase === 'Initiative' && next.phase !== 'Initiative') {
+      callbacks.stopDice()
+      callbacks.showResult()
+      resultTimer = timers.set(() => {
+        resultTimer = null
+        callbacks.clearResult()
+      }, 650)
+      return
+    }
+    if (next.phase !== 'Initiative') callbacks.stopDice()
+    else if (previous.phase !== 'Initiative') callbacks.startEntry()
+  }
+  function dispose() {
+    if (resultTimer !== null) timers.clear(resultTimer)
+    resultTimer = null
+  }
+  return { transition, dispose }
+}
+function stopInitiativeDice() {
+  if (diceTimer) clearInterval(diceTimer)
+  if (diceSettleTimer) clearTimeout(diceSettleTimer)
+  diceTimer = null
+  diceSettleTimer = null
+}
+const initiativeLifecycle = createInitiativeLifecycle({
+  clearResult: () => { initiativeResolutionMessage.value = '' },
+  showResult: () => { initiativeResolutionMessage.value = initiativeResultText() },
+  stopDice: stopInitiativeDice,
+  startEntry: startInitiativeDice,
+}, {
+  set: (callback, delay) => setTimeout(callback, delay),
+  clear: handle => clearTimeout(handle as ReturnType<typeof setTimeout>),
+})
+watch(() => [props.game.matchId, props.game.phase] as const, ([matchId, phase], previous) => {
+  initiativeLifecycle.transition({ matchId, phase }, previous
+    ? { matchId: previous[0], phase: previous[1] } : undefined)
 }, { immediate: true })
-onBeforeUnmount(() => { if (diceTimer) clearInterval(diceTimer); if (diceSettleTimer) clearTimeout(diceSettleTimer); if (autoCloseTimer) clearTimeout(autoCloseTimer) })
+watch(() => props.game.initiativeRolls.join(','), () => {
+  if (diceAnimationReadyToSettle.value) settleInitiativeDice()
+  else if (diceSettled.value && hasAuthoritativeInitiativeRolls()) animatedRolls.value = [...props.game.initiativeRolls]
+})
+onBeforeUnmount(() => {
+  stopInitiativeDice()
+  initiativeLifecycle.dispose()
+  if (autoCloseTimer) clearTimeout(autoCloseTimer)
+})
 
 watch(() => JSON.stringify([
   prompt.value?.promptId ?? '',
@@ -856,6 +986,11 @@ function kindLabel() {
 </script>
 
 <template>
+  <Teleport :to="landscapeTeleportTarget()">
+    <Transition name="initiative-result">
+      <div v-if="initiativeResolutionMessage" class="initiative-resolution-message" role="status" aria-live="polite">{{ initiativeResolutionMessage }}</div>
+    </Transition>
+  </Teleport>
   <Teleport :to="mobileLayout && minimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
     <div v-if="visible" class="l12-prompt-overlay" :data-tutorial-prompt-id="prompt?.promptId" :data-tutorial-prompt-kind="prompt?.kind"
       @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
@@ -869,7 +1004,7 @@ function kindLabel() {
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
       </section>
 
-      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'prompt-information-panel': true, 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
+      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'prompt-information-panel': true, 'opening-initiative-panel': isInitiative, 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
         <header :class="{ 'effect-decision-header': isEffectDecision }">
           <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ promptTitle }}</h2>
           <button class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
@@ -878,9 +1013,9 @@ function kindLabel() {
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body"
           @touchstart.passive="onChoiceBodyTouchStart" @touchmove="onChoiceBodyTouchMove" @touchend="onChoiceBodyTouchEnd" @touchcancel="onChoiceBodyTouchEnd">
-        <p v-if="promptSituation" class="prompt-situation effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
-        <div class="prompt-task-context" :data-actor-state="promptActor.state"><span class="prompt-actor">{{ promptActor.label }}</span><span v-if="!isPureEffectDecision && prompt.data?.choiceMode !== 'instant'" class="prompt-selection-range" role="status">{{ promptSelectionRange }} · {{ promptPendingSelection }}</span><span v-else class="prompt-selection-range">{{ promptSelectionRange }}</span></div>
-        <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
+        <p v-if="promptSituation && !isInitiative" class="prompt-situation effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
+        <div v-if="!isInitiative" class="prompt-task-context" :data-actor-state="promptActor.state"><span class="prompt-actor">{{ promptActor.label }}</span><span v-if="!isPureEffectDecision && prompt.data?.choiceMode !== 'instant'" class="prompt-selection-range" role="status">{{ promptSelectionRange }} · {{ promptPendingSelection }}</span><span v-else class="prompt-selection-range">{{ promptSelectionRange }}</span></div>
+        <p v-if="promptInstruction && !isInitiative" class="prompt-instruction">{{ promptInstruction }}</p>
         <p v-if="prompt.presentation?.paymentStatus && prompt.presentation?.paymentSummary" class="prompt-payment-state"
           :data-payment-status="prompt.presentation.paymentStatus">{{ promptPaymentCopy(prompt) }}</p>
         <p v-if="promptSubmissionCopy(prompt)" class="prompt-submit-consequence">{{ promptSubmissionCopy(prompt) }}</p>
@@ -888,12 +1023,21 @@ function kindLabel() {
           {{ label(choice) }}：{{ choiceConsequence(choice) }}
         </p>
         <p v-if="autoCloseMessage" class="prompt-auto-close" role="timer" aria-live="polite">{{ autoCloseMessage }}</p>
-        <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
-          <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
-            <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
-            <div><strong>{{ player.playerIndex === game.you ? '你' : '对手' }}</strong><span>{{ player.master.masterName }}</span></div>
-            <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
+        <div v-if="isInitiative" class="initiative-opening-stage" data-ui-contract="match-opening-stage"
+          :class="{ settled: diceSettled, skipped: openingIntroSkipped }">
+          <article v-for="player in initiativePlayers" :key="player.playerIndex"
+            :class="{ mine: player.playerIndex === game.you, opponent: player.playerIndex !== game.you, winner: diceSettled && game.diceWinner === player.playerIndex }"
+            :style="initiativePlayerStyle(player.faction)">
+            <img v-if="masterDeckBannerUrl(player.master.masterId)" class="initiative-master-banner"
+              :src="masterDeckBannerUrl(player.master.masterId)" alt="" aria-hidden="true" @error="hideBrokenBanner" />
+            <span class="initiative-master-wash" aria-hidden="true" />
+            <img class="initiative-master-profile" :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
+            <div class="initiative-identity"><small>{{ player.playerIndex === game.you ? '你' : '对手' }}</small><strong>{{ player.master.masterName }}</strong><span>{{ initiativeFactionLabel(player.faction) }}</span></div>
+            <div class="initiative-die"><b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em></div>
           </article>
+          <div class="initiative-clash" aria-hidden="true"><span>对阵</span></div>
+          <button v-if="!diceSettled && !openingIntroSkipped" type="button" class="initiative-skip" @click="skipOpeningIntro">跳过演出</button>
+          <strong class="initiative-status" role="status" aria-live="polite">{{ initiativeWinnerText() }}</strong>
         </div>
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
@@ -1096,12 +1240,21 @@ function kindLabel() {
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
-        <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
-          <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
-            <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
-            <div><strong>{{ player.playerIndex === game.you ? '你' : '对手' }}</strong><span>{{ player.master.masterName }}</span></div>
-            <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
+        <div v-if="isInitiative" class="initiative-opening-stage" data-ui-contract="match-opening-stage"
+          :class="{ settled: diceSettled, skipped: openingIntroSkipped }">
+          <article v-for="player in initiativePlayers" :key="player.playerIndex"
+            :class="{ mine: player.playerIndex === game.you, opponent: player.playerIndex !== game.you, winner: diceSettled && game.diceWinner === player.playerIndex }"
+            :style="initiativePlayerStyle(player.faction)">
+            <img v-if="masterDeckBannerUrl(player.master.masterId)" class="initiative-master-banner"
+              :src="masterDeckBannerUrl(player.master.masterId)" alt="" aria-hidden="true" @error="hideBrokenBanner" />
+            <span class="initiative-master-wash" aria-hidden="true" />
+            <img class="initiative-master-profile" :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
+            <div class="initiative-identity"><small>{{ player.playerIndex === game.you ? '你' : '对手' }}</small><strong>{{ player.master.masterName }}</strong><span>{{ initiativeFactionLabel(player.faction) }}</span></div>
+            <div class="initiative-die"><b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em></div>
           </article>
+          <div class="initiative-clash" aria-hidden="true"><span>对阵</span></div>
+          <button v-if="!diceSettled && !openingIntroSkipped" type="button" class="initiative-skip" @click="skipOpeningIntro">跳过演出</button>
+          <strong class="initiative-status" role="status" aria-live="polite">{{ initiativeWinnerText() }}</strong>
         </div>
         <small>{{ isMulliganPhase ? '调度' : waitingDefense ? '进攻结算' : '对手操作' }}</small>
         <h2>{{ isMulliganPhase ? overlayTitle : waitingText() }}</h2>
@@ -1118,7 +1271,7 @@ function kindLabel() {
 .response-target-row{display:flex;box-sizing:border-box;height:70px;min-height:70px;max-height:70px;flex:none;align-items:stretch;gap:8px;border:1px solid #52615d;background:#10191a;overflow:hidden}
 .response-target-row.selected{border-color:#79d2ce;box-shadow:inset 0 0 0 1px #79d2ce}
 .response-target-select{flex:1;min-width:0;padding:12px;border:0;background:transparent;color:#eee;text-align:left;white-space:pre-wrap;overflow:hidden;overflow-wrap:anywhere}
-.initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:var(--l12-board-copy,13px)}.initiative-race span{color:#89928e;font-size:var(--l12-board-copy,13px)}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:max(52px,var(--l12-board-copy,13px));line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:var(--l12-board-copy,13px);font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
+@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
 .l12-prompt-overlay{position:fixed!important;z-index:2147483600!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
 .l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:clamp(118px,19vw,258px);padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}
 .prompt-panel{position:relative;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 36px);margin:auto;padding:16px;overflow-x:hidden;overflow-y:auto}
@@ -1149,7 +1302,23 @@ function kindLabel() {
 .disaster-preparation-history{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 12px;padding:9px;border:1px solid #3c4646;background:#080c0d;text-align:left}.disaster-preparation-history>section{min-width:0;border:1px solid #394240;background:#101516}.disaster-preparation-history>section>header{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid #333c3a}.disaster-preparation-history>section>header b{font-size:var(--l12-board-copy,13px)}.disaster-preparation-history>section>header span{display:grid;width:19px;height:19px;place-items:center;background:#232a28;color:#fff;font:900 var(--l12-board-copy,13px) monospace}.disaster-preparation-history>section>div{display:flex;min-height:78px;align-items:center;gap:5px;overflow-x:auto;padding:6px}.disaster-preparation-history button{display:flex;width:112px;min-width:112px;flex-direction:column;gap:3px;padding:3px;border:2px solid #68706d;background:#080b0c;color:#fff}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:102px;height:auto;aspect-ratio:8/5}.disaster-preparation-history button span{overflow:hidden;font-size:var(--l12-board-copy,13px);font-weight:900;text-overflow:ellipsis;white-space:nowrap}.disaster-preparation-history p{margin:auto;color:#626b68;font-size:var(--l12-board-copy,13px)}.disaster-preparation-history .banned button{border-color:#a83c46;box-shadow:0 0 8px rgba(168,60,70,.22)}.disaster-preparation-history .banned>header b{color:#ef7780}.disaster-preparation-history .revealed button{border-color:#d1b76c;box-shadow:0 0 8px rgba(209,183,108,.2)}.disaster-preparation-history .revealed>header b{color:#e8cf83}.disaster-preparation-history .chosen button{border-color:#3f9d73;box-shadow:0 0 8px rgba(63,157,115,.24)}.disaster-preparation-history .chosen>header b{color:#79d2a7}.l12-prompt-overlay.preparation .waiting-panel{width:min(1100px,calc(100vw - 36px));padding:16px 20px 22px}.l12-prompt-overlay.preparation .waiting-panel>small{display:block;margin-top:12px}
 .disaster-preparation-history{grid-template-columns:minmax(260px,.8fr) minmax(420px,1.2fr)}.disaster-preparation-history button small{display:block;width:100%;overflow:hidden;color:#9ca6a1;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center;text-overflow:ellipsis;white-space:nowrap}.disaster-preparation-history .chosen button small{color:#78d1a6}
 @media(max-width:700px){.disaster-preparation-history{grid-template-columns:1fr;max-height:260px;overflow:auto}.disaster-preparation-history>section>div{min-height:68px}.disaster-preparation-history button{width:96px;min-width:96px}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:86px}}
-.initiative-race img{width:58px;height:58px;object-fit:cover;border:2px solid #666;border-radius:2px}
+.l12-prompt-overlay.initiative .prompt-panel.opening-initiative-panel{width:min(920px,calc(100vw - 36px));padding:18px}
+.initiative-opening-stage{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;min-height:214px;margin:10px 0 14px;padding-bottom:34px;isolation:isolate;overflow:hidden}
+.initiative-opening-stage article{--initiative-accent:#b4b2af;position:relative;isolation:isolate;display:grid;min-width:0;min-height:178px;align-content:end;overflow:hidden;border:2px solid color-mix(in srgb,var(--initiative-accent) 62%,#4c5553);background:linear-gradient(135deg,color-mix(in srgb,var(--initiative-accent) 28%,#11191b),#080c0d 68%);box-shadow:inset 0 0 32px rgba(0,0,0,.66);animation:initiative-opponent-enter calc(480ms * var(--l12-animation-scale,1)) cubic-bezier(.2,.8,.2,1) both}
+.initiative-opening-stage article.mine{animation-name:initiative-mine-enter}.initiative-opening-stage article.winner{border-color:#e4bd58;box-shadow:0 0 20px rgba(228,189,88,.42),inset 0 0 30px color-mix(in srgb,var(--initiative-accent) 20%,transparent)}
+.initiative-master-banner{position:absolute;z-index:-1;inset:0;width:100%;height:100%;object-fit:cover;opacity:.88;pointer-events:none}.initiative-master-wash{position:absolute;z-index:-2;inset:0;background:radial-gradient(circle at 72% 20%,color-mix(in srgb,var(--initiative-accent) 52%,transparent),transparent 58%),linear-gradient(120deg,#12191b,#050809)}
+.initiative-opening-stage article::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(0deg,rgba(2,5,6,.94),rgba(2,5,6,.08) 72%),linear-gradient(90deg,rgba(2,5,6,.45),transparent 56%);pointer-events:none}
+.initiative-master-profile{position:absolute;z-index:1;top:12px;width:66px;height:66px;object-fit:cover;border:2px solid color-mix(in srgb,var(--initiative-accent) 70%,#ddd);background:#090d0e;box-shadow:0 8px 18px #000}.initiative-opening-stage article.opponent .initiative-master-profile{left:12px}.initiative-opening-stage article.mine .initiative-master-profile{right:12px}
+.initiative-identity{position:relative;z-index:2;display:grid;min-width:0;gap:2px;padding:12px 14px;text-shadow:0 2px 7px #000}.initiative-opening-stage article.mine .initiative-identity{text-align:right}.initiative-identity small{color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.12em}.initiative-identity strong{overflow:hidden;color:#fff;font-size:max(20px,var(--l12-board-copy,13px));line-height:1.25;text-overflow:ellipsis;white-space:nowrap}.initiative-identity span{color:#d1d8d3;font-size:var(--l12-board-copy,13px);font-weight:800}
+.initiative-die{position:absolute;z-index:3;top:48%;display:grid;width:68px;justify-items:center;transform:translateY(-50%)}.initiative-opening-stage article.opponent .initiative-die{right:12px}.initiative-opening-stage article.mine .initiative-die{left:12px}.initiative-die b{color:#fff;font-size:max(58px,var(--l12-board-copy,13px));line-height:.9;text-shadow:0 4px 14px #000;animation:dice-shake calc(180ms * var(--l12-animation-scale,1)) infinite alternate}.initiative-opening-stage.settled .initiative-die b{animation:dice-land calc(320ms * var(--l12-animation-scale,1)) ease-out}.initiative-die em{margin-top:4px;padding:2px 6px;border:1px solid rgba(228,189,88,.62);background:rgba(4,7,8,.82);color:#f4d778;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900;white-space:nowrap}
+.initiative-clash{position:absolute;z-index:5;left:50%;top:43%;display:grid;width:62px;height:62px;place-items:center;border:2px solid #e5c56f;background:#0b0e0f;box-shadow:0 0 0 5px rgba(4,7,8,.72),0 0 28px rgba(229,197,111,.42);color:#fff0bd;transform:translate(-50%,-50%) rotate(45deg);animation:initiative-clash-enter calc(420ms * var(--l12-animation-scale,1)) calc(240ms * var(--l12-animation-scale,1)) cubic-bezier(.2,.8,.2,1) both}.initiative-clash span{font-size:max(16px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.08em;transform:rotate(-45deg)}
+.initiative-skip{position:absolute;z-index:7;right:0;bottom:0;box-sizing:border-box;min-width:96px;min-height:44px;padding:7px 12px;border:1px solid #7e8985;background:#111718;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900}.initiative-skip:hover,.initiative-skip:focus-visible{border-color:#70d7df;background:#174e54}
+.initiative-status{position:absolute;z-index:6;left:50%;bottom:2px;max-width:calc(100% - 210px);overflow:hidden;padding:6px 12px;border:1px solid #8c7650;background:rgba(7,10,11,.94);box-shadow:0 6px 18px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);text-align:center;text-overflow:ellipsis;white-space:nowrap;transform:translateX(-50%)}
+.initiative-opening-stage.skipped article,.initiative-opening-stage.skipped .initiative-clash{animation:none!important}.initiative-opening-stage.skipped .initiative-die b{animation:none!important}
+.initiative-resolution-message{position:fixed;z-index:2147483650;left:50%;top:50%;max-width:min(520px,calc(100vw - 32px));padding:14px 22px;border:2px solid #e4bd58;background:rgba(7,10,11,.96);box-shadow:0 0 32px rgba(228,189,88,.34),0 14px 34px #000;color:#fff2c7;font-size:max(22px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.06em;text-align:center;transform:translate(-50%,-50%);pointer-events:none!important}.initiative-result-enter-active,.initiative-result-leave-active{transition:opacity calc(160ms * var(--l12-animation-scale,1)) ease,transform calc(160ms * var(--l12-animation-scale,1)) ease}.initiative-result-enter-from,.initiative-result-leave-to{opacity:0;transform:translate(-50%,-45%) scale(.96)}
+@keyframes initiative-opponent-enter{from{opacity:0;transform:translateX(-34px);filter:brightness(.4)}to{opacity:1;transform:none;filter:none}}@keyframes initiative-mine-enter{from{opacity:0;transform:translateX(34px);filter:brightness(.4)}to{opacity:1;transform:none;filter:none}}@keyframes initiative-clash-enter{from{opacity:0;transform:translate(-50%,-50%) rotate(45deg) scale(.45)}to{opacity:1;transform:translate(-50%,-50%) rotate(45deg) scale(1)}}
+@media(prefers-reduced-motion:reduce){.initiative-opening-stage article,.initiative-clash,.initiative-die b{animation:none!important}.initiative-result-enter-active,.initiative-result-leave-active{transition:none!important}}
+@media(max-width:900px) and (max-height:500px){.l12-prompt-overlay.initiative .prompt-panel.opening-initiative-panel{padding:10px}.initiative-opening-stage{min-height:132px;margin:4px 0 7px;padding-bottom:28px;gap:8px}.initiative-opening-stage article{min-height:104px}.initiative-master-profile{top:7px;width:44px;height:44px}.initiative-opening-stage article.opponent .initiative-master-profile{left:7px}.initiative-opening-stage article.mine .initiative-master-profile{right:7px}.initiative-identity{padding:7px 9px}.initiative-identity strong{font-size:max(15px,var(--l12-board-copy,13px))}.initiative-die{top:45%;width:48px}.initiative-opening-stage article.opponent .initiative-die{right:6px}.initiative-opening-stage article.mine .initiative-die{left:6px}.initiative-die b{font-size:max(42px,var(--l12-board-copy,13px))}.initiative-die em{font-size:var(--l12-board-micro,9px)}.initiative-clash{top:40%;width:42px;height:42px}.initiative-clash span{font-size:var(--l12-board-copy,13px)}.initiative-status{bottom:0;max-width:calc(100% - 190px);padding:4px 8px}.initiative-skip{min-width:88px;min-height:44px;padding:5px 8px}.l12-prompt-overlay.initiative .prompt-choices{min-height:52px}.l12-prompt-overlay.initiative .prompt-choices>button{min-height:48px}}
 .l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}
 .l12-prompt-overlay.mobile-safe-overlay{inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px)!important;width:var(--l12-viewport-width,100vw)!important;height:var(--l12-viewport-height,100vh)!important;padding:8px!important;overflow:hidden}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel,.l12-prompt-overlay.mobile-safe-overlay .waiting-panel{box-sizing:border-box;max-width:100%!important;max-height:100%;overflow:auto}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel{padding:12px}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip{position:relative;max-height:54vh;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;scroll-behavior:smooth;scrollbar-width:none;touch-action:pan-x}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip::-webkit-scrollbar{display:none}.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto!important;width:auto!important;height:auto!important;padding:0!important}
 /* Natural landscape belongs to the browser. Rotated candidate/history rows

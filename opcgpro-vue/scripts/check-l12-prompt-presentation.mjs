@@ -53,17 +53,20 @@ function narrativeWithinScrollableBody(text) {
  if(headers.length!==1 || bodies.length!==1)return false
  const narrative=nodes.filter(node=>classes(node).includes('prompt-situation'))
  return narrative.length===1 && bodies[0].children.includes(narrative[0])
-  && narrative[0].props.some(prop=>prop.type===7 && prop.name==='if' && prop.exp?.content==='promptSituation')
+  && narrative[0].props.some(prop=>prop.type===7 && prop.name==='if' && prop.exp?.content==='promptSituation && !isInitiative')
   && narrative[0].children.some(node=>node.type===5 && node.content.content==='isEffectDecision ? decisionEffectText : promptSituation')
   && !headers[0].children.some(node=>node.type===1 && classes(node).includes('effect-decision-text'))
 }
 assert(narrativeWithinScrollableBody(source),'Complete chain narrative must belong to the existing scroll body, not the unbounded header')
-const narrative=source.match(/<p v-if="promptSituation" class="prompt-situation effect-decision-text l12-effect-body">[\s\S]*?<\/p>/)?.[0]
+const narrative=source.match(/<p v-if="promptSituation && !isInitiative" class="prompt-situation effect-decision-text l12-effect-body">[\s\S]*?<\/p>/)?.[0]
 assert(narrative,'Preserve the single full narrative binding')
 assert(!narrativeWithinScrollableBody(source.replace(narrative,'').replace('<header :class="{ \'effect-decision-header\': isEffectDecision }">',`<header :class="{ 'effect-decision-header': isEffectDecision }">${narrative}`)),'Header regression must be rejected')
 assert(!narrativeWithinScrollableBody(source.replace(narrative,'')),'Deleting the narrative must not pass containment')
 assert(!narrativeWithinScrollableBody(source.replace(narrative,narrative+narrative)),'Duplicating the narrative must not pass containment')
 assert(!narrativeWithinScrollableBody(source.replace('isEffectDecision ? decisionEffectText : promptSituation','promptTitle')),'A shortened title must not replace the full narrative')
+for(const invalidCondition of ['promptSituation && isInitiative','promptSituation && !isEffectDecision','promptSituation && false'])
+ assert(!narrativeWithinScrollableBody(source.replace('v-if="promptSituation && !isInitiative"',`v-if="${invalidCondition}"`)),
+  'Only the separate initiative stage may omit the full scrollable narrative: '+invalidCondition)
 assert(source.includes('.prompt-choice-body>.prompt-situation,.prompt-choice-body>.prompt-choices{flex:0 0 auto}'),'Scrollable text and choices must retain intrinsic height')
 assert(source.includes('.prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:1fr'))
 assert(source.includes('height:auto;min-height:82px!important;max-height:none;overflow:visible'), 'Equal options must grow together without clipping consequences')

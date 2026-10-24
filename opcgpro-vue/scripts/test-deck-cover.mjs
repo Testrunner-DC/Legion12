@@ -86,6 +86,7 @@ assert.equal(validateOptionalDeckCoverCardIds({ coverCardIds: ['L-12', 'L-12'] }
 
 const source = relative => readFileSync(new URL(relative, import.meta.url), 'utf8')
 const coverComponent = source('../src/l12/DeckCover.vue')
+const specialAssets = source('../src/l12/specialAssets.ts')
 assert.doesNotMatch(coverComponent, /\.deck-cover--compact\{height:(?:104|96)px/,
   'compact hosts must preserve the 12:5 banner instead of fixed-height cropping')
 assert.match(coverComponent, /bottom:0;right:-2%/,
@@ -113,10 +114,15 @@ for (const masterId of deckBannerMasterIds) {
   assert.deepEqual([...banner.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${masterId} must remain a PNG`)
   assert.equal(banner.readUInt32BE(16), 1200, `${masterId} banner width must be 1200`)
   assert.equal(banner.readUInt32BE(20), 500, `${masterId} banner height must be 500`)
-  assert.match(coverComponent, new RegExp(`['\"]${masterId}['\"]`), `${masterId} must be in the formal banner allowlist`)
+  assert.match(specialAssets, new RegExp(`['\"]${masterId}['\"]`), `${masterId} must be in the shared formal banner allowlist`)
+  assert.doesNotMatch(coverComponent, new RegExp(`['\"]${masterId}['\"]`), `${masterId} must not duplicate the shared allowlist in DeckCover`)
 }
 assert.ok(deckBannerBytes > 0, 'formal banner assets must not be empty')
-assert.doesNotMatch(coverComponent, /['\"]S01-02M2['\"]/, 'the non-selectable revived Osiris must keep the fallback path')
+assert.doesNotMatch(specialAssets, /['\"]S01-02M2['\"]/, 'the non-selectable revived Osiris must keep the fallback path')
+assert.match(specialAssets, /export function masterDeckBannerUrl\(masterId\?: string\)/,
+  'the shared asset registry must expose the formal master banner resolver')
+assert.match(specialAssets, /deploymentPath\(`\/assets\/l12\/deck-banners\/\$\{normalized\}\.png`\)/,
+  'the shared master banner resolver must retain deployment-base ownership')
 for (const contract of [
   "variant?: 'regular' | 'featured' | 'compact'",
   'metaPrefix?: string',
@@ -138,7 +144,8 @@ for (const contract of [
   'bottom:0;right:-2%',
   'transform-origin:100% 100%',
   '.deck-cover--compact{height:auto;aspect-ratio:12/5',
-  "import { deploymentPath } from './deploymentBase'",
+  "import { masterDeckBannerUrl as resolveMasterDeckBannerUrl } from './specialAssets'",
+  'resolveMasterDeckBannerUrl(normalizedMasterId.value)',
   'deck-cover__master-banner',
   'loading="lazy"',
   'fetchpriority="low"',

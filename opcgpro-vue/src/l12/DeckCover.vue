@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import CardImage from './CardImage.vue'
-import { deploymentPath } from './deploymentBase'
 import { getFactionPresentation } from './factionPresentation'
+import { masterDeckBannerUrl as resolveMasterDeckBannerUrl } from './specialAssets'
 import { selectDeckCoverCardIds, validateDeckCoverCardIds } from './deckCover'
 import type { DeckCard } from './decks'
-
-const deckBannerMasterIds = new Set([
-  'S01-01M1', 'S01-01M2', 'S01-02M1', 'S01-02M3', 'S01-03M1', 'S01-03M2', 'S01-04M1', 'S01-04M2',
-  'S02-01M1', 'S02-02M1', 'S02-03M1', 'S02-04M1', 'S02-05M1', 'S02-05M2', 'S02-06M1', 'S02-06M2',
-  'ST01-M1', 'ST02-M1', 'ST03-M1', 'ST04-M1', 'ST05-M1', 'ST06-M1',
-])
 
 const props = withDefaults(defineProps<{
   name: string
@@ -54,9 +48,8 @@ const coverStyle = computed(() => ({ '--deck-cover-accent': presentation.value.c
 const normalizedMasterId = computed(() => props.masterId.trim().toLocaleUpperCase('en-US'))
 const failedBannerId = ref('')
 watch(normalizedMasterId, () => { failedBannerId.value = '' })
-const masterBannerUrl = computed(() => deckBannerMasterIds.has(normalizedMasterId.value)
-  && failedBannerId.value !== normalizedMasterId.value
-  ? deploymentPath(`/assets/l12/deck-banners/${normalizedMasterId.value}.png`)
+const masterBannerUrl = computed(() => failedBannerId.value !== normalizedMasterId.value
+  ? resolveMasterDeckBannerUrl(normalizedMasterId.value)
   : '')
 function rejectMasterBanner() { failedBannerId.value = normalizedMasterId.value }
 </script>

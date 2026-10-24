@@ -14,7 +14,7 @@ if (fixtureStart < 'const entry = `'.length || fixtureEnd < fixtureStart)
   throw new Error('Unable to locate the sanitized GamePage fixture in verify-batch253-visual.mjs')
 
 const fixtureSetup = fixtureSource.slice(fixtureStart, fixtureEnd)
-const entry = "import '/src/l12/mobileViewport.css';\nimport GlobalBugFeedback from '/src/l12/site/GlobalBugFeedback.vue';\nimport { useLandscapeViewport } from '/src/l12/mobileViewport.ts';\nimport { ref as viewportRef } from 'vue';\n" + fixtureSetup + `
+const entry = "import '/src/l12/mobileViewport.css';\nimport GlobalBugFeedback from '/src/l12/site/GlobalBugFeedback.vue';\nimport { useLandscapeViewport } from '/src/l12/mobileViewport.ts';\nimport { audioPreferences, syncAudioStore } from '/src/l12/audioPreferences.ts';\nimport { ref as viewportRef } from 'vue';\n" + fixtureSetup + `
 // Visual QA may run in a desktop browser with a phone-sized viewport.  This flag
 // only affects the synthetic preview, allowing it to exercise the production
 // touch-landscape branch without changing application runtime detection.
@@ -326,6 +326,35 @@ if(deathMode!==null)setTimeout(()=>{
 },800)
 if(params.has('canvas'))window.__battleDockFixture={state:l12State}
 const previewState={game:l12State.game,room:l12State.room,socket:l12State.socket,rankedClock:l12State.rankedClock}
+if(params.has('opening-fixture')){
+ const viewer=Math.max(0,Math.min(1,Number(params.get('opening-you')||0)))
+ const role=params.get('opening-role')==='waiting'?'waiting':'owner'
+ const initialPhase=params.get('opening-phase')||'Initiative'
+ const initialRolls=params.get('opening-rolls')==='zero'?[0,0]:[6,3]
+ const initialWinner=role==='owner'?viewer:1-viewer
+ function initiativePrompt(winner,matchId){return {promptId:'fixture-initiative-'+matchId,playerIndex:winner,kind:'initiative',text:'决定先后攻',validChoices:['first','second'],minChoose:1,maxChoose:1,choiceLabels:{first:'先攻',second:'后攻'},data:{},createdRevision:1,controller:winner}}
+ function publishOpening({matchId=previewState.game.matchId,phase=previewState.game.phase,rolls=previewState.game.initiativeRolls,winner=previewState.game.diceWinner,firstPlayer=previewState.game.firstPlayer,revision=(Number(previewState.game.revision)||0)+1}={}){
+  const initiative=phase==='Initiative'
+  const owner=winner===viewer
+  const next={...previewState.game,matchId,phase,revision,you:viewer,activePlayer:firstPlayer,firstPlayer,diceWinner:winner,initiativeRolls:[...rolls],
+   prompts:initiative&&owner?[initiativePrompt(winner,matchId)]:[],
+   waitingPrompt:initiative&&!owner?{playerIndex:winner,playerName:previewState.game.players[winner]?.name||'对手',kind:'initiative',waitingSummary:'对手正在选择先攻或后攻'}:null}
+  previewState.game=next;l12State.game=next
+  return next
+ }
+ const motion=params.get('motion')||'standard'
+ audioPreferences.animation=['standard','fast','off'].includes(motion)?motion:'standard';syncAudioStore()
+ publishOpening({matchId:'opening-A',phase:initialPhase,rolls:initialRolls,winner:initialWinner,firstPlayer:initialWinner,revision:1})
+ window.__openingFixture={
+  state(){return {matchId:previewState.game.matchId,phase:previewState.game.phase,revision:previewState.game.revision,rolls:[...previewState.game.initiativeRolls],winner:previewState.game.diceWinner,firstPlayer:previewState.game.firstPlayer,you:previewState.game.you}},
+  publish:publishOpening,
+  setRolls(rolls){return publishOpening({rolls,revision:(Number(previewState.game.revision)||0)+1})},
+  revise(){return publishOpening({revision:(Number(previewState.game.revision)||0)+1})},
+  sameMatchPhase(phase){return publishOpening({phase,revision:(Number(previewState.game.revision)||0)+1})},
+  nextMatch(matchId,phase='Initiative',{rolls=[6,3],winner=viewer,firstPlayer=winner}={}){return publishOpening({matchId,phase,rolls,winner,firstPlayer,revision:1})},
+  setMotion(next){audioPreferences.animation=next;syncAudioStore();return document.documentElement.dataset.l12Animation},
+ }
+}
 window.__osirisFixture={start({gameOver=false}={}){
  const current=previewState.game
  const sequence=Math.max(0,...(current.recentEvents||[]).map(event=>event.sequence||0))+1
@@ -355,6 +384,16 @@ window.setInterval(()=>{
 const app=createApp({setup(){ if(params.has('canvas'))useLandscapeViewport(viewportRef(true)); return ()=>params.has('canvas')?h('div',{class:'l12-landscape-surface'},[h(GamePage),h(GlobalBugFeedback)]):h(GamePage) }})
 app.use(createRouter({history:createMemoryHistory(),routes:[]}))
 app.mount('#app')
+if(params.has('opening-fixture')&&params.has('opening-underlay')){
+ window.__openingUnderlayClicks=0
+ const underlay=document.createElement('button')
+ underlay.id='opening-underlay'
+ underlay.textContent='底层操作按钮'
+ underlay.style.cssText='position:fixed;z-index:5000;left:50%;top:50%;min-width:180px;min-height:52px;transform:translate(-50%,-50%);background:#174e54;color:#fff;border:2px solid #70d7df;font-weight:900'
+ underlay.addEventListener('click',()=>{window.__openingUnderlayClicks+=1})
+ document.body.appendChild(underlay)
+ window.__openingFixture.unmount=()=>app.unmount()
+}
 `
 
 const portArgument = process.argv.find((value, index, values) => values[index - 1] === '--port')

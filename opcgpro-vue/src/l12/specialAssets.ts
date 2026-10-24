@@ -6,6 +6,12 @@ const assetRoot = '/assets/l12/special'
 // after the file has been deployed.
 const masterProfileAssetRevision = '20260903-2'
 
+const deckBannerMasterIds = new Set([
+  'S01-01M1', 'S01-01M2', 'S01-02M1', 'S01-02M3', 'S01-03M1', 'S01-03M2', 'S01-04M1', 'S01-04M2',
+  'S02-01M1', 'S02-02M1', 'S02-03M1', 'S02-04M1', 'S02-05M1', 'S02-05M2', 'S02-06M1', 'S02-06M2',
+  'ST01-M1', 'ST02-M1', 'ST03-M1', 'ST04-M1', 'ST05-M1', 'ST06-M1',
+])
+
 const roundCardAssets: Record<string, string> = {
   'S01-0216': 'Round_S01-0216-卡诺匹斯箱.png',
   'S01-0217': 'Round_S01-0217-卡诺匹斯罐一.png',
@@ -54,6 +60,13 @@ export const transparentSiteLogoUrl = `${assetRoot}/logo/main-trans.png`
 
 export function masterProfileUrl(masterId?: string, fallback?: string) {
   return masterId ? `${assetRoot}/master/${masterId}.png?v=${masterProfileAssetRevision}` : fallback
+}
+
+export function masterDeckBannerUrl(masterId?: string) {
+  const normalized = masterId?.trim().toLocaleUpperCase('en-US') ?? ''
+  return deckBannerMasterIds.has(normalized)
+    ? deploymentPath(`/assets/l12/deck-banners/${normalized}.png`)
+    : ''
 }
 
 export function roundCardUrl(cardId?: string, fallback?: string) {
