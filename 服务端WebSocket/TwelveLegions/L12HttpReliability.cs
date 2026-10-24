@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace TwelveLegions.Server;
 
@@ -19,6 +20,7 @@ internal sealed class L12HttpTrafficGuard
     }
 
     internal const int AnonymousReadLimit = 120;
+    internal const int PublicMediaReadLimit = 600;
     internal const int AccountReadLimit = 240;
     internal const int MutationLimit = 60;
     internal const int AuthenticationLimit = 30;
@@ -45,7 +47,7 @@ internal sealed class L12HttpTrafficGuard
 
     internal L12HttpRateDecision Acquire(HttpRequest request, string clientIdentity, string? accountId)
     {
-        var (policy, limit, forceClientPartition) = Classify(request.Method, request.Path);
+        var (policy, limit, forceClientPartition) = Classify(request);
         if (policy == "read" && string.IsNullOrWhiteSpace(accountId))
         {
             policy = "anonymous-read";
@@ -121,8 +123,10 @@ internal sealed class L12HttpTrafficGuard
     private static int RetryAfter(DateTimeOffset now, DateTimeOffset resetAt)
         => Math.Max(1, (int)Math.Ceiling((resetAt - now).TotalSeconds));
 
-    private static (string Policy, int Limit, bool ForceClientPartition) Classify(string method, PathString path)
+    private static (string Policy, int Limit, bool ForceClientPartition) Classify(HttpRequest request)
     {
+        var method = request.Method;
+        var path = request.Path;
         if (!path.StartsWithSegments("/api") || HttpMethods.IsOptions(method))
             return ("unlimited", int.MaxValue, true);
         if (path.StartsWithSegments("/api/telemetry"))
@@ -132,9 +136,48 @@ internal sealed class L12HttpTrafficGuard
             return ("authentication", AuthenticationLimit, true);
         if (IsExpensive(method, path))
             return ("expensive", ExpensiveLimit, false);
+        if (IsPublicMediaContentGet(request))
+            return ("public-media", PublicMediaReadLimit, true);
         if (!HttpMethods.IsGet(method) && !HttpMethods.IsHead(method))
             return ("mutation", MutationLimit, false);
         return ("read", AccountReadLimit, false);
+    }
+
+    private static bool IsPublicMediaContentGet(HttpRequest request)
+    {
+        // Only canonical content URLs emitted by SiteMediaUrl receive a separate,
+        // client-bound allowance. Metadata, uploads and malformed paths keep their original policy.
+        const string prefix = "/api/site/media/";
+        if (!HttpMethods.IsGet(request.Method) || request.Path.Value is not { } value
+            || !value.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        // Path is already decoded. Preserve the raw path boundary so encoded segments
+        // cannot become canonical media URLs merely through server normalization.
+        var rawTarget = request.HttpContext.Features.Get<IHttpRequestFeature>()?.RawTarget;
+        if (!string.IsNullOrEmpty(rawTarget))
+        {
+            var query = rawTarget.IndexOf('?');
+            var rawPath = query < 0 ? rawTarget.AsSpan() : rawTarget.AsSpan(0, query);
+            if (!rawPath.SequenceEqual(value)) return false;
+        }
+        var remaining = value.AsSpan(prefix.Length);
+        var separator = remaining.IndexOf('/');
+        if (separator != 32 || !IsLowerHex(remaining[..separator])) return false;
+        remaining = remaining[(separator + 1)..];
+        separator = remaining.IndexOf('/');
+        if (separator < 0) return false;
+        var variant = remaining[..separator];
+        if (!variant.SequenceEqual("desktop") && !variant.SequenceEqual("mobile")
+            && !variant.SequenceEqual("thumbnail")) return false;
+        var fileName = remaining[(separator + 1)..];
+        return fileName.Length == 69 && fileName.EndsWith(".webp", StringComparison.Ordinal)
+            && IsLowerHex(fileName[..64]);
+    }
+
+    private static bool IsLowerHex(ReadOnlySpan<char> value)
+    {
+        foreach (var character in value)
+            if (!(character is >= '0' and <= '9' or >= 'a' and <= 'f')) return false;
+        return true;
     }
 
     private static bool IsExpensive(string method, PathString path)
