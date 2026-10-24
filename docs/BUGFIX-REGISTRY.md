@@ -2,6 +2,7 @@
 
 ## OPS-20261024-CI-HOST-COPY｜发布宿主绑定与唯一入口普通复制
 
+- 86067c05真实Ubuntu23宿主测试通过；后续新增夹具的原生输出留存断言失败（run40059855492，原摘要保留），不是应用已执行的证据。夹具改用process.exitCode，避免[Node文档所述强制退出截断异步stdout/stderr](https://nodejs.org/docs/latest-v22.x/api/process.html#processexitcode)风险；原全量输出／退出码／摘要断言不放宽，并补有界合成失败定位。本地5组与单叶Batch通过，是否解决真实Linux失败待新run；不冒旧前端根因。自定义入口误用不存在的参数在测试前拒绝保留，改现有env不改产品。
 - 实际ae1da5bc CI在派发前0job失败：本次新job.env错误引用runner.temp（[官方作用域表](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability)该层不提供runner）。只将配置放到可用的步骤env，完整13项经GITHUB_ENV导出；新实际步骤体／后续进程4组、12反例并拒绝真实失败版本、三叶标准Batch通过。原失败保留，不把本地通过或这次启动纠正冒完整Linux资格，也不是旧CI前端失败的已证原因。
 - 目标5既有入口的Windows假设阻止Linux资格；仅工具外围修当前宿主可执行文件／runner.temp生成根、单标准构建原生失败透传、九处原生文件参数与Python定位及输出物理guard。原C禁写、文件存在、精确包／runtime／卡图哈希、150MiB预算、排空和旧数据规则均不变。
 - 三复制入口统一普通文件组件，排除原dependency／dist／cards目录但不遍历其跳转，其他链接／非空目标／源目标物理重叠拒绝。新增祖先跳转真RED（工具输出01df55，无Tee文件）在源根物理解析后通过19场；9真实原生参数往返、原发布缓存／dirty／篡改／失效回归通过。23宿主／原23存储／3实际包装体退出码／10破坏反例保留，两个新增QA错误与旧literal失败区分，不降低门槛。

@@ -83,7 +83,9 @@ try {
     const payload = Buffer.from(scenario.tail).toString('base64')
     // Only npm is replaced. The real workflow body runs in its own actual
     // PowerShell process and consumes a native Node exit, stdout and stderr.
-    const native = `process.stdout.write('native fixture stdout\\n');process.stderr.write(Buffer.from(process.env.L12_STEP_PAYLOAD,'base64').toString());process.exit(${scenario.code})`
+    // Pipe writes can be asynchronous on POSIX. Let the child flush them before
+    // exiting, so this fixture tests the wrapper rather than truncating its input.
+    const native = `process.stdout.write('native fixture stdout\\n');process.stderr.write(Buffer.from(process.env.L12_STEP_PAYLOAD,'base64').toString());process.exitCode=${scenario.code}`
     const program = `function npm { & ${quote(process.execPath)} -e ${quote(native)} }\n` + actual
     const result = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(program, 'utf16le').toString('base64')], {
       env: { ...process.env, L12_ARTIFACT_ROOT: directory, L12_STEP_PAYLOAD: payload }, encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 100000,
@@ -92,7 +94,8 @@ try {
     assert.equal(result.status, scenario.code, result.stderr || result.stdout)
     const log = fs.readFileSync(path.join(directory, 'frontend-native.log'), 'utf8')
     assert(log.includes('native fixture stdout'))
-    assert(log.replace(/\r\n/g, '\n').includes(scenario.tail), 'raw log retains all native lines; host newline convention is not data loss')
+    assert(log.replace(/\r\n/g, '\n').includes(scenario.tail),
+      `raw log retains all native lines; exit=${scenario.code}; expected=${scenario.tail.length}; log=${log.length}; synthetic tail=${JSON.stringify(log.slice(-240))}`)
     const annotation = result.stdout.split(/\r?\n/).find(line => line.startsWith('::error title=L12 frontend actual failure::'))
     if (scenario.code === 0) assert.equal(annotation, undefined)
     else {
