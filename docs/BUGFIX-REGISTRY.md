@@ -2,6 +2,7 @@
 
 ## QA-20261024-WORKLOAD-CODE-OWNERSHIP｜消除最后11份历史执行源码依赖
 
+- 提交后最终接受：5229270e干净标准前端Batch实际exit0／性能全链／361 UI／类型／双Vite通过，5AE6D84B；11源Git blob／干净checkout／真实Windows autocrlf=true导出字节同C59361F9。无.git120文件真实镜像的51归属与三种actual adapter导入成功、旧artifact执行读取／网络／子进程均拒，篡改副本拒绝，F210DAEB。最终77绑定CB8628；3171文件376823316B已结束副本精确删除，源码／共享依赖／所有原证据保留。唯一qa-owned-workload-20261024/main-acceptance.json；无产品／两服／维护写入，Git同步另见同目录回执。
 - 共因是F737原核心、R6传递依赖和独立测量入口仍加载历史artifact代码，单改顶层入口不闭合。全族11份264511B原代码逐SHA读取后，8份原字节纳仓库，3份13处仅代码位置／数据根绑定衍生可逆回原SHA；不读取真实账本／凭据／业务数据。normal/local共用精确重绑器，原F737 SHA、3秒／900秒、30＋10、隐私与清退不改；R6数据和代码根分离，防止stop/output随源码搬进仓库。
 - 全同类扫描覆盖F737双import/re-export、顶层selector/R6 hash、R6 ledger／boundaries／pure／TS、两协议转换、local qualifier和wire测量独立消费者。归属86源／0旧执行／19历史证据；catalogue有界80→96，单叶256KiB及运行准入不变；实际库／依赖／凭据和历史证据仍外置，不冒完整CI或跨平台资格。
 - 新77例覆盖每叶篡改、逆还原、丢失／重复锚点、两R6根回退、真实三fresh-process导入与all-bottom共享选择器，并拒历史执行／网络／子进程；归属51、原normal136、local49＋12＋5、实际Windows执行21、测量纯11通过。独审无实质阻断。原normal dirty-tree假失败保留，防改写改以运行前后两源SHA核对；冻结selector EOF空行原字节保留。提交后干净镜像和标准Batch尚待，不将本地专项冒线上性能或部署。
