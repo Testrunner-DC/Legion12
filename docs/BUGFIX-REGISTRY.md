@@ -2,6 +2,8 @@
 
 ## QA-20261024-FROZEN-GUARD-OWNERSHIP｜冻结原字节纳管与默认来源闭合
 
+- 最终补充：a08e3bb4标准Focused实际通过，已提交blob／Windows过滤／干净副本两Python原字节全等。首次stage失败来自旧负例的literal路径先验早于Git，原件保留；92302ced只将无Git直接验证与旧parser准确首因分开，不改变任何当前镜像／运行断言。真实最终镜像47例／87文件成功、坏源拒绝、夹具精确清退。唯一Main回执引用C9236E0E／103C68BB／5495B10F，150MB级可再生临时副本已删，未部署或冒远端已同步。
+
 - 历史源原先仍在执行清单中，normal默认loader、两个执行入口和terminal回归均读artifact。现新增仓库原字节17107B／549BC守卫，正常监督器只一行默认路径改str(sibling.resolve())；原阈值、deadline、worker/reap、行格式及编译执行均保，新normal8CE69E70同时重绑三个消费者。运行时仍显式传已核remote frozen-guard.py，非线上换包。
 - 校验器强核仓库guard与原runtime SHA、normal实际字节与三pin四方一致；坏字节、错误pin拒绝。旧源只保不可变证据，禁止execution标签；标准ownership和默认loader不读它，显式--verify-local-inputs仍强核所有19输入，不能为可移植静默跳过。两Python根锚定-text，防Git自动换行破坏源码hash。标准隔离copy沿现有sources清单含新guard，无第二执行／持久化体系。
 - Main47归属、26runtime、15qualification、40terminal Python、70normal原自测均真实通过；其中29受控CLI子进程、旧artifact读拒绝hook、资源／deadline／坏输出／真实子进程清退保留。Windows externalPosixSigtermVerified=false，不冒Linux服务／cgroup／30＋10。独立只读复核无实质阻断，提交后blob／过滤字节与镜像probe需另真实读回。
