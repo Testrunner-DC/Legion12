@@ -133,11 +133,32 @@ assert.equal(selector.selectLegalCommandWithAllBottom({playerIndex:0},invalid,{}
 assert.equal(legacyReads,0);assert.equal(networkCalls,0);assert.equal(childProcesses,0)
 console.log(JSON.stringify({status:'passed',mode,actualModuleLoaded:true,allBottomActualSelectorPassed:true,legacyReads,networkCalls,childProcesses,sourceReads}))
 `
-const root=path.join('D:/GPT/Legion12/cache/primary/qa-owned-workload-20261024','source-test-'+crypto.randomUUID())
+function sourceTestRoot(env,platform,id,{directoryExists=file=>fs.existsSync(file)&&fs.statSync(file).isDirectory()}={}){
+ const filesystem=platform==='win32'?path.win32:path.posix
+ const base=env.L12_WORK_CACHE??(platform==='win32'?'D:/GPT/Legion12/cache/primary/qa-owned-workload-20261024':env.RUNNER_TEMP)
+ assert.ok(typeof base==='string'&&filesystem.isAbsolute(base),'EXPLICIT_ABSOLUTE_WORKLOAD_TEST_CACHE_REQUIRED')
+ if(platform==='win32')assert.match(base,/^[A-Za-z]:[\\/]/,'DRIVE_QUALIFIED_WORKLOAD_TEST_CACHE_REQUIRED')
+ if(platform!=='win32'&&env.L12_WORK_CACHE===undefined)
+  assert.ok(directoryExists(base),'RUNNER_TEMP_MUST_BE_EXISTING_DIRECTORY')
+ assert.match(id,/^[a-f0-9-]{36}$/)
+ return filesystem.join(base,'source-test-'+id)
+}
+const syntheticId='00000000-0000-0000-0000-000000000001'
+check(()=>assert.equal(sourceTestRoot({},'win32',syntheticId),path.win32.join('D:/GPT/Legion12/cache/primary/qa-owned-workload-20261024','source-test-'+syntheticId)))
+check(()=>assert.equal(sourceTestRoot({L12_WORK_CACHE:'E:/accepted-cache'},'win32',syntheticId),path.win32.join('E:/accepted-cache','source-test-'+syntheticId)))
+check(()=>assert.equal(sourceTestRoot({RUNNER_TEMP:'/runner/tmp'},'linux',syntheticId,{directoryExists:()=>true}),'/runner/tmp/source-test-'+syntheticId))
+check(()=>assert.throws(()=>sourceTestRoot({},'linux',syntheticId),/EXPLICIT_ABSOLUTE_WORKLOAD_TEST_CACHE_REQUIRED/))
+check(()=>assert.throws(()=>sourceTestRoot({L12_WORK_CACHE:'relative-cache',RUNNER_TEMP:'/runner/tmp'},'linux',syntheticId),/EXPLICIT_ABSOLUTE_WORKLOAD_TEST_CACHE_REQUIRED/))
+check(()=>assert.throws(()=>sourceTestRoot({L12_WORK_CACHE:''},'win32',syntheticId),/EXPLICIT_ABSOLUTE_WORKLOAD_TEST_CACHE_REQUIRED/))
+check(()=>assert.throws(()=>sourceTestRoot({RUNNER_TEMP:'/missing/runner'},'linux',syntheticId,{directoryExists:()=>false}),/RUNNER_TEMP_MUST_BE_EXISTING_DIRECTORY/))
+check(()=>assert.throws(()=>sourceTestRoot({RUNNER_TEMP:'/runner-file'},'linux',syntheticId,{directoryExists:()=>false}),/RUNNER_TEMP_MUST_BE_EXISTING_DIRECTORY/))
+for(const base of ['\\cache','/cache'])check(()=>assert.throws(()=>sourceTestRoot({L12_WORK_CACHE:base},'win32',syntheticId),/DRIVE_QUALIFIED_WORKLOAD_TEST_CACHE_REQUIRED/))
+check(()=>assert.equal(sourceTestRoot({L12_WORK_CACHE:'/explicit/new-cache'},'linux',syntheticId,{directoryExists:()=>{throw new Error('DO_NOT_REQUIRE_PREEXISTING_EXPLICIT_CACHE')}}),'/explicit/new-cache/source-test-'+syntheticId))
+const root=sourceTestRoot(process.env,process.platform,crypto.randomUUID())
 execFileSync(process.env.L12_PWSH||'pwsh',['-NoProfile','-NonInteractive','-Command',
  '. $env:L12_WORKLOAD_GUARD; $null=Assert-L12GeneratedPath -Path $env:L12_WORKLOAD_TEST_ROOT -Purpose "workload source import acceptance"'],
  {windowsHide:true,timeout:15000,env:{...process.env,L12_WORKLOAD_GUARD:path.join(REPO,'ops/windows/L12GeneratedStorage.ps1'),L12_WORKLOAD_TEST_ROOT:root}})
-assert.ok(!fs.existsSync(root));fs.mkdirSync(root)
+assert.ok(!fs.existsSync(root));fs.mkdirSync(root,{recursive:true})
 const generated=[],imports=[]
 try{
  for(const [mode,source]of [['normal-prepared',normal.source],['normal-executable',executable.source],['local',local.source]]){

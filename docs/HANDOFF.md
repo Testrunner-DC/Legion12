@@ -1,5 +1,10 @@
 # 十二军团简短交接
 
+## 2026-10-24 QA宿主临时根尾项｜不把Windows通过冒完整CI
+
+- 继续实际CI入口核查确认workflow为ubuntu，新的source-import自测不能依赖D父目录已经存在。只改该自测根选择：Windows仍默认D，显式绝对L12_WORK_CACHE优先；非Windows只接受显式cache或现存目录RUNNER_TEMP，拒缺失／文件／相对输入和Windows无盘符路径；物理guard先于recursive创建，不默认C。原77＋11路径边界共88、3真实Windows新进程导入通过，唯一qa-owned-workload-20261024/source-root-portability-final.log；Linux路径只是纯输入反例，不冒Linux执行或canonical CI出包已过。
+- 动效第二片已独读三叶、250报告及全部3图、10源实核，17组250/250专项接受；35console／34本地可选异画失败及进程枚举拒绝保留。来源写/运行租约已明确结束，全冻结待Main干净标准Batch／类型／双构建，不将开局三草稿混入；唯一legion-entry-presentation-20261024/main-source-acceptance.json，尚未同步／部署。
+
 ## 2026-10-24 QA负载闭包最终接收｜干净Batch与真实无Git导入通过
 
 - 5229270e提交后，11源Git blob／干净副本／真实autocrlf=true导出逐字节一致（C59361F9）；无.git镜像120文件、归属51及normal-prepared／normal-executable／local三个真实导入均通过，禁止全部旧artifact执行读取／网络／子进程，篡改副本仍拒绝，F210DAEB。不是只有字符串检查或仅checker能启动。
