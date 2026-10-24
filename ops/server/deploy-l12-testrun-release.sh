@@ -1234,13 +1234,21 @@ if [[ "${1:-}" == "self-test" ]]; then
   exit 0
 fi
 
-if [[ "${1:-}" == "runtime-backup-plan" ]]; then
-  (( $# == 1 )) || fail "runtime-backup-plan accepts no additional arguments"
-  assert_cleanup_root "$(dirname "$lock_file")" || fail "runtime snapshot plan lock root is unsafe"
-  [[ ! -L "$lock_file" && ( ! -e "$lock_file" || -f "$lock_file" ) ]] || fail "runtime snapshot plan lock is unsafe"
+if [[ "${1:-}" == "runtime-backup-plan" || "${1:-}" == "runtime-backup-rotate" ]]; then
+  (( $# == 1 )) || fail "$1 accepts no additional arguments"
+  runtime_backup_action=plan
+  if [[ "$1" == "runtime-backup-rotate" ]]; then
+    [[ "$prune_runtime_backups_enabled" == 1 ]] || fail "runtime-backup-rotate requires explicit L12_TESTRUN_PRUNE_RUNTIME_BACKUPS=1"
+    runtime_backup_action=apply
+  fi
+  assert_cleanup_root "$(dirname "$lock_file")" || fail "runtime snapshot operation lock root is unsafe"
+  [[ ! -L "$lock_file" && ( ! -e "$lock_file" || -f "$lock_file" ) ]] || fail "runtime snapshot operation lock is unsafe"
   exec 9>>"$lock_file"
-  flock --nonblock 9 || fail "deployment is active; runtime snapshot plan did not run"
-  prune_runtime_backup_groups plan
+  flock --nonblock 9 || fail "deployment is active; runtime snapshot operation did not run"
+  if [[ "$runtime_backup_action" == apply ]]; then assert_unblocked; fi
+  # Use the same verifier/retention policy as post-deploy cleanup, without
+  # selecting or pruning programs, starting services, or deploying a release.
+  prune_runtime_backup_groups "$runtime_backup_action"
   exit 0
 fi
 

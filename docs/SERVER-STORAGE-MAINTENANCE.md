@@ -1,5 +1,13 @@
 # Legion12 服务器存储维护方案
 
+## 2026-10-24 测试备份长期受控轮转规则
+
+- 人类明确批准call_1761ca532bb649bcabaf9cad6506bd40：“批准测试服这条长期轮转规则”。仅限正式节点上的`/opt/legion12-testrun-deployment/runtime-backups`及对应测试工具；同目标、同保留边界和同风险的后续执行不重复申请。正式服备份、定时任务和服务重启不在本授权内。
+- 同一已验工具`/usr/local/sbin/deploy-legion12-testrun-release`提供`runtime-backup-plan`预览；实际轮转须显式设置`L12_TESTRUN_PRUNE_RUNTIME_BACKUPS=1`再调用`runtime-backup-rotate`。单参数、持原部署flock后核人工阻断，共用原校验器；默认开关仍0，不因无人操作而自行删除。
+- 至少保留最近两组完整SHA／归档校验通过的备份，每次最多移除一组更旧完整归档及sidecar，校验限时15秒。PINNED、失败绑定、未知／残缺／损坏／链接资料和诊断证据继续保护，异常即停止。完整正常恢复的诊断目录仅被识别为无备份依赖，原程序版本保护不放宽；独立轮转不清程序、素材、当前运行库或其他文件。
+- 最终5E081506工具经70原生Linux及标准Batch91461验证后安装，旧D3FD工具原件私有保留。首次真实受控执行3468.79ms，只移最旧2eda归档及校验共17826835逻辑字节，最新两组、全部诊断文件及两服服务身份不变；无新调度或正式服变更。旧备份点已删除，不再宣传可恢复该旧点；可用恢复点为保留的两组。唯一D盘`restore-business-20261024/authorized-test-rotation.json`和`test-backup-rotation-policy.json`。
+- 操作清单跨JSON传递时，纳秒时间戳必须使用精确字符串，不能用JavaScript Number承接64位纳秒整数。保留原始失败，重新只读捕获精确清单并核其他原字段，再持锁执行；不得为数值表示错误放宽现场一致性检查。此修正不改变发布或备份完整性规则。
+
 ## 2026-10-22 测试备份受控预览（仅本地，未启用自动删除）
 
 - `deploy-l12-testrun-release.sh runtime-backup-plan` 取得原部署flock，只预览一组可轮转的归档/sidecar，零备份删除；可能创建锁文件，不宣传为零文件写入。与apply共用至少保留最新两组、完整SHA及归档校验、PINNED/failure、路径和预算保护。无参数仍原apply，删除仍需显式开关且每次最多一组，默认自动删除保持0。

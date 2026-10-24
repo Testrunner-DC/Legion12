@@ -243,5 +243,68 @@ if cli_run > "$case_root/corrupt.log" 2>&1; then fail 'CLI accepted a corrupt re
 [[ "$(find "$cli_backup" -type f -name '*.tar.gz' | wc -l)" == 5 ]] || fail 'CLI removed a backup after failed proof'
 case_passed cli-plan-refuses-corrupt-proof-without-deletion
 
+seed_rotate_cli() {
+  seed_case "rotate-cli-$1"
+  cli_root="$case_root/l12-testrun-deploy-behavior-rotate"
+  mkdir -p "$cli_root/opt/legion12-testrun-deployment/failures" "$cli_root/run/lock"
+  cp -a "$backup_dir" "$cli_root/opt/legion12-testrun-deployment/runtime-backups"
+  backup_dir="$cli_root/opt/legion12-testrun-deployment/runtime-backups"
+  failure_dir="$cli_root/opt/legion12-testrun-deployment/failures"
+  cli_enabled=1; cli_keep=2
+  snapshots=()
+  while IFS= read -r archive; do snapshots+=("$archive"); done < <(find "$backup_dir" -maxdepth 1 -name '*.tar.gz' | LC_ALL=C sort)
+}
+rotate_cli() {
+  L12_TESTRUN_DEPLOY_TEST_MODE=1 L12_TESTRUN_DEPLOY_TEST_ROOT="$cli_root" \
+    L12_TESTRUN_PRUNE_RUNTIME_BACKUPS="$cli_enabled" L12_TESTRUN_RUNTIME_BACKUP_KEEP_GROUPS="$cli_keep" \
+    bash "$source_file" runtime-backup-rotate "$@"
+}
+rotate_refused() {
+  if rotate_cli "$@" > "$case_root/refused.log" 2>&1; then fail 'standalone rotation unexpectedly accepted'; fi
+  assert_count 5
+}
+
+seed_rotate_cli default-off; cli_enabled=0
+rotate_refused; case_passed cli-rotate-default-off-refused
+
+seed_rotate_cli one-pair
+mkdir -p "$cli_root/opt/legion12-testrun-releases/unknown-protected-program"
+printf 'synthetic program evidence\n' > "$cli_root/opt/legion12-testrun-releases/unknown-protected-program/evidence.txt"
+program_before="$(sha256sum "$cli_root/opt/legion12-testrun-releases/unknown-protected-program/evidence.txt")"
+rotate_cli > "$case_root/rotate.log" 2>&1 || fail 'explicit standalone rotation refused'
+assert_count 4
+[[ ! -e "${snapshots[0]}" && ! -e "${snapshots[0]}.sha256" ]] || fail 'standalone rotation did not remove exactly oldest pair'
+for index in 1 2 3 4; do assert_exists "${snapshots[index]}"; assert_exists "${snapshots[index]}.sha256"; done
+[[ "$(sha256sum "$cli_root/opt/legion12-testrun-releases/unknown-protected-program/evidence.txt")" == "$program_before" ]] \
+  || fail 'backup-only entry changed protected program evidence'
+case_passed cli-rotate-removes-one-pair-without-program-cleanup
+
+seed_rotate_cli extra; rotate_refused extra; case_passed cli-rotate-refuses-extra-arguments
+seed_rotate_cli blocked; printf 'synthetic manual reconciliation\n' > "$cli_root/opt/legion12-testrun-deployment/deployment-blocked.txt"
+rotate_refused; grep -Fq 'manual reconciliation marker exists' "$case_root/refused.log" || fail 'standalone rotation ignored deployment-blocked evidence'
+case_passed cli-rotate-preserves-manual-reconciliation-block
+seed_rotate_cli busy
+exec 8>>"$cli_root/run/lock/legion12-testrun-deploy.lock"; flock --nonblock 8 || fail 'cannot own synthetic rotation lock'
+rotate_refused; grep -Fq 'deployment is active' "$case_root/refused.log" || fail 'standalone rotation lock not enforced'
+exec 8>&-; case_passed cli-rotate-does-not-race-a-deployment
+seed_rotate_cli bad-keep; cli_keep=1; rotate_refused; case_passed cli-rotate-refuses-keep-below-two
+seed_rotate_cli bad-flag; cli_enabled=2; rotate_refused; case_passed cli-rotate-refuses-invalid-opt-in
+seed_rotate_cli corrupt; printf bad >> "${snapshots[4]}"; rotate_refused; case_passed cli-rotate-refuses-corrupt-retained-group
+seed_rotate_cli pinned; touch "$backup_dir/PINNED"
+rotate_cli > "$case_root/pinned.log"; assert_count 5; case_passed cli-rotate-preserves-global-pin
+seed_rotate_cli failure-bound; failure_record "${snapshots[0]}"
+rotate_cli > "$case_root/failure-bound.log"; assert_count 4; assert_exists "${snapshots[0]}"
+[[ ! -e "${snapshots[1]}" ]] || fail 'standalone rotation ignored exact failure-bound oldest pair'
+case_passed cli-rotate-preserves-exact-failure-binding
+seed_rotate_cli completed-diagnostic; seed_diagnostic
+diagnostic_before="$(find "$diagnostic" -type f -exec sha256sum {} \; | LC_ALL=C sort)"
+rotate_cli > "$case_root/completed.log"; assert_count 4
+[[ "$(find "$diagnostic" -type f -exec sha256sum {} \; | LC_ALL=C sort)" == "$diagnostic_before" ]] || fail 'standalone rotation modified diagnostic evidence'
+case_passed cli-rotate-preserves-completed-diagnostic-evidence
+seed_rotate_cli incomplete-diagnostic; seed_diagnostic; mutate_diagnostic missing-restored
+rotate_refused; case_passed cli-rotate-refuses-incomplete-diagnostic
+seed_rotate_cli unknown-failure; printf 'synthetic unknown failure\n' > "$failure_dir/unknown.txt"
+rotate_refused; case_passed cli-rotate-refuses-unknown-failure
+
 passed=1
-printf 'PASS all 57 synthetic retention cases; completed diagnostic evidence preserved, program retention unchanged; no service, real backup, database or player data accessed\n'
+printf 'PASS all 70 synthetic retention cases; backup-only rotation requires explicit opt-in, completed diagnostic evidence preserved, program retention unchanged; no service, real backup, database or player data accessed\n'
