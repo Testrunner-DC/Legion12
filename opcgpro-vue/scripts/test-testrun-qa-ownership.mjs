@@ -168,15 +168,20 @@ if(args.length){
   const entry=path.join(root,'opcgpro-vue/scripts/check-testrun-qa-ownership.mjs'),currentBytes=fs.readFileSync(entry)
   const env={...process.env,L12_QA_SOURCE_REPO:QA_REPO,L12_QA_SOURCE_COMMIT:sourceHead}
   const child=()=>spawnSync(process.execPath,[entry],{encoding:'utf8',env,windowsHide:true,timeout:15000})
+  const noGit=spawnSync('git',['-C',root,'rev-parse','--show-toplevel'],{encoding:'utf8',windowsHide:true,timeout:15000})
+  assert.notEqual(noGit.status,0);assert.match(noGit.stderr,/not a git repository/)
   fs.writeFileSync(entry,execFileSync('git',['-C',QA_REPO,'show','7a4217aed105fbc174eb8d70f244fafa833efb98:opcgpro-vue/scripts/check-testrun-qa-ownership.mjs'],{windowsHide:true}))
-  const red=child();assert.notEqual(red.status,0);assert.match(red.stderr,/not a git repository/)
+  // The historical checker now stops earlier: it only recognizes the former
+  // literal artifact path. Keep that exact failure separate from the explicit
+  // no-Git probe above; do not claim its cause is a Git lookup it never reached.
+  const red=child();assert.notEqual(red.status,0);assert.match(red.stderr,/QA_PIN_ANCHOR_CHANGED/)
   fs.writeFileSync(entry,currentBytes)
   const green=child();assert.equal(green.status,0,green.stderr)
   const accepted=JSON.parse(green.stdout);assert.equal(accepted.stagedSourceBound,true);assert.equal(accepted.sourceCount,actual.sourceCount)
   const changed=path.join(root,'opcgpro-vue/scripts/run-testrun-representative-pressure.mjs')
   fs.appendFileSync(changed,'\n// synthetic changed staged source\n')
   const corrupted=child();assert.notEqual(corrupted.status,0);assert.match(corrupted.stderr,/QA_STAGED_SOURCE_DIFFERS/)
-  stagingProbe={oldEntryRejectedWithoutGit:true,currentBoundEntryPassed:true,changedCopyRejected:true,sourceHead,copiedFiles:paths.size,networkCalls:0,cleanup:'pending'}
+  stagingProbe={stagedRootHasNoGit:true,oldEntryRejectedWithCurrentDependency:true,oldEntryFirstRejection:'QA_PIN_ANCHOR_CHANGED',currentBoundEntryPassed:true,changedCopyRejected:true,sourceHead,copiedFiles:paths.size,networkCalls:0,cleanup:'pending'}
  }finally{
   if(fs.existsSync(dependencyLink)){assert.ok(fs.lstatSync(dependencyLink).isSymbolicLink());if(process.platform==='win32')fs.rmdirSync(dependencyLink);else fs.unlinkSync(dependencyLink)}
   // Only the exact new fixture root and the files copied above are reclaimed.
