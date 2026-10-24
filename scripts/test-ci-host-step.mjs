@@ -24,8 +24,24 @@ execFileSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command',
 assert(!fs.existsSync(root))
 fs.mkdirSync(root, { recursive: true })
 const quote = value => "'" + value.replaceAll("'", "''") + "'"
+const stdoutLine = 'native fixture stdout'
+function assertCapturedNativeLines(log, stderr) {
+  const lines = log.replace(/\r\n/g, '\n').split('\n')
+  if (lines.at(-1) === '') lines.pop()
+  assert.equal(lines.filter(line => line === stdoutLine).length, 1, 'native stdout captured exactly once')
+  // PowerShell merges two independent native streams; stdout may occur between
+  // stderr lines. Require every stderr line verbatim, in order, without assuming
+  // a cross-stream order that the native process does not guarantee.
+  assert.deepEqual(lines.filter(line => line !== stdoutLine), stderr.split('\n'),
+    `raw stderr lines retained; expected=${stderr.length}; log=${log.length}; synthetic tail=${JSON.stringify(log.slice(-240))}`)
+}
 let cases = 0
 try {
+  for (const log of ['native fixture stdout\nfirst\nsecond\n', 'first\nnative fixture stdout\nsecond\n', 'first\nsecond\nnative fixture stdout\n'])
+    assertCapturedNativeLines(log, 'first\nsecond')
+  for (const log of ['first\nnative fixture stdout\n', 'first\nnative fixture stdout\nsecon\n', 'second\nnative fixture stdout\nfirst\n'])
+    assert.throws(() => assertCapturedNativeLines(log, 'first\nsecond'))
+  cases++
   const initialization = workflow.split('      - name: 生成目录绑定\n')[1]?.split('\n      - ')[0]
     ?.split('        run: |\n')[1]?.trimEnd().split('\n')
   assert(initialization?.length && initialization.every(line => line.startsWith('          ')))
@@ -93,9 +109,7 @@ try {
     assert.ifError(result.error)
     assert.equal(result.status, scenario.code, result.stderr || result.stdout)
     const log = fs.readFileSync(path.join(directory, 'frontend-native.log'), 'utf8')
-    assert(log.includes('native fixture stdout'))
-    assert(log.replace(/\r\n/g, '\n').includes(scenario.tail),
-      `raw log retains all native lines; exit=${scenario.code}; expected=${scenario.tail.length}; log=${log.length}; synthetic tail=${JSON.stringify(log.slice(-240))}`)
+    assertCapturedNativeLines(log, scenario.tail)
     const annotation = result.stdout.split(/\r?\n/).find(line => line.startsWith('::error title=L12 frontend actual failure::'))
     if (scenario.code === 0) assert.equal(annotation, undefined)
     else {
@@ -138,4 +152,4 @@ try {
   }
   fs.rmdirSync(root)
 }
-console.log(`Actual CI step bodies passed: ${cases} groups (13 bindings/fresh later step;host-error annotation;3 native exit/stdout/stderr cases); standard npm mocked, no dependency install/product load; fixtures removed.`)
+console.log(`Actual CI step bodies passed: ${cases} groups (native stream interleaving/loss guards;13 bindings/fresh later step;host-error annotation;3 native exit/stdout/stderr cases); standard npm mocked, no dependency install/product load; fixtures removed.`)

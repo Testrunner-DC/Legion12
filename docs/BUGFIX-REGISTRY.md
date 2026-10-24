@@ -2,6 +2,7 @@
 
 ## OPS-20261024-CI-HOST-COPY｜发布宿主绑定与唯一入口普通复制
 
+- 新dfb268dd真实Linux失败已证与强制退出风险不同：exit7原始合成摘要完整55字符，但stdout插在stderr两行之间，旧断言错误要求跨流连续。修正为stdout恰一次、stderr每行全字节及原顺序，无缺失／截断／乱序容忍，保留10k载荷、真实0／7／13退出码和限长转义。三合法交错＋三破坏反例、实际6步骤组与单叶标准Batch42517通过；原860与dfb两个失败摘要分别保全，Linux新run尚未证明通过。
 - 86067c05真实Ubuntu23宿主测试通过；后续新增夹具的原生输出留存断言失败（run40059855492，原摘要保留），不是应用已执行的证据。夹具改用process.exitCode，避免[Node文档所述强制退出截断异步stdout/stderr](https://nodejs.org/docs/latest-v22.x/api/process.html#processexitcode)风险；原全量输出／退出码／摘要断言不放宽，并补有界合成失败定位。本地5组与单叶Batch通过，是否解决真实Linux失败待新run；不冒旧前端根因。自定义入口误用不存在的参数在测试前拒绝保留，改现有env不改产品。
 - 实际ae1da5bc CI在派发前0job失败：本次新job.env错误引用runner.temp（[官方作用域表](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability)该层不提供runner）。只将配置放到可用的步骤env，完整13项经GITHUB_ENV导出；新实际步骤体／后续进程4组、12反例并拒绝真实失败版本、三叶标准Batch通过。原失败保留，不把本地通过或这次启动纠正冒完整Linux资格，也不是旧CI前端失败的已证原因。
 - 目标5既有入口的Windows假设阻止Linux资格；仅工具外围修当前宿主可执行文件／runner.temp生成根、单标准构建原生失败透传、九处原生文件参数与Python定位及输出物理guard。原C禁写、文件存在、精确包／runtime／卡图哈希、150MiB预算、排空和旧数据规则均不变。
