@@ -15,7 +15,7 @@ const screenshotRoot = path.join(outputRoot, 'screenshots')
 fs.mkdirSync(screenshotRoot, { recursive: true })
 
 const tracked = [
-  'src/l12/game/PromptOverlay.vue', 'src/l12/game/GameBoard.vue',
+  'src/l12/game/PromptOverlay.vue', 'src/l12/CardImage.vue', 'src/l12/game/GameBoard.vue',
   'src/l12/site/uiSystem.css',
   'scripts/test-match-opening-presentation.mjs', 'scripts/preview-l12-battle-layout.mjs',
   'scripts/verify-match-opening-presentation-20261024.mjs',
@@ -246,14 +246,55 @@ try {
         const tl = project(0, 0), tr = project(node.clientWidth, 0)
         const bl = project(0, node.clientHeight), br = project(node.clientWidth, node.clientHeight)
         const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
+        const article = node.closest('.opening-master-card')
+        const stage = article?.offsetParent
+        const articleStyle = article ? getComputedStyle(article) : null
+        const articleMatrix = new DOMMatrixReadOnly(articleStyle?.transform || 'none')
+        const [articleOriginX, articleOriginY] = (articleStyle?.transformOrigin || '0 0').split(' ').map(Number.parseFloat)
+        const stageRect = stage?.getBoundingClientRect()
+        const toViewport = point => {
+          const nested = new DOMPoint(
+            node.offsetLeft + point.x - articleOriginX,
+            node.offsetTop + point.y - articleOriginY,
+          ).matrixTransform(articleMatrix)
+          return {
+            x: (stageRect?.left || 0) + (article?.offsetLeft || 0) + nested.x + articleOriginX,
+            y: (stageRect?.top || 0) + (article?.offsetTop || 0) + nested.y + articleOriginY,
+          }
+        }
         return { transform: style.transform, originX, width: node.clientWidth,
-          leftEdge: distance(tl, bl), rightEdge: distance(tr, br), corners: { tl, tr, bl, br } }
+          leftEdge: distance(tl, bl), rightEdge: distance(tr, br), corners: { tl, tr, bl, br },
+          viewportCorners: { tl: toViewport(tl), tr: toViewport(tr), bl: toViewport(bl), br: toViewport(br) } }
       }))
       assert.ok(depth.every(item => item.transform.startsWith('matrix3d(')), `master faces were only rotated in 2D: ${JSON.stringify(depth)}`)
-      assert.ok(depth[0].originX <= 1 && depth[0].leftEdge > depth[0].rightEdge * 1.08,
+      assert.ok(depth[0].originX <= 1 && depth[0].leftEdge > depth[0].rightEdge * 1.22,
         `opponent outer edge was not nearer than its inner edge: ${JSON.stringify(depth[0])}`)
-      assert.ok(Math.abs(depth[1].originX - depth[1].width) <= 1 && depth[1].rightEdge > depth[1].leftEdge * 1.08,
+      assert.ok(Math.abs(depth[1].originX - depth[1].width) <= 1 && depth[1].rightEdge > depth[1].leftEdge * 1.22,
         `self outer edge was not nearer than its inner edge: ${JSON.stringify(depth[1])}`)
+      const opponentBounds = {
+        left: Math.min(...Object.values(depth[0].viewportCorners).map(point => point.x)),
+        right: Math.max(...Object.values(depth[0].viewportCorners).map(point => point.x)),
+        top: Math.min(...Object.values(depth[0].viewportCorners).map(point => point.y)),
+        bottom: Math.max(...Object.values(depth[0].viewportCorners).map(point => point.y)),
+      }
+      const selfBounds = {
+        left: Math.min(...Object.values(depth[1].viewportCorners).map(point => point.x)),
+        right: Math.max(...Object.values(depth[1].viewportCorners).map(point => point.x)),
+        top: Math.min(...Object.values(depth[1].viewportCorners).map(point => point.y)),
+        bottom: Math.max(...Object.values(depth[1].viewportCorners).map(point => point.y)),
+      }
+      assert.ok(opponentBounds.left >= 1440 * .08 && opponentBounds.left <= 1440 * .18
+        && opponentBounds.right >= 1440 * .34 && opponentBounds.right <= 1440 * .43,
+      `opponent master missed the human-marked horizontal footprint: ${JSON.stringify(opponentBounds)}`)
+      assert.ok(selfBounds.left >= 1440 * .57 && selfBounds.left <= 1440 * .66
+        && selfBounds.right >= 1440 * .82 && selfBounds.right <= 1440 * .92,
+      `self master missed the human-marked horizontal footprint: ${JSON.stringify(selfBounds)}`)
+      assert.ok(opponentBounds.top <= 900 * .12 && opponentBounds.bottom >= 900 * .72,
+        `opponent master missed the human-marked vertical footprint: ${JSON.stringify(opponentBounds)}`)
+      assert.ok(selfBounds.top <= 900 * .2 && selfBounds.bottom >= 900 * .8,
+        `self master missed the human-marked vertical footprint: ${JSON.stringify(selfBounds)}`)
+      assert.ok(opponentBounds.right < versus.left && selfBounds.left > versus.right,
+        `master cards overlapped the central versus title: ${JSON.stringify({ opponentBounds, selfBounds, versus })}`)
       const masterVisibility = await page.locator('.opening-master-card').evaluateAll(nodes => nodes.map(node => ({
         opacity: Number.parseFloat(getComputedStyle(node).opacity), visibility: getComputedStyle(node).visibility,
         imageOpacity: Number.parseFloat(getComputedStyle(node.querySelector('.l12-card-image')).opacity),
@@ -264,9 +305,68 @@ try {
       assert.ok(snapshot.identityRects[1].top > versus.bottom, `self identity was not below versus: ${JSON.stringify({ identities: snapshot.identityRects, versus })}`)
       await page.screenshot({ path: path.join(screenshotRoot, 'visual-dramatic-versus.png') })
       return { identities: snapshot.identities, identityTexts: snapshot.identityTexts, identityRects: snapshot.identityRects,
-        identityColors: snapshot.identityColors, articleRects: snapshot.articleRects, depth, masterVisibility, factionColors: snapshot.factionColors, versus }
+        identityColors: snapshot.identityColors, articleRects: snapshot.articleRects, depth, opponentBounds, selfBounds,
+        masterVisibility, factionColors: snapshot.factionColors, versus }
     } finally { await context.close() }
   })
+
+  async function verifyResponsiveVersus(name, viewport, params) {
+    await runCase(name, async () => {
+      const { context, page } = await openingPage(baseUrl, viewport, { 'opening-rolls': 'zero', markers: '0', ...params })
+      try {
+        await page.waitForSelector('[data-ui-contract="match-opening-stage"]', { state: 'visible' })
+        await page.evaluate(() => {
+          for (const element of document.querySelectorAll('.opening-master-card,.opening-master-card .l12-card-image,.opening-versus,.opening-versus-player,.opening-dice-row')) {
+            for (const animation of element.getAnimations()) {
+              animation.pause()
+              animation.currentTime = 650
+            }
+          }
+        })
+        await waitForArtwork(page)
+        const geometry = await page.evaluate(() => {
+          const rect = node => {
+            const value = node.getBoundingClientRect()
+            return { left: value.left, top: value.top, right: value.right, bottom: value.bottom,
+              width: value.width, height: value.height }
+          }
+          const stage = rect(document.querySelector('.opening-presentation'))
+          const cards = [...document.querySelectorAll('.opening-master-card .l12-card-image')].map(node => {
+            const box = rect(node)
+            const style = getComputedStyle(node)
+            const matrix = new DOMMatrixReadOnly(style.transform)
+            const [originX, originY] = style.transformOrigin.split(' ').map(Number.parseFloat)
+            const project = (x, y) => {
+              const point = new DOMPoint(x - originX, y - originY, 0, 1).matrixTransform(matrix)
+              return { x: point.x / point.w + originX, y: point.y / point.w + originY }
+            }
+            const tl = project(0, 0), tr = project(node.clientWidth, 0)
+            const bl = project(0, node.clientHeight), br = project(node.clientWidth, node.clientHeight)
+            const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
+            return { ...box, transform: style.transform, leftEdge: distance(tl, bl), rightEdge: distance(tr, br) }
+          })
+          const copy = [...document.querySelectorAll('.opening-versus,.opening-versus-player')].map(node => ({
+            ...rect(node), text: node.textContent?.trim(),
+          }))
+          return { stage, cards, copy }
+        })
+        const inside = (box, stage) => box.left >= stage.left - 1 && box.top >= stage.top - 1
+          && box.right <= stage.right + 1 && box.bottom <= stage.bottom + 1
+        const intersects = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+        assert.ok(geometry.cards.every(card => inside(card, geometry.stage)),
+          `responsive projected master left the opening stage: ${JSON.stringify(geometry)}`)
+        assert.ok(geometry.cards[0].leftEdge > geometry.cards[0].rightEdge * 1.22
+          && geometry.cards[1].rightEdge > geometry.cards[1].leftEdge * 1.22,
+        `responsive master depth weakened below the accepted threshold: ${JSON.stringify(geometry.cards)}`)
+        assert.ok(geometry.cards.every(card => geometry.copy.every(copy => !intersects(card, copy))),
+          `responsive master overlapped versus/player copy: ${JSON.stringify(geometry)}`)
+        return geometry
+      } finally { await context.close() }
+    })
+  }
+
+  await verifyResponsiveVersus('visual-dramatic-versus-short-landscape', { width: 844, height: 390 }, { mobile: '1', canvas: '1' })
+  await verifyResponsiveVersus('visual-dramatic-versus-portrait-rotated', { width: 390, height: 844 }, { mobile: '1', canvas: '1' })
 
   await runCase('visual-large-dice', async () => {
     const { context, page } = await openingPage(baseUrl, { width: 1440, height: 900 }, { 'opening-rolls': 'valid' })

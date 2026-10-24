@@ -203,7 +203,7 @@ assert.match(template, /opening-versus-player[\s\S]*opening-die[\s\S]*openingPla
   'central versus identities and dice labels must share the same live/replay identity rule')
 assert.doesNotMatch(template, /class="opening-versus-player"[^>]*:style=/,
   'central player ids must not inherit a faction-colored inline style')
-assert.match(script, /'--opening-perspective': mine \? '-18deg' : '18deg'[\s\S]*'--opening-depth-origin': mine \? '100% 50%' : '0% 50%'/,
+assert.match(script, /'--opening-perspective': mine \? '-28deg' : '28deg'[\s\S]*'--opening-depth-origin': mine \? '100% 50%' : '0% 50%'/,
   'outer edges must stay near the camera while both inner edges recede toward versus')
 assert.doesNotMatch(template, /opening-master-card[\s\S]{0,420}opening-master-name/,
   'player identity must not remain attached below either flying master card')
@@ -240,10 +240,22 @@ assert.match(style, /\.opening-versus-player small\{color:#76dce3/,
   'both player ids must use the fixed interface cyan instead of faction colors')
 assert.match(style, /\.opening-master-card :deep\(\.l12-card-image\)\{[^}]*transform-origin:var\(--opening-depth-origin\)[^}]*animation:opening-master-depth/,
   'the card plane itself must own the depth projection instead of relying on two-dimensional article tilt')
+assert.match(style, /\.opening-master-card\{[^}]*width:clamp\(240px,32vw,480px\)/,
+  'the versus card plane must be large enough to occupy the human-marked quadrilateral')
+assert.match(script, /'--opening-side-x': mine \? 'clamp\(150px, 22vw, 360px\)' : 'clamp\(-360px, -22vw, -150px\)'/,
+  'both master cards must advance toward the center instead of remaining at the screen edges')
+assert.match(script, /'--opening-side-y': mine \? 'clamp\(40px, 5vh, 64px\)' : 'clamp\(-64px, -5vh, -40px\)'/,
+  'the opponent-high and viewer-low split must match the marked vertical footprints')
 assert.match(style, /@keyframes opening-master-sequence[\s\S]*var\(--opening-side-x\)[\s\S]*var\(--opening-side-y\)/,
   'the split beat must retain the accepted opponent-high and viewer-low placement')
-assert.match(style, /@keyframes opening-master-depth\{[^}]*perspective\(760px\) rotateY\(0\)[\s\S]*perspective\(760px\) rotateY\(var\(--opening-perspective\)\)/,
+assert.match(style, /\.opening-master-card\{--opening-depth-distance:620px;/,
+  'desktop versus projection must retain the accepted depth distance')
+assert.match(style, /@keyframes opening-master-depth\{[^}]*perspective\(var\(--opening-depth-distance\)\) rotateY\(0\) scaleX\(1\)[\s\S]*perspective\(var\(--opening-depth-distance\)\) rotateY\(var\(--opening-perspective\)\) scaleX\(1\.25\)/,
   'the master face must become a projected quadrilateral with a materially strong Y-depth angle')
+assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)\{\.opening-master-card\{--opening-depth-distance:300px;width:clamp\(112px,17vw,164px\)/,
+  'short landscape must keep the projected depth after reducing the card size')
+assert.match(style, /data-l12-rotated="true"[\s\S]*\.opening-master-card\)\{--opening-depth-distance:300px;width:164px\}/,
+  'rotated portrait must use the contained logical-canvas master footprint')
 assert.match(style, /\.opening-die b\{[^}]*font-size:clamp\(88px,12vw,156px\)/,
   'desktop dice must occupy the central opening composition')
 assert.match(style, /\.mulligan-card-row :deep\(\.mulligan-card\.prompt-card-candidate\)\{[^}]*width:150px[^}]*border:0[^}]*background:transparent/,
