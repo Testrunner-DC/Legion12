@@ -72,6 +72,42 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     results = []
 
+    terminal_value = {"schema": 1, "kind": "terminal-owned-analytics-import-v1",
+        "operationRunId": "1" * 32, "fixtureRunId": "2" * 32,
+        "databaseSha256": "A" * 64, "proofSha256": "B" * 64,
+        "test": {"pid": 101, "commit": "a" * 40, "dllSha256": "C" * 64},
+        "formal": {"pid": 102, "commit": "b" * 40, "dllSha256": "D" * 64},
+        "diagnosticSetting": "terminal-recipients-v4:30:" + "3" * 32,
+        "templateSourceSha256": "E" * 64}
+    raw = json.dumps(terminal_value, sort_keys=True, separators=(",", ":")).encode()
+    selected = tool.parse_terminal_binding(raw, tool.digest(raw))
+    assert selected.source_root == Path("/tmp/l12-analytics-fixture-" + "2" * 32)
+    assert selected.receipts == Path("/tmp/l12-analytics-import-" + "2" * 32 + "-terminal-" + "1" * 32)
+    results.append({"name": "strict-terminal-binding-derives-only-fixed-roots", "passed": True})
+    for name, mutate, expected_sha in (
+        ("binding-extra-field", lambda value: value.__setitem__("extra", True), None),
+        ("binding-bool-schema", lambda value: value.__setitem__("schema", True), None),
+        ("binding-bool-pid", lambda value: value["test"].__setitem__("pid", True), None),
+        ("binding-same-pid", lambda value: value["formal"].__setitem__("pid", value["test"]["pid"]), None),
+        ("binding-diagnostic-scope", lambda value: value.__setitem__("diagnosticSetting", "terminal-recipients-v4:31:" + "3" * 32), None),
+        ("binding-template-source", lambda value: value.__setitem__("templateSourceSha256", "wrong"), None),
+        ("binding-sha", lambda _value: None, "0" * 64)):
+        value = json.loads(json.dumps(terminal_value)); mutate(value)
+        changed = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        try:
+            tool.parse_terminal_binding(changed, expected_sha or tool.digest(changed))
+            raise AssertionError(name + " accepted")
+        except RuntimeError:
+            pass
+        results.append({"name": "reject-" + name, "passed": True})
+    duplicate = raw[:-1] + b',"schema":1}'
+    try:
+        tool.parse_terminal_binding(duplicate, tool.digest(duplicate))
+        raise AssertionError("duplicate binding field accepted")
+    except RuntimeError:
+        pass
+    results.append({"name": "reject-binding-duplicate-field", "passed": True})
+
     def case(name, mutate=None, hook=None, success=False, committed=False, target_count=0):
         args = list(fixture(cache / name))
         if mutate:
@@ -109,6 +145,7 @@ def main():
     case("positive-full-closure-different-migration-times-preserved-backup-reentry", success=True)
     case("wrong-database-SHA", lambda a: a.__setitem__(4, dataclasses.replace(a[4], database_sha="0" * 64)))
     case("wrong-proof-SHA", lambda a: a.__setitem__(4, dataclasses.replace(a[4], proof_sha="0" * 64)))
+    case("wrong-bound-assembly-SHA", lambda a: a.__setitem__(4, dataclasses.replace(a[4], assembly_sha="0" * 64)))
     case("old-nonempty-target", lambda a: change(a[2], "INSERT INTO matches VALUES('old',X'01')"), target_count=1)
     case("unknown-source-table", lambda a: source_change(a, "CREATE TABLE unknown_table(value TEXT)"))
     case("unknown-nonmatch-source-data", lambda a: source_change(a, "INSERT INTO other_data VALUES(1,'unexpected')"))

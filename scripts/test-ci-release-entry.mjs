@@ -17,6 +17,9 @@ function check(source) {
     'cheap frontend rejection must precede long backend suites')
   assert.match(source, /^        run: bash scripts\/test-l12-runtime-backup-retention\.sh ops\/server\/deploy-l12-testrun-release\.sh "\$RUNNER_TEMP"$/m,
     'CI must execute the real synthetic backup-retention boundary suite')
+  for (const command of ['python3 -I -B ops/ci/test-l12-card-assets-input.py --work-root "$RUNNER_TEMP/l12-card-input"',
+    'python3 -I -B ops/ci/l12-card-assets-input.py check --lock ops/ci/l12-card-assets-input.lock.json'])
+    assert.equal(source.includes(command), true, `CI must preserve trusted asset boundary: ${command}`)
 }
 
 check(workflow)
@@ -33,4 +36,6 @@ assert.throws(() => check(workflow.replace('./scripts/invoke-l12-tests.ps1 -Proj
   /preserve.*Platform.Tests/)
 assert.throws(() => check(workflow.replace('run: bash scripts/test-l12-runtime-backup-retention.sh', 'run: echo skipped-retention')),
   /synthetic backup-retention/)
-console.log('CI single release entry: current workflow and four negative mutations passed; canonical package and synthetic retention requirements retained.')
+assert.throws(() => check(workflow.replace('python3 -I -B ops/ci/test-l12-card-assets-input.py', 'echo skipped-assets')), /trusted asset boundary/)
+assert.throws(() => check(workflow.replace('check --lock ops/ci/l12-card-assets-input.lock.json', 'check --lock other.json')), /trusted asset boundary/)
+console.log('CI single release entry: current workflow and six negative mutations passed; canonical package, trusted asset input and synthetic retention requirements retained.')

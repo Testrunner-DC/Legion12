@@ -9,7 +9,8 @@ import {inspectQaOwnership,readQaOwnership,QA_REPO,QA_MANIFEST} from './check-te
 const actual=readQaOwnership(),manifest=JSON.parse(fs.readFileSync(path.join(QA_REPO,QA_MANIFEST)))
 let cases=1
 const fixture={schema:1,formalMutationsAllowed:false,normalConfirmationMs:3000,normalLifecycleMs:900000,
-  sources:['opcgpro-vue/scripts/probe.mjs'],entries:[{path:'opcgpro-vue/scripts/probe.mjs',mode:'test-only',target:'https://legion-12.com/testrun/'}],immutableInputs:[],completeLegacyCodeClosure:false}
+  sources:['opcgpro-vue/scripts/probe.mjs'],entries:[{path:'opcgpro-vue/scripts/probe.mjs',mode:'test-only',target:'https://legion-12.com/testrun/'}],
+  legacyExecutableInputs:[],immutableEvidenceInputs:[],completeLegacyCodeClosure:true}
 const fakeTracked=new Set(fixture.sources)
 for(const [name,mutate]of[
  ['unversioned source',value=>value.sources.push('ops/qa/missing.py')],
@@ -20,8 +21,10 @@ for(const [name,mutate]of[
  ['changed lifecycle',value=>{value.normalLifecycleMs=901000}],
  ['formal target',value=>{value.entries[0].target='https://legion-12.com/'}],
  ['unowned entry',value=>{value.entries[0].path='ops/qa/unowned.ps1'}],
- ['claiming legacy closure',value=>{value.completeLegacyCodeClosure=true}],
- ['bad input hash',value=>value.immutableInputs.push({path:'D:/fixture.mjs',sha256:'wrong'})],
+ ['claiming legacy closure',value=>value.legacyExecutableInputs.push({path:'D:/legacy.mjs',sha256:'A'.repeat(64),execution:'module-import',role:'executed legacy fixture'})],
+ ['bad executable hash',value=>{value.completeLegacyCodeClosure=false;value.legacyExecutableInputs.push({path:'D:/legacy.mjs',sha256:'wrong',execution:'module-import',role:'executed legacy fixture'})}],
+ ['bad evidence hash',value=>value.immutableEvidenceInputs.push({path:'D:/fixture.json',sha256:'wrong',role:'immutable receipt'})],
+ ['input overlap',value=>{const row={path:'D:/legacy.mjs',sha256:'A'.repeat(64),execution:'module-import',role:'fixture source'};value.completeLegacyCodeClosure=false;value.legacyExecutableInputs.push(row);value.immutableEvidenceInputs.push(row)}],
 ]) {
  const value=structuredClone(fixture);mutate(value)
  assert.throws(()=>inspectQaOwnership(value,{tracked:fakeTracked,read:()=>Buffer.from('export const valid=true')}),name);cases++
@@ -29,8 +32,13 @@ for(const [name,mutate]of[
 assert.throws(()=>inspectQaOwnership(fixture,{tracked:fakeTracked,read:()=>Buffer.from("import x from './untracked.mjs'")}));cases++
 const privateHeader=['-----BEGIN','OPENSSH PRIVATE KEY-----'].join(' ')
 assert.throws(()=>inspectQaOwnership(fixture,{tracked:fakeTracked,read:()=>Buffer.from(privateHeader)}));cases++
-const pinned=structuredClone(fixture);pinned.immutableInputs=[{path:'D:/fixture.mjs',sha256:crypto.createHash('sha256').update('expected').digest('hex').toUpperCase()}]
+const pinned=structuredClone(fixture);pinned.immutableEvidenceInputs=[{path:'D:/fixture.json',sha256:crypto.createHash('sha256').update('expected').digest('hex').toUpperCase(),role:'immutable receipt'}]
 assert.throws(()=>inspectQaOwnership(pinned,{tracked:fakeTracked,read:()=>Buffer.from('different'),verifyLocalInputs:true}));cases++
+const declared=structuredClone(fixture);declared.completeLegacyCodeClosure=false
+declared.legacyExecutableInputs=[{path:'D:/legacy.mjs',sha256:crypto.createHash('sha256').update('legacy').digest('hex').toUpperCase(),execution:'module-import',role:'executed legacy fixture'}]
+assert.equal(inspectQaOwnership(declared,{tracked:fakeTracked,read:file=>Buffer.from(file==='D:/legacy.mjs'?'legacy':'export const valid=true')}).completeLegacyCodeClosure,false);cases++
+assert.equal(manifest.legacyExecutableInputs.length,15);assert.equal(manifest.immutableEvidenceInputs.length,4)
+assert.ok(manifest.immutableEvidenceInputs.some(row=>row.path.endsWith('/fixture-import-r2/testrun-owned-analytics-import.py')));cases++
 const fixtureGenerator=fs.readFileSync(path.join(QA_REPO,'ops/qa/TestAnalyticsHistory/Program.cs'),'utf8')
 assert.match(fixtureGenerator,/args\.Length != 4/)
 assert.match(fixtureGenerator,/deployment-commit"\)\.Trim\(\) != expectedCommit/)
@@ -59,6 +67,7 @@ assert.throws(()=>inspectQaOwnership(fixture,{repo:stagedRepo,tracked:new Set([.
   :file.endsWith('probe.mjs')?Buffer.from("import './imported.mjs'")
   :Buffer.from(file.startsWith(sourceRoot)?'different':'export const valid=true')}));cases++
 const releaseEntry=fs.readFileSync(path.join(QA_REPO,'ops/windows/verify-l12.ps1'),'utf8')
+assert.match(releaseEntry,/\$qaSources\.schema -ne 1/)
 assert.match(releaseEntry,/foreach \(\$relative in @\(\$qaSources\.sources\) \+ @\('ops\/qa\/toolchain-sources\.json'\)\)/)
 assert.match(releaseEntry,/\$env:L12_QA_SOURCE_REPO = \$repoRoot/)
 assert.match(releaseEntry,/\$env:L12_QA_SOURCE_COMMIT = \$commit/)

@@ -7,6 +7,12 @@ import {openTerminalDiagnosticControl} from './testrun-pressure-control.mjs'
 export {bindOwnedControl,testRequest,durableJson,pause,publicFailure} from './testrun-pressure-runtime.mjs'
 export {remoteJson}
 const NORMAL_GUARD_SHA='2CD7EBC3F06A4E1845537EB16A71EBB6EBF296079491494C8516097F237E86BD'
+const ANALYTICS_TEMPLATE=path.join(REPO,'ops/qa/testrun-owned-analytics-import.py')
+const ANALYTICS_FIXTURE='D:/GPT/Legion12/artifacts/stage-goals-20261023/test-release/fixture-generated.json'
+const ANALYTICS_FIXTURE_SHA='110EB8BAF258C5DF09811CCDABD87BC4D4EC5BBFE5171707135FFF6B0E5066EC'
+const ANALYTICS_OLD_BINDING='D:/GPT/Legion12/artifacts/stage-goals-20261023/test-release/fixture-import-binding-r2.json'
+const ANALYTICS_OLD_BINDING_SHA='F4A53611FC7E81BEA2CC481F1526F8DF78CACBBA0CB8B35A377896890CA76CC4'
+const ANALYTICS_OLD_SOURCE_SHA='B103480CB65ED534369192AE0486272DB197DD1AD737FC4F8611F86A2700925E'
 let setting=null
 export function configureTerminalRuntime(value){terminalDiagnosticProfile(value);assert.equal(setting,null);setting=value}
 export function terminalSetting(){assert.notEqual(setting,null,'TERMINAL_RUNTIME_NOT_CONFIGURED');return setting}
@@ -31,6 +37,37 @@ export function terminalJournalRemote(code,parameters,options){
  return remoteJson(source+code.slice(IDENTITY_CODE.length),{...parameters,diagnosticSetting:terminalSetting()},options)
 }
 export const observeTerminalIdentity=binding=>remoteJson(source+'\nprint(json.dumps(result,separators=(",",":")))',{...binding,diagnosticSetting:terminalSetting()})
+const readPlain=(file,maximum)=>{
+ const item=fs.lstatSync(file);assert.ok(item.isFile()&&!item.isSymbolicLink()&&item.size>0&&item.size<=maximum,'TERMINAL_ANALYTICS_INPUT_REJECTED')
+ const bytes=fs.readFileSync(file);assert.equal(bytes.length,item.size);return bytes
+}
+const selectedIdentity=value=>{
+ assert.ok(Number.isSafeInteger(value?.pid)&&value.pid>0);assert.match(value.commit,/^[a-f0-9]{40}$/);assert.match(value.dllSha256,/^[A-F0-9]{64}$/)
+ return {pid:value.pid,commit:value.commit,dllSha256:value.dllSha256}
+}
+export function createTerminalAnalyticsPackage(binding,runId,{read=(file,maximum)=>readPlain(file,maximum)}={}){
+ assert.match(runId,/^[a-f0-9]{32}$/)
+ const test=selectedIdentity(binding?.test),formal=selectedIdentity(binding?.formal);assert.notEqual(test.pid,formal.pid)
+ const fixtureBytes=read(ANALYTICS_FIXTURE,16384);assert.equal(digest(fixtureBytes),ANALYTICS_FIXTURE_SHA,'TERMINAL_ANALYTICS_FIXTURE_RECEIPT_CHANGED')
+ const oldBindingBytes=read(ANALYTICS_OLD_BINDING,4096);assert.equal(digest(oldBindingBytes),ANALYTICS_OLD_BINDING_SHA,'TERMINAL_ANALYTICS_OLD_BINDING_CHANGED')
+ const fixture=JSON.parse(fixtureBytes),oldBinding=JSON.parse(oldBindingBytes)
+ assert.equal(fixture.schema,1);assert.match(fixture.runId,/^[a-f0-9]{32}$/);assert.equal(fixture.formalWrites,0);assert.equal(fixture.serviceDatabaseWrites,0)
+ assert.equal(fixture.result?.runId,fixture.runId);assert.match(fixture.result?.databaseSha256,/^[A-F0-9]{64}$/);assert.match(fixture.result?.proofSha256,/^[A-F0-9]{64}$/)
+ assert.equal(fixture.result?.proof?.assemblySha256,test.dllSha256);assert.equal(fixture.result?.proof?.matches,16)
+ assert.equal(fixture.result?.proof?.serviceDatabaseWrites,0);assert.equal(fixture.result?.proof?.effectVersion?.split('/')[1],test.commit)
+ assert.deepEqual(Object.keys(oldBinding).sort(),['derivedSha256','functionsUnchanged','nineFixedBindings','path','schema','twoPidReplacementsReverseExact'].sort())
+ assert.equal(oldBinding.schema,1);assert.equal(oldBinding.functionsUnchanged,true);assert.equal(oldBinding.nineFixedBindings,true)
+ assert.equal(oldBinding.twoPidReplacementsReverseExact,true);assert.equal(oldBinding.derivedSha256,ANALYTICS_OLD_SOURCE_SHA)
+ const template=read(ANALYTICS_TEMPLATE,65536),templateSourceSha256=digest(template);assert.ok(template.includes(Buffer.from('def parse_terminal_binding(')))
+ assert.ok(!template.includes(Buffer.from('/fixture-import-r2/testrun-owned-analytics-import.py')))
+ const importBinding={schema:1,kind:'terminal-owned-analytics-import-v1',operationRunId:runId,fixtureRunId:fixture.runId,
+  databaseSha256:fixture.result.databaseSha256,proofSha256:fixture.result.proofSha256,test,formal,
+  diagnosticSetting:terminalSetting(),templateSourceSha256}
+ const bindingJson=JSON.stringify(importBinding),bindingSha256=digest(bindingJson)
+ return {template,templateSourceSha256,importBinding,bindingJson,bindingSha256,
+  evidence:{fixtureReceiptSha256:ANALYTICS_FIXTURE_SHA,oldBindingSha256:ANALYTICS_OLD_BINDING_SHA,
+   oldDerivedSourceSha256:ANALYTICS_OLD_SOURCE_SHA,artifactSourceRead:false,repositoryTemplate:true}}
+}
 export function assertTerminalIdentity(value,binding){
  for(const name of ['test','formal']){
   const item=value[name],expected=binding[name]
@@ -118,34 +155,26 @@ print(json.dumps({'schema':1,'testPid':p['test']['pid'],'rows':rows,'deploymentD
 `,{...binding,diagnosticSetting:terminalSetting()},{timeoutMs:15000})
 }
 export async function prepareTerminalAnalytics(binding,runId){
- assert.match(runId,/^[a-f0-9]{32}$/)
- const file='D:/GPT/Legion12/artifacts/stage-goals-20261023/test-release/fixture-import-r2/testrun-owned-analytics-import.py'
- const original=fs.readFileSync(file,'utf8')
- const prior=JSON.parse(fs.readFileSync('D:/GPT/Legion12/artifacts/stage-goals-20261023/test-release/fixture-import-binding-r2.json'))
- assert.equal(digest(original),prior.derivedSha256);assert.equal(prior.functionsUnchanged,true)
- let adapted=original
- const edits=[
-  ['616457, TEST_COMMIT, TEST_DLL',binding.test.pid+', TEST_COMMIT, TEST_DLL'],
-  ['577290, FORMAL_COMMIT, FORMAL_DLL',binding.formal.pid+', FORMAL_COMMIT, FORMAL_DLL'],
-  ['RECEIPTS = Path("/tmp/l12-analytics-import-" + RUN)','RECEIPTS = Path("/tmp/l12-analytics-import-" + RUN + "-terminal-'+runId+'")'],
-  ['require(not environ.get(b"L12_TESTRUN_TRANSPORT_DIAGNOSTICS"), "DIAGNOSTICS_CHANGED")',
-   'require(environ.get(b"L12_TESTRUN_TRANSPORT_DIAGNOSTICS", b"") == ('+JSON.stringify(terminalSetting())+'.encode() if name == "test" else b""), "DIAGNOSTICS_CHANGED")'],
- ]
- for(const [before,after] of edits){assert.equal(adapted.split(before).length,2);adapted=adapted.replace(before,after)}
- let reverse=adapted;for(const [before,after]of edits.toReversed())reverse=reverse.replace(after,before);assert.equal(reverse,original)
+ const packaged=createTerminalAnalyticsPackage(binding,runId)
  const result=await remoteJson(source+String.raw`
 import base64,sqlite3
-raw=base64.b64decode(p['source'],validate=True);assert len(raw)<50000 and hashlib.sha256(raw).hexdigest().upper()==p['sha256']
-root=pathlib.Path('/tmp/l12-analytics-fixture-5f1a2343200a4fa680d7bd10ef1f8ded');assert root.resolve()==root and root.is_dir() and not root.is_symlink()
+raw=base64.b64decode(p['templateBase64'],validate=True)
+assert 0<len(raw)<=65536 and hashlib.sha256(raw).hexdigest().upper()==p['templateSourceSha256']
+binding_raw=p['bindingJson'].encode('utf-8')
+assert 0<len(binding_raw)<=8192 and hashlib.sha256(binding_raw).hexdigest().upper()==p['bindingSha256']
+binding=json.loads(p['bindingJson']);assert binding['templateSourceSha256']==p['templateSourceSha256']
+root=pathlib.Path('/tmp/l12-analytics-fixture-'+binding['fixtureRunId']);assert root.resolve()==root and root.is_dir() and not root.is_symlink()
 with sqlite3.connect('file:/opt/legion12-testrun-runtime/matches.db?mode=ro',uri=True) as db:
  assert db.execute('SELECT COUNT(*) FROM matches').fetchone()[0]==0,'DIAGNOSTIC_MATCH_FIXTURE_TARGET_NOT_EMPTY'
-entry=root/('terminal-import-'+p['runId']+'.py');assert not os.path.lexists(entry)
+entry=root/('terminal-import-'+binding['operationRunId']+'.py');assert not os.path.lexists(entry)
 with entry.open('xb') as out:os.fchmod(out.fileno(),0o600);out.write(raw);out.flush();os.fsync(out.fileno())
-child=subprocess.run(['python3','-I','-B',str(entry),'--apply'],cwd=root,capture_output=True,text=True,timeout=40)
+child=subprocess.run(['python3','-I','-B',str(entry),'--terminal-apply','--binding-sha',p['bindingSha256']],input=p['bindingJson'],cwd=root,capture_output=True,text=True,timeout=40)
 assert len(child.stdout)<131072 and len(child.stderr)<8192
 value=json.loads(child.stdout) if child.stdout.strip() else None
 assert child.returncode==0 and not child.stderr and value['status']=='COMMITTED_VERIFIED' and value['matches']==16,'DIAGNOSTIC_FIXTURE_NOT_VERIFIED'
 print(json.dumps({'schema':1,'result':value,'diagnosticOnly':True,'onlineCapacityAccepted':False,'formalWrites':0},separators=(',',':')))
-`,{...binding,diagnosticSetting:terminalSetting(),runId,source:Buffer.from(adapted).toString('base64'),sha256:digest(adapted)},{timeoutMs:50000})
- return {...result,derivation:{sourceSha256:digest(original),adaptedSha256:digest(adapted),reverseExact:true,exactPolicyEdits:4,appendFunctionUnchanged:true}}
+ `,{...binding,diagnosticSetting:terminalSetting(),templateBase64:packaged.template.toString('base64'),
+  templateSourceSha256:packaged.templateSourceSha256,bindingJson:packaged.bindingJson,bindingSha256:packaged.bindingSha256},{timeoutMs:50000})
+ return {...result,derivation:{templateSourceSha256:packaged.templateSourceSha256,bindingSha256:packaged.bindingSha256,
+  exactPolicyEdits:0,...packaged.evidence}}
 }

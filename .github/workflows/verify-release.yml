@@ -41,6 +41,11 @@ jobs:
       - name: 唯一发布包入口约束
         run: node scripts/test-ci-release-entry.mjs
 
+      - name: 可信卡图输入边界（仅合成目录）
+        run: |
+          python3 -I -B ops/ci/test-l12-card-assets-input.py --work-root "$RUNNER_TEMP/l12-card-input"
+          python3 -I -B ops/ci/l12-card-assets-input.py check --lock ops/ci/l12-card-assets-input.lock.json
+
       - name: 测试快照轮转边界（仅合成目录）
         run: bash scripts/test-l12-runtime-backup-retention.sh ops/server/deploy-l12-testrun-release.sh "$RUNNER_TEMP"
 
@@ -65,5 +70,6 @@ jobs:
         shell: pwsh
         run: ./scripts/invoke-l12-tests.ps1 -Project ./TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj
 
-      # CI has no trusted optimized-card asset input. Deployable packages use
-      # ops/windows/verify-l12.ps1 with its complete asset and drain proofs.
+      # Reviewed asset bytes are pinned in ops/ci/l12-card-assets-input.lock.json.
+      # Canonical verify-l12.ps1 still needs a separately qualified portable
+      # host entry before CI can build deployable packages. Do not hand-pack one.

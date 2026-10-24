@@ -214,7 +214,9 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 `
 
 2026-10-21 已撤下旧 schema-1 手拼包出口：它依赖已不存在的 public/cards Git 子树，且缺少当前双前端、共享清单、排空能力及优化卡图绑定，不能再将其 Artifact 当成可部署包。唯一可部署包入口保持 `ops/windows/verify-l12.ps1`，沿既有完整校验、schema-3/运行兼容证明、卡图内容寻址及150 MiB上限执行，不新增重复发布链。
 
-CI 自动生成标准包仍需先接入可核验的完整优化卡图来源；当前不从未知URL拉资源、不虚填空卡图哈希或冒称已完成CI出包。`scripts/test-ci-release-entry.mjs` 与既有工作流验收器防止旧出口复活，并保留标准入口的能力/资源要求。
+2026-10-24 已补可信输入层：`ops/ci/l12-card-assets-input.lock.json` 从已验 schema-3 卡图归档固定实际1842个文件的字节／SHA，含1830张当前图、10张旧前端兼容图及2份原始清单；清单正文随锁保存，图片不进入Git。`ops/ci/l12-card-assets-input.py prepare` 可从原验收归档或固定公开卡图源还原全新目录供原入口的 `-CardAssetDirectory` 使用；它不是第二打包器。不覆盖已有目录，不跟随HTTP重定向，缺文件／SHA变化／路径逃逸／链接／预算超界即拒绝；所有输出仍经同一物理D/E守卫。更新锁须从新的已验归档重新生成并审查，不追随线上可变清单自动更新。
+
+本地完整1842文件还原与原324＋42卡池审计已验证；公开源只做了当前／兼容／天灾3张文件校验，不能冒全远端来源验收。CI只接合成边界和锁检查，尚未执行整套远端取图／标准出包；唯一 `verify-l12.ps1` 的Windows主机入口仍需独立完成可移植资格，不能凭输入层完成就宣称CI出包。`scripts/test-ci-release-entry.mjs` 与既有工作流验收器防止旧出口复活，并保留标准入口的能力/资源要求。
 
 ## 回滚与排查
 

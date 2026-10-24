@@ -1,6 +1,7 @@
 """One fixed, first-append-only analytics fixture import. No network or service control.
 
-The CLI has no path/binding overrides. The injectable function is for offline SQLite tests.
+The CLI accepts only the fixed legacy operation or an exact SHA-bound owned-control terminal
+binding; neither accepts arbitrary paths or scopes. The injectable function is for offline SQLite tests.
 An intent without a final receipt is UNKNOWN, never permission to repeat this operation.
 """
 from __future__ import annotations
@@ -10,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import socket
 import sqlite3
@@ -26,6 +28,7 @@ RUN = "b640f54edf5940e48b4f6f54b394a6ff"
 SOURCE_ROOT = Path("/tmp/l12-analytics-fixture-" + RUN)
 TARGET = Path("/opt/legion12-testrun-runtime/matches.db")
 RECEIPTS = Path("/tmp/l12-analytics-import-" + RUN)
+ACTIVE_RECEIPTS = RECEIPTS
 DB_SHA = "BBBEB2A345F2B46A649F9E4702D53805D58B11C888CC57E57E825B32F7971B61"
 PROOF_SHA = "13C99652713A137E9AE107E116FC94CA954750A395E6D9350ED4C55E7AFAEC45"
 TEST_COMMIT = "131989a65ef3b26a22e58e5fe5c480c061aae9cb"
@@ -170,6 +173,75 @@ class Policy:
     nonmatch: frozenset
     metadata_counts: dict
     version_table: str = "match_recorder_schema"
+    assembly_sha: str = TEST_DLL
+
+
+@dataclass(frozen=True)
+class TerminalBinding:
+    operation_run_id: str
+    fixture_run_id: str
+    database_sha: str
+    proof_sha: str
+    test_pid: int
+    test_commit: str
+    test_dll: str
+    formal_pid: int
+    formal_commit: str
+    formal_dll: str
+    diagnostic_setting: str
+    template_source_sha: str
+
+    @property
+    def source_root(self):
+        return Path("/tmp/l12-analytics-fixture-" + self.fixture_run_id)
+
+    @property
+    def receipts(self):
+        return Path("/tmp/l12-analytics-import-" + self.fixture_run_id + "-terminal-" + self.operation_run_id)
+
+
+def parse_terminal_binding(raw, expected_sha):
+    require(type(raw) is bytes and 0 < len(raw) <= 8192, "TERMINAL_BINDING_SIZE_REJECTED")
+    require(type(expected_sha) is str and re.fullmatch(r"[A-F0-9]{64}", expected_sha)
+            and digest(raw) == expected_sha, "TERMINAL_BINDING_SHA_CHANGED")
+    def exact_object(pairs):
+        result = {}
+        for key, selected in pairs:
+            require(key not in result, "TERMINAL_BINDING_DUPLICATE_FIELD_REJECTED")
+            result[key] = selected
+        return result
+    value = json.loads(raw.decode("utf-8"), object_pairs_hook=exact_object)
+    require(type(value) is dict and set(value) == {"schema", "kind", "operationRunId", "fixtureRunId",
+            "databaseSha256", "proofSha256", "test", "formal", "diagnosticSetting", "templateSourceSha256"},
+            "TERMINAL_BINDING_SHAPE_REJECTED")
+    require(type(value["schema"]) is int and value["schema"] == 1
+            and value["kind"] == "terminal-owned-analytics-import-v1",
+            "TERMINAL_BINDING_KIND_REJECTED")
+    require(all(type(value[name]) is str and re.fullmatch(r"[a-f0-9]{32}", value[name])
+                for name in ("operationRunId", "fixtureRunId")), "TERMINAL_BINDING_RUN_REJECTED")
+    require(all(type(value[name]) is str and re.fullmatch(r"[A-F0-9]{64}", value[name])
+                for name in ("databaseSha256", "proofSha256")), "TERMINAL_BINDING_FIXTURE_REJECTED")
+    identities = []
+    for name in ("test", "formal"):
+        item = value[name]
+        require(type(item) is dict and set(item) == {"pid", "commit", "dllSha256"},
+                "TERMINAL_BINDING_IDENTITY_SHAPE_REJECTED")
+        require(type(item["pid"]) is int and item["pid"] > 0
+                and type(item["commit"]) is str and re.fullmatch(r"[a-f0-9]{40}", item["commit"])
+                and type(item["dllSha256"]) is str and re.fullmatch(r"[A-F0-9]{64}", item["dllSha256"]),
+                "TERMINAL_BINDING_IDENTITY_REJECTED")
+        identities.append(item)
+    require(identities[0]["pid"] != identities[1]["pid"], "TERMINAL_BINDING_DISTINCT_PID_REQUIRED")
+    require(type(value["diagnosticSetting"]) is str
+            and re.fullmatch(r"terminal-recipients-v4:30:[a-f0-9]{32}", value["diagnosticSetting"]),
+            "TERMINAL_BINDING_DIAGNOSTIC_REJECTED")
+    require(type(value["templateSourceSha256"]) is str
+            and re.fullmatch(r"[A-F0-9]{64}", value["templateSourceSha256"]),
+            "TERMINAL_BINDING_SOURCE_REJECTED")
+    return TerminalBinding(value["operationRunId"], value["fixtureRunId"], value["databaseSha256"],
+        value["proofSha256"], identities[0]["pid"], identities[0]["commit"], identities[0]["dllSha256"],
+        identities[1]["pid"], identities[1]["commit"], identities[1]["dllSha256"], value["diagnosticSetting"],
+        value["templateSourceSha256"])
 
 
 def append_fixture(source, proof_path, target, receipt_root, policy, *, guard=lambda: None,
@@ -191,7 +263,7 @@ def append_fixture(source, proof_path, target, receipt_root, policy, *, guard=la
     require(uuid.UUID(proof["runId"]).hex == policy.run_id and proof["matchIds"] == ids
             and proof["matches"] == 16 and proof["minimumReturnedSamples"] >= 5
             and proof["defaultQueryTotal"] > 0 and proof["serviceDatabaseWrites"] == 0
-            and proof["assemblySha256"] == TEST_DLL and proof["database"] == str(source), "FIXTURE_PROOF_REJECTED")
+            and proof["assemblySha256"] == policy.assembly_sha and proof["database"] == str(source), "FIXTURE_PROOF_REJECTED")
     guard()
     # Atomic mkdir is also a durable one-attempt fence: never remove/reuse this root.
     receipt_root.mkdir(mode=0o700)
@@ -301,7 +373,7 @@ def append_fixture(source, proof_path, target, receipt_root, policy, *, guard=la
             con.close()
 
 
-def live_storage_binding():
+def live_storage_binding(source_root=SOURCE_ROOT, receipts=RECEIPTS):
     test = Path("/opt/legion12-testrun/publish/runtime").resolve(strict=True)
     formal = Path("/opt/legion12-test/publish/runtime").resolve(strict=True)
     require(test.is_dir() and formal.is_dir() and test == TARGET.parent and formal != test,
@@ -317,18 +389,21 @@ def live_storage_binding():
     require(stat.S_ISREG(formal_matches.st_mode), "FORMAL_MATCH_DATABASE_REQUIRED")
     match_identity = (formal_matches.st_dev, formal_matches.st_ino)
     require(match_identity in forbidden, "FORMAL_MATCH_IDENTITY_CHANGED")
-    reject_forbidden_aliases(selected_family(SOURCE_ROOT / "fixture-matches.db", SOURCE_ROOT / "fixture-proof.json",
-                             TARGET, RECEIPTS / "before.sqlite"), forbidden)
+    reject_forbidden_aliases(selected_family(source_root / "fixture-matches.db", source_root / "fixture-proof.json",
+                             TARGET, receipts / "before.sqlite"), forbidden)
     return {"testRuntime": str(test), "formalRuntime": str(formal),
             "formalMatchesIdentity": match_identity}, forbidden
 
 
-def live_guard():
+def live_guard(binding=None):
     require(sys.platform == "linux" and os.geteuid() == 0 and socket.gethostname() == "ser550468033481", "FIXED_ROOT_HOST_REQUIRED")
     result = {}
-    for name, unit, root, pid, commit, sha in (
-        ("test", "legion12-testrun.service", Path("/opt/legion12-testrun"), 542637, TEST_COMMIT, TEST_DLL),
-        ("formal", "legion12-test.service", Path("/opt/legion12-test"), 534086, FORMAL_COMMIT, FORMAL_DLL)):
+    identities = ((542637, TEST_COMMIT, TEST_DLL), (534086, FORMAL_COMMIT, FORMAL_DLL)) if binding is None else (
+        (binding.test_pid, binding.test_commit, binding.test_dll),
+        (binding.formal_pid, binding.formal_commit, binding.formal_dll))
+    for (name, unit, root), (pid, commit, sha) in zip((
+        ("test", "legion12-testrun.service", Path("/opt/legion12-testrun")),
+        ("formal", "legion12-test.service", Path("/opt/legion12-test"))), identities):
         info = dict(line.split("=", 1) for line in subprocess.check_output(
             ["systemctl", "show", unit, "-p", "MainPID", "-p", "ActiveState", "-p", "NRestarts"], text=True, timeout=3).splitlines())
         require(info["ActiveState"] == "active" and int(info["MainPID"]) == pid, "SERVICE_PID_CHANGED")
@@ -339,35 +414,53 @@ def live_guard():
             if key in {b"L12_PUBLIC_BASE_URL", b"L12_TESTRUN_MATCH_STORAGE", b"L12_PRIVATE_DECK_OBJECT_PERSISTENCE", b"L12_TESTRUN_TRANSPORT_DIAGNOSTICS"}:
                 require(key not in environ, "DUPLICATE_ENVIRONMENT")
                 environ[key] = value
-        require(not environ.get(b"L12_TESTRUN_TRANSPORT_DIAGNOSTICS"), "DIAGNOSTICS_CHANGED")
+        expected_diagnostic = binding.diagnostic_setting.encode() if binding is not None and name == "test" else b""
+        require(environ.get(b"L12_TESTRUN_TRANSPORT_DIAGNOSTICS", b"") == expected_diagnostic, "DIAGNOSTICS_CHANGED")
         if name == "test":
             require(environ.get(b"L12_PUBLIC_BASE_URL", b"").rstrip(b"/") == b"https://legion-12.com/testrun" and environ.get(b"L12_TESTRUN_MATCH_STORAGE") == b"ephemeral" and environ.get(b"L12_PRIVATE_DECK_OBJECT_PERSISTENCE") == b"true", "TEST_PROFILE_CHANGED")
         else:
             require(environ.get(b"L12_PUBLIC_BASE_URL", b"") in {b"", b"https://legion-12.com", b"https://legion-12.com/"} and not environ.get(b"L12_TESTRUN_MATCH_STORAGE"), "FORMAL_PROFILE_CHANGED")
         result[name] = (pid, Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19], info["NRestarts"])
-    result["storage"], _ = live_storage_binding()
+    source_root = SOURCE_ROOT if binding is None else binding.source_root
+    receipts = RECEIPTS if binding is None else binding.receipts
+    result["storage"], _ = live_storage_binding(source_root, receipts)
     return result
 
 
 def main():
-    require(sys.argv[1:] == ["--apply"], "ONLY_FIXED_APPLY_MODE_ALLOWED")
+    global ACTIVE_RECEIPTS
+    if sys.argv[1:] == ["--apply"]:
+        binding = None
+    else:
+        require(len(sys.argv) == 4 and sys.argv[1:3] == ["--terminal-apply", "--binding-sha"],
+                "ONLY_FIXED_APPLY_MODE_ALLOWED")
+        raw = sys.stdin.buffer.read(8193)
+        binding = parse_terminal_binding(raw, sys.argv[3])
+        require(file_sha(Path(__file__)) == binding.template_source_sha, "TERMINAL_TEMPLATE_SOURCE_CHANGED")
+        ACTIVE_RECEIPTS = binding.receipts
     def expired(*_):
         raise TimeoutError("IMPORT_TOTAL_DEADLINE")
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(35)
     try:
-        apply_fixed()
+        apply_fixed(binding)
     finally:
         signal.alarm(0)
 
 
-def apply_fixed():
-    initial = live_guard()
-    _, forbidden_ids = live_storage_binding()
-    for path in (SOURCE_ROOT, SOURCE_ROOT.parent):
+def apply_fixed(binding=None):
+    source_root = SOURCE_ROOT if binding is None else binding.source_root
+    receipts = RECEIPTS if binding is None else binding.receipts
+    run_id = RUN if binding is None else binding.fixture_run_id
+    database_sha = DB_SHA if binding is None else binding.database_sha
+    proof_sha = PROOF_SHA if binding is None else binding.proof_sha
+    assembly_sha = TEST_DLL if binding is None else binding.test_dll
+    initial = live_guard(binding)
+    _, forbidden_ids = live_storage_binding(source_root, receipts)
+    for path in (source_root, source_root.parent):
         require(path.resolve(strict=True) == path and not path.is_symlink(), "FIXTURE_ROOT_REJECTED")
-    require(SOURCE_ROOT.stat().st_uid == 0 and stat.S_IMODE(SOURCE_ROOT.stat().st_mode) == 0o700, "PRIVATE_FIXTURE_ROOT_REQUIRED")
-    require(not os.path.lexists(RECEIPTS), "REENTRY_RECEIPT_EXISTS")
+    require(source_root.stat().st_uid == 0 and stat.S_IMODE(source_root.stat().st_mode) == 0o700, "PRIVATE_FIXTURE_ROOT_REQUIRED")
+    require(not os.path.lexists(receipts), "REENTRY_RECEIPT_EXISTS")
     import fcntl
     lock = Path("/run/lock/legion12-normal-pressure.lock")
     with lock.open("a+") as stream:
@@ -375,11 +468,12 @@ def apply_fixed():
                 and os.fstat(stream.fileno()).st_uid == 0, "LOCK_PATH_REJECTED")
         fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         def guard():
-            require(live_guard() == initial, "SERVICE_IDENTITY_CHANGED")
-            _, current_forbidden = live_storage_binding()
+            require(live_guard(binding) == initial, "SERVICE_IDENTITY_CHANGED")
+            _, current_forbidden = live_storage_binding(source_root, receipts)
             forbidden_ids.update(current_forbidden)
-        result = append_fixture(SOURCE_ROOT / "fixture-matches.db", SOURCE_ROOT / "fixture-proof.json", TARGET, RECEIPTS,
-                 Policy(RUN, DB_SHA, PROOF_SHA, COUNTS, frozenset(NONMATCH), META_COUNTS),
+        result = append_fixture(source_root / "fixture-matches.db", source_root / "fixture-proof.json", TARGET, receipts,
+                 Policy(run_id, database_sha, proof_sha, COUNTS, frozenset(NONMATCH), META_COUNTS,
+                        assembly_sha=assembly_sha),
                  guard=guard, forbidden_ids=forbidden_ids)
         print(json.dumps(result, separators=(",", ":")))
 
@@ -389,6 +483,6 @@ if __name__ == "__main__":
         main()
     except Exception as error:
         print(json.dumps({"schema": 1, "status": "FAILED_OR_RECONCILIATION_REQUIRED",
-                          "errorClass": type(error).__name__, "receiptRoot": str(RECEIPTS),
+                          "errorClass": type(error).__name__, "receiptRoot": str(ACTIVE_RECEIPTS),
                           "retryAutomatically": False}), file=sys.stderr)
         raise SystemExit(2)

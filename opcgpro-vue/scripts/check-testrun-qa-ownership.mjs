@@ -61,18 +61,28 @@ export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.
     assert.ok(['local-browser','test-only','read-only-static','offline-preparer','private-ledger'].includes(entry.mode),'QA_ENTRY_SCOPE_INVALID')
     if(entry.mode==='test-only')assert.equal(entry.target,'https://legion-12.com/testrun/')
   }
-  assert.ok(Array.isArray(manifest.immutableInputs))
-  const inputs=new Set()
-  for(const input of manifest.immutableInputs) {
+  assert.ok(Array.isArray(manifest.legacyExecutableInputs)&&Array.isArray(manifest.immutableEvidenceInputs))
+  const executableInputs=new Set(),evidenceInputs=new Set()
+  for(const input of manifest.legacyExecutableInputs) {
     assert.ok(typeof input.path==='string'&&/^[CDE]:\//.test(input.path)&&!input.path.split('/').includes('..')
-      &&/\.(mjs|ps1|py)$/.test(input.path),'QA_INPUT_PATH_INVALID')
-    assert.ok(!inputs.has(input.path),'QA_INPUT_DUPLICATE');inputs.add(input.path)
-    assert.match(input.sha256,/^[A-F0-9]{64}$/)
-    if(verifyLocalInputs)assert.equal(crypto.createHash('sha256').update(read(input.path)).digest('hex').toUpperCase(),input.sha256,'PINNED_QA_INPUT_DRIFT')
+      &&/\.(mjs|ps1|py)$/.test(input.path),'QA_EXECUTABLE_INPUT_PATH_INVALID')
+    assert.ok(!executableInputs.has(input.path),'QA_EXECUTABLE_INPUT_DUPLICATE');executableInputs.add(input.path)
+    assert.match(input.sha256,/^[A-F0-9]{64}$/);assert.ok(typeof input.role==='string'&&input.role.length>=8)
+    assert.ok(['adapted-module','module-import','child-process','compiled-exec','function-extraction'].includes(input.execution),'QA_EXECUTABLE_MODE_INVALID')
+    if(verifyLocalInputs)assert.equal(crypto.createHash('sha256').update(read(input.path)).digest('hex').toUpperCase(),input.sha256,'PINNED_QA_EXECUTABLE_DRIFT')
   }
-  assert.equal(manifest.completeLegacyCodeClosure,false,'Immutable legacy dependencies remain explicitly outside the owned source set')
+  for(const input of manifest.immutableEvidenceInputs) {
+    assert.ok(typeof input.path==='string'&&/^[CDE]:\//.test(input.path)&&!input.path.split('/').includes('..')
+      &&/\.(mjs|ps1|py|json|log)$/.test(input.path),'QA_EVIDENCE_INPUT_PATH_INVALID')
+    assert.ok(!evidenceInputs.has(input.path)&&!executableInputs.has(input.path),'QA_INPUT_CLASS_OVERLAP');evidenceInputs.add(input.path)
+    assert.match(input.sha256,/^[A-F0-9]{64}$/);assert.ok(typeof input.role==='string'&&input.role.length>=8)
+    if(verifyLocalInputs)assert.equal(crypto.createHash('sha256').update(read(input.path)).digest('hex').toUpperCase(),input.sha256,'PINNED_QA_EVIDENCE_DRIFT')
+  }
+  assert.equal(manifest.completeLegacyCodeClosure,executableInputs.size===0,'QA_LEGACY_CLOSURE_CLAIM_INVALID')
   return {status:'passed',sourceCount:seen.size,relativeImportTargets:importTargets.size,
-    sources:hashes,immutableInputsVerified:verifyLocalInputs?inputs.size:0,completeLegacyCodeClosure:false,
+    sources:hashes,legacyExecutableInputs:executableInputs.size,immutableEvidenceInputs:evidenceInputs.size,
+    immutableInputsVerified:verifyLocalInputs?executableInputs.size+evidenceInputs.size:0,
+    completeLegacyCodeClosure:manifest.completeLegacyCodeClosure,
     stagedSourceBound:Boolean(sourceMirror),networkCalls:0,remoteExecutionAuthorized:false,onlineCapacityAccepted:false}
 }
 
@@ -97,7 +107,8 @@ export function readQaOwnership({verifyLocalInputs=false}={}) {
     [ledger+'/account-ledger-sink-r2.ps1',exact(execution,/const SINK_SHA='([A-F0-9]{64})'/g)],
     [ledger+'/account-ledger-client-r2.mjs',exact(execution,/const CLIENT_SHA='([A-F0-9]{64})'/g)],
   ]
-  assert.deepEqual(manifest.immutableInputs.map(value=>[value.path,value.sha256]),expected,'QA_DECLARED_INPUTS_DIFFER_FROM_RUNTIME_PINS')
+  const declared=new Map(manifest.legacyExecutableInputs.map(value=>[value.path,value.sha256]))
+  for(const [file,sha256]of expected)assert.equal(declared.get(file),sha256,'QA_DECLARED_EXECUTABLE_DIFFERS_FROM_RUNTIME_PIN: '+file)
   const names=git(['-c','core.quotepath=false','ls-files'])
   const tracked=new Set(names.trim().split(/\r?\n/))
   assert.ok(tracked.has(QA_MANIFEST),'QA_MANIFEST_NOT_VERSIONED')
