@@ -1,5 +1,7 @@
 # 十二军团任务台账
 
+接续2026-10-24 QA账本纳管（P2测试接入，不改产品）：原sink／client原字节纳仓库，Reader只提取原四函数；正常、恢复、本地消费者及测试转仓库，9个SHA／7路径强核，三个原代码仅留不可变证据。70仓库源／25相对依赖、11历史执行／8历史证据，19输入实际逐SHA通过，完整闭包false。新28＋原47归属、真实执行21（normal2＋local2实际sink）和恢复24通过，含DPAPI／CurrentUserOnly／完整60＋9／错误run及本地读者；零网络和正式数据变更。独审无实质阻断，但intent-to-add不等于提交，最终干净源镜像／Git字节及标准Batch待验；唯一qa-owned-ledger-20261024。开局三草稿与动效两叶不混本批；后者已冻结返还，Main验收前不进入下一阶段。
+
 接续2026-10-24排位通知A片（P2/P3）Main接受：完整读六叶／核冻结SHA与独审无阻断，真实完整平台2338/2338零失败跳过、隔离标准前端Batch exit0／类型和双Vite通过，两产物均核新文案；不含开局三草稿或动效新QA。纯review／normal／insufficient保审计但无通知／未读／资源推送，真实处罚、冻结／解除与私人申诉保留，mixed release按账号关联场次。CB4BDB53 TRX、实际进程返回及wrapper transcript的日志边界在唯一ranked-integrity-notify-20261024/main-acceptance.json明确；未变规则8378复用，不冒新Release／部署／线上关单。B单方处置／C账号按天禁赛仍待实施，源码同步实况见同目录synchronization.json。
 
 并行协调2026-10-24：人类已在“L12-卡牌区域移动动画专项”直接要求分阶段升级、Main验收及双方／观战连续性。Main逐读新增QA并收束初始化器调用／合成边界／逐断言执行口径，最终C87E8A63；当前Main重型验收结束后只给一次有界本地执行槽，无产品／测试服／Git租约，GameBoard原4F57BA5E只读。必须真实组件与命令入口证成RED，不能由pendingAction与watcher先后臆断生产竞态；提示仅放行自身续办，持久连线不当作busy，无新网络锁或计时暂停。假socket与直接状态写入、非真实触摸／恢复／观战全链均明示，首UI失败不冒后续command已执行；不与开局specialAssets／DeckCover／PromptOverlay三草稿冲突。

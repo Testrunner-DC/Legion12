@@ -69,9 +69,9 @@ try {
     $notAfter=[DateTimeOffset]::Parse($control.registrationWindow.notAfterUtc,[Globalization.CultureInfo]::InvariantCulture)
     if($notAfter -le $opened -or ($notAfter-$opened).TotalSeconds -gt 900){Fail-NormalLedger 'NORMAL_LEDGER_WINDOW_REJECTED'}
 
-    # Read only four immutable functions, never dot-source the historical runner.
-    $source='C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/test-account-ledger-real-r4.ps1'
-    $readerSha='C991435C5E18FC8A26D9F57264E25BC38F4D1B4D4CC79DAF395D1C0EFCC6BECE'
+    # Read only the four immutable repository helpers, never a historical runner.
+    $source=Join-Path $PSScriptRoot 'ledger/AccountLedgerReader.ps1'
+    $readerSha='7ABD52F25FFB11B9DEDBD11B6C6E4FF592F72DA0900D46133BC41E34AE1EBE25'
     if((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -cne $readerSha){Fail-NormalLedger 'NORMAL_FROZEN_READER_CHANGED'}
     $tokens=$null;$parseErrors=$null
     $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$parseErrors)

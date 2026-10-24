@@ -10,7 +10,7 @@ import {validatePressureMeasurementCheckpoint} from '../../scripts/lib/l12-press
 
 export const PWSH='C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe'
 export const FROZEN_GUARD=path.join(REPO,'ops/qa/testrun-frozen-resource-guard.py')
-const LEDGER='C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5'
+const LEDGER=path.join(REPO,'ops/qa/ledger')
 const SINK_SHA='B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81'
 const CLIENT_SHA='88BB6ACB68C3867CEC7A5E3DBA5A2B429A672FE4CDEF94C8D47D5921EA38B7F9'
 export function createExecutableCore(adapterUrl,{confirmationTrace=false}={}){

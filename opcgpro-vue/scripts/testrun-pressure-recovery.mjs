@@ -8,7 +8,7 @@ import {pathToFileURL} from 'node:url'
 import {REPO, EVIDENCE_ROOT, CACHE_ROOT, assertTestrunTarget, assertGeneratedDirectories, digest} from './testrun-pressure-protocol.mjs'
 
 const READER = path.join(REPO, 'ops/qa/Read-TestrunPressureLedgers.ps1')
-const LEGACY = 'C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5'
+const LEDGER_SOURCES = path.join(REPO, 'ops/qa/ledger')
 const SINK_SHA = 'B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81'
 const CLIENT_SHA = '88BB6ACB68C3867CEC7A5E3DBA5A2B429A672FE4CDEF94C8D47D5921EA38B7F9'
 const tokenPattern = /^[a-f0-9]{64}$/
@@ -380,7 +380,7 @@ export async function runRecoverySelfTests() {
       ['same-pid', c => {c.formal.pid = c.test.pid}], ['wrong-group-run', c => {c.groups[1].runId += '-wrong'}],
       ['wrong-binding', c => {c.bindingSha256 = '0'.repeat(64)}]])
       await check('control-reject-' + name, () => {const bad = structuredClone(control); mutate(bad); assert.throws(() => validateRecoveryControl(bad, binding, control.bindingSha256))})
-    const sinkPath = path.join(LEGACY, 'account-ledger-sink-r2.ps1'), clientPath = path.join(LEGACY, 'account-ledger-client-r2.mjs')
+    const sinkPath = path.join(LEDGER_SOURCES, 'account-ledger-sink-r2.ps1'), clientPath = path.join(LEDGER_SOURCES, 'account-ledger-client-r2.mjs')
     assert.equal(digest(fs.readFileSync(sinkPath)), SINK_SHA); assert.equal(digest(fs.readFileSync(clientPath)), CLIENT_SHA)
     const {AccountLedgerClient, NamedPipeLedgerTransport, registrationFingerprint} = await import(pathToFileURL(clientPath).href)
     const startSink = async index => {
@@ -566,7 +566,8 @@ export async function runRecoverySelfTests() {
     assert.equal(networkCalls, 0)
     const proof = {schema: 1, status: 'offline-tests-passed', cases: results.length, results, networkCalls,
       realDpapiLedgers: 2, ledgerGroups: [60, 9], actualColdReaderExecuted: true, wrongRunRejectedByActualFrozenReader: true,
-      frozenReaderSha256: 'C991435C5E18FC8A26D9F57264E25BC38F4D1B4D4CC79DAF395D1C0EFCC6BECE',
+      frozenReaderSha256: '7ABD52F25FFB11B9DEDBD11B6C6E4FF592F72DA0900D46133BC41E34AE1EBE25',
+      originalReaderEvidenceSha256: 'C991435C5E18FC8A26D9F57264E25BC38F4D1B4D4CC79DAF395D1C0EFCC6BECE',
       sourceSha256: digest(fs.readFileSync(import.meta.filename)), readerSha256: digest(fs.readFileSync(READER)),
       credentialsEmittedToStdout: false, onlineCapacityAccepted: false, liveLinuxSessionsVerified: false,
       boundary: 'Actual Windows DPAPI/sink/CurrentUserOnly private-pipe cold reads; injected HTTP/session/recovery only.'}

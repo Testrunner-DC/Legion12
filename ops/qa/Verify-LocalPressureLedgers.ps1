@@ -11,10 +11,10 @@ if ($control.kind -cne 'local-pressure-account-ledgers' -or $control.runId -notm
 $base = [uri]$control.baseUrl
 if ($base.Scheme -cne 'http' -or $base.Host -cne '127.0.0.1' -or $base.Port -le 0 -or
     $base.UserInfo -or $base.Query -or $base.Fragment -or $base.AbsolutePath -cne '/') { throw 'LOCAL_LEDGER_BINDING_REJECTED' }
-# Execute only the existing immutable reader helpers, not its independent test runner.
-$source = 'C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/test-account-ledger-real-r4.ps1'
+# Execute only the existing immutable repository helpers, not a test runner.
+$source = Join-Path $PSScriptRoot 'ledger/AccountLedgerReader.ps1'
 if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -cne
-    'C991435C5E18FC8A26D9F57264E25BC38F4D1B4D4CC79DAF395D1C0EFCC6BECE') { throw 'LOCAL_READER_SOURCE_REJECTED' }
+    '7ABD52F25FFB11B9DEDBD11B6C6E4FF592F72DA0900D46133BC41E34AE1EBE25') { throw 'LOCAL_READER_SOURCE_REJECTED' }
 $tokens=$null; $parseErrors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$parseErrors)
 if (@($parseErrors).Count -ne 0) { throw 'LOCAL_READER_SOURCE_REJECTED' }

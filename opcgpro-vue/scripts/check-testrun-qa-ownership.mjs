@@ -27,6 +27,43 @@ export function inspectOwnedGuardPins({frozen,normal,pressureRuntime,terminalRun
   return {frozenSha256,normalSha256,normalPinConsumers:normalPins.length}
 }
 
+export function inspectOwnedLedgerPins({sink,client,reader,execution,recovery,localQualifier,normalReader,localReader,executionTest}) {
+  const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex').toUpperCase()
+  const pin=(source,pattern)=>{const matches=[...source.matchAll(pattern)];assert.equal(matches.length,1,'QA_LEDGER_PIN_ANCHOR_CHANGED');return matches[0][1]}
+  for(const bytes of [sink,client,reader])assert.ok(Buffer.isBuffer(bytes)&&bytes.length>0&&bytes.length<=131072,'QA_OWNED_LEDGER_BYTES_INVALID')
+  const sinkSha256=sha(sink),clientSha256=sha(client),readerSha256=sha(reader)
+  // The first two are byte-for-byte historical sources. The last file contains
+  // only the four original reader ASTs, never the historical test runner.
+  assert.equal(sinkSha256,'B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81','QA_OWNED_LEDGER_SINK_DRIFT')
+  assert.equal(clientSha256,'88BB6ACB68C3867CEC7A5E3DBA5A2B429A672FE4CDEF94C8D47D5921EA38B7F9','QA_OWNED_LEDGER_CLIENT_DRIFT')
+  assert.equal(readerSha256,'7ABD52F25FFB11B9DEDBD11B6C6E4FF592F72DA0900D46133BC41E34AE1EBE25','QA_OWNED_LEDGER_READER_DRIFT')
+  const pins=[
+    [sinkSha256,pin(execution,/const SINK_SHA='([A-F0-9]{64})'/g)],
+    [clientSha256,pin(execution,/const CLIENT_SHA='([A-F0-9]{64})'/g)],
+    [sinkSha256,pin(recovery,/const SINK_SHA = '([A-F0-9]{64})'/g)],
+    [clientSha256,pin(recovery,/const CLIENT_SHA = '([A-F0-9]{64})'/g)],
+    [sinkSha256,pin(localQualifier,/const LEDGER_SINK_SHA = '([A-F0-9]{64})'/g)],
+    [clientSha256,pin(localQualifier,/const LEDGER_CLIENT_SHA = '([A-F0-9]{64})'/g)],
+    [readerSha256,pin(normalReader,/\$readerSha='([A-F0-9]{64})'/g)],
+    [readerSha256,pin(localReader,/-cne\s*\r?\n\s*'([A-F0-9]{64})'/g)],
+    [readerSha256,pin(recovery,/frozenReaderSha256: '([A-F0-9]{64})'/g)],
+  ]
+  for(const [actual,expected]of pins)assert.equal(actual,expected,'QA_OWNED_LEDGER_CONSUMER_PIN_DRIFT')
+  const paths=[
+    [execution,"const LEDGER=path.join(REPO,'ops/qa/ledger')"],
+    [recovery,"const LEDGER_SOURCES = path.join(REPO, 'ops/qa/ledger')"],
+    [normalReader,"$source=Join-Path $PSScriptRoot 'ledger/AccountLedgerReader.ps1'"],
+    [localReader,"$source = Join-Path $PSScriptRoot 'ledger/AccountLedgerReader.ps1'"],
+    [localQualifier,"from '../../ops/qa/ledger/account-ledger-client-r2.mjs'"],
+    [localQualifier,"const ledgerSource = path.join(repo, 'ops/qa/ledger/account-ledger-sink-r2.ps1')"],
+    [executionTest,"await import('../../ops/qa/ledger/account-ledger-client-r2.mjs')"],
+  ]
+  for(const [source,expected]of paths)assert.ok(source.includes(expected),'QA_LEDGER_CONSUMER_NOT_REPOSITORY_BOUND')
+  for(const source of [execution,recovery,localQualifier,normalReader,localReader,executionTest])
+    assert.ok(!source.includes('/ledger-r5/'),'QA_LEDGER_CONSUMER_STILL_USES_HISTORICAL_CODE')
+  return {sinkSha256,clientSha256,readerSha256,consumerPins:pins.length,repositoryPaths:paths.length}
+}
+
 // This is a read-only source-ownership check, not remote execution permission or
 // a substitute for the normal runtime/identity/workload/cleanup verifiers.
 export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.readFileSync(file),verifyLocalInputs=false,sourceMirror}={}) {
@@ -126,18 +163,33 @@ export function readQaOwnership({verifyLocalInputs=false}={}) {
     terminalRuntime:code('opcgpro-vue/scripts/terminal-recipient-runtime.mjs'),
     terminalGuard:code('ops/qa/testrun-terminal-resource-guard.py'),qualification})
   assert.ok(manifest.immutableEvidenceInputs.some(input=>input.sha256===guardPins.frozenSha256),'QA_ORIGINAL_GUARD_EVIDENCE_MISSING')
-  const ledger=exact(execution,/const LEDGER='([^']+)'/g)
+  const ledgerFiles=['account-ledger-sink-r2.ps1','account-ledger-client-r2.mjs','AccountLedgerReader.ps1']
+  for(const name of ledgerFiles)assert.ok(manifest.sources.includes('ops/qa/ledger/'+name),'QA_LEDGER_SOURCE_NOT_OWNED')
+  const ledgerPins=inspectOwnedLedgerPins({
+    sink:fs.readFileSync(path.join(QA_REPO,'ops/qa/ledger/'+ledgerFiles[0])),
+    client:fs.readFileSync(path.join(QA_REPO,'ops/qa/ledger/'+ledgerFiles[1])),
+    reader:fs.readFileSync(path.join(QA_REPO,'ops/qa/ledger/'+ledgerFiles[2])),execution,
+    recovery:code('opcgpro-vue/scripts/testrun-pressure-recovery.mjs'),
+    localQualifier:code('opcgpro-vue/scripts/qualify-local-pressure.mjs'),
+    normalReader:code('ops/qa/Read-TestrunPressureLedgers.ps1'),
+    localReader:code('ops/qa/Verify-LocalPressureLedgers.ps1'),
+    executionTest:code('opcgpro-vue/scripts/test-testrun-pressure-execution.mjs'),
+  })
+  for(const [name,sha256]of [[ledgerFiles[0],ledgerPins.sinkSha256],[ledgerFiles[1],ledgerPins.clientSha256],
+    ['test-account-ledger-real-r4.ps1','C991435C5E18FC8A26D9F57264E25BC38F4D1B4D4CC79DAF395D1C0EFCC6BECE']]){
+    const original=manifest.immutableEvidenceInputs.find(input=>input.path.endsWith('/ledger-r5/'+name)&&input.sha256===sha256)
+    assert.ok(original&&!Object.hasOwn(original,'execution'),'QA_ORIGINAL_LEDGER_EVIDENCE_MISSING')
+    assert.ok(!manifest.legacyExecutableInputs.some(input=>input.path===original.path),'QA_ORIGINAL_LEDGER_STILL_EXECUTED')
+  }
   const expected=[
     [exact(protocol,/export const FROZEN_CORE = '([^']+)'/g),exact(protocol,/export const FROZEN_SHA = '([A-F0-9]{64})'/g)],
-    [ledger+'/account-ledger-sink-r2.ps1',exact(execution,/const SINK_SHA='([A-F0-9]{64})'/g)],
-    [ledger+'/account-ledger-client-r2.mjs',exact(execution,/const CLIENT_SHA='([A-F0-9]{64})'/g)],
   ]
   const declared=new Map(manifest.legacyExecutableInputs.map(value=>[value.path,value.sha256]))
   for(const [file,sha256]of expected)assert.equal(declared.get(file),sha256,'QA_DECLARED_EXECUTABLE_DIFFERS_FROM_RUNTIME_PIN: '+file)
   const names=git(['-c','core.quotepath=false','ls-files'])
   const tracked=new Set(names.trim().split(/\r?\n/))
   assert.ok(tracked.has(QA_MANIFEST),'QA_MANIFEST_NOT_VERSIONED')
-  return {...inspectQaOwnership(manifest,{tracked,verifyLocalInputs,sourceMirror}),ownedGuardPins:guardPins}
+  return {...inspectQaOwnership(manifest,{tracked,verifyLocalInputs,sourceMirror}),ownedGuardPins:guardPins,ownedLedgerPins:ledgerPins}
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   assert.ok(process.argv.length===2||(process.argv.length===3&&process.argv[2]==='--verify-local-inputs'),'Only optional local immutable-input verification is supported')

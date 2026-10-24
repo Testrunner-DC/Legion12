@@ -68,7 +68,13 @@
     "ops/qa/testrun-frozen-resource-guard.py",
     "ops/qa/testrun-owned-analytics-import.py",
     "ops/qa/testrun-terminal-resource-guard.py",
-    "scripts/lib/l12-pressure-checkpoint.mjs"
+    "scripts/lib/l12-pressure-checkpoint.mjs",
+    "ops/qa/ledger/account-ledger-sink-r2.ps1",
+    "ops/qa/ledger/account-ledger-client-r2.mjs",
+    "ops/qa/ledger/AccountLedgerReader.ps1",
+    "ops/qa/Verify-LocalPressureLedgers.ps1",
+    "opcgpro-vue/scripts/qualify-local-pressure.mjs",
+    "opcgpro-vue/scripts/test-owned-ledger-sources.mjs"
   ],
   "entries": [
     {
@@ -208,24 +214,6 @@
       "sha256": "D328933729E54167078F123329A0880981C8C5A55771E32865F77B9DEAE1B456",
       "execution": "module-import",
       "role": "Transitive selector contract executed by the terminal-wire measurement."
-    },
-    {
-      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-sink-r2.ps1",
-      "sha256": "B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81",
-      "execution": "child-process",
-      "role": "DPAPI ledger sink executed as a PowerShell child process."
-    },
-    {
-      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-client-r2.mjs",
-      "sha256": "88BB6ACB68C3867CEC7A5E3DBA5A2B429A672FE4CDEF94C8D47D5921EA38B7F9",
-      "execution": "module-import",
-      "role": "Private-pipe ledger client dynamically imported by execution and recovery."
-    },
-    {
-      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/test-account-ledger-real-r4.ps1",
-      "sha256": "C991435C5E18FC8A26D9F57264E25BC38F4D1B4D4CC79DAF395D1C0EFCC6BECE",
-      "execution": "function-extraction",
-      "role": "Four reader functions extracted into ScriptBlocks by the active cold-ledger reader."
     }
   ],
   "immutableEvidenceInputs": [
@@ -253,6 +241,21 @@
       "path": "D:/GPT/Legion12/artifacts/stage-goals-20261023/test-release/fixture-import-r2/testrun-owned-analytics-import.py",
       "sha256": "B103480CB65ED534369192AE0486272DB197DD1AD737FC4F8611F86A2700925E",
       "role": "Historical derived importer source retained only as immutable evidence after migration to the repository template."
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-sink-r2.ps1",
+      "sha256": "B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81",
+      "role": "Original ledger source retained only as evidence after its exact bytes were versioned in the repository."
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-client-r2.mjs",
+      "sha256": "88BB6ACB68C3867CEC7A5E3DBA5A2B429A672FE4CDEF94C8D47D5921EA38B7F9",
+      "role": "Original ledger source retained only as evidence after its exact bytes were versioned in the repository."
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/test-account-ledger-real-r4.ps1",
+      "sha256": "C991435C5E18FC8A26D9F57264E25BC38F4D1B4D4CC79DAF395D1C0EFCC6BECE",
+      "role": "Original reader test-runner source retained only as evidence; only its four exact function ASTs now live in the repository."
     }
   ],
   "completeLegacyCodeClosure": false,

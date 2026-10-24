@@ -6,9 +6,13 @@ import {spawn, execFileSync} from 'node:child_process'
 import {pathToFileURL} from 'node:url'
 import {adaptFrozenPressureCore, assertLocalPressureTarget, cleanupLocalQualificationAccounts, digest} from './local-pressure-protocol.mjs'
 import {summarizeLocalPressureCost} from './local-pressure-cost.mjs'
-import {AccountLedgerClient, NamedPipeLedgerTransport, registrationFingerprint} from 'file:///C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-client-r2.mjs'
+import {AccountLedgerClient, NamedPipeLedgerTransport, registrationFingerprint} from '../../ops/qa/ledger/account-ledger-client-r2.mjs'
 
 const repo = path.resolve(import.meta.dirname, '../..')
+const LEDGER_SINK_SHA = 'B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81'
+const LEDGER_CLIENT_SHA = '88BB6ACB68C3867CEC7A5E3DBA5A2B429A672FE4CDEF94C8D47D5921EA38B7F9'
+assert.equal(digest(fs.readFileSync(path.join(repo, 'ops/qa/ledger/account-ledger-sink-r2.ps1'))), LEDGER_SINK_SHA)
+assert.equal(digest(fs.readFileSync(path.join(repo, 'ops/qa/ledger/account-ledger-client-r2.mjs'))), LEDGER_CLIENT_SHA)
 assert.ok(process.argv.slice(2).every(value => ['--host-probe', '--cleanup-probe', '--notification-probe', '--hand-array-delta', '--wire-cost'].includes(value)), 'only local probe switches are accepted')
 const hostProbeOnly = process.argv.includes('--host-probe')
 const cleanupProbeOnly = process.argv.includes('--cleanup-probe')
@@ -111,7 +115,7 @@ try {
   Object.assign(report, {ready, observedHealth: health, protocolBinding: binding, status: 'ready'})
   const core = await import(pathToFileURL(adaptedPath).href)
   await core.initializeLocalQualificationProtocol(binding, {handArrayDeltaV1, wireCost})
-  const ledgerSource = 'C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-sink-r2.ps1'
+  const ledgerSource = path.join(repo, 'ops/qa/ledger/account-ledger-sink-r2.ps1')
   for (const [index, maxSlots] of [60, 9].entries()) {
     const run = 'local-' + runId + '-' + index, pipe = 'l12-local-' + crypto.randomBytes(16).toString('hex')
     // Start #2 only when #1 is closed, preserving the original registration boundary.

@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import {execFileSync} from 'node:child_process'
 import {pathToFileURL} from 'node:url'
-import {createExecutableCore,assertPressureDisk,assertCapturedMeasurement,readPeripheralPreflight,createOwnedLedgerSinks} from './testrun-pressure-execution.mjs'
+import {PWSH,createExecutableCore,assertPressureDisk,assertCapturedMeasurement,readPeripheralPreflight,createOwnedLedgerSinks} from './testrun-pressure-execution.mjs'
 import {assertGeneratedDirectories,EVIDENCE_ROOT,CACHE_ROOT,digest} from './testrun-pressure-protocol.mjs'
 import {createPressureMeasurementCheckpoint,persistPressureMeasurementCheckpoint} from '../../scripts/lib/l12-pressure-checkpoint.mjs'
 import {readColdLedgersPrivately} from './testrun-pressure-recovery.mjs'
@@ -50,7 +51,7 @@ const controlPath=path.join(output,'ledger-control.json');fs.writeFileSync(contr
 let sinks,exits,cold
 try{
  sinks=await createOwnedLedgerSinks(control,{cache:ledgerRoot,output})
- const clientModule=await import('file:///C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-client-r2.mjs')
+ const clientModule=await import('../../ops/qa/ledger/account-ledger-client-r2.mjs')
  for(const index of [0,1]){
   await sinks.start(index);const username=`QActrl${index}`,password=crypto.randomBytes(24).toString('hex'),requestedAtUtc=new Date().toISOString()
   await sinks.clients[index].persistIntent({slot:0,username,password,requestedAtUtc,preflightAbsent:true,requestFingerprint:clientModule.registrationFingerprint(username,password)})
@@ -60,7 +61,40 @@ try{
  cold=await readColdLedgersPrivately({controlPath,controlSha256,bindingSha256:control.bindingSha256,allowPartial:true,consume:envelope=>assert.equal(envelope.accounts.length,2)})
  assert.equal(cold.complete,false);assert.deepEqual(cold.groups.map(item=>[item.count,item.sequence,item.confirmed,item.wrongRunRejected]),[[1,2,1,true],[1,2,1,true]])
  results.push({name:'two-actual-frozen-pipes-DPAPI-cold-reader-and-normal-writer-exits',status:'passed'})
+ // Exercise the other live consumer too, without starting an application or
+ // contacting the loopback URL. Only these newly owned synthetic ledgers exist.
+ const localOutput=path.join(output,'local-reader');fs.mkdirSync(localOutput)
+ const localSha='A'.repeat(64)
+ const localControl={schema:1,kind:'local-pressure-account-ledgers',runId,
+  baseUrl:'http://127.0.0.1:12345/',serverSha256:localSha,
+  groups:[60,9].map((maxSlots,index)=>({index,maxSlots,runId:`local-${runId}-${index}`,
+   ledgerPath:path.join(ledgerRoot,'ledger-'+index+'.dpapi')}))}
+ fs.writeFileSync(path.join(ledgerRoot,'owner.json'),JSON.stringify({schema:1,
+  kind:'l12-local-real-pressure-v1',runId,serverSha256:localSha}),{flag:'wx'})
+ const localControlPath=path.join(localOutput,'control.json')
+ fs.writeFileSync(localControlPath,JSON.stringify(localControl),{flag:'wx'})
+ const localSinks=await createOwnedLedgerSinks(localControl,{cache:ledgerRoot,output:localOutput})
+ try{
+  for(const index of [0,1]){
+   await localSinks.start(index)
+   const username=`QLocal${index}`,password=crypto.randomBytes(24).toString('hex'),requestedAtUtc=new Date().toISOString()
+   await localSinks.clients[index].persistIntent({slot:0,username,password,requestedAtUtc,preflightAbsent:true,
+    requestFingerprint:clientModule.registrationFingerprint(username,password)})
+   await localSinks.clients[index].persistConfirmed({slot:0,id:'synthetic-local-account-'+index,createdAtUtc:new Date().toISOString()})
+   localSinks.clients[index].close()
+  }
+  const localExits=await localSinks.finish();assert.ok(localExits.every(item=>item.code===0&&item.errorBytes===0))
+  const localRead=JSON.parse(execFileSync(PWSH,['-NoProfile','-File',
+   path.resolve(import.meta.dirname,'../../ops/qa/Verify-LocalPressureLedgers.ps1'),
+   '-ControlPath',localControlPath,'-ExpectedServerSha256',localSha],
+  {encoding:'utf8',windowsHide:true,timeout:15000,maxBuffer:16384}))
+  assert.equal(localRead.secretsEmitted,false);assert.equal(localRead.remoteCalls,0)
+  assert.deepEqual(localRead.groups.map(item=>[item.count,item.sequence,item.confirmed,item.wrongRunRejected]),
+   [[1,2,1,true],[1,2,1,true]])
+  fs.writeFileSync(path.join(localOutput,'verification.json'),JSON.stringify(localRead),{flag:'wx'})
+  results.push({name:'actual-local-reader-two-DPAPI-groups-and-wrong-run-rejection',status:'passed'})
+ }finally{await localSinks.finish()}
 }finally{if(sinks)await sinks.finish();globalThis.fetch=originalFetch}
 assert.equal(networkCalls,0)
-const proof={schema:1,status:'passed',cases:results.length,results,realNetworkCalls:0,actualLocalLedgerSinks:2,ledgerCounts:[1,1],full69LedgerAcceptanceClaimed:false,cold,exits,sources:['testrun-pressure-execution.mjs','test-testrun-pressure-execution.mjs','run-testrun-representative-pressure.mjs'].map(file=>({file,sha256:digest(fs.readFileSync(path.join(import.meta.dirname,file)))})),onlineCapacityAccepted:false}
+const proof={schema:1,status:'passed',cases:results.length,results,realNetworkCalls:0,actualLocalLedgerSinks:4,normalReaderLedgerSinks:2,localVerifierLedgerSinks:2,localVerifierProof:'local-reader/verification.json',ledgerCounts:[1,1],full69LedgerAcceptanceClaimed:false,cold,exits,sources:['testrun-pressure-execution.mjs','test-testrun-pressure-execution.mjs','run-testrun-representative-pressure.mjs'].map(file=>({file,sha256:digest(fs.readFileSync(path.join(import.meta.dirname,file)))})),onlineCapacityAccepted:false}
 fs.writeFileSync(path.join(output,'execution-tests.json'),JSON.stringify(proof,null,2),{flag:'wx'});console.log(JSON.stringify({status:proof.status,cases:proof.cases,output,realNetworkCalls:0}))

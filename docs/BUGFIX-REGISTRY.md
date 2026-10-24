@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## QA-20261024-LEDGER-CODE-OWNERSHIP｜账本代码不再依赖历史artifact执行
+
+- 共因：正常执行、恢复和本地资格仍从旧ledger-r5加载代码，源码归属不随提交移动。仅把sink 17355B／B74A6359、client 9306B／88BB6ACB原字节纳Git；新Reader 2908B／7ABD52F2只有原runner四个精确函数，不执行旧测试runner、不迁移任何真实账本。三个具名-text保字节，全部正常／恢复／本地消费者改仓库路径并核固定SHA。
+- 同类扫描覆盖execution、recovery、qualify-local、两个PS读者及执行测试；归属门强核三源／9pin／7路径并拒旧运行路径，原三个输入保留为immutableEvidence。70仓库源、11旧执行、8证据，19历史输入实际核SHA；closure=false，不冒全部测试工具可移植。DPAPI CurrentUser、CurrentUserOnly管道、持久写后ACK、注册顺序、窗口／分组／清退和无凭据stdout全部保持。
+- Main实际新28归属／变异／AST／ACK＋原47，真实执行21与恢复24均通过；后两者实际Windows DPAPI和私有管道，含完整60＋9及错误run拒绝，执行21另直接覆盖本地PS读者，4个实际sink正常退出。网络0，不是线上容量、真实玩家账本恢复或新压力测试。初始历史reader RED、中间20例与21例旧计数回执保留。
+- 独立只读复核无实质阻断，重点要求提交后clean sourceMirror，不接受intent-to-add的ls-files假闭合。唯一qa-owned-ledger-20261024，源码／已提交blob及Windows checkout／镜像／标准Batch最终状态分别记录；未改应用／卡效／数据库／维护／部署，回滚仅工具调用来源与三个源码叶。
+
 ## BUG-20261024-RANKED-INTEGRITY-QUIET-REVIEW｜无实际影响的复核不通知玩家
 
 - 人类直接需求拆为三片：A无判罚复核静默，B可仅处置单方，C账号管理按天排位禁赛。本片仅A，B/C未实施；不把关联排位问题混成已完成。P2/P3沿原处置事务与通知投影，不改积分、收益纠正、限制或持久格式。
