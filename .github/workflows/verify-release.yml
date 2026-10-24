@@ -12,12 +12,19 @@ concurrency:
   group: l12-verify-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   verify-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Actual Linux rules alone take ~17 min; include the bounded first asset
+    # fetch plus platform/frontend/publish without weakening any individual gate.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: 生成目录绑定
         shell: pwsh
@@ -96,11 +103,50 @@ jobs:
       - name: 发布状态来源回归
         run: node scripts/test-release-status.mjs
 
+      - name: 标准出包选择与边界
+        id: policy
+        shell: pwsh
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_HEAD: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node ops/ci/test-l12-package-policy.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical source policy regression failed' }
+          node ops/ci/test-l12-canonical-step.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical adapter regression failed' }
+          python3 -I -B ops/ci/test-l12-canonical-artifacts.py --work-root "$env:L12_WORK_CACHE/artifact-fixtures"
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical artifact boundary regression failed' }
+          $selection = node ops/ci/l12-package-policy.mjs $env:CI_EVENT_NAME $env:GITHUB_EVENT_PATH $env:CI_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical source policy failed' }
+          $selection = $selection | ConvertFrom-Json
+          "package=$($selection.package.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "verify=$($selection.verify.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "commit=$($selection.commit)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host $selection.reason
+
+      - name: 可信卡图精确缓存
+        if: steps.policy.outputs.package == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.L12_WORK_CACHE }}/card-input
+          key: l12-card-input-${{ runner.os }}-${{ hashFiles('ops/ci/l12-card-assets-input.lock.json', 'ops/ci/l12-card-assets-input.py') }}
+
+      - name: 唯一标准发布包
+        id: canonical
+        if: steps.policy.outputs.package == 'true'
+        shell: pwsh
+        env:
+          CI_HEAD: ${{ steps.policy.outputs.commit }}
+        run: ./ops/ci/invoke-l12-canonical-package.ps1 -Commit $env:CI_HEAD -CardAssetRoot "$env:L12_WORK_CACHE/card-input" -OutputRoot "$env:L12_ARTIFACT_ROOT/canonical"
+
       - name: 安装前端依赖
+        if: steps.policy.outputs.verify == 'true'
         working-directory: opcgpro-vue
         run: npm ci --prefer-offline --no-audit
 
       - name: 前端生产构建
+        if: steps.policy.outputs.verify == 'true'
         working-directory: opcgpro-vue
         shell: pwsh
         env:
@@ -127,13 +173,15 @@ jobs:
           }
 
       - name: L12 规则测试
+        if: steps.policy.outputs.verify == 'true'
         shell: pwsh
         run: ./scripts/invoke-l12-tests.ps1 -Project ./TwelveLegions.Tests/TwelveLegions.Tests.csproj
 
       - name: 平台与控制面测试
+        if: steps.policy.outputs.verify == 'true'
         shell: pwsh
         run: ./scripts/invoke-l12-tests.ps1 -Project ./TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj
 
-      # Reviewed asset bytes are pinned in ops/ci/l12-card-assets-input.lock.json.
-      # Canonical verify-l12.ps1 still needs a separately qualified portable
-      # host entry before CI can build deployable packages. Do not hand-pack one.
+      # Both mutually exclusive lanes retain full rules/platform/frontend gates.
+      # Only verify-l12.ps1 creates packages; CI never deploys or changes services.
+      # External attachment publication awaits its separate data-transfer choice.

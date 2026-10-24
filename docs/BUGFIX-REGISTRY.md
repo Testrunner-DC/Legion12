@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261024-CANONICAL-AUTO｜可信缓存接既有唯一出包入口
+
+- 直接承接目标5工具需求，不改规则／网络／数据库；没有新产品裁定。命中卡图缓存不能仅信key，现核原锁1842文件全部SHA且拒绝根／后代链接、硬链接和额外文件，不修复／删改损坏缓存。文档／纯QA不触发应用包，未知源码及无法证祖先的浅克隆保守走完整canonical；附注tag解析到实际commit，固定SHA参数不进shell。
+- workflow两路互斥：原完整verify路径仍在，出包只委托verify-l12.ps1完整规则／平台／UI及标准归档。新适配器实核宿主与checkout，失败留原日志及3000B UTF8尾；只读产物校验限14字段、schema3／能力／当前commit、原150MiB运行包／400MiB图包大小SHA与精确路径，不手写归档或manifest。无服务或维护变更；附件上传仍未授权、保留原全禁止保护。
+- 验收：44策略、真实Git/CLI五场、实际新宿主七场、最终27含真实CLI／Windows junction及hardlink边界通过；原37缓存／完整整源复用。标准12叶有效前缀含原性能链及发布反例；缺ssh-keygen和长夹具tar失败均保留，短根续验90817实际exit0、76发布场景／30备份／34排空全过，572A1650；不冒新单轮Batch。唯一canonical-ci-20261024。回滚仅具名工具批；原70bc实际Linux前端及规则success、平台被30m任务上限取消，不冒全部通过。新45m是全流程预算，不改任何应用或3秒性能门槛。
+
 ## OPS-20261024-CI-HOST-COPY｜既有CI宿主、只读基准与唯一复制入口
 
 - 共因与范围：原Windows宿主／原生文件参数、robocopy及强制QA的本机历史路径不能直接在Linux执行；同族还纠正Main新引入的job.env上下文、stdout／stderr合法交错误判、过长注释截断与中文解码、教学惰性测试D路径。最后实际8c315e29错误已由官方公开页确认：guidance／progress忽略L12_PWSH而调用powershell.exe，三教学QA现统一既有绑定／宿主fallback。以上仅P2工具，不改产品规则、教学步骤、性能或隐私。

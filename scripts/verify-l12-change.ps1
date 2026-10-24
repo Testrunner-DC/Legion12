@@ -180,7 +180,7 @@ try {
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
     $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
     $testStorageChanged = Test-AnyPath @('^scripts/(lib/l12-test-storage|test-l12-test-storage|invoke-l12-tests)\.ps1$', '^scripts/lib/TestStorageIsolationTests\.cs$', '^ops/windows/Initialize-L12BuildEnvironment\.ps1$')
-    $workflowChanged = $testStorageChanged -or (Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/(check-l12-architecture-lock\.mjs|verify-l12-github-workflow\.ps1)$'))
+    $workflowChanged = $testStorageChanged -or (Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^ops/ci/', '^scripts/(check-l12-architecture-lock\.mjs|verify-l12-github-workflow\.ps1|test-ci-release-entry\.mjs)$'))
     if ($testStorageChanged) { $backendChanged=$true; $platformChanged=$true }
     $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup|test-l12-storage-audit)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
     $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^ops/windows/deploy-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$', '^scripts/(release-ledger|test-release-ledger|release-status|test-release-status)\.mjs$', '^release-ledger/')

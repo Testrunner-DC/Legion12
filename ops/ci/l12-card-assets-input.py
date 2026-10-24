@@ -334,15 +334,40 @@ def write_asset(root, row, raw):
 
 def verify_tree(root, files):
     actual = set()
+    directories = {parent.as_posix() for name in files for parent in Path(name).parents if parent != Path(".")}
     for path in root.rglob("*"):
-        mode = path.lstat().st_mode
-        require(not path.is_symlink() and (stat.S_ISDIR(mode) or stat.S_ISREG(mode)), "OUTPUT_LINK_OR_SPECIAL_REJECTED")
+        info = path.lstat()
+        mode = info.st_mode
+        require(not path.is_symlink() and not (getattr(info, "st_file_attributes", 0) & 0x400)
+            and (stat.S_ISDIR(mode) or stat.S_ISREG(mode)), "OUTPUT_LINK_OR_SPECIAL_REJECTED")
         if path.is_file():
+            require(info.st_nlink == 1, "OUTPUT_LINK_OR_SPECIAL_REJECTED")
             name = path.relative_to(root).as_posix()
             require(name in files and path.stat().st_size == files[name]["size"]
                 and file_digest(path, files[name]["size"]) == files[name]["sha256"], "OUTPUT_BYTES_MISMATCH")
             actual.add(name)
+        else:
+            require(path.relative_to(root).as_posix() in directories, "OUTPUT_UNDECLARED_DIRECTORY")
     require(actual == set(files), "OUTPUT_INCOMPLETE")
+
+
+def assert_plain_prepared_root(root):
+    require(root.is_absolute(), "PREPARED_ROOT_MUST_BE_ABSOLUTE")
+    require(os.path.lexists(root), "PREPARED_ROOT_MISSING")
+    info = root.lstat()
+    require(stat.S_ISDIR(info.st_mode) and not root.is_symlink()
+        and not (getattr(info, "st_file_attributes", 0) & 0x400), "PREPARED_ROOT_NOT_PLAIN")
+
+
+def verify_prepared(lock, root):
+    """Validate an existing cache without fetching, repairing or deleting it."""
+    files = validate_lock(lock)
+    assert_plain_prepared_root(root)
+    require(root.resolve() == root, "PREPARED_ROOT_NOT_PHYSICAL")
+    verify_tree(root, files)
+    return {"schema": 1, "assetVersion": lock["assetVersion"], "files": len(files),
+        "bytes": sum(row["size"] for row in files.values()), "allFileHashesVerified": True,
+        "readOnly": True, "releasePackageCreated": False}
 
 
 def materialize(lock, root, archive=None, fetch=None):
@@ -397,6 +422,9 @@ def main():
     pin.add_argument("--output-lock", required=True)
     check = commands.add_parser("check")
     check.add_argument("--lock", required=True)
+    verify = commands.add_parser("verify")
+    verify.add_argument("--lock", required=True)
+    verify.add_argument("--input-root", required=True)
     prepare = commands.add_parser("prepare")
     prepare.add_argument("--lock", required=True)
     prepare.add_argument("--output-root", required=True)
@@ -417,6 +445,12 @@ def main():
         lock, sha = load_lock(options.lock)
         if options.command == "check":
             result = {"schema": 1, "lockSha256": sha, "files": len(lock["files"]), "valid": True}
+        elif options.command == "verify":
+            # Reject a linked root before the common physical-path guard resolves
+            # ancestor aliases. The verifier must not traverse a restored root link.
+            assert_plain_prepared_root(Path(options.input_root))
+            result = verify_prepared(lock, generated_path(options.input_root))
+            result["lockSha256"] = sha
         else:
             result = materialize(lock, generated_path(options.output_root), options.archive)
             result["lockSha256"] = sha

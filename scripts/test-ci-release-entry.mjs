@@ -4,6 +4,7 @@ import fs from 'node:fs'
 const workflow = fs.readFileSync(process.argv[2] || new URL('../.github/workflows/verify-release.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const standard = fs.readFileSync(new URL('../ops/windows/verify-l12.ps1', import.meta.url), 'utf8')
 const deploy = fs.readFileSync(new URL('../ops/windows/deploy-l12-testrun.ps1', import.meta.url), 'utf8')
+const canonicalCi = fs.readFileSync(new URL('../ops/ci/invoke-l12-canonical-package.ps1', import.meta.url), 'utf8')
 
 export function check(source) {
   assert.doesNotMatch(source, /tar\s+-[a-zA-Z]*c|dotnet\s+publish|actions\/upload-artifact|releaseSha256\s*"?\s*:/,
@@ -48,6 +49,28 @@ export function check(source) {
     'CI must bind host and all generated roots before dependency install and frontend execution')
   assert.equal((source.match(/^          npm run build 2>&1 \| Tee-Object -FilePath \$log$/gm) || []).length, 1,
     'CI still owns exactly one standard frontend build')
+  for (const name of ['安装前端依赖', '前端生产构建', 'L12 规则测试', '平台与控制面测试']) {
+    const step = source.split(`      - name: ${name}\n`)[1]?.split('\n      - ')[0] || ''
+    assert.match(step, /^        if: steps\.policy\.outputs\.verify == 'true'$/m,
+      `verification-only lane must not repeat canonical gates: ${name}`)
+  }
+  const canonical = source.split('      - name: 唯一标准发布包\n')[1]?.split('\n      - ')[0] || ''
+  for (const marker of ["if: steps.policy.outputs.package == 'true'", 'id: canonical',
+    'CI_HEAD: ${{ steps.policy.outputs.commit }}',
+    'run: ./ops/ci/invoke-l12-canonical-package.ps1 -Commit $env:CI_HEAD -CardAssetRoot "$env:L12_WORK_CACHE/card-input" -OutputRoot "$env:L12_ARTIFACT_ROOT/canonical"'])
+    assert.ok(canonical.includes(marker), `single canonical lane missing: ${marker}`)
+  assert.equal((source.match(/run: \.\/ops\/ci\/invoke-l12-canonical-package\.ps1/g) || []).length, 1, 'single canonical invocation')
+  const cache = source.split('      - name: 可信卡图精确缓存\n')[1]?.split('\n      - ')[0] || ''
+  for (const marker of ["if: steps.policy.outputs.package == 'true'", 'uses: actions/cache@v4',
+    'path: ${{ env.L12_WORK_CACHE }}/card-input', "hashFiles('ops/ci/l12-card-assets-input.lock.json', 'ops/ci/l12-card-assets-input.py')"])
+    assert.ok(cache.includes(marker), `exact canonical input cache missing: ${marker}`)
+  assert.doesNotMatch(cache, /restore-keys:/, 'no partially matching trusted asset cache')
+  const policy = source.split('      - name: 标准出包选择与边界\n')[1]?.split('\n      - ')[0] || ''
+  for (const marker of ['id: policy', 'node ops/ci/test-l12-package-policy.mjs',
+    'python3 -I -B ops/ci/test-l12-canonical-artifacts.py',
+    'node ops/ci/l12-package-policy.mjs $env:CI_EVENT_NAME $env:GITHUB_EVENT_PATH $env:CI_HEAD',
+    'if ($LASTEXITCODE -ne 0)', 'ConvertFrom-Json', '"commit=$($selection.commit)"', '"verify=$($selection.verify.ToString().ToLowerInvariant())"', '$env:GITHUB_OUTPUT'])
+    assert.ok(policy.includes(marker), `canonical source selection boundary missing: ${marker}`)
 }
 
 check(workflow)
@@ -74,4 +97,20 @@ assert.throws(() => check(workflow.replace('    steps:', '    env:\n      BAD: $
 assert.throws(() => check(workflow.replace("'L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','L12_PWSH'", "'L12_PWSH'")), /host\/failure binding/)
 assert.throws(() => check(workflow.replace('$tailBytes.Length -gt 3000', '$tailBytes.Length -gt 8000')), /host\/failure binding/)
 assert.throws(() => check(workflow.replace('while (($tailBytes[$start] -band 0xC0) -eq 0x80)', 'while ($false)')), /host\/failure binding/)
-console.log('CI single release entry: current workflow and fourteen negative mutations passed; step context, cross-step roots, canonical package and failure propagation retained.')
+assert.throws(() => check(workflow.replace("if: steps.policy.outputs.verify == 'true'", 'if: always()')), /must not repeat/)
+assert.throws(() => check(workflow.replace('run: ./ops/ci/invoke-l12-canonical-package.ps1', 'run: echo skipped')), /single canonical lane/)
+assert.throws(() => check(workflow.replace("hashFiles('ops/ci/l12-card-assets-input.lock.json', 'ops/ci/l12-card-assets-input.py')", "hashFiles('global.json')")), /input cache/)
+assert.throws(() => check(workflow.replace('      - name: 可信卡图精确缓存\n', '      - name: skipped-cache\n')), /input cache/)
+assert.throws(() => check(workflow.replace('node ops/ci/l12-package-policy.mjs $env:CI_EVENT_NAME', 'echo skip $env:CI_EVENT_NAME')), /source selection/)
+assert.throws(() => check(workflow.replace('id: policy', 'id: other')), /source selection/)
+for (const marker of ['ops/windows/verify-l12.ps1', 'ops/ci/l12-canonical-artifacts.py',
+  'verify --lock $lock --input-root $CardAssetRoot', 'prepare --lock $lock --output-root $CardAssetRoot --from-web',
+  'if ($LASTEXITCODE -ne 0)', 'if ($canonicalExit -ne 0)', '-OutputDirectory $OutputRoot -CacheRoot $env:L12_WORK_CACHE -CardAssetDirectory $CardAssetRoot',
+  'Assert-L12GeneratedPath', '::error title=L12 canonical actual failure::'])
+  assert.ok(canonicalCi.includes(marker), `canonical adapter must retain ${marker}`)
+assert.doesNotMatch(canonicalCi, /\btar\s+-|dotnet\s+publish|--filter|SkipTests|SkipBuild/, 'CI adapter cannot create a second packager or skip gates')
+const ownerCall = canonicalCi.split('    & $env:L12_PWSH -NoProfile -NonInteractive -File ')[1]?.split('    $canonicalExit')[0]
+assert(ownerCall && !/-Force\b/.test(ownerCall), 'canonical owner cannot be forced; New-Item directory creation is unrelated')
+for (const project of ['TwelveLegions.Tests', 'TwelveLegions.Platform.Tests'])
+  assert.ok(standard.includes(`'${project}/${project}.csproj'`), 'canonical owner retains both full suites')
+console.log('CI single release entry: current workflow and twenty negative mutations passed; mutually exclusive full verification/canonical lanes, exact input cache and failure propagation retained.')

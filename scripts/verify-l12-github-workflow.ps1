@@ -43,4 +43,13 @@ if (([regex]::Matches($text, 'node scripts/test-release-status\.mjs')).Count -ne
 
 & node (Join-Path $repoRoot 'scripts/test-ci-release-entry.mjs') $path
 if ($LASTEXITCODE -ne 0) { throw 'Canonical release entry contract failed.' }
-Write-Host '[L12 workflow] push/PR/manual/tag verify the full code; canonical asset-bound packages remain owned by verify-l12.ps1.'
+& node (Join-Path $repoRoot 'ops/ci/test-l12-package-policy.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Canonical package source policy failed.' }
+& node (Join-Path $repoRoot 'ops/ci/test-l12-canonical-step.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Actual canonical adapter synthetic regression failed.' }
+$pythonNames = if ([IO.Path]::DirectorySeparatorChar -eq '\') { @('python') } else { @('python3','python') }
+$python = Get-Command -Name $pythonNames -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $python) { throw 'Canonical artifact regression needs Python.' }
+& $python.Source -I -B (Join-Path $repoRoot 'ops/ci/test-l12-canonical-artifacts.py') --work-root (Join-Path $env:L12_WORK_CACHE 'canonical-artifact-fixtures')
+if ($LASTEXITCODE -ne 0) { throw 'Canonical artifact output boundary failed.' }
+Write-Host '[L12 workflow] mutually exclusive verification/canonical lanes retain full gates; only verify-l12.ps1 creates deployable packages. No service operation.'

@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import sys
 import tarfile
 import tempfile
 import threading
@@ -341,6 +342,120 @@ class TrustedInputTests(unittest.TestCase):
         if os.name == "nt":
             with self.assertRaisesRegex(ValueError, "GENERATED_STORAGE_GUARD_REJECTED"):
                 assets.generated_path(Path("C:/l12-card-input-must-not-be-created"))
+
+    def prepared(self):
+        root = self.root / "prepared"
+        assets.materialize(LOCK, root, fetch=lambda row, deadline: PAYLOADS[row["path"]])
+        return root
+
+    def directory_link(self, name, target, parent=None):
+        link = (parent or self.root) / name
+        if os.name == "nt":
+            result = assets.subprocess.run([os.environ["L12_PWSH"], "-NoProfile", "-NonInteractive", "-Command",
+                "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:L12_TEST_LINK "
+                "-Target $env:L12_TEST_LINK_TARGET | Out-Null"],
+                env=dict(os.environ, L12_TEST_LINK=str(link), L12_TEST_LINK_TARGET=str(target)),
+                capture_output=True, text=True, timeout=15, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.addCleanup(link.rmdir)
+        else:
+            link.symlink_to(target, target_is_directory=True)
+            self.addCleanup(link.unlink)
+        return link
+
+    def test_prepared_verify_is_read_only_and_never_downloads(self):
+        root = self.prepared()
+        before = {name: (root.joinpath(name).stat().st_mtime_ns, root.joinpath(name).read_bytes()) for name in PAYLOADS}
+        with mock.patch.object(assets, "web_bytes", side_effect=AssertionError("NO_DOWNLOAD")), \
+            mock.patch.object(assets, "write_asset", side_effect=AssertionError("NO_REPAIR")), \
+            mock.patch.object(assets.shutil, "rmtree", side_effect=AssertionError("NO_DELETE")):
+            result = assets.verify_prepared(LOCK, root)
+        self.assertTrue(result["readOnly"])
+        self.assertTrue(result["allFileHashesVerified"])
+        self.assertFalse(result["releasePackageCreated"])
+        self.assertEqual(result["files"], len(PAYLOADS))
+        self.assertEqual(result["bytes"], sum(map(len, PAYLOADS.values())))
+        self.assertEqual(before, {name: (root.joinpath(name).stat().st_mtime_ns, root.joinpath(name).read_bytes()) for name in PAYLOADS})
+
+    def test_prepared_verify_missing_relative_and_file_roots_rejected(self):
+        missing = self.root / "not-created"
+        file = self.root / "not-a-directory"
+        file.write_bytes(b"preserved")
+        for root, error in [(missing, "PREPARED_ROOT_MISSING"), (Path("relative"), "PREPARED_ROOT_MUST_BE_ABSOLUTE"),
+            (file, "PREPARED_ROOT_NOT_PLAIN")]:
+            with self.subTest(root=root):
+                with self.assertRaisesRegex(ValueError, error):
+                    assets.verify_prepared(LOCK, root)
+        self.assertFalse(missing.exists())
+        self.assertEqual(file.read_bytes(), b"preserved")
+
+    def test_prepared_verify_actual_root_link_refused_and_target_preserved(self):
+        target = self.root / "target"
+        target.mkdir()
+        (target / "preserved.txt").write_bytes(b"preserved")
+        link = self.directory_link("linked-root", target)
+        with self.assertRaisesRegex(ValueError, "PREPARED_ROOT_NOT_PLAIN"):
+            assets.verify_prepared(LOCK, link)
+        self.assertEqual((target / "preserved.txt").read_bytes(), b"preserved")
+
+    def test_prepared_verify_actual_descendant_link_refused(self):
+        root = self.prepared()
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "preserved.txt").write_bytes(b"preserved")
+        self.directory_link("extra-link", outside, parent=root)
+        with self.assertRaisesRegex(ValueError, "OUTPUT_LINK_OR_SPECIAL_REJECTED"):
+            assets.verify_prepared(LOCK, root)
+        self.assertEqual((outside / "preserved.txt").read_bytes(), b"preserved")
+
+    def test_prepared_verify_corrupt_missing_and_extra_files_never_repaired(self):
+        root = self.prepared()
+        name = next(name for name in PAYLOADS if name not in assets.METADATA)
+        target = root / name
+        wrong = b"x" * len(PAYLOADS[name])
+        target.write_bytes(wrong)
+        with self.assertRaisesRegex(ValueError, "OUTPUT_BYTES_MISMATCH"):
+            assets.verify_prepared(LOCK, root)
+        self.assertEqual(target.read_bytes(), wrong)
+        target.unlink()
+        with self.assertRaisesRegex(ValueError, "OUTPUT_INCOMPLETE"):
+            assets.verify_prepared(LOCK, root)
+        self.assertFalse(target.exists())
+        target.write_bytes(PAYLOADS[name])
+        extra = root / "unexpected.txt"
+        extra.write_bytes(b"preserved")
+        with self.assertRaisesRegex(ValueError, "OUTPUT_BYTES_MISMATCH"):
+            assets.verify_prepared(LOCK, root)
+        self.assertEqual(extra.read_bytes(), b"preserved")
+        extra.unlink()
+        directory = root / "undeclared-empty-directory"
+        directory.mkdir()
+        with self.assertRaisesRegex(ValueError, "OUTPUT_UNDECLARED_DIRECTORY"):
+            assets.verify_prepared(LOCK, root)
+        self.assertTrue(directory.is_dir())
+
+    def test_prepared_verify_actual_hardlink_refused(self):
+        root = self.prepared()
+        original = root / "card-assets.preload.json"
+        outside = self.root / "hardlinked-public-bytes.json"
+        os.link(original, outside)
+        with self.assertRaisesRegex(ValueError, "OUTPUT_LINK_OR_SPECIAL_REJECTED"):
+            assets.verify_prepared(LOCK, root)
+        self.assertEqual(outside.read_bytes(), PAYLOADS["card-assets.preload.json"])
+        self.assertEqual(original.read_bytes(), PAYLOADS["card-assets.preload.json"])
+
+    def test_prepared_verify_actual_cli(self):
+        root = self.prepared()
+        lock = self.root / "lock.json"
+        lock.write_text(json.dumps(LOCK), encoding="utf-8")
+        result = assets.subprocess.run([sys.executable, "-I", "-B", str(Path(assets.__file__)),
+            "verify", "--lock", str(lock), "--input-root", str(root)],
+            capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        proof = json.loads(result.stdout)
+        self.assertTrue(proof["readOnly"])
+        self.assertEqual(proof["files"], len(PAYLOADS))
+        self.assertEqual(proof["lockSha256"], assets.file_digest(lock, assets.MAX_LOCK_BYTES))
 
 
 if __name__ == "__main__":
