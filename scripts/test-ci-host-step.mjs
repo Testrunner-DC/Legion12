@@ -26,6 +26,38 @@ fs.mkdirSync(root, { recursive: true })
 const quote = value => "'" + value.replaceAll("'", "''") + "'"
 let cases = 0
 try {
+  const initialization = workflow.split('      - name: 生成目录绑定\n')[1]?.split('\n      - ')[0]
+    ?.split('        run: |\n')[1]?.trimEnd().split('\n')
+  assert(initialization?.length && initialization.every(line => line.startsWith('          ')))
+  const hostDirectory = path.join(root, 'host')
+  fs.mkdirSync(hostDirectory)
+  const hostRoots = {
+    L12_WORK_CACHE: path.join(hostDirectory, 'cache'),
+    L12_DEPENDENCY_CACHE: path.join(hostDirectory, 'dependencies'),
+    L12_ARTIFACT_ROOT: path.join(hostDirectory, 'evidence'),
+    L12_ARCHIVE_ROOT: path.join(hostDirectory, 'archives'),
+  }
+  const environmentFile = path.join(hostDirectory, 'github-env.txt')
+  const initialized = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(initialization.map(line => line.slice(10)).join('\n'), 'utf16le').toString('base64')], {
+    cwd: repo, env: { ...process.env, ...hostRoots, GITHUB_ENV: environmentFile },
+    encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 100000,
+  })
+  assert.ifError(initialized.error)
+  assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout)
+  const exported = Object.fromEntries(fs.readFileSync(environmentFile, 'utf8').replace(/^\uFEFF/, '').trim().split(/\r?\n/)
+    .map(line => { const at = line.indexOf('='); assert(at > 0); return [line.slice(0, at), line.slice(at + 1)] }))
+  assert.equal(Object.keys(exported).length, 13, 'all step-local roots and native child bindings must reach later steps')
+  for (const [name, value] of Object.entries(hostRoots)) assert.equal(exported[name], value)
+  assert.equal(exported.L12_PWSH, pwsh)
+  const laterStep = spawnSync(process.execPath, ['-e',
+    'process.stdout.write(JSON.stringify(Object.fromEntries(["L12_WORK_CACHE","L12_DEPENDENCY_CACHE","L12_ARTIFACT_ROOT","L12_ARCHIVE_ROOT","L12_PWSH","TEMP","TMP","TMPDIR"].map(k=>[k,process.env[k]]))))'], {
+    env: { ...process.env, ...exported }, encoding: 'utf8', windowsHide: true, timeout: 15000,
+  })
+  assert.ifError(laterStep.error); assert.equal(laterStep.status, 0)
+  const later = JSON.parse(laterStep.stdout)
+  for (const name of Object.keys(later)) assert.equal(later[name], exported[name], `fresh later step lost ${name}`)
+  cases++
   for (const scenario of [{ code: 0, tail: 'synthetic success' },
     { code: 7, tail: 'synthetic 7% failure\nsecond line' },
     { code: 13, tail: 'X'.repeat(10000) + '\nsynthetic 13% stderr' }]) {
@@ -54,9 +86,22 @@ try {
   }
 } finally {
   for (const directory of fs.readdirSync(root)) {
-    assert(['0', '7', '13'].includes(directory))
+    assert(['host', '0', '7', '13'].includes(directory))
     const child = path.join(root, directory)
     assert(fs.lstatSync(child).isDirectory() && !fs.lstatSync(child).isSymbolicLink())
+    if (directory === 'host') {
+      const removeHost = current => {
+        for (const name of fs.readdirSync(current)) {
+          const item = path.join(current, name), stat = fs.lstatSync(item)
+          assert(!stat.isSymbolicLink())
+          if (stat.isDirectory()) removeHost(item)
+          else { assert.equal(item, path.join(child, 'github-env.txt')); assert(stat.isFile()); fs.unlinkSync(item) }
+        }
+        fs.rmdirSync(current)
+      }
+      removeHost(child)
+      continue
+    }
     assert.deepEqual(fs.readdirSync(child), ['frontend-native.log'])
     const log = path.join(child, 'frontend-native.log')
     assert(fs.lstatSync(log).isFile() && !fs.lstatSync(log).isSymbolicLink())
@@ -64,4 +109,4 @@ try {
   }
   fs.rmdirSync(root)
 }
-console.log(`Actual CI frontend wrapper passed: ${cases} native exit/stdout/stderr/annotation cases; standard npm build mocked, no dependency install or product load; fixtures removed.`)
+console.log(`Actual CI step bodies passed: ${cases} groups (13 exported bindings plus fresh later step;3 native exit/stdout/stderr/annotation cases); standard npm mocked, no dependency install/product load; fixtures removed.`)

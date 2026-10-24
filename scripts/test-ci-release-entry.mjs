@@ -5,7 +5,7 @@ const workflow = fs.readFileSync(process.argv[2] || new URL('../.github/workflow
 const standard = fs.readFileSync(new URL('../ops/windows/verify-l12.ps1', import.meta.url), 'utf8')
 const deploy = fs.readFileSync(new URL('../ops/windows/deploy-l12-testrun.ps1', import.meta.url), 'utf8')
 
-function check(source) {
+export function check(source) {
   assert.doesNotMatch(source, /tar\s+-[a-zA-Z]*c|dotnet\s+publish|actions\/upload-artifact|releaseSha256\s*"?\s*:/,
     'CI must not publish a second hand-assembled legacy deployment artifact')
   for (const command of ['node scripts/check-l12-architecture-lock.mjs', 'node scripts/test-ci-release-entry.mjs',
@@ -21,12 +21,14 @@ function check(source) {
     'python3 -I -B ops/ci/l12-card-assets-input.py check --lock ops/ci/l12-card-assets-input.lock.json'])
     assert.equal(source.includes(command), true, `CI must preserve trusted asset boundary: ${command}`)
   for (const name of ['L12_WORK_CACHE', 'L12_DEPENDENCY_CACHE', 'L12_ARTIFACT_ROOT', 'L12_ARCHIVE_ROOT'])
-    assert.match(source, new RegExp(`^      ${name}: \\$\\{\\{ runner\\.temp \\}\\}/l12-ci/`, 'm'),
-      `CI must bind ${name} outside its source checkout`)
+    assert.match(source, new RegExp(`^          ${name}: \\$\\{\\{ runner\\.temp \\}\\}/l12-ci/`, 'm'),
+      `CI must bind ${name} in step env outside its source checkout`)
+  assert.doesNotMatch(source.split(/^    steps:/m)[0], /\$\{\{\s*runner\./,
+    'runner context is unavailable before steps: never place runner.temp in workflow/job env')
   for (const command of ['& ./ops/windows/Initialize-L12BuildEnvironment.ps1 | Out-Null',
     '& ./scripts/test-l12-build-host.ps1 -WorkRoot $env:L12_WORK_CACHE',
     'node scripts/test-ci-host-step.mjs',
-    "@('L12_PWSH','TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME')",
+    "@('L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','L12_PWSH','TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME')",
     'npm run build 2>&1 | Tee-Object -FilePath $log', '$buildExit = $LASTEXITCODE',
     'if ($buildExit -ne 0)', 'exit $buildExit',
     '$tail = $tail.Replace(\'%\',\'%25\').Replace("`r",\'%0D\').Replace("`n",\'%0A\')'])
@@ -57,4 +59,6 @@ assert.throws(() => check(workflow.replace('& ./ops/windows/Initialize-L12BuildE
 assert.throws(() => check(workflow.replace('L12_WORK_CACHE: ${{ runner.temp }}', 'L12_WORK_CACHE: ${{ github.workspace }}')), /bind L12_WORK_CACHE/)
 assert.throws(() => check(workflow.replace('exit $buildExit', 'exit 0')), /host\/failure binding/)
 assert.throws(() => check(workflow.replace('.Replace("`n",\'%0A\')', '')), /host\/failure binding/)
-console.log('CI single release entry: current workflow and ten negative mutations passed; canonical package, trusted assets, synthetic retention and native failure propagation retained.')
+assert.throws(() => check(workflow.replace('    steps:', '    env:\n      BAD: ${{ runner.temp }}\n    steps:')), /runner context is unavailable/)
+assert.throws(() => check(workflow.replace("'L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','L12_PWSH'", "'L12_PWSH'")), /host\/failure binding/)
+console.log('CI single release entry: current workflow and twelve negative mutations passed; step context, cross-step roots, canonical package and failure propagation retained.')

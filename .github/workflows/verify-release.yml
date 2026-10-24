@@ -16,15 +16,26 @@ jobs:
   verify-release:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      L12_WORK_CACHE: ${{ runner.temp }}/l12-ci/cache
-      L12_DEPENDENCY_CACHE: ${{ runner.temp }}/l12-ci/dependencies
-      L12_ARTIFACT_ROOT: ${{ runner.temp }}/l12-ci/evidence
-      L12_ARCHIVE_ROOT: ${{ runner.temp }}/l12-ci/archives
-      NUGET_PACKAGES: ${{ runner.temp }}/l12-ci/dependencies/nuget/packages
-      npm_config_cache: ${{ runner.temp }}/l12-ci/dependencies/npm
     steps:
       - uses: actions/checkout@v4
+
+      - name: 生成目录绑定
+        shell: pwsh
+        env:
+          L12_WORK_CACHE: ${{ runner.temp }}/l12-ci/cache
+          L12_DEPENDENCY_CACHE: ${{ runner.temp }}/l12-ci/dependencies
+          L12_ARTIFACT_ROOT: ${{ runner.temp }}/l12-ci/evidence
+          L12_ARCHIVE_ROOT: ${{ runner.temp }}/l12-ci/archives
+          NUGET_PACKAGES: ${{ runner.temp }}/l12-ci/dependencies/nuget/packages
+          npm_config_cache: ${{ runner.temp }}/l12-ci/dependencies/npm
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./ops/windows/Initialize-L12BuildEnvironment.ps1 | Out-Null
+          foreach ($name in @('L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','L12_PWSH','TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME')) {
+            $value = [Environment]::GetEnvironmentVariable($name, 'Process')
+            if ([string]::IsNullOrWhiteSpace($value) -or $value.Contains("`n") -or $value.Contains("`r")) { throw 'Invalid bound CI environment' }
+            "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -42,19 +53,13 @@ jobs:
           cache: npm
           cache-dependency-path: opcgpro-vue/package-lock.json
 
-      - name: 构建宿主与缓存绑定
+      - name: 构建宿主边界验证
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./ops/windows/Initialize-L12BuildEnvironment.ps1 | Out-Null
           & ./scripts/test-l12-build-host.ps1 -WorkRoot $env:L12_WORK_CACHE
           node scripts/test-ci-host-step.mjs
           if ($LASTEXITCODE -ne 0) { throw 'CI native failure propagation fixture failed' }
-          foreach ($name in @('L12_PWSH','TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME')) {
-            $value = [Environment]::GetEnvironmentVariable($name, 'Process')
-            if ([string]::IsNullOrWhiteSpace($value) -or $value.Contains("`n") -or $value.Contains("`r")) { throw 'Invalid bound CI environment' }
-            "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
 
       - name: P0-P4 架构退出锁
         run: node scripts/check-l12-architecture-lock.mjs
