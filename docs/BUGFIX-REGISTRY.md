@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## UI-20261024-ARCHIVE-DETAIL-FIT｜卡框按可用高度缩放，正文独立滚动
+
+- 来源人类要求修复图鉴详情卡面完整显示，沿P4现有横／竖卡框及同一详情组件处理；不改卡效、图鉴资料或详情入口。原宽度优先缩放与max-height混用导致短屏裁切；弹框和卡图改按可用高度约束，正文用既有独立滚动区。
+- Main独验拒绝把同一竖版卡背塞进两种外框当横卡成功。改受控500×700／800×500四角标记图片后，14尺寸×两种卡图方向28组通过；逐项核sameOrigin、manifest方向、实际natural尺寸、painted contain、modal内衬和关闭按钮避让、正文滚到底。320窄屏横卡另补100%宽度上限与30px关闭避让，最终右边289≤内衬290、卡顶61＞关闭底57。Main看原问题与最终四角截图；旧green证据保留，不冒真实手机验收。
+- 三叶CardArchive／mobile guard／新detail-fit QA冻结，唯一card-archive-detail-fit-20261024/directional-r2/report.json SHA3FE6E464…D54C。最终产品92959912、合同CD042610、QA0BA1FE00。原Batch先前源通过不当作最后两条CSS的新构建，待Main干净候选续验；不含未完成开局草稿、不部署或线上关单。
+
 ## UI-20261024-GALLERY-THUMBNAIL｜列表卡图约束命中实际按钮子节点
 
 - 人类在来源画廊任务明确批准。旧列表尺寸选择器只命中 article 直接图片；新增的 gallery-card-open 按钮包住图片后，内建 CardImage 与上传图失去约束。两类列表统一约束按钮及其真实子图：宽屏64×90、窄屏52×74、contain完整卡面；不改详情、上传、API或资料保存。

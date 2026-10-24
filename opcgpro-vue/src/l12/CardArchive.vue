@@ -493,20 +493,74 @@ function resetFilters() {
 :global(.archive-card.landscape-thumbnail .archive-card-image){aspect-ratio:8/5}
 .archive-modal {
   box-sizing: border-box;
+  width: min(1040px, 100%);
+  height: min(820px, calc(100dvh - 56px));
+  max-height: min(820px, calc(100dvh - 56px));
   overflow: hidden;
 }
+.archive-modal :deep(.archive-modal-image) {
+  width: min(100%, 480px, calc((100dvh - 112px) * 5 / 7));
+  max-height: none;
+  margin-inline: auto;
+}
+.archive-modal :deep(.archive-modal-image.horizontal) {
+  width: min(100%, 560px, calc((100dvh - 112px) * 8 / 5));
+}
+.archive-modal :deep(.archive-modal-detail) {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 @media (max-width: 760px) {
+  .archive-modal-backdrop {
+    padding:
+      max(10px, env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-left));
+  }
   .archive-modal {
     grid-template-rows: auto minmax(0, 1fr);
+    width: 100%;
     height: min(820px, calc(100dvh - 20px));
+    max-height: calc(100dvh - 20px);
   }
-
+  .archive-modal :deep(.archive-modal-image) {
+    width: min(68vw, 330px, calc(48dvh * 5 / 7));
+    max-height: none;
+  }
+  .archive-modal :deep(.archive-modal-image.horizontal) {
+    width: min(100%, 86vw, 480px, calc(48dvh * 8 / 5));
+    margin-block-start: 30px;
+  }
   .archive-modal :deep(.archive-modal-detail) {
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
     padding: 0 12px 12px 4px;
     scrollbar-gutter: stable;
+  }
+}
+@media (min-width: 761px) and (max-height: 640px) {
+  .archive-modal-backdrop {
+    padding:
+      max(10px, env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-left));
+  }
+  .archive-modal {
+    gap: 18px;
+    width: 100%;
+    height: calc(100dvh - 20px);
+    max-height: calc(100dvh - 20px);
+    padding: 14px;
+  }
+  .archive-modal :deep(.archive-modal-image) {
+    width: min(100%, 480px, calc((100dvh - 48px) * 5 / 7));
+  }
+  .archive-modal :deep(.archive-modal-image.horizontal) {
+    width: min(100%, 560px, calc((100dvh - 48px) * 8 / 5));
+  }
+  .archive-modal :deep(.archive-modal-detail) {
+    padding: 12px 8px 8px 0;
   }
 }
 @media (max-width: 900px), (max-height: 640px) {
