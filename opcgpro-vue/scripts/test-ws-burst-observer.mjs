@@ -3,7 +3,9 @@ import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { WsBurstObserver, finalizeClientObservationStatus } from './ws-burst-observer.mjs'
 
-const frozen = fs.readFileSync('D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-full-workload-r7/ws-burst-r7.mjs')
+// Read-only original bytes travel with the test; optional local evidence remains
+// external, but a normal build must not require this workstation's archive.
+const frozen = fs.readFileSync(new URL('./fixtures/ws-burst-r7-original.txt', import.meta.url))
 assert.equal(crypto.createHash('sha256').update(frozen).digest('hex').toUpperCase(), '9CF6B5E3E300ED2082A6630BE1638817439995073334B3B8BAC97EAADC1ABAA0')
 const owned = fs.readFileSync(new URL('./ws-burst-observer.mjs', import.meta.url), 'utf8')
 const body = owned.slice(owned.indexOf("import crypto from 'node:crypto'"))

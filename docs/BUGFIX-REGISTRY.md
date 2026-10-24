@@ -2,6 +2,7 @@
 
 ## OPS-20261024-CI-HOST-COPY｜发布宿主绑定与唯一入口普通复制
 
+- 实际Linux40060673994已通过宿主／前置门，前端test-ws-burst-observer因硬读D历史原件ENOENT。原9056B以只读txt纳仓库并固定-text，SHA9CF6B5E3与旧原件相同；只改测试读取位置，保留原哈希、逆还原与3秒／60连接的所有语义。扫描test-*.mjs历史读取，另处pressure-execution为具名独立现场入口、不在标准npm build，未混改。三叶隔离标准前端Batch29076 exit0，性能全链／361 UI／类型／双Vite通过（6B455EE3）；这不是实际Linux构建或canonical包成功，须看新CI。原失败摘要和证据保留，已结束输出精确回收1341476681B，不保冗余全树。
 - 新dfb268dd真实Linux失败已证与强制退出风险不同：exit7原始合成摘要完整55字符，但stdout插在stderr两行之间，旧断言错误要求跨流连续。修正为stdout恰一次、stderr每行全字节及原顺序，无缺失／截断／乱序容忍，保留10k载荷、真实0／7／13退出码和限长转义。三合法交错＋三破坏反例、实际6步骤组与单叶标准Batch42517通过；原860与dfb两个失败摘要分别保全，Linux新run尚未证明通过。
 - 86067c05真实Ubuntu23宿主测试通过；后续新增夹具的原生输出留存断言失败（run40059855492，原摘要保留），不是应用已执行的证据。夹具改用process.exitCode，避免[Node文档所述强制退出截断异步stdout/stderr](https://nodejs.org/docs/latest-v22.x/api/process.html#processexitcode)风险；原全量输出／退出码／摘要断言不放宽，并补有界合成失败定位。本地5组与单叶Batch通过，是否解决真实Linux失败待新run；不冒旧前端根因。自定义入口误用不存在的参数在测试前拒绝保留，改现有env不改产品。
 - 实际ae1da5bc CI在派发前0job失败：本次新job.env错误引用runner.temp（[官方作用域表](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability)该层不提供runner）。只将配置放到可用的步骤env，完整13项经GITHUB_ENV导出；新实际步骤体／后续进程4组、12反例并拒绝真实失败版本、三叶标准Batch通过。原失败保留，不把本地通过或这次启动纠正冒完整Linux资格，也不是旧CI前端失败的已证原因。

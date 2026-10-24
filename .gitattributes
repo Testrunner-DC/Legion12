@@ -6,3 +6,4 @@
 /ops/qa/ledger/account-ledger-client-r2.mjs -text
 /ops/qa/ledger/AccountLedgerReader.ps1 -text
 /ops/qa/workload/** -text
+/opcgpro-vue/scripts/fixtures/ws-burst-r7-original.txt -text
