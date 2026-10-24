@@ -120,6 +120,7 @@ async function stageSnapshot(page) {
   return page.evaluate(() => {
     const stage = document.querySelector('[data-ui-contract="match-opening-stage"]')
     if (!(stage instanceof HTMLElement)) throw new Error('opening stage missing')
+    const overlay = stage.closest('.l12-prompt-overlay')
     const articles = [...stage.querySelectorAll('article')]
     const identityNodes = [...stage.querySelectorAll('.opening-versus-player')]
     const panel = stage.closest('.prompt-panel,.waiting-panel')
@@ -130,6 +131,12 @@ async function stageSnapshot(page) {
     }
     return {
       stage: rect(stage), panel: panel ? rect(panel) : null,
+      overlay: overlay ? {
+        ...rect(overlay),
+        className: overlay.className,
+        overflow: getComputedStyle(overlay).overflow,
+        position: getComputedStyle(overlay).position,
+      } : null,
       productionUiSystemLoaded: [...document.querySelectorAll('style[data-vite-dev-id],link[rel="stylesheet"]')].some(node =>
         ((node instanceof HTMLStyleElement ? node.dataset.viteDevId : node.getAttribute('href')) || '').includes('/src/l12/site/uiSystem.css')),
       articleClasses: articles.map(article => article.className),
@@ -183,11 +190,17 @@ try {
         await page.waitForSelector('[data-ui-contract="match-opening-stage"]', { state: 'visible' })
         await waitForArtwork(page)
         const snapshot = await stageSnapshot(page)
+        await page.screenshot({ path: path.join(screenshotRoot, `${name}-observed.png`) })
         assert.deepEqual(snapshot.articleClasses.map(value => String(value).includes('mine') ? 'mine' : String(value).includes('opponent') ? 'opponent' : 'unknown'), ['opponent', 'mine'])
         assert.equal(snapshot.productionUiSystemLoaded, true, 'production uiSystem.css was not loaded by the real preview page')
         assert.ok(snapshot.landingTargets.every(target => target.x && target.y && target.scale > 0), `real master anchor was not measured: ${JSON.stringify(snapshot.landingTargets)}`)
-        assert.ok(snapshot.stage.width > 180 && snapshot.stage.height > 90)
+        assert.ok(snapshot.stage.width > 180 && snapshot.stage.height > 90,
+          `initiative stage collapsed below a visible opening presentation: ${JSON.stringify({ stage: snapshot.stage, overlay: snapshot.overlay, viewport: snapshot.viewport })}`)
         assert.equal(snapshot.panel, null, 'opening returned to a framed prompt panel')
+        assert.ok(snapshot.overlay
+          && snapshot.overlay.width >= snapshot.viewport.width * .9
+          && snapshot.overlay.height >= snapshot.viewport.height * .9,
+        `initiative presentation was clipped into a passive waiting tile: ${JSON.stringify(snapshot.overlay)}`)
         assert.ok(snapshot.actions.every(action => action.width >= 43.5 && action.height >= 43.5), `undersized action: ${JSON.stringify(snapshot.actions)}`)
         if (role === 'owner') {
           await page.locator('[data-tutorial-choice="first"]').click()
@@ -196,6 +209,8 @@ try {
         } else {
           assert.equal(await page.locator('[data-tutorial-choice="first"]').count(), 0)
           await page.waitForSelector('.opening-action')
+          assert.equal(await page.evaluate(() => window.__sentCommands.filter(command => JSON.stringify(command).includes('first') || JSON.stringify(command).includes('second')).length), 0,
+            'the waiting viewer emitted an initiative choice command')
         }
         if ((you === 0 && role === 'owner') || (you === 1 && role === 'waiting')) {
           await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })

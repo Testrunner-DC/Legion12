@@ -44,6 +44,8 @@ assert.doesNotMatch(script, /watch\(\(\) => props\.game\.phase/,
   'a phase-only watcher could attribute the previous match result to a new match')
 assert.doesNotMatch(script, /playMulliganDeal|mulliganDealTimer/,
   'the first opening slice must not retain the unapproved, unconsumed mulligan expansion')
+assert.match(script, /waitingPrompt\.value\?\.kind !== 'initiative'[\s\S]*waitingPrompt\.value \|\| waitingDefense\.value/,
+  'the non-choosing initiative viewer must keep the shared full opening instead of entering the passive wait tile')
 
 function runtimeFunction(name, bindings = {}) {
   const declaration = scriptAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)
@@ -171,6 +173,8 @@ assert.equal(initialLaterPhase.state.starts, 0)
 
 assert.equal((template.match(/data-ui-contract="match-opening-stage"/g) || []).length, 1,
   'the initiative owner and waiting player must share one non-modal opening stage')
+assert.match(template, /waiting: !isInitiative && \(waitingPrompt \|\| \(isMulliganPhase && !isMulligan\)\)/,
+  'the waiting initiative viewer must not inherit ordinary waiting blur or tile styling')
 const masterFaceSourcePattern = /class="opening-master-card"[\s\S]*<CardImage :card-id="player\.master\.masterId" :legacy-url="player\.master\.masterImageUrl"/
 assert.match(template, masterFaceSourcePattern,
   'the opening must fly the real master card face into the current match')

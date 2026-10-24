@@ -70,6 +70,7 @@ const waitingDefense = computed(() => !l12State.gmEnabled && !props.suppressDefe
 const displayKind = computed(() => prompt.value?.kind ?? waitingPrompt.value?.kind ?? (waitingDefense.value ? 'defense-wait' : isMulliganPhase.value ? 'mulligan' : ''))
 const isDisasterPreparation = computed(() => props.game.phase === 'DisasterPreparation')
 const passiveWaiting = computed(() => Boolean(!prompt.value && !isDisasterPreparation.value && !isMulliganPhase.value
+  && waitingPrompt.value?.kind !== 'initiative'
   && (waitingPrompt.value || waitingDefense.value)))
 const isPreparation = computed(() => isDisasterPreparation.value || ['initiative', 'disaster-ban', 'disaster-pick', 'disaster-reveal', 'mulligan'].includes(displayKind.value))
 const isInitiative = computed(() => displayKind.value === 'initiative')
@@ -1039,7 +1040,7 @@ function kindLabel() {
     <div v-if="visible" class="l12-prompt-overlay" :data-tutorial-prompt-id="prompt?.promptId" :data-tutorial-prompt-kind="prompt?.kind"
       @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
       @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
-      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), 'passive-waiting': passiveWaiting, minimized: minimized && !passiveWaiting, 'inspector-active': inspectorVisible || reservePlacementDetailSpace, 'mobile-safe-overlay': mobileLayout && !passiveWaiting }">
+      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: !isInitiative && (waitingPrompt || (isMulliganPhase && !isMulligan)), 'passive-waiting': passiveWaiting, minimized: minimized && !passiveWaiting, 'inspector-active': inspectorVisible || reservePlacementDetailSpace, 'mobile-safe-overlay': mobileLayout && !passiveWaiting }">
       <section v-if="minimized && !passiveWaiting" class="prompt-minimized-bar" role="status">
         <button :aria-label="`展开：${overlayTitle}`" ref="expandButton" aria-describedby="prompt-minimized-task" :title="minimizedTask" @click="expandPrompt">{{ minimizedButtonText }}</button>
         <span id="prompt-minimized-task" class="prompt-minimized-task">{{ minimizedTask }}</span>

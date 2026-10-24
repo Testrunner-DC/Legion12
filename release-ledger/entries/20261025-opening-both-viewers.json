@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-opening-both-viewers",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "双方开场演出",
+  "changes": [{
+    "category": "battle",
+    "text": "双方都会看到完整开场演出；先后攻选择仍只由取得选择权的一方操作，等待方不再被缩成普通等待提示。",
+    "paths": ["opcgpro-vue/src/l12/game/PromptOverlay.vue"]
+  }]
+}
