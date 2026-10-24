@@ -162,6 +162,27 @@
   color:var(--l12-ui-info);
 }
 
+/* Keep the dismiss action reachable when a modal owns its scroll container. */
+:where([role='dialog'][aria-modal='true'],[role='alertdialog'][aria-modal='true'])>header:first-child:has(>button){
+  --l12-sticky-dialog-background:rgb(12,20,27);
+  position:sticky;
+  z-index:20;
+  top:0;
+  background:var(--l12-sticky-dialog-background);
+  box-shadow:0 1px 0 rgba(235,230,216,.14);
+}
+
+:where([role='dialog'][aria-modal='true'],[role='alertdialog'][aria-modal='true'])>header:first-child:has(>button)::before{
+  content:'';
+  position:absolute;
+  right:0;
+  bottom:100%;
+  left:0;
+  height:32px;
+  background:var(--l12-sticky-dialog-background);
+  pointer-events:none;
+}
+
 @media(max-width:700px){
   .site-shell .site-content{
     overflow-x:clip;

@@ -74,6 +74,10 @@ function selectCard(card: DeckCard) {
   selectedCard.value = card
   mobileDetailsOpen.value = window.matchMedia('(max-width:1000px)').matches
 }
+function openCardDetails(card: DeckCard) {
+  selectedCard.value = card
+  mobileDetailsOpen.value = true
+}
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const master = computed(() => entry.value ? byId.value.get(entry.value.deck.masterId) : undefined)
 const backTo = computed(() => typeof route.query.from === 'string' && route.query.from.startsWith('/decks') ? route.query.from : '/decks?tab=plaza')
@@ -542,7 +546,7 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
           <section><b>构筑摘要</b><p v-if="entry.deck.cardIds.length">主牌<strong>{{ entry.deck.cardIds.length }}</strong></p><p v-if="entry.deck.moraleIds.length">士气<strong>{{ entry.deck.moraleIds.length }}</strong></p><p v-if="entry.deck.specialIds?.length">额外<strong>{{ entry.deck.specialIds.length }}</strong></p><p v-if="automaticExtraCardIdsForMaster(entry.deck.masterId).length">自动额外<strong>{{ automaticExtraCardIdsForMaster(entry.deck.masterId).length }}</strong></p></section>
           <section id="public-deck-construction-filters" aria-label="构筑筛选"></section>
         </aside>
-        <div class="public-deck-main"><DeckConstructionBrowser :entries="entries" :catalog="catalog" :master-faction="master?.faction" :title="`${entry.deck.name} · 全部构筑`" filter-target="#public-deck-construction-filters" hide-header external-details @select="selectCard"/>
+        <div class="public-deck-main"><DeckConstructionBrowser :entries="entries" :catalog="catalog" :master-faction="master?.faction" :title="`${entry.deck.name} · 全部构筑`" filter-target="#public-deck-construction-filters" hide-header external-details @select="selectCard" @open="openCardDetails"/>
 
       <section v-if="hasGuide" id="public-deck-guide" class="content-panel detail-anchor-section" data-detail-section="guide">
         <header><div><h2>牌库指南</h2><p v-if="entry.contentUpdatedAt">作者更新于 {{ formatTime(entry.contentUpdatedAt) }} · 修订 {{ entry.contentRevision }}</p></div></header>
@@ -574,7 +578,7 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
       </section>
       <section id="public-deck-hands" class="content-panel detail-anchor-section" data-detail-section="hands">
         <header><div><h2>随机起手</h2><p>随机展示当前构筑中的 6 张主牌。</p></div><button @click="redrawOpeningHand">重新抽取</button></header>
-        <div class="opening-hand"><article v-for="copy in openingHand" :key="copy.key"><button class="hand-card" :aria-label="`查看${copy.card!.nameZh}详情，${copy.label}`" @click="selectCard(copy.card!)"><CardImage :card-id="copy.cardImageId" :legacy-url="copy.legacyUrl" :alt="`${copy.card!.nameZh} · ${copy.label}`" intent="thumb" fit="contain"/><b>{{ copy.card!.nameZh }}</b><small>{{ copy.label }}</small></button></article></div>
+        <div class="opening-hand"><article v-for="copy in openingHand" :key="copy.key"><button class="hand-card" :aria-label="`查看${copy.card!.nameZh}详情，${copy.label}`" @click="selectCard(copy.card!)" @dblclick.prevent="openCardDetails(copy.card!)"><CardImage :card-id="copy.cardImageId" :legacy-url="copy.legacyUrl" :alt="`${copy.card!.nameZh} · ${copy.label}`" intent="thumb" fit="contain"/><b>{{ copy.card!.nameZh }}</b><small>{{ copy.label }}</small></button></article></div>
       </section>
         </div>
         <aside class="archive-detail public-card-detail" aria-label="卡牌详情"><CardDetailContent v-if="selectedCard" :card="selectedCard" :show-catalog-only="false"/></aside>

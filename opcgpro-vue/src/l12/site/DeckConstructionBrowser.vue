@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<{
 }>(), { title: '构筑快照', filterTarget: '', hideHeader: false })
 
 const query = ref('')
-const emit = defineEmits<{ select: [card: DeckCard] }>()
+const emit = defineEmits<{ select: [card: DeckCard]; open: [card: DeckCard] }>()
 const type = ref('all')
 const section = ref('all')
 const filtersOpen = ref(false)
@@ -62,6 +62,11 @@ function selectCard(cardId: string) {
   const card = byId.value.get(cardId)
   if (card) emit('select', card)
 }
+function openCard(cardId: string) {
+  selectedId.value = cardId
+  const card = byId.value.get(cardId)
+  if (card) emit('open', card)
+}
 watch(visible, values => {
   if (selectedId.value && !values.some(entry => entry.cardId === selectedId.value)) selectedId.value = ''
 }, { immediate: true })
@@ -93,7 +98,7 @@ onMounted(() => { filterTargetReady.value = Boolean(props.filterTarget) })
       </div>
     </nav>
     <div class="construction-grid">
-        <button v-for="entry in visible" :key="`${entry.section}-${entry.cardId}`" :class="{ selected: selectedId === entry.cardId }" @click="selectCard(entry.cardId)">
+        <button v-for="entry in visible" :key="`${entry.section}-${entry.cardId}`" :class="{ selected: selectedId === entry.cardId }" :aria-label="`${byId.get(entry.cardId)?.nameZh || entry.cardId}，单击选择，双击打开卡牌详情`" @click="selectCard(entry.cardId)" @dblclick.prevent="openCard(entry.cardId)">
           <CardImage :card-id="entry.cardId" :legacy-url="byId.get(entry.cardId)?.imageUrl" :alt="byId.get(entry.cardId)?.nameZh || entry.cardId" intent="thumb"/>
           <strong>×{{ entry.quantity }}</strong><span>{{ byId.get(entry.cardId)?.nameZh || entry.cardId }}</span><small>{{ byId.get(entry.cardId)?.number || entry.cardId }} · {{ sectionLabel(entry.section) }}</small>
         </button>

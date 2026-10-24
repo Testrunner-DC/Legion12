@@ -336,8 +336,10 @@ export function deckSnapshotTemplateContract(sources) {
     && exactVisibility(node, 'for', 'entry in visible')
     && exactDirective(node, 'bind', 'key', '`${entry.section}-${entry.cardId}`')
     && exactDirective(node, 'bind', 'class', '{ selected: selectedId === entry.cardId }')
+    && exactDirective(node, 'bind', 'aria-label', "`${byId.get(entry.cardId)?.nameZh || entry.cardId}，单击选择，双击打开卡牌详情`")
     && exactDirective(node, 'on', 'click', 'selectCard(entry.cardId)')
-    && exactDynamicSurface(node, ['key', 'class'], ['click']) && !hasVisualHidingOverride(node))
+    && exactDirective(node, 'on', 'dblclick', 'openCard(entry.cardId)')
+    && exactDynamicSurface(node, ['key', 'class', 'aria-label'], ['click', 'dblclick']) && !hasVisualHidingOverride(node))
   const quantity = cardButton && unique(renderedChildren(cardButton), node => node.tag === 'strong'
     && hasInterpolation(node, 'entry.quantity', '×'))
   const details = browserHost && unique(renderedChildren(browserHost), node => componentTag(node, 'CatalogCardDetails', 'catalog-card-details')

@@ -6,7 +6,12 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const output = process.env.L12_QA_OUT || path.resolve(root, '../artifacts/public-deck-detail-content')
+const output = process.env.L12_QA_OUT
+const qaCacheRoot = process.env.L12_WORK_CACHE
+const qaScope = process.env.L12_QA_SCOPE ?? 'full'
+assert.ok(output && path.isAbsolute(output), 'L12_QA_OUT must be an absolute governed evidence path')
+assert.ok(qaCacheRoot && path.isAbsolute(qaCacheRoot), 'L12_WORK_CACHE must be initialized to an absolute governed cache path')
+assert.match(qaScope, /^(?:full|sticky)$/, 'L12_QA_SCOPE must be full or sticky when provided')
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
@@ -15,9 +20,11 @@ const entry = `
 import {createApp,h} from 'vue'
 import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
 import PublicDeckDetailPage from '/src/l12/site/PublicDeckDetailPage.vue'
+import SiteShell from '/src/l12/site/SiteShell.vue'
 import {loadDeckCatalog,loadOfficialPresetDecks} from '/src/l12/decks.ts'
 import {publicDeckApi,publicDeckReadApi,platformState} from '/src/l12/platform.ts'
 import '/src/style.css'
+import '/src/l12/site/uiSystem.css'
 platformState.account={id:'author',username:'验收作者',role:'player'}
 const catalog=await loadDeckCatalog()
 const placeholder='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 350"><rect width="250" height="350" fill="#18252b"/><path d="M30 40h190v270H30z" fill="none" stroke="#9f8750" stroke-width="5"/><text x="125" y="180" fill="#e8d59c" text-anchor="middle" font-size="28">十二军团</text></svg>')
@@ -84,12 +91,12 @@ window.fetch=(input,init)=>{
 const router=createRouter({history:createMemoryHistory(),routes:[{name:'public-deck-detail',path:'/decks/:deckId',component:PublicDeckDetailPage},{path:'/decks',component:{template:'<div>decks</div>'}}]})
 await router.push('/decks/qa')
 await router.isReady()
-createApp({render:()=>h(RouterView)}).use(router).mount('#app')
+createApp({render:()=>fixtureQuery.has('stickyModal')?h(SiteShell,null,{default:()=>h('div',{style:'padding:40px'},'弹框滚动验收背景')}):h(RouterView)}).use(router).mount('#app')
 `
 
 let browser
 const server = await createServer({
-  root, configLoader: 'runner', cacheDir: path.join(root, '.tmp', 'vite-public-deck-detail-content'),
+  root, configLoader: 'runner', cacheDir: path.join(qaCacheRoot, 'vite-public-deck-detail-content'),
   server: { host: '127.0.0.1', port: 0, strictPort: false },
   plugins: [{
     name: 'public-deck-detail-content-fixture',
@@ -150,6 +157,7 @@ try {
   page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText || 'failed'}`))
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   const report = []
+  if(qaScope==='full'){
   for (const viewport of viewports) {
     await page.setViewportSize(viewport)
     await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__`)
@@ -196,6 +204,15 @@ try {
       assert.ok((await target.innerText()).includes(expectedName),'详情必须更新为单击的那张卡')
       assert.ok((await target.innerText()).trim().length>20,'详情包含卡名及效果文本')
       assert.equal(await target.evaluate(el=>el.scrollWidth>el.clientWidth+1),false,'详情无横向溢出')
+      if(desktop){
+        await card.dblclick()
+        const dialog=page.locator('.catalog-detail-dialog')
+        await dialog.waitFor()
+        assert.equal(await page.locator('.catalog-detail-dialog').count(),1,'双击单卡只打开一个详情层')
+        assert.ok((await dialog.innerText()).includes(expectedName),'双击详情必须对应被双击的单卡')
+        await page.getByRole('button',{name:'关闭卡牌详情',exact:true}).click()
+        assert.equal(await page.locator('.catalog-detail-dialog').count(),0,'关闭双击详情后不得残留弹层')
+      }
       await page.screenshot({path:path.join(output,`${source.includes('construction')?'construction':'hand'}-detail-${suffix(viewport)}.png`),fullPage:true})
       if(!desktop){
         const effect=target.locator('.archive-effect').first()
@@ -271,10 +288,42 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
     await captureSection('matches', viewport, `guest-statistics-${suffix(viewport)}.png`)
   }
+  }
+  const stickyDialogReport=[]
+  for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+    await page.setViewportSize(viewport)
+    await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__?stickyModal=1`)
+    if(viewport.width<=700)await page.getByRole('button',{name:'打开导航',exact:true}).click()
+    await page.getByRole('button',{name:'更新日志',exact:true}).click()
+    const modal=page.locator('.update-modal')
+    const header=modal.locator(':scope>header')
+    const close=page.getByRole('button',{name:'关闭更新日志',exact:true})
+    await modal.waitFor()
+    await close.focus()
+    assert.equal(await close.evaluate(element=>document.activeElement===element),true,`关闭键必须可获得焦点 ${suffix(viewport)}`)
+    const scrolled=await modal.evaluate(element=>{element.scrollTop=element.scrollHeight;return {scrollTop:element.scrollTop,scrollHeight:element.scrollHeight,clientHeight:element.clientHeight}})
+    assert.ok(scrolled.scrollHeight>scrolled.clientHeight && scrolled.scrollTop>0,`更新日志必须形成自身滚动 ${suffix(viewport)}`)
+    await page.waitForFunction(()=>document.querySelector('.update-modal')?.scrollTop>0)
+    const [modalBox,headerBox,closeBox]=await Promise.all([modal.boundingBox(),header.boundingBox(),close.boundingBox()])
+    assert.ok(modalBox&&headerBox&&closeBox,`固定标题与关闭键必须可测 ${suffix(viewport)}`)
+    const topCover=await header.evaluate(element=>{const style=getComputedStyle(element,'::before');return {height:Number.parseFloat(style.height),backgroundColor:style.backgroundColor,pointerEvents:style.pointerEvents,content:style.content}})
+    const topInset=headerBox.y-modalBox.y
+    assert.ok(topCover.content!==''&&topCover.content!=='none'&&topCover.height>=topInset,`固定标题遮挡层必须覆盖父级顶端内边距 ${suffix(viewport)}`)
+    assert.equal(topCover.backgroundColor,'rgb(12, 20, 27)',`固定标题遮挡层必须使用完全不透明深色背景 ${suffix(viewport)}`)
+    assert.equal(topCover.pointerEvents,'none',`固定标题遮挡层不得拦截关闭操作 ${suffix(viewport)}`)
+    assert.ok(headerBox.y>=modalBox.y-1 && headerBox.y+headerBox.height<=modalBox.y+modalBox.height+1,`滚到底后标题栏仍在弹框内 ${suffix(viewport)}`)
+    assert.ok(closeBox.y>=headerBox.y-1 && closeBox.y+closeBox.height<=headerBox.y+headerBox.height+1,`滚到底后关闭键仍在固定标题栏内 ${suffix(viewport)}`)
+    assert.ok(closeBox.y>=-1 && closeBox.y+closeBox.height<=viewport.height+1,`滚到底后关闭键仍在视口内 ${suffix(viewport)}`)
+    assert.equal(await close.evaluate(element=>document.activeElement===element),true,`滚到底后关闭键焦点不丢失 ${suffix(viewport)}`)
+    await page.screenshot({path:path.join(output,`update-modal-sticky-${suffix(viewport)}.png`),fullPage:false})
+    stickyDialogReport.push({viewport,scrolled,modalBox,headerBox,closeBox,topInset,topCover})
+    await close.click()
+    assert.equal(await page.locator('.update-modal').count(),0,`固定关闭键可直接关闭更新日志 ${suffix(viewport)}`)
+  }
   assert.equal(errors.length, 0, `page errors: ${errors.join(' | ')}`)
-  assert.equal(anchoredCaptures.length, 28, 'All guide, matchup, statistics and hand captures require live bounds')
-  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report, anchoredCaptures, errors }, null, 2))
-  console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, screenshots: fs.readdirSync(output).filter(name => name.endsWith('.png')).length }, null, 2))
+  assert.equal(anchoredCaptures.length, qaScope==='full'?28:0, 'Only the full scope captures public deck content sections')
+  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', scope:qaScope, viewports:qaScope==='full'?viewports:[], report, anchoredCaptures, stickyDialogReport, errors }, null, 2))
+  console.log(JSON.stringify({ status: 'passed', scope:qaScope, output, viewports:qaScope==='full'?viewports.length:stickyDialogReport.length, screenshots: fs.readdirSync(output).filter(name => name.endsWith('.png')).length }, null, 2))
 } finally {
   await browser?.close()
   await server.close()

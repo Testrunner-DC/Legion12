@@ -200,6 +200,14 @@ reject('quantity text overridden', 'browserQuantityRendering', changed('deckCons
   '<strong>×{{ entry.quantity }}</strong>', '<strong v-text="entry.cardId">×{{ entry.quantity }}</strong>'))
 reject('card selection handler uses display index', 'browserQuantityRendering', changed('deckConstructionBrowser',
   '@click="selectCard(entry.cardId)"', '@click="selectCard(String(index))"'))
+reject('card double click uses selection instead of detail', 'browserQuantityRendering', changed('deckConstructionBrowser',
+  '@dblclick.prevent="openCard(entry.cardId)"', '@dblclick.prevent="selectCard(entry.cardId)"'))
+reject('card double click removed', 'browserQuantityRendering', changed('deckConstructionBrowser',
+  '@dblclick.prevent="openCard(entry.cardId)"', ''))
+reject('card accessible label uses wrong identity', 'browserQuantityRendering', changed('deckConstructionBrowser',
+  '${byId.get(entry.cardId)?.nameZh || entry.cardId}', '${entry.quantity}'))
+reject('card unapproved dynamic surface still rejected', 'browserQuantityRendering', changed('deckConstructionBrowser',
+  '@dblclick.prevent="openCard(entry.cardId)"', ':title="arbitrary" @dblclick.prevent="openCard(entry.cardId)"'))
 reject('selected computed uses the wrong identity', 'browserSelectedComputed', changed('deckConstructionBrowser',
   'computed(() => byId.value.get(selectedId.value))', 'computed(() => byId.value.get(visible.value[0]?.cardId))'))
 reject('details component uses the wrong branch', 'browserSelectedComputed', changed('deckConstructionBrowser',

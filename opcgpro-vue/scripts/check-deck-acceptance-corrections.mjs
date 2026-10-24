@@ -3,13 +3,22 @@ import assert from 'node:assert/strict'
 import { privateLibraryActionsContract } from './private-deck-template-contract.mjs'
 const read = name => fs.readFileSync(new URL(`../src/l12/${name}`, import.meta.url), 'utf8')
 const editor = read('L12DeckEditor.vue'), library = read('site/DeckLibraryPage.vue'), detail = read('site/PublicDeckDetailPage.vue'), navigation = read('site/deckEditorNavigation.ts')
+const constructionBrowser = read('site/DeckConstructionBrowser.vue')
+const publicDeckDoubleClickContract = (browserSource, detailSource) => browserSource.includes('@click="selectCard(entry.cardId)" @dblclick.prevent="openCard(entry.cardId)"')
+  && browserSource.includes("open: [card: DeckCard]")
+  && browserSource.includes("if (card) emit('open', card)")
+  && detailSource.includes('external-details @select="selectCard" @open="openCardDetails"')
+  && detailSource.includes('@click="selectCard(copy.card!)" @dblclick.prevent="openCardDetails(copy.card!)"')
+  && detailSource.includes('function openCardDetails(card: DeckCard)')
+  && detailSource.includes('mobileDetailsOpen.value = true')
 const checks = [
   ['分享图与内容编辑共用短码且不使用已退役 UUID 路由', editor.includes('publicDeckApi.list()') && editor.includes('publicDeckRouteReference') && editor.includes(':publication-id="publicationCode"') && !editor.includes('publicDeckApi.get(id)') && editor.includes('verifiedPublicDeckUrl') && library.includes('validateOwnReferences(await deckLibraryApi.ownReferences([id]), [id], actor)') && library.includes('publicDeckUrl(candidate!.publicCode)')],
   ['主宰术语', ['L12DeckEditor.vue','site/DeckLibraryPage.vue','site/PublicDeckDetailPage.vue','site/PublicDeckContentEditor.vue'].every(name => !read(name).includes('主城'))],
   ['桌面详情下方保留已保存牌库，移动端改用选择弹框', editor.includes('class="saved-decks-panel grand-panel"') && editor.includes('class="saved-list"') && editor.includes('mobileSavedDecksOpen') && editor.includes('class="mobile-saved-decks-dialog"') && !editor.includes('<label>已保存牌库<select')],
   ['我的牌库三动作', privateLibraryActionsContract(library)],
   ['对局建议复用 Profile', detail.includes('<DeckProfile compact :master-id="row.opponentMasterId"') && !detail.includes('<CardImage :card-id="row.opponentMasterId"')],
-  ['构筑及起手点击共享详情', read('site/DeckConstructionBrowser.vue').includes('@click="selectCard(entry.cardId)"') && (detail.includes('@click="selectCard(card)"') || detail.includes('@click="selectCard(copy.card!)"')) && detail.includes('external-details @select="selectCard"') && detail.includes('class="archive-detail public-card-detail"') && detail.includes('--l12-card-detail-sidebar-width') && !detail.includes('dblclick')],
+  ['构筑及起手点击共享详情', constructionBrowser.includes('@click="selectCard(entry.cardId)"') && (detail.includes('@click="selectCard(card)"') || detail.includes('@click="selectCard(copy.card!)"')) && detail.includes('class="archive-detail public-card-detail"') && detail.includes('--l12-card-detail-sidebar-width')],
+  ['公开牌库单卡双击打开详情', publicDeckDoubleClickContract(constructionBrowser, detail)],
 ]
 checks.push(['编辑牌库短文案及稳定来源跳转', detail.includes('@click="editDeck">编辑牌库</button>')
   && detail.includes('deckEditorQuery(route.fullPath, saved.name, entry.value.id, saved.id)')
@@ -18,4 +27,6 @@ checks.push(['编辑牌库短文案及稳定来源跳转', detail.includes('@cli
   && navigation.includes("DEFAULT_DECK_EDITOR_RETURN = '/decks?tab=mine'")])
 const failures = checks.filter(([,pass]) => !pass).map(([name]) => name)
 assert.deepEqual(failures, [], `验收纠错失败：${failures.join('、')}`)
+assert.equal(publicDeckDoubleClickContract(constructionBrowser.replace('@dblclick.prevent="openCard(entry.cardId)"', ''), detail), false, '缺少构筑单卡双击时合同必须失败')
+assert.equal(publicDeckDoubleClickContract(constructionBrowser, detail.replace('@open="openCardDetails"', '@open="selectCard"')), false, '双击错误绑定到单击选择时合同必须失败')
 console.log(`牌库验收纠错合同通过 ${checks.length}/${checks.length}`)

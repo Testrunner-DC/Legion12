@@ -860,8 +860,8 @@ onBeforeUnmount(() => {
     <div v-if="modal" class="site-modal-mask ui-state-scope" @click.self="closeSiteModal">
       <L12SettingsModal v-if="modal === 'settings'" @close="closeSiteSettings" @feedback="openSiteFeedback"/>
 
-      <section v-else-if="modal === 'updates'" class="site-modal update-modal">
-        <header><div><small>CHANGELOG</small><h2>更新日志</h2></div><button @click="modal = null">×</button></header>
+      <section v-else-if="modal === 'updates'" class="site-modal update-modal" role="dialog" aria-modal="true" aria-labelledby="site-update-modal-title">
+        <header><div><small>CHANGELOG</small><h2 id="site-update-modal-title">更新日志</h2></div><button type="button" aria-label="关闭更新日志" @click="modal = null">×</button></header>
         <article v-for="(entry, index) in updateEntries" :key="`${entry.date}-${entry.version}-${index}`">
           <time>{{ entry.date }}</time><h3>{{ entry.title }}</h3><code v-if="entry.version">{{ entry.version }}</code>
           <section v-for="section in entry.sections" :key="section.title" class="update-section">

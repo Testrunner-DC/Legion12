@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-dialog-deck-access",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "弹框与牌库详情",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "滚动弹框时，标题和关闭入口保持可见，顶部不再透出滚过的正文。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/uiSystem.css",
+        "opcgpro-vue/src/l12/site/SiteShell.vue"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "公开牌库详情中，双击构筑或随机起手的单卡可打开卡牌详情；手机原有单击查看方式保留。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/DeckConstructionBrowser.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue"
+      ]
+    }
+  ]
+}

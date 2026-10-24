@@ -98,10 +98,16 @@ reject('browser wrong selection event', 'sharedBrowserConsumer', changed('public
   '@select="selectCard"', '@select="selectedCard = null"'))
 reject('browser once selection event', 'sharedBrowserConsumer', changed('publicDeckDetail',
   '@select="selectCard"', '@select.once="selectCard"'))
+reject('browser wrong card detail event', 'sharedBrowserConsumer', changed('publicDeckDetail',
+  '@open="openCardDetails"', '@open="selectCard"'))
+reject('browser card detail event omitted', 'sharedBrowserConsumer', changed('publicDeckDetail',
+  '@open="openCardDetails"', ''))
+reject('browser once card detail event', 'sharedBrowserConsumer', changed('publicDeckDetail',
+  '@open="openCardDetails"', '@open.once="openCardDetails"'))
 reject('browser loses external ownership flag', 'sharedBrowserConsumer', changed('publicDeckDetail',
   'hide-header external-details', 'hide-header'))
 reject('second shared browser cannot own competing details', 'sharedBrowserConsumer', changed('publicDeckDetail',
-  '@select="selectCard"/>', '@select="selectCard"/><DeckConstructionBrowser :entries="entries" :catalog="catalog"/>'))
+  '@open="openCardDetails"/>', '@open="openCardDetails"/><DeckConstructionBrowser :entries="entries" :catalog="catalog"/>'))
 
 reject('filter anchor wrong target id', 'filterBridge', changed('publicDeckDetail',
   'id="public-deck-construction-filters"', 'id="public-deck-filter-tray"'))
@@ -152,7 +158,7 @@ reject('duplicate mobile detail owner', 'uniqueDetailOwnership', changed('public
 
 const commentedBrowser = changed('publicDeckDetail', '<DeckConstructionBrowser ', '<!-- <DeckConstructionBrowser ')
 reject('comment cannot supply shared browser', 'sharedBrowserConsumer', changed('publicDeckDetail',
-  '@select="selectCard"/>', '@select="selectCard"/> -->', commentedBrowser))
+  '@open="openCardDetails"/>', '@open="openCardDetails"/> -->', commentedBrowser))
 
 const fakeSources = {
   publicDeckDetail: `<script setup>const fake = '<DeckConstructionBrowser external-details/>'</script><template><!-- <section id="public-deck-construction-filters"/> --><script>const hidden = '构筑摘要'</script></template>`,

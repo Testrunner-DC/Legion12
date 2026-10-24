@@ -234,7 +234,7 @@ export function publicDeckConsumerTemplateContract(sources) {
     entries: 'entries', catalog: 'catalog', 'master-faction': 'master?.faction',
     title: '`${entry.deck.name} · 全部构筑`',
   }, { 'filter-target': '#public-deck-construction-filters' }, ['hide-header', 'external-details'],
-  { select: 'selectCard' }))
+  { select: 'selectCard', open: 'openCardDetails' }))
 
   const browserRoot = unique(renderedChildren(browser.template), node => node.tag === 'section' && hasClass(node, 'construction-browser')
     && staticAttribute(node, 'data-ui-contract', 'shared-deck-construction-browser')
