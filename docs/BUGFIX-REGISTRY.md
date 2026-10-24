@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## UI-20261024-DISASTER-CENTER-REVEAL｜天灾中央翻面与完整卡面交接
+
+- 旧直飞天灾框偏离中央、无可读停驻且沿用竖卡形状。沿既有reservation/owner/visibility/busy/coverTarget生命周期，仅公开天灾先卡背准备、真实图解码后8:5横框中央翻面停驻，再落到battle-layout内唯一current-disaster-card；不另建队列、不改规则/日志/音效。prompt让位、重传一次、换局取消及reduce/off必要两端点保留，普通移区四帧与原21反例不放宽。
+- 同类扫描ZoneMovement的天灾/普通登场/墓地、真实GameBoard目标和main.ts的motion.css。原预览缺CSS及错误target的框架失败分列，有效三几何RED后18项按1＋17分段17＋149断言全过、49合同/29破坏反例过。Main另发现round夹具不能证明真实卡面，锁定1732×1240图在8:5 cover裁边；仅改contain及同QA可选锁图读取，真实desktop/spectator横屏两项35断言全过，A090C648及两张卡面图独读、最终AB9AA611/2EE343BC稳定，浏览器与预览退出。
+- 映射前端有效前缀＋剩余原检查、类型及双Vite通过，不冒新单轮Batch/Release、真机或原Bug已修。唯一disaster-center-reveal-20261024/main-review.json；与依赖同一preview的83e两支UI派发QA一起同步，后者不冒真实权限/ACK/原玩家故障关闭。回滚只本族展示/QA，不动权威状态或天灾规则；本批未部署，开局演出另有人类视觉批准边界。
+
+## ADMIN-20261024-ACCOUNT-RANKED-RESTRICTION｜账号管理独立按天禁赛
+
+- 承接人类原账号管理需求，与单方撤回收益B分片：沿原status.write、风险确认、CommandEnvelope、事务审计/CAS/持久幂等建立专用GET/PUT/clear，不回退账号禁用或整场处置。新设置按服务端确认时刻加整数天，重放不续期；手工/完整性禁赛取较晚截止，clear只解除手工行，held与完整性处罚独立保留。不改PermissionVersion、登录会话、收益或现局，仅排位入队和配对复核沿原RankedAdmissionBlock生效。
+- 持久状态仅AccountRow可选字段，正常schema9→10先核现快照、事务更新双标记，不改快照正文/hash；广播对象仍格式9，future11在旧JSON回退前拒绝。含手工限制状态的原离线降级演练拒绝，恢复沿既有完整SQLite/WAL/镜像及匹配程序，不声称删除SQLite后新JSON可交旧binary独立导入。扫描现schema消费者与新排位/管理命令/账号公共视图，理由仅专用管理接口。
+- 真实HTTP基线1/1为404，非缺DTO编译失败；focused79项75过/4夹具错纠正后仅三方法6/6，不冒新79整轮。4API/6内存SFC与20安全合同过、critical未发现确定P1/P2。Main完整平台40958实际2394/2397：两UTF16旧schema预期三数9→10；另一个未改教学Fact仅临时matches.db清退失败。只这3项重编译续验实际3/3、1A95BA8C，产品DLL0D6B9356不变、测试3704BAB6；教学同源未再现但根因未定/未修，不冒新2397整轮或Release。前端clear DTO仅对象展开满足严格类型，原有效前缀＋剩余原检查/类型/双Vite通过；PATH/缺版本启动错误保原件。真实RoomManager现局恢复/拒新排位/休闲对照、重叠限制、幂等/回滚/迁移断言全部保留。本地接受未部署；唯一account-ranked-restriction-20261024/main-review.json及synchronization.json。回滚须匹配程序与完整数据边界，不能用丢新字段的旧程序恢复。
+
 ## ADMIN-20261024-SINGLE-PARTY｜个人收益处罚、恢复完备与旧端隔离
 
 - 人类明确可选“仅撤回收益／禁赛＋撤回收益”，而非只禁赛；新增显式account范围、参赛目标及按天限制。个人聚合／称号／结算投影按match＋account键处理，不把另一方或整场放进统计排除，不改原始winner、录像、公共牌库样本。仅支持完整当前档案事实的最新连续胜局后缀；败方损失不退、后继或缺事实不猜，预览说明限制；撤销须原范围／对象／场次完全相同，旧整场请求指纹字节兼容。

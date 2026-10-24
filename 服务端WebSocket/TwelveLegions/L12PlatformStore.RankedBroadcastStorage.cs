@@ -24,7 +24,7 @@ public sealed partial class L12PlatformStore
     private static void InitializeRankedBroadcastObjectStorage(SqliteConnection connection,
         int? existingSchemaVersion)
     {
-        if (existingSchemaVersion == RankedBroadcastObjectSchemaVersion)
+        if (existingSchemaVersion is >= RankedBroadcastObjectSchemaVersion and <= PlatformStorageSchemaVersion)
         {
             AssertRankedBroadcastObjectSchema(connection, transaction: null);
             ValidateRankedBroadcastObjectRows(connection, transaction: null);
@@ -900,8 +900,15 @@ public sealed partial class L12PlatformStore
             PublishOrValidateRankedBroadcastSchemaEightMirror(connection, pendingMirrorPath, mirrorPath);
             return;
         }
-        if (existingVersion != RankedBroadcastObjectSchemaVersion)
+        if (existingVersion is not (>= RankedBroadcastObjectSchemaVersion and <= PlatformStorageSchemaVersion))
             throw new InvalidDataException("排位广播反向迁移副本不是 schema 9");
+
+        // This offline rehearsal is not a way to erase schema-10 restrictions.
+        var restrictionSnapshot = ReadSnapshot(connection);
+        if (restrictionSnapshot is { } restrictionState
+            && DeserializeDataAndValidate(ValidateSnapshot(restrictionState)).Accounts
+                .Any(account => account.RankedRestriction is not null))
+            throw new InvalidDataException("含手工排位限制的数据库不能降级为不识别该状态的旧格式");
 
         var pendingMirrorVerified = false;
         try

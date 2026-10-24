@@ -16,6 +16,12 @@ export interface PlatformAccount {
 export interface RoleCommandResult { accountId: string; role: 'player' | 'admin'; changed: boolean }
 export interface AdminAccountPage { items: PlatformAccount[]; page: number; pageSize: number; total: number; activeCount: number; deletedCount: number }
 export interface AccountStatusOperation { applied: boolean; account: PlatformAccount; revokedSessions: number; alreadyApplied: boolean }
+export interface AccountRankedRestriction {
+  accountId: string; restrictionUntil?: string | null; reason?: string | null; setAt?: string | null
+  setByAccountId?: string | null; clearedAt?: string | null; effectiveRestrictionUntil?: string | null; version: number
+}
+export interface AccountRankedRestrictionCommand { reason: string; expectedVersion: number; idempotencyKey: string }
+export interface AccountRankedRestrictionOperation { applied: boolean; restriction: AccountRankedRestriction; alreadyApplied: boolean }
 export interface PlatformSession {
   id: string; createdAt: string; expiresAt: string; current: boolean; authStrength: string; permissionVersion: number
 }
@@ -1481,6 +1487,15 @@ export const adminApi = {
     return platformRequest<AdminAccountPage>(`/api/admin/accounts/query${params.size ? `?${params}` : ''}`)
   },
   account: (id: string) => platformRequest<PlatformAccount>(`/api/admin/accounts/${encodeURIComponent(id)}`),
+  accountRankedRestriction: (id: string) => platformRequest<AccountRankedRestriction>(`/api/admin/accounts/${encodeURIComponent(id)}/ranked-restriction`),
+  setAccountRankedRestriction: (id: string, restrictionDays: number, command: AccountRankedRestrictionCommand) =>
+    platformRequest<AccountRankedRestrictionOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/ranked-restriction`, {
+      method: 'PUT', body: JSON.stringify(commandBody('ranked-restriction', { ...command, restrictionDays })),
+    }),
+  clearAccountRankedRestriction: (id: string, command: AccountRankedRestrictionCommand) =>
+    platformRequest<AccountRankedRestrictionOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/ranked-restriction/clear`, {
+      method: 'POST', body: JSON.stringify(commandBody('ranked-restriction-clear', { ...command })),
+    }),
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
   setAccountStatus: (id: string, disabled: boolean, reason: string, expectedVersion?: number) => platformRequest<AccountStatusOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {
     method: 'PUT', body: JSON.stringify(commandBody('account-status', { disabled, reason, expectedVersion })),

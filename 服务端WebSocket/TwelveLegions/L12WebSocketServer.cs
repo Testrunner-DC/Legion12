@@ -951,6 +951,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app = builder.Build();
         var trafficGuard = new L12HttpTrafficGuard();
         MapRankedIntegrityEndpoints();
+        MapAccountRankedRestrictionEndpoints();
         _app.Use((context, next) => _httpPerformance.InvokeAsync(context, next));
         _app.Use((context, next) => L12HttpExceptionBoundary.InvokeAsync(context, next));
         _app.UseWebSockets();

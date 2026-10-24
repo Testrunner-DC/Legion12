@@ -111,6 +111,7 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? DisabledAt { get; set; }
         public string? DisabledByAccountId { get; set; }
         public string? DisabledReason { get; set; }
+        public AccountRankedRestrictionRow? RankedRestriction { get; set; }
         public string? Email { get; set; }
         public string? NormalizedEmail { get; set; }
         public DateTimeOffset? EmailVerifiedAt { get; set; }

@@ -569,14 +569,11 @@ public sealed partial class L12PlatformStore
         {
             if (IsRankedSeasonCutoverFenced(now))
                 return "赛季正在切换，暂不接受新的排位对局；已开始的对局仍可恢复并完成";
-            var activeRestriction = _data.RankedIntegrityDecisions
-                .Where(row => row.Disposition == "confirmed" && !IsDecisionRevokedLocked(row.Id)
-                    && !row.MatchIds.Any(IsT01TransitionWaivedMatchLocked))
-                .SelectMany(row => row.AccountEffects)
-                .Where(effect => effect.AccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
-                    && effect.RestrictionUntil > now)
-                .OrderByDescending(effect => effect.RestrictionUntil).FirstOrDefault();
-            if (activeRestriction?.RestrictionUntil is { } restrictedUntil)
+            var integrityUntil = RankedIntegrityRestrictionUntilLocked(accountId, now);
+            var manualUntil = ManualRankedRestrictionUntilLocked(accountId, now);
+            var restrictionUntil = manualUntil is null ? integrityUntil
+                : integrityUntil is null || manualUntil >= integrityUntil ? manualUntil : integrityUntil;
+            if (restrictionUntil is { } restrictedUntil)
                 return $"该账号排位资格被限制至 {restrictedUntil.ToOffset(TimeSpan.FromHours(8)):yyyy-MM-dd HH:mm}（UTC+8）";
 
             var cooldown = _data.RankedHeldRewards.Where(row =>

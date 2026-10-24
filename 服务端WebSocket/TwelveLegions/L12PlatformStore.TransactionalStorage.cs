@@ -74,7 +74,7 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 9;
+    private const int PlatformStorageSchemaVersion = 10;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
@@ -884,6 +884,7 @@ public sealed partial class L12PlatformStore
         {
             InitializeDeckDomainSchema(connection, existingSchemaVersion);
             InitializeRankedBroadcastObjectStorage(connection, ReadExistingStorageSchemaVersion(connection));
+            InitializeAccountRankedRestrictionSchema(connection);
         }
         catch (L12PlatformStorageIncompatibleException)
         {
@@ -1241,6 +1242,7 @@ public sealed partial class L12PlatformStore
             throw new InvalidDataException("平台版本字段无效");
         if (data.Accounts.GroupBy(row => row.Id).Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
             throw new InvalidDataException("账号 ID 为空或重复");
+        ValidateAccountRankedRestrictions(data);
         if (data.Accounts.GroupBy(row => row.Username, StringComparer.OrdinalIgnoreCase)
             .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
             throw new InvalidDataException("账号名为空或重复");

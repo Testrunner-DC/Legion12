@@ -1,11 +1,13 @@
 # 十二军团简短交接
 
-## 2026-10-24 三片本地接受｜后续QA继续并行，不重开部署
+## 2026-10-24 本批收尾接受｜Git结果见各族回执，不重开部署
 
 - 画廊派发分页／筛选、赛季目录及跨账号读取隔离已验，16c1349f本地提交；最近1000条边界明示，三尺寸真实SFC与2尺寸目标图、一次映射前端门禁有效，不冒HTTP持久化／真机。开局展示21b0e464本地提交，复用17未变项＋r5三定向＋r6三图，产品416EDF／同一Banner来源／650ms独立点穿结果；人类视觉确认前禁止正式部署。分别见既有main-acceptance.json。
 - 人类已明确单方判罚两档：仅撤回收益／禁赛＋撤回收益。个人按真实目标隔离，完整最新连续胜局事实才撤回，旧match兼容；held、完整correction／精确逆及旧服双POST隔离三风险已修。原8RED、HTTP10RED/2控制、集合4RED/1控制分开保留；最终25专项全过，Main同DLL0307D05A仅一次完整平台2377/2377零失败跳过，FFD991D6 TRX与监督清退。前端有效前缀＋26原步骤／类型双Vite过，不冒新单轮Batch或部署；唯一ranked-integrity-single-party-20261024/main-review.json，实际推送以同目录synchronization.json为准。
-- 本批两个已验产品源码提交后，下一片独立草稿保留：Bug83e同状态玩家／GM真实点击只新QA一叶，假socket无真ACK／原故障已修结论；天灾仅两QA叶准备三项RED，ZoneMovement仍BD1AC503未改。共享preview新增只在disaster-chain内，Main已独读后授权BugQA精确重绑DAE786，不放宽hash或复制第二preview。Bug两支先占唯一浏览器窗，天灾严格三项RED候补；两源不提交、推送、部署或关单。
-- C账号管理按天禁赛仍只读方案：独立账号状态不能伪造match；现集中平台schema10可使旧9 SQLite fail closed，但独立旧JSON恢复尚需可靠格式边界，未写／未验，不假称已解决。费用可用性待原批准、真机按人类保留未验，不重复问；Bug4项旧intake不冒今日无新增／实际关单0。正式3a部署、沙盒退出及维护解除早已完成，此轮线上写入0，不因旧计划回流；普通同步不等CI或扩恢复／清理。
+- 90c85d4b及两前端提交已非强推／精确远端读回，不等CI。83e QA仅因共享preview补真实motion.css，由DAE786精确重绑488B5807；6BDBF2D7脚本同两支native-r2实际exit0、同6D8E24D8起点／11原生命中／各一精确envelope。Main独读720A7833报告及7pin前后一致并看2图；旧8E2EC410保留。仅当前UI dispatch接受，不冒原Bug修复／真实权限／ACK／真机，原单不关闭；72332及5297/profile已退，QA全部返槽冻结，需与共享preview一同同步。
+- C账号按天禁赛本地接受：原404、focused 75/79＋4夹具错及三方法6/6续验分别保留，4API/6SFC＋20合同过、critical独审无确定P1/P2。Main完整平台40958实际2394/2397：两UTF16旧schema预期仅三数改9→10；另一个未改教学Fact在清退matches.db时失败。随后仅这3项实际全过、1A95BA8C TRX及625488监督清退，产品DLL0D6B9356未变、测试DLL3704BAB6；教学清退同源未再现但根因未定，跟踪不冒修复或新2397整轮绿。原权限/幂等审计、手工与完整性限制独立，仅新排位、不改现局/会话；schema10/future11及完整SQLite/WAL/镜像＋匹配程序恢复。唯一account-ranked-restriction-20261024/main-review.json，未部署。
+- 天灾5叶本地接受：原18项按1＋17分段17＋149断言、49合同/29破坏反例通过。Main发现round图不足证明完整卡面，正式锁1732×1240原图仅改contain后，desktop/spectator横屏2项35断言实际全过，A090C648报告及两张真实卡面图已独读，AB9AA611/2EE343BC前后同、浏览器/5211清退；原18生命周期复用不重跑。真实target在battle-layout，框架/缺CSS/旧target及启动失败均保留。唯一disaster-center-reveal-20261024/main-review.json。
+- 本次映射前端有效前缀＋原失败点后续步骤已通过：clear DTO仅改对象展开满足严格类型，4API/6SFC、67回放及剩余原合同过；直接CMD缺.bin和缺VITE_APP_VERSION两次启动失败保留，恢复原标准环境后类型及两Vite真实通过、10源前后同。只续失败点、不冒新单轮Batch/Release，不重跑未改规则或30＋10。费用可用性仍待原批准、真机未验；教学清退原因留待有新证据时处理。线上0写、关单0，旧intake不冒今日无新增；正式3a部署/沙盒/维护已完成不重开。实际Git以两族synchronization.json为准。
 
 ## 2026-10-24 测试备份受控轮转已实际完成｜自动出包首轮成功
 

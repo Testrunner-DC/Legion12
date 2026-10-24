@@ -53,3 +53,5 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(`Admin safety contracts passed (${checks.length}).`)
+
+await import('./test-account-ranked-restriction.mjs')
