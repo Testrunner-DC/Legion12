@@ -6,7 +6,7 @@ import {IDENTITY_CODE,remoteJson,startTerminalGuard,terminalDiagnosticProfile,HO
 import {openTerminalDiagnosticControl} from './testrun-pressure-control.mjs'
 export {bindOwnedControl,testRequest,durableJson,pause,publicFailure} from './testrun-pressure-runtime.mjs'
 export {remoteJson}
-const NORMAL_GUARD_SHA='2CD7EBC3F06A4E1845537EB16A71EBB6EBF296079491494C8516097F237E86BD'
+const NORMAL_GUARD_SHA='8CE69E70F27B23F7FD2651764CD1ACFA14C8BCF84161E923DB482975219F8C07'
 const ANALYTICS_TEMPLATE=path.join(REPO,'ops/qa/testrun-owned-analytics-import.py')
 const ANALYTICS_FIXTURE='D:/GPT/Legion12/artifacts/stage-goals-20261023/test-release/fixture-generated.json'
 const ANALYTICS_FIXTURE_SHA='110EB8BAF258C5DF09811CCDABD87BC4D4EC5BBFE5171707135FFF6B0E5066EC'

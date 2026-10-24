@@ -9,7 +9,7 @@ import {remoteJson,pause,durableJson} from './testrun-pressure-runtime.mjs'
 import {validatePressureMeasurementCheckpoint} from '../../scripts/lib/l12-pressure-checkpoint.mjs'
 
 export const PWSH='C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe'
-export const FROZEN_GUARD='D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/guard-deadline-r4/resource-guard-deadline-r4.py'
+export const FROZEN_GUARD=path.join(REPO,'ops/qa/testrun-frozen-resource-guard.py')
 const LEDGER='C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5'
 const SINK_SHA='B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81'
 const CLIENT_SHA='88BB6ACB68C3867CEC7A5E3DBA5A2B429A672FE4CDEF94C8D47D5921EA38B7F9'

@@ -1,2 +1,4 @@
 *.sh text eol=lf
 *.ps1 text eol=crlf
+/ops/qa/testrun-frozen-resource-guard.py -text
+/ops/qa/testrun-normal-resource-guard.py -text

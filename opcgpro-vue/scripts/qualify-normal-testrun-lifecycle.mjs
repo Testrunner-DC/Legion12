@@ -9,7 +9,7 @@ import {observeIdentity,assertRuntimeIdentity,assertGuardReady,acquireTestSessio
 import {createNormalSessionManager} from './testrun-pressure-recovery.mjs'
 
 const PWSH='C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe'
-const FROZEN_GUARD='D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/guard-deadline-r4/resource-guard-deadline-r4.py'
+const FROZEN_GUARD=path.join(REPO,'ops/qa/testrun-frozen-resource-guard.py')
 export async function protectOwnedSession({file,runId,kind,token}){
  assert.match(runId,/^[a-f0-9]{32}$/);assert.ok(['original','recovery'].includes(kind));assert.match(token,/^[a-f0-9]{64}$/)
  assert.equal(path.basename(file),kind+'-session.dpapi')
@@ -106,7 +106,7 @@ export async function recoverQualification({reportPath,reportSha256,bindingPath,
   }finally{privateSession.token=''}
  }
  const ready=JSON.parse(fs.readFileSync(path.join(output,'guard.jsonl'),'utf8').split('\n')[0])
- assertGuardReady(ready,binding,'2CD7EBC3F06A4E1845537EB16A71EBB6EBF296079491494C8516097F237E86BD')
+ assertGuardReady(ready,binding,'8CE69E70F27B23F7FD2651764CD1ACFA14C8BCF84161E923DB482975219F8C07')
  const owned=await remoteJson(String.raw`
 import hashlib,json,os,pathlib,signal,socket,stat,time
 assert os.geteuid()==0 and socket.gethostname()=='ser550468033481'

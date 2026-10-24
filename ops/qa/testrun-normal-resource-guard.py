@@ -26,7 +26,7 @@ import time
 import types
 
 sys.dont_write_bytecode = True
-LEGACY_PATH = "D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/guard-deadline-r4/resource-guard-deadline-r4.py"
+LEGACY_PATH = str(pathlib.Path(__file__).with_name("testrun-frozen-resource-guard.py").resolve())
 LEGACY_SHA = "549BC59A31A3EDF836A045C5F915C9DB2E283B070150ABC7E369A01BBC8A2C1F"
 PROFILE = {"baseUrl": "https://legion-12.com/testrun", "matchStorage": "ephemeral",
            "privateDeckObjectPersistence": "true", "diagnostics": "off"}

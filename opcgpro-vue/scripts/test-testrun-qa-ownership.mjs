@@ -4,7 +4,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import {execFileSync,spawnSync} from 'node:child_process'
 import ts from 'typescript'
-import {inspectQaOwnership,readQaOwnership,QA_REPO,QA_MANIFEST} from './check-testrun-qa-ownership.mjs'
+import {inspectQaOwnership,inspectOwnedGuardPins,readQaOwnership,QA_REPO,QA_MANIFEST} from './check-testrun-qa-ownership.mjs'
 
 const actual=readQaOwnership(),manifest=JSON.parse(fs.readFileSync(path.join(QA_REPO,QA_MANIFEST)))
 let cases=1
@@ -37,8 +37,57 @@ assert.throws(()=>inspectQaOwnership(pinned,{tracked:fakeTracked,read:()=>Buffer
 const declared=structuredClone(fixture);declared.completeLegacyCodeClosure=false
 declared.legacyExecutableInputs=[{path:'D:/legacy.mjs',sha256:crypto.createHash('sha256').update('legacy').digest('hex').toUpperCase(),execution:'module-import',role:'executed legacy fixture'}]
 assert.equal(inspectQaOwnership(declared,{tracked:fakeTracked,read:file=>Buffer.from(file==='D:/legacy.mjs'?'legacy':'export const valid=true')}).completeLegacyCodeClosure,false);cases++
-assert.equal(manifest.legacyExecutableInputs.length,15);assert.equal(manifest.immutableEvidenceInputs.length,4)
+assert.equal(manifest.legacyExecutableInputs.length,14);assert.equal(manifest.immutableEvidenceInputs.length,5)
 assert.ok(manifest.immutableEvidenceInputs.some(row=>row.path.endsWith('/fixture-import-r2/testrun-owned-analytics-import.py')));cases++
+const guardInputs={frozen:fs.readFileSync(path.join(QA_REPO,'ops/qa/testrun-frozen-resource-guard.py')),
+ normal:fs.readFileSync(path.join(QA_REPO,'ops/qa/testrun-normal-resource-guard.py')),
+ pressureRuntime:fs.readFileSync(path.join(QA_REPO,'opcgpro-vue/scripts/testrun-pressure-runtime.mjs'),'utf8'),
+ terminalRuntime:fs.readFileSync(path.join(QA_REPO,'opcgpro-vue/scripts/terminal-recipient-runtime.mjs'),'utf8'),
+ terminalGuard:fs.readFileSync(path.join(QA_REPO,'ops/qa/testrun-terminal-resource-guard.py'),'utf8'),
+ qualification:fs.readFileSync(path.join(QA_REPO,'opcgpro-vue/scripts/qualify-normal-testrun-lifecycle.mjs'),'utf8')}
+assert.equal(inspectOwnedGuardPins(guardInputs).normalPinConsumers,3);cases++
+for(const key of ['frozen','normal']){
+ const changed=Buffer.from(guardInputs[key]);changed[0]^=1
+ assert.throws(()=>inspectOwnedGuardPins({...guardInputs,[key]:changed}),/QA_OWNED_.*_GUARD_DRIFT/);cases++
+}
+for(const [key,label]of [['pressureRuntime','FROZEN_GUARD_SHA'],['terminalRuntime','NORMAL_GUARD_SHA'],['terminalGuard','NORMAL_SHA'],['qualification','assertGuardReady']]){
+ const changed=guardInputs[key].replace(new RegExp('('+label+"[^\\n]*?)[A-F0-9]{64}"),'$1'+'F'.repeat(64))
+ assert.notEqual(changed,guardInputs[key]);assert.throws(()=>inspectOwnedGuardPins({...guardInputs,[key]:changed}));cases++
+}
+const attributes=fs.readFileSync(path.join(process.env.L12_QA_SOURCE_REPO||QA_REPO,'.gitattributes'),'utf8')
+for(const file of ['testrun-frozen-resource-guard.py','testrun-normal-resource-guard.py']){
+ assert.ok(attributes.split(/\r?\n/).includes('/ops/qa/'+file+' -text'))
+ const bytes=fs.readFileSync(path.join(QA_REPO,'ops/qa',file));assert.ok(!bytes.includes(13)&&bytes[0]!==0xef);cases++
+}
+const originalGuard=manifest.immutableEvidenceInputs.find(row=>row.sha256===actual.ownedGuardPins.frozenSha256)
+assert.ok(originalGuard&&!Object.hasOwn(originalGuard,'execution'))
+assert.ok(!manifest.legacyExecutableInputs.some(row=>row.path===originalGuard.path));cases++
+const missingEvidence=structuredClone(fixture)
+missingEvidence.immutableEvidenceInputs=[originalGuard]
+const withoutOld=file=>{if(file===originalGuard.path)throw new Error('HISTORICAL_GUARD_UNAVAILABLE');return Buffer.from('export const valid=true')}
+assert.equal(inspectQaOwnership(missingEvidence,{tracked:fakeTracked,read:withoutOld}).status,'passed');cases++
+assert.throws(()=>inspectQaOwnership(missingEvidence,{tracked:fakeTracked,read:withoutOld,verifyLocalInputs:true}),/HISTORICAL_GUARD_UNAVAILABLE/);cases++
+const mislabeled=structuredClone(missingEvidence);mislabeled.immutableEvidenceInputs[0].execution='compiled-exec'
+assert.throws(()=>inspectQaOwnership(mislabeled,{tracked:fakeTracked,read:withoutOld}),/QA_EVIDENCE_EXECUTION_FORBIDDEN/);cases++
+// Execute the actual Python default loader while denying all reads of its
+// former artifact input. No Linux services, network, or generated files exist.
+const defaultLoader=spawnSync(process.env.L12_PYTHON||'python',['-I','-B','-c',String.raw`
+import hashlib,json,os,pathlib,sys,types
+root=pathlib.Path(sys.argv[1]);old=sys.argv[2]
+def deny_old(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes,os.PathLike)) and os.fsdecode(args[0]).replace('\\','/')==old:
+  raise PermissionError('HISTORICAL_GUARD_UNAVAILABLE')
+sys.addaudithook(deny_old)
+source=root/'ops/qa/testrun-normal-resource-guard.py'
+normal=types.ModuleType('owned_guard_loader_test');normal.__file__=str(source)
+exec(compile(source.read_bytes(),str(source),'exec'),normal.__dict__)
+assert isinstance(normal.LEGACY_PATH,str)
+assert normal.LEGACY_PATH==str((source.parent/'testrun-frozen-resource-guard.py').resolve())
+legacy=normal.load_frozen_guard()
+assert legacy.EXPECTED_HOST=='ser550468033481' and legacy.ROUND_BUDGET_SECONDS==3.75
+print(json.dumps({'loadedRepositoryGuard':True,'historicalArtifactRead':False}))
+`,QA_REPO,originalGuard.path],{encoding:'utf8',windowsHide:true,timeout:15000})
+assert.equal(defaultLoader.status,0,defaultLoader.stderr);assert.equal(JSON.parse(defaultLoader.stdout).historicalArtifactRead,false);cases++
 const fixtureGenerator=fs.readFileSync(path.join(QA_REPO,'ops/qa/TestAnalyticsHistory/Program.cs'),'utf8')
 assert.match(fixtureGenerator,/args\.Length != 4/)
 assert.match(fixtureGenerator,/deployment-commit"\)\.Trim\(\) != expectedCommit/)

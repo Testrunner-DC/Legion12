@@ -65,6 +65,7 @@
     "ops/qa/test-testrun-owned-analytics-import.py",
     "ops/qa/test-testrun-terminal-resource-guard.py",
     "ops/qa/testrun-normal-resource-guard.py",
+    "ops/qa/testrun-frozen-resource-guard.py",
     "ops/qa/testrun-owned-analytics-import.py",
     "ops/qa/testrun-terminal-resource-guard.py",
     "scripts/lib/l12-pressure-checkpoint.mjs"
@@ -209,12 +210,6 @@
       "role": "Transitive selector contract executed by the terminal-wire measurement."
     },
     {
-      "path": "D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/guard-deadline-r4/resource-guard-deadline-r4.py",
-      "sha256": "549BC59A31A3EDF836A045C5F915C9DB2E283B070150ABC7E369A01BBC8A2C1F",
-      "execution": "compiled-exec",
-      "role": "Frozen resource guard compiled and executed by the owned supervisor."
-    },
-    {
       "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-sink-r2.ps1",
       "sha256": "B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81",
       "execution": "child-process",
@@ -234,6 +229,11 @@
     }
   ],
   "immutableEvidenceInputs": [
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/guard-deadline-r4/resource-guard-deadline-r4.py",
+      "sha256": "549BC59A31A3EDF836A045C5F915C9DB2E283B070150ABC7E369A01BBC8A2C1F",
+      "role": "Original frozen guard retained only as immutable evidence after its exact bytes were versioned in the repository."
+    },
     {
       "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-full-workload-r7/ws-burst-r7.mjs",
       "sha256": "9CF6B5E3E300ED2082A6630BE1638817439995073334B3B8BAC97EAADC1ABAA0",

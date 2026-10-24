@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## QA-20261024-FROZEN-GUARD-OWNERSHIP｜冻结原字节纳管与默认来源闭合
+
+- 历史源原先仍在执行清单中，normal默认loader、两个执行入口和terminal回归均读artifact。现新增仓库原字节17107B／549BC守卫，正常监督器只一行默认路径改str(sibling.resolve())；原阈值、deadline、worker/reap、行格式及编译执行均保，新normal8CE69E70同时重绑三个消费者。运行时仍显式传已核remote frozen-guard.py，非线上换包。
+- 校验器强核仓库guard与原runtime SHA、normal实际字节与三pin四方一致；坏字节、错误pin拒绝。旧源只保不可变证据，禁止execution标签；标准ownership和默认loader不读它，显式--verify-local-inputs仍强核所有19输入，不能为可移植静默跳过。两Python根锚定-text，防Git自动换行破坏源码hash。标准隔离copy沿现有sources清单含新guard，无第二执行／持久化体系。
+- Main47归属、26runtime、15qualification、40terminal Python、70normal原自测均真实通过；其中29受控CLI子进程、旧artifact读拒绝hook、资源／deadline／坏输出／真实子进程清退保留。Windows externalPosixSigtermVerified=false，不冒Linux服务／cgroup／30＋10。独立只读复核无实质阻断，提交后blob／过滤字节与镜像probe需另真实读回。
+- 14旧执行＋5历史证据、closure=false如实保留；历史证据同SHA定位的非阻断未来防漂移边界不当作已全闭包。唯一qa-frozen-guard-20261024；应用／正式测试服务／维护／数据库0变化，未因QA-only改动重建或部署应用。
+
+### 2026-10-24 图鉴／画廊两批Main最终接收
+
+- 仅含已接受叶的干净67899c5b（含画廊00d1261b）标准前端Batch实际exit0：性能／UI等原链、类型及正式／测试双构建通过，不重复后端／30＋10。混合树DeckCover失败及首隔离副本autocrlf造成观察器原字节比较失败均保留；用单次checkout配置保原LF，不改全局Git、不改断言，最终clean-batch-r2 SHA ED7C172A。
+- Main独验回执ui-card-fit-20261024/main-acceptance.json绑定两份原浏览器raw／五源／最终候选及失败。临时干净验收树3150文件376361831B精确清退，依赖联接目标、原热构建和证据保留。两批只本地接收；github.com DNS失败，未冒推送或部署，正式3a及已解除维护不重复操作。
+
 ## UI-20261024-ARCHIVE-DETAIL-FIT｜卡框按可用高度缩放，正文独立滚动
 
 - 来源人类要求修复图鉴详情卡面完整显示，沿P4现有横／竖卡框及同一详情组件处理；不改卡效、图鉴资料或详情入口。原宽度优先缩放与max-height混用导致短屏裁切；弹框和卡图改按可用高度约束，正文用既有独立滚动区。

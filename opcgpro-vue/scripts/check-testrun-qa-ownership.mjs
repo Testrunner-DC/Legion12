@@ -14,6 +14,19 @@ const allowedSource=value=>typeof value==='string'&&value.length>0&&!value.inclu
   &&(value.startsWith('opcgpro-vue/scripts/')||value.startsWith('ops/qa/')
     ||value==='scripts/lib/l12-pressure-checkpoint.mjs')&&sourceExtensions.has(path.extname(value))
 
+export function inspectOwnedGuardPins({frozen,normal,pressureRuntime,terminalRuntime,terminalGuard,qualification}) {
+  const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex').toUpperCase()
+  const pin=(source,pattern)=>{const matches=[...source.matchAll(pattern)];assert.equal(matches.length,1,'QA_GUARD_PIN_ANCHOR_CHANGED');return matches[0][1]}
+  for(const bytes of [frozen,normal])assert.ok(Buffer.isBuffer(bytes)&&bytes.length>0&&bytes.length<=131072,'QA_OWNED_GUARD_BYTES_INVALID')
+  const frozenSha256=sha(frozen),normalSha256=sha(normal)
+  assert.equal(frozenSha256,pin(pressureRuntime,/export const FROZEN_GUARD_SHA='([A-F0-9]{64})'/g),'QA_OWNED_FROZEN_GUARD_DRIFT')
+  const normalPins=[pin(terminalRuntime,/const NORMAL_GUARD_SHA='([A-F0-9]{64})'/g),
+    pin(terminalGuard,/^NORMAL_SHA = "([A-F0-9]{64})"\r?$/gm),
+    pin(qualification,/assertGuardReady\(ready,binding,'([A-F0-9]{64})'\)/g)]
+  for(const expected of normalPins)assert.equal(normalSha256,expected,'QA_OWNED_NORMAL_GUARD_DRIFT')
+  return {frozenSha256,normalSha256,normalPinConsumers:normalPins.length}
+}
+
 // This is a read-only source-ownership check, not remote execution permission or
 // a substitute for the normal runtime/identity/workload/cleanup verifiers.
 export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.readFileSync(file),verifyLocalInputs=false,sourceMirror}={}) {
@@ -72,6 +85,7 @@ export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.
     if(verifyLocalInputs)assert.equal(crypto.createHash('sha256').update(read(input.path)).digest('hex').toUpperCase(),input.sha256,'PINNED_QA_EXECUTABLE_DRIFT')
   }
   for(const input of manifest.immutableEvidenceInputs) {
+    assert.ok(!Object.hasOwn(input,'execution'),'QA_EVIDENCE_EXECUTION_FORBIDDEN')
     assert.ok(typeof input.path==='string'&&/^[CDE]:\//.test(input.path)&&!input.path.split('/').includes('..')
       &&/\.(mjs|ps1|py|json|log)$/.test(input.path),'QA_EVIDENCE_INPUT_PATH_INVALID')
     assert.ok(!evidenceInputs.has(input.path)&&!executableInputs.has(input.path),'QA_INPUT_CLASS_OVERLAP');evidenceInputs.add(input.path)
@@ -100,10 +114,21 @@ export function readQaOwnership({verifyLocalInputs=false}={}) {
   const protocol=code('opcgpro-vue/scripts/testrun-pressure-protocol.mjs')
   const runtime=code('opcgpro-vue/scripts/testrun-pressure-runtime.mjs')
   const execution=code('opcgpro-vue/scripts/testrun-pressure-execution.mjs')
+  const qualification=code('opcgpro-vue/scripts/qualify-normal-testrun-lifecycle.mjs')
+  const frozenRelative='ops/qa/testrun-frozen-resource-guard.py'
+  assert.ok(manifest.sources.includes(frozenRelative),'QA_FROZEN_GUARD_NOT_OWNED')
+  const repositoryGuard="path.join(REPO,'ops/qa/testrun-frozen-resource-guard.py')"
+  assert.ok(execution.includes('export const FROZEN_GUARD='+repositoryGuard),'QA_EXECUTION_GUARD_NOT_REPOSITORY_BOUND')
+  assert.ok(qualification.includes('const FROZEN_GUARD='+repositoryGuard),'QA_QUALIFICATION_GUARD_NOT_REPOSITORY_BOUND')
+  const normal=fs.readFileSync(path.join(QA_REPO,'ops/qa/testrun-normal-resource-guard.py'))
+  assert.ok(normal.toString('utf8').includes('LEGACY_PATH = str(pathlib.Path(__file__).with_name("testrun-frozen-resource-guard.py").resolve())'),'QA_DEFAULT_GUARD_NOT_REPOSITORY_BOUND')
+  const guardPins=inspectOwnedGuardPins({frozen:fs.readFileSync(path.join(QA_REPO,frozenRelative)),normal,pressureRuntime:runtime,
+    terminalRuntime:code('opcgpro-vue/scripts/terminal-recipient-runtime.mjs'),
+    terminalGuard:code('ops/qa/testrun-terminal-resource-guard.py'),qualification})
+  assert.ok(manifest.immutableEvidenceInputs.some(input=>input.sha256===guardPins.frozenSha256),'QA_ORIGINAL_GUARD_EVIDENCE_MISSING')
   const ledger=exact(execution,/const LEDGER='([^']+)'/g)
   const expected=[
     [exact(protocol,/export const FROZEN_CORE = '([^']+)'/g),exact(protocol,/export const FROZEN_SHA = '([A-F0-9]{64})'/g)],
-    [exact(execution,/export const FROZEN_GUARD='([^']+)'/g),exact(runtime,/export const FROZEN_GUARD_SHA='([A-F0-9]{64})'/g)],
     [ledger+'/account-ledger-sink-r2.ps1',exact(execution,/const SINK_SHA='([A-F0-9]{64})'/g)],
     [ledger+'/account-ledger-client-r2.mjs',exact(execution,/const CLIENT_SHA='([A-F0-9]{64})'/g)],
   ]
@@ -112,7 +137,7 @@ export function readQaOwnership({verifyLocalInputs=false}={}) {
   const names=git(['-c','core.quotepath=false','ls-files'])
   const tracked=new Set(names.trim().split(/\r?\n/))
   assert.ok(tracked.has(QA_MANIFEST),'QA_MANIFEST_NOT_VERSIONED')
-  return inspectQaOwnership(manifest,{tracked,verifyLocalInputs,sourceMirror})
+  return {...inspectQaOwnership(manifest,{tracked,verifyLocalInputs,sourceMirror}),ownedGuardPins:guardPins}
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   assert.ok(process.argv.length===2||(process.argv.length===3&&process.argv[2]==='--verify-local-inputs'),'Only optional local immutable-input verification is supported')

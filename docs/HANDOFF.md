@@ -1,5 +1,17 @@
 # 十二军团简短交接
 
+## 2026-10-24 QA冻结守卫纳管｜执行依赖15→14，不冒整体闭包
+
+- 新ops/qa/testrun-frozen-resource-guard.py与历史原件逐字节17107B／549BC全等；normal只改默认来源为仓库同名sibling字符串，新8CE69E70，三真实pin一起绑定。线上CLI仍显式传远端frozen-guard.py，不受别名影响；.gitattributes两根锚定-text保跨平台原字节。旧源仅留immutableEvidence、可选历史审计仍要求可读，不将旧失败或证据删除。
+- Main真实47归属、26terminal runtime、15qualification、40terminal Python及70normal selftest通过；14真实旧执行叶／5不可变证据、19逐SHA读取，closure仍false。默认Pythonloader在拒绝旧artifact读取的审计hook下通过；篡改新guard／normal或三pin拒绝，Windows70例不冒POSIX外部SIGTERM。有限独审无阻断，历史证据仅同SHA定位而非精确path的非阻断防漂移边界保留。
+- 本片11工具叶＋Main记录，不改应用／原负载门槛或服务；提交后仍需干净源镜像probe与Git blob／Windows过滤字节读回，唯一qa-frozen-guard-20261024。图鉴／画廊已完成独验见下，不重复其Batch。远端DNS失败仍不得冒已推送；排位通知六叶和开局三叶草稿均不混本提交。
+
+## 2026-10-24 图鉴与画廊独验完成｜干净候选前端Batch通过
+
+- 图鉴67899c5b／画廊00d1261b两本地提交仅含五接受叶和记录，不含开局三叶草稿。Main对方向真实四角图28组与真实解码缩略图六组读源／核SHA／看图，干净候选标准前端Batch-r2实际exit0，类型及双构建全过。混合树失败和首隔离checkout换行失败保留；单次core.autocrlf=false恢复固定源字节，不改全局／断言。
+- 临时隔离树376361831B／3150文件已精确删除，共享依赖／原热构建与全部raw保留，唯一ui-card-fit-20261024/main-acceptance.json及clean-batch-r2 ED7C172A。github DNS使fetch失败，两批尚未推送或部署，不冒当前远端无分歧。正式3a／本次维护已完成不再操作。
+- 下一QA单叶闭包Main实施中（新frozen同549BC、normal仅仓库sibling），排位通知A片六叶为唯一并行写槽；个人处罚／按天禁赛后续，画廊派发分页／赛季下拉排队，开局三叶及能力不可付诊断仍未接受，不遗漏不混包。
+
 ## 2026-10-24 图鉴详情补验｜真实方向与内衬／关闭碰撞已覆盖
 
 - 图鉴原28绿只证明外框，Main退回后改方向真实四角图，并补真实解码／来源／方向、内衬与关闭不重叠、正文滚到底；新28组全过，320横卡100%上限及30px避让消除实际碰撞。最终CardArchive92959912／mobile guardCD042610／detail-fit0BA1FE00，raw3FE6E464；旧报告不覆盖。Main看原与最终图，非真实手机或原玩家数据。

@@ -55,7 +55,7 @@ for node in ast.walk(tree):
 try {
  assertTerminalIdentity(await observeTerminalIdentity(binding),binding);cases++
  const installed=await installTerminalGuardFiles('1'.repeat(32),REPO+'/ops/qa/testrun-terminal-resource-guard.py',
-  'D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/guard-deadline-r4/resource-guard-deadline-r4.py')
+  REPO+'/ops/qa/testrun-frozen-resource-guard.py')
  assert.equal(installed.files.length,4);cases++
  const removed=await removeTerminalGuardFiles(installed,{transportExitCode:143,completion:{allOwnedChildrenReaped:true},diagnosticOnly:true,onlineCapacityAccepted:false,ready:{}})
  assert.equal(removed.ownedFilesRemoved,4);cases++
