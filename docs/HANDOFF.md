@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-24 动效第二片Main整合｜复用250专项，待干净标准Batch
+
+- 只纳ZoneMovement与两QA三叶：公开play／put／enter军团非field→field中央停驻再落地，公开正有限数兵力影响局部冲击；未知／隐藏／非军团不新增演出，reduce/off必要两端点，现有reservation／busy／安全卡背／prompt让位与取消不变。
+- Main已完整读初diff及四修订、250报告和3图，实核10源，最终BD1AC503／89CBF7A6／CE12F312、17组250/250专项接受。原RED50＋错QA1、35console／34本地可选异画失败／未知404以及进程枚举拒绝均保留，不冒生产ACK／真实网络／物理手机／全动画。来源全部租约已结束，全冻结；唯一legion-entry-presentation-20261024/main-source-acceptance.json。
+- 本轮只对三叶与记录的干净候选做标准前端Batch／类型／双Vite，不重复原专项／未改后端／线上负载或部署；开局三个产品草稿保留不混。主目标仍active，随后回目标5既有唯一出包入口宿主资格与受控轮转缺口，不用动画替代未完成的原目标。
+
 ## 2026-10-24 QA宿主临时根尾项｜不把Windows通过冒完整CI
 
 - 继续实际CI入口核查确认workflow为ubuntu，新的source-import自测不能依赖D父目录已经存在。只改该自测根选择：Windows仍默认D，显式绝对L12_WORK_CACHE优先；非Windows只接受显式cache或现存目录RUNNER_TEMP，拒缺失／文件／相对输入和Windows无盘符路径；物理guard先于recursive创建，不默认C。原77＋11路径边界共88、3真实Windows新进程导入通过，唯一qa-owned-workload-20261024/source-root-portability-final.log；Linux路径只是纯输入反例，不冒Linux执行或canonical CI出包已过。

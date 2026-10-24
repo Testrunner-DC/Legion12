@@ -1,5 +1,7 @@
 # 十二军团任务台账
 
+接续2026-10-24动效第二片（P2/P4）：Main接收公开军团非场内来源→战场的中央停驻／按公开兵力局部落地，唯一ZoneMovement产品叶与两QA叶；同reservation/busy/隐私/取消保留，非军团／隐藏／未知／场内移动不新增。三叶BD1AC503／89CBF7A6／CE12F312及17组250/250已读源／看3图／核10源，局部源码与专项接受，原RED与资源错误不覆盖；下一干净标准前端Batch，不重复250或后端／30＋10，未部署。子线程全冻结、Main接管，开局DeckCover／PromptOverlay／specialAssets草稿排除。唯一legion-entry-presentation-20261024/main-source-acceptance.json。
+
 接续QA宿主根边界：现有CI为ubuntu，source-import自测增加显式跨宿主临时根选择／既有RUNNER_TEMP目录／Windows带盘符约束，仍先物理guard再创建新UUID并精确清退。原77＋11纯根例＝88与三实际Windows导入通过；不冒Linux真实执行或CI资格，不重跑未改UI／双构建／负载。动效第二片三叶源及17场250证据已Main逐读／看3图，局部接受、待Main干净Batch，子任务全冻结无写/重型槽；35console／34可选本地API拒绝和进程枚举权限不足照实保留。
 
 完成2026-10-24 QA负载源码闭包的提交后接受：5229270e真实干净标准前端Batch exit0（性能／361 UI／类型／双Vite，5AE6D84B），11冻结源Git／干净／Windows过滤原字节同C59361F9；无.git120文件镜像51归属＋3条实际导入／篡改拒绝、F210DAEB。77新回归已绑定最终CB8628，86源／0旧执行／19证据；运行库／凭据／CI资格不冒完成。3171文件376823316B可再生副本清退，依赖／证据保留，唯一qa-owned-workload-20261024/main-acceptance.json及同步回执；不部署、维护不动、无重复30＋10。动画r2的50产品RED与1卡背预期误判分列，源线程下一仅ZoneMovement与两QA叶写、先冻结源码无运行，不遗漏旧请求或混入本批。

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import type { ActionEvent, Card, GameState, PlayerView, Prompt } from '../../src/l12/types'
 import GameBoard from '../../src/l12/game/GameBoard.vue'
 import { l12State } from '../../src/l12/net'
@@ -10,11 +10,13 @@ const faceUrl = (cardId: string) => `/api/site/media/visual-transition/${cardId}
 const harnessParams = new URLSearchParams(window.location.search)
 const initialViewer = Number(harnessParams.get('viewer') || 0)
 const spectatorPreview = harnessParams.get('spectator') === '1'
+// Opt-in only: every existing consumer keeps the historical read-only harness.
+const interactive = harnessParams.get('interactive') === '1' && !spectatorPreview
 const landscapeEnabled = ref(harnessParams.get('landscape') === '1')
 useLandscapeViewport(landscapeEnabled)
-const card = (instanceId: string, name: string, cardId: string, tapped = false, imageUrl?: string): Card => ({
+const card = (instanceId: string, name: string, cardId: string, tapped = false, imageUrl?: string, troops = 2000): Card => ({
   instanceId, name, cardId, cardType: 'legion', faction: 'otherworld', cost: 1,
-  baseTroops: 2000, troops: 2000, disasterLevel: 0, tapped, summonRound: 0, imageUrl,
+  baseTroops: troops, troops, disasterLevel: 0, tapped, summonRound: 0, imageUrl,
 })
 const mover = card('mover-1', '侍从骑士', 'S02-0609')
 const swapper = card('mover-2', '罗宾汉', 'S02-0617')
@@ -57,6 +59,11 @@ const libraryEntrant = card('library-entrant', '牌库置入军团', 'S01-02M1',
 const missingTypeSource = { ...card('missing-type-source', '缺类型来源', 'S01-02M3', false, faceUrl('S01-02M3')), cardType:'' }
 const masterPlaySource = { ...card('master-play-source', '主宰来源', 'S01-03M1', false, faceUrl('S01-03M1')), cardType:'master' }
 const unknownOriginEntrant = card('unknown-origin-entrant', '未知来源置入军团', 'S01-03M2', false, faceUrl('S01-03M2'))
+const lightImpactEntrant = card('light-impact-entrant', '轻装登场军团', 'QA-LIGHT', false, faceUrl('QA-LIGHT'), 1000)
+const heavyImpactEntrant = card('heavy-impact-entrant', '重装登场军团', 'QA-HEAVY', false, faceUrl('QA-HEAVY'), 8000)
+const nextMatchEntrant = card('next-match-entrant', '新对局登场军团', 'QA-NEXT', false, faceUrl('QA-NEXT'), 4000)
+const historicalMatchEntrant = card('historical-match-entrant', '新对局历史军团', 'QA-HISTORICAL', false, faceUrl('QA-HISTORICAL'), 3000)
+const templateFallbackEntrant = card('template-fallback-entrant', '公开结算区登场军团', 'QA-TEMPLATE', false, faceUrl('QA-TEMPLATE'), 4500)
 
 function player(playerIndex: number): PlayerView {
   return {
@@ -87,7 +94,21 @@ if (harnessParams.has('private-hand')) {
 if (spectatorPreview) {
   for (const participant of game.players) participant.hand = []
 }
+if (interactive) {
+  game.activePlayer = initialViewer
+  Object.assign(l12State, {
+    game, status:'online', recoveryPhase:'snapshot-acknowledged', pendingAction:false,
+    spectating:false, observerView:'player', gmEnabled:false, refereeControlsEnabled:false,
+  })
+}
 const playbackSpeed = ref<number | null>(null)
+const presentationBusy = ref(false)
+const presentationBusyTrace = ref<Array<{ value: boolean; at: number }>>([])
+function presentationChanged(value: boolean) {
+  presentationBusy.value = value
+  const last = presentationBusyTrace.value.at(-1)
+  if (!last || last.value !== value) presentationBusyTrace.value.push({ value, at:performance.now() })
+}
 let sequence = 0
 const authorityEntryMoves = new Map<string, number>()
 function publish(event: Omit<ActionEvent, 'sequence'>) {
@@ -132,6 +153,29 @@ function placeOpponent(card: Card, row: number, slot: number, events: Array<Omit
   game.players[1].field[row][slot] = card
   authorityEntryMoves.set(card.instanceId, (authorityEntryMoves.get(card.instanceId) ?? 0) + 1)
   publishBatch(events)
+}
+function projectPrivateHands(players: PlayerView[]) {
+  if (!spectatorPreview && !harnessParams.has('private-hand')) return
+  for (const participant of players) participant.hand = []
+}
+async function stageAndPlayOpponent(card: Card, row: number, slot: number, groupId: string) {
+  const projectedPrivateHand = spectatorPreview || harnessParams.has('private-hand')
+  if (projectedPrivateHand) game.players[1].handCount = (game.players[1].handCount ?? 0) + 1
+  else {
+    game.players[1].hand = [...(game.players[1].hand ?? []), card]
+    game.players[1].handCount = game.players[1].hand.length
+  }
+  game.revision += 1
+  game.stateHash = `visual-${game.revision}`
+  // Give the pre-flush zone observer one coherent hand snapshot before the
+  // authoritative play revision. Otherwise both mutations can collapse into
+  // the same microtask and the synthetic fixture never establishes a source.
+  await nextTick()
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  placeOpponent(card, row, slot, [{
+    type:'play', playerIndex:1, text:`玩家B打出${card.name}`, originZone:'hand',
+    playerLogGroupId:groupId, playerLogTiming:'enter', cards:[card],
+  }])
 }
 
 const api = {
@@ -303,6 +347,17 @@ const api = {
         { type:'play', playerIndex:0, text:'玩家A连续打出军团乙', cards:[rapidEntrantB] },
       ])
     })
+  },
+  async playImpactEntrant(tier: 'light' | 'heavy') {
+    const entrant = tier === 'heavy' ? heavyImpactEntrant : lightImpactEntrant
+    await stageAndPlayOpponent(entrant, tier === 'heavy' ? 1 : 0, 2, `play:${entrant.instanceId}`)
+  },
+  playTemplateFallbackEntrant() {
+    game.players[1].field[1][2] = templateFallbackEntrant
+    publishBatch([{
+      type:'put', playerIndex:1, text:'公开结算区军团登场', originZone:'resolving',
+      playerLogGroupId:'put:template-fallback-entrant', playerLogTiming:'enter', cards:[templateFallbackEntrant],
+    }])
   },
   playEntryArtifact() {
     const playerLogGroupId = 'play:entry-artifact'
@@ -504,6 +559,43 @@ const api = {
   closePrompt() { game.prompts = []; game.revision += 1 },
   setReplay(speed: number | null) { playbackSpeed.value = speed },
   setViewer(playerIndex: number) { game.you = playerIndex; game.revision += 1 },
+  rematerializeCurrentSnapshot() {
+    game.recentEvents = (game.recentEvents ?? []).map(event => ({ ...event, cards:event.cards?.map(card => ({ ...card })) }))
+  },
+  advanceRevisionWithoutEntry() {
+    game.revision += 1
+    game.stateHash = `visual-${game.revision}`
+    game.recentEvents = [...(game.recentEvents ?? [])]
+  },
+  switchMatchWithHistoricalEntry() {
+    const players = [player(0), player(1)]
+    players[1].hand = (players[1].hand ?? []).filter(card => card.instanceId !== historicalMatchEntrant.instanceId)
+    players[1].handCount = players[1].hand.length
+    players[1].field[1][0] = historicalMatchEntrant
+    projectPrivateHands(players)
+    sequence = 1
+    Object.assign(game, {
+      matchId:`visual-transition-harness-next-${performance.now().toFixed(0)}`,
+      revision:1, activePlayer:interactive ? initialViewer : 0, players,
+      recentEvents:[{
+        sequence:1, type:'play', playerIndex:1, text:'新对局历史快照中的军团登场', originZone:'hand',
+        playerLogGroupId:'historical:new-match-entry', playerLogTiming:'enter', cards:[historicalMatchEntrant],
+      }],
+      stateHash:'visual-next-1', prompts:[],
+    })
+  },
+  async playNextMatchEntrant() {
+    await stageAndPlayOpponent(nextMatchEntrant, 1, 1, 'play:next-match-entrant')
+  },
+  presentationSnapshot() {
+    return {
+      busy:presentationBusy.value,
+      trace:presentationBusyTrace.value.map(item => ({ ...item })),
+      matchId:game.matchId,
+      revision:game.revision,
+    }
+  },
+  resetPresentationTrace() { presentationBusyTrace.value = [{ value:presentationBusy.value, at:performance.now() }] },
   authorityEntryMoveCount(instanceId: string) { return authorityEntryMoves.get(instanceId) ?? 0 },
   visibilityLeaseCount(instanceId: string) {
     const target = document.querySelector(`[data-card-instance-id="${CSS.escape(instanceId)}"]`)
@@ -516,6 +608,7 @@ Object.assign(window, { __visualTransitionHarness: api })
 <template>
   <div v-if="landscapeEnabled" id="l12-landscape-teleports" />
   <div :class="{ 'l12-landscape-surface': landscapeEnabled }" :data-l12-landscape-canvas="landscapeEnabled || undefined">
-    <GameBoard :game="game" read-only :spectator-live-view="spectatorPreview" :replay-playback-speed="playbackSpeed" />
+    <GameBoard :game="game" :read-only="!interactive" :spectator-live-view="spectatorPreview" :replay-playback-speed="playbackSpeed"
+      @presentation-change="presentationChanged" />
   </div>
 </template>

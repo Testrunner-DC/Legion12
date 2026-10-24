@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## UI-20261024-LEGION-CENTER-LANDING｜同一登场事务的中央展示与落地
+
+- 人类按阶段要求改善军团登场与观战演出。原共享ZoneMovement只有来源直飞格位，没有中央停驻或公开兵力派生的局部落地。本片仅扩P2/P4呈现：已接受的play／put／enter、公开legion、非field来源→field统一走中央→落地；隐私未知／非军团／场内位移不新增该演出，不改P0/P1结算／P3数据／服务器计时。
+- 同类扫描movementFromEvent、sourceGhost、template fallback及entryTransactionKey，共用既有reservation／visualOwner／busy与完成释放；RHS仅公开troops或nullish时baseTroops且严格正有限number，未知不猜。holder正面解码前仍允许静态安全卡背；reduce／off只作两端点必要交接，全部新增impact在finish／cancel／dispose清退，active-prompt让位／换局／重传规则保留。
+- Main完整读三叶初稿及四次收束点，最终BD1AC503／89CBF7A6／CE12F312冻结；独读9DF3DD9E真实报告、17组250/250与全部3图、10实际源SHA前后。双方／观战×宽屏／横屏／旋转竖屏、真实主与impact同帧可见几何／强度、template确实路径、准备卡背、门控到完成、减少动态、重传／换局均覆盖。合成authority／假socket／本地Vite不冒生产入站ACK、真触摸或整动画完成。
+- 原两次RED、50真实产品缺口与1错误QA预期分别保留；35console／34本地可选异画API拒绝及一次未归属404保留，未伪装无资源错误；子任务不能枚举全部进程，不冒0process，仅finally和监听核验。唯一legion-entry-presentation-20261024/main-source-acceptance.json；来源全部租约结束，待Main只纳三叶的干净标准Batch／类型／双构建，不部署、不混开局三草稿。
+
 ## QA-20261024-WORKLOAD-CODE-OWNERSHIP｜消除最后11份历史执行源码依赖
 
 - 宿主根尾项：新自测不再假设D父目录现存；显式绝对cache优先，Windows默认仍D且必须带盘符，非Windows只能继承现存目录RUNNER_TEMP；最终物理guard不变且在recursive创建前。补11路径例后88与三个实际Windows导入通过，source-root-portability-final.log；路径纯例不是Linux执行或CI全出包接受。该项不重跑源码未变的产品／负载。
