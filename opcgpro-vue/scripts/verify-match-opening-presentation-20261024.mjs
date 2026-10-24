@@ -120,6 +120,7 @@ async function stageSnapshot(page) {
     const stage = document.querySelector('[data-ui-contract="match-opening-stage"]')
     if (!(stage instanceof HTMLElement)) throw new Error('opening stage missing')
     const articles = [...stage.querySelectorAll('article')]
+    const identityNodes = [...stage.querySelectorAll('.opening-versus-player')]
     const panel = stage.closest('.prompt-panel,.waiting-panel')
     const actionButtons = [...document.querySelectorAll('.initiative-skip:not(:disabled), [data-tutorial-choice]:not(:disabled), .prompt-confirm-choice:not(:disabled)')]
     const rect = element => {
@@ -132,6 +133,14 @@ async function stageSnapshot(page) {
         ((node instanceof HTMLStyleElement ? node.dataset.viteDevId : node.getAttribute('href')) || '').includes('/src/l12/site/uiSystem.css')),
       articleClasses: articles.map(article => article.className),
       articleRects: articles.map(rect),
+      identities: identityNodes.map(node => node.querySelector('small')?.textContent?.trim() || ''),
+      identityTexts: identityNodes.map(node => node.textContent?.trim() || ''),
+      identityRects: identityNodes.map(rect),
+      identityColors: identityNodes.map(node => {
+        const label = node.querySelector('small')
+        return label ? getComputedStyle(label).color : ''
+      }),
+      factionColors: articles.map(article => getComputedStyle(article).getPropertyValue('--opening-faction-color').trim()),
       landingTargets: articles.map(article => ({
         x: article.style.getPropertyValue('--master-target-x'),
         y: article.style.getPropertyValue('--master-target-y'),
@@ -195,6 +204,89 @@ try {
       } finally { await context.close() }
     })
   }
+
+  await runCase('visual-dramatic-versus', async () => {
+    const { context, page } = await openingPage(baseUrl, { width: 1440, height: 900 }, { 'opening-rolls': 'zero', markers: '0' })
+    try {
+      await page.waitForSelector('[data-ui-contract="match-opening-stage"]', { state: 'visible' })
+      await page.evaluate(() => {
+        for (const element of document.querySelectorAll('.opening-master-card,.opening-master-card .l12-card-image,.opening-versus,.opening-versus-player,.opening-dice-row')) {
+          for (const animation of element.getAnimations()) {
+            animation.pause()
+            animation.currentTime = 650
+          }
+        }
+      })
+      await waitForArtwork(page)
+      const snapshot = await stageSnapshot(page)
+      assert.equal(snapshot.identities.at(-1), '你', JSON.stringify(snapshot.identities))
+      assert.ok(snapshot.identities[0] && snapshot.identities[0] !== '对手', `live opponent id was replaced by generic copy: ${JSON.stringify(snapshot.identities)}`)
+      assert.deepEqual(snapshot.identityColors, ['rgb(118, 220, 227)', 'rgb(118, 220, 227)'], `player ids inherited faction colors: ${JSON.stringify(snapshot.identityColors)}`)
+      assert.equal(snapshot.factionColors.length, 2)
+      assert.ok(snapshot.factionColors.every(Boolean), `missing faction glow: ${JSON.stringify(snapshot.factionColors)}`)
+      assert.notEqual(snapshot.factionColors[0], snapshot.factionColors[1], 'fixture factions must render distinct master glows')
+      const versus = await page.locator('.opening-versus').evaluate(node => {
+        const rect = node.getBoundingClientRect()
+        const style = getComputedStyle(node)
+        return { text: node.textContent?.trim(), left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
+          width: rect.width, height: rect.height, fontSize: Number.parseFloat(style.fontSize), opacity: Number.parseFloat(style.opacity) }
+      })
+      assert.equal(versus.text, '对阵')
+      assert.ok(versus.fontSize >= 48 && versus.opacity > .9, JSON.stringify(versus))
+      assert.ok(snapshot.articleRects[0].left < snapshot.articleRects[1].left, `opponent/self sides reversed: ${JSON.stringify(snapshot.articleRects)}`)
+      assert.ok(snapshot.articleRects[0].top + 60 < snapshot.articleRects[1].top, `master cards remained on one flat line: ${JSON.stringify(snapshot.articleRects)}`)
+      const depth = await page.locator('.opening-master-card .l12-card-image').evaluateAll(nodes => nodes.map(node => {
+        const style = getComputedStyle(node)
+        const matrix = new DOMMatrixReadOnly(style.transform)
+        const [originX, originY] = style.transformOrigin.split(' ').map(Number.parseFloat)
+        const project = (x, y) => {
+          const point = new DOMPoint(x - originX, y - originY, 0, 1).matrixTransform(matrix)
+          return { x: point.x / point.w + originX, y: point.y / point.w + originY }
+        }
+        const tl = project(0, 0), tr = project(node.clientWidth, 0)
+        const bl = project(0, node.clientHeight), br = project(node.clientWidth, node.clientHeight)
+        const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
+        return { transform: style.transform, originX, width: node.clientWidth,
+          leftEdge: distance(tl, bl), rightEdge: distance(tr, br), corners: { tl, tr, bl, br } }
+      }))
+      assert.ok(depth.every(item => item.transform.startsWith('matrix3d(')), `master faces were only rotated in 2D: ${JSON.stringify(depth)}`)
+      assert.ok(depth[0].originX <= 1 && depth[0].leftEdge > depth[0].rightEdge * 1.08,
+        `opponent outer edge was not nearer than its inner edge: ${JSON.stringify(depth[0])}`)
+      assert.ok(Math.abs(depth[1].originX - depth[1].width) <= 1 && depth[1].rightEdge > depth[1].leftEdge * 1.08,
+        `self outer edge was not nearer than its inner edge: ${JSON.stringify(depth[1])}`)
+      const masterVisibility = await page.locator('.opening-master-card').evaluateAll(nodes => nodes.map(node => ({
+        opacity: Number.parseFloat(getComputedStyle(node).opacity), visibility: getComputedStyle(node).visibility,
+        imageOpacity: Number.parseFloat(getComputedStyle(node.querySelector('.l12-card-image')).opacity),
+      })))
+      assert.ok(masterVisibility.every(item => item.opacity > .9 && item.imageOpacity > .9 && item.visibility === 'visible'),
+        `projected master faces were not visibly rendered: ${JSON.stringify(masterVisibility)}`)
+      assert.ok(snapshot.identityRects[0].bottom < versus.top, `opponent identity was not above versus: ${JSON.stringify({ identities: snapshot.identityRects, versus })}`)
+      assert.ok(snapshot.identityRects[1].top > versus.bottom, `self identity was not below versus: ${JSON.stringify({ identities: snapshot.identityRects, versus })}`)
+      await page.screenshot({ path: path.join(screenshotRoot, 'visual-dramatic-versus.png') })
+      return { identities: snapshot.identities, identityTexts: snapshot.identityTexts, identityRects: snapshot.identityRects,
+        identityColors: snapshot.identityColors, articleRects: snapshot.articleRects, depth, masterVisibility, factionColors: snapshot.factionColors, versus }
+    } finally { await context.close() }
+  })
+
+  await runCase('visual-large-dice', async () => {
+    const { context, page } = await openingPage(baseUrl, { width: 1440, height: 900 }, { 'opening-rolls': 'valid' })
+    try {
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+      const dice = await page.locator('.opening-die').evaluateAll(nodes => nodes.map(node => {
+        const face = node.querySelector('b')
+        const rect = node.getBoundingClientRect()
+        const faceRect = face?.getBoundingClientRect()
+        const style = face ? getComputedStyle(face) : null
+        return { label: node.querySelector('small')?.textContent?.trim(), width: rect.width, height: rect.height,
+          faceWidth: faceRect?.width || 0, faceHeight: faceRect?.height || 0, fontSize: Number.parseFloat(style?.fontSize || '0') }
+      }))
+      assert.equal(dice.at(-1)?.label, '你', JSON.stringify(dice))
+      assert.ok(dice[0]?.label && dice[0].label !== '对手', JSON.stringify(dice))
+      assert.ok(dice.every(item => item.fontSize >= 88 && item.faceWidth >= 80 && item.faceHeight >= 80), JSON.stringify(dice))
+      await page.screenshot({ path: path.join(screenshotRoot, 'visual-large-dice.png') })
+      return { dice }
+    } finally { await context.close() }
+  })
 
   await runCase('skip-waits-for-authoritative-rolls-and-revision-does-not-reenter', async () => {
     const { context, page } = await openingPage(baseUrl, { width: 1366, height: 768 }, { 'opening-rolls': 'zero' })
@@ -265,6 +357,20 @@ try {
         assert.equal(await page.locator('.mulligan-stage .prompt-panel').count(), 0)
         assert.match(await page.locator('.mulligan-stage header').innerText(), /你是先手[\s\S]*请确认调度的手牌/)
         assert.equal(await page.locator('[data-tutorial-mulligan-card]').count(), 5, 'fixture hand count was not rendered from game state')
+        const mulliganPresentation = await page.locator('[data-tutorial-mulligan-card]').first().evaluate(node => {
+          const style = getComputedStyle(node)
+          const image = node.querySelector('.l12-card-image')
+          const imageRect = image?.getBoundingClientRect()
+          const meta = node.querySelector('.prompt-card-candidate__meta')
+          return { borderTopWidth: style.borderTopWidth, backgroundColor: style.backgroundColor,
+            imageWidth: imageRect?.width || 0, imageHeight: imageRect?.height || 0,
+            metaDisplay: meta ? getComputedStyle(meta).display : 'missing', metaText: meta?.textContent?.trim() || '' }
+        })
+        assert.equal(mulliganPresentation.borderTopWidth, '0px', JSON.stringify(mulliganPresentation))
+        assert.equal(mulliganPresentation.backgroundColor, 'rgba(0, 0, 0, 0)', JSON.stringify(mulliganPresentation))
+        assert.equal(mulliganPresentation.metaDisplay, 'none', JSON.stringify(mulliganPresentation))
+        assert.equal(mulliganPresentation.metaText, '')
+        assert.ok(mulliganPresentation.imageWidth >= (viewport.key === 'desktop' ? 138 : 100), JSON.stringify(mulliganPresentation))
         const visibleLayout = await page.evaluate(() => {
           const overlay = document.querySelector('.l12-prompt-overlay.mobile-safe-overlay')
             || document.querySelector('.l12-prompt-overlay')
@@ -314,12 +420,83 @@ try {
           cardRects.push(cardRect)
         }
         const firstId = await firstCard.getAttribute('data-tutorial-mulligan-card')
+        assert.ok(firstId, 'fixture mulligan card id missing')
+        await firstCard.hover()
+        const hoveredImage = await firstCard.evaluate(node => {
+          const image = node.querySelector('.l12-card-image')
+          if (!(image instanceof HTMLElement)) throw new Error('hovered mulligan image missing')
+          const rect = element => {
+            const value = element.getBoundingClientRect()
+            return { left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height }
+          }
+          const imageRect = rect(image)
+          const visualBounds = { left: imageRect.left - 11, top: imageRect.top - 11, right: imageRect.right + 11,
+            bottom: imageRect.bottom + 11, width: imageRect.width + 22, height: imageRect.height + 22 }
+          const clippingAncestors = []
+          for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent)
+            if (/(hidden|clip|auto|scroll)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) {
+              clippingAncestors.push({ className: parent.className, rect: rect(parent), overflow: `${style.overflowX}/${style.overflowY}` })
+            }
+            if (parent.classList.contains('l12-prompt-overlay')) break
+          }
+          return { image: imageRect, visualBounds, clippingAncestors }
+        })
+        assert.ok(hoveredImage.clippingAncestors.length > 0, JSON.stringify(hoveredImage))
+        assert.ok(hoveredImage.clippingAncestors.every(item => inside(hoveredImage.visualBounds, item.rect)),
+          `hovered mulligan art or glow crossed a clipping ancestor: ${JSON.stringify(hoveredImage)}`)
         await firstCard.click()
+        await page.waitForFunction(id => document.querySelector(`[data-tutorial-mulligan-card="${id}"]`)?.classList.contains('selected'), firstId)
+        await page.waitForTimeout(180)
+        const selectedPresentation = await firstCard.evaluate(node => {
+          const imageBox = node.querySelector('.l12-card-image')
+          const image = node.querySelector('.l12-card-image__img')
+          const state = node.querySelector('.prompt-card-candidate__state')
+          if (!(imageBox instanceof HTMLElement) || !(image instanceof HTMLImageElement)) throw new Error('selected mulligan art missing')
+          const rect = element => {
+            const value = element.getBoundingClientRect()
+            return { left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height }
+          }
+          const clippingAncestors = []
+          for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent)
+            if (/(hidden|clip|auto|scroll)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) {
+              clippingAncestors.push({ className: parent.className, rect: rect(parent), overflow: `${style.overflowX}/${style.overflowY}` })
+            }
+            if (parent.classList.contains('l12-prompt-overlay')) break
+          }
+          return {
+            selected: node.classList.contains('selected'), ariaPressed: node.getAttribute('aria-pressed'),
+            state: state?.textContent?.trim() || '', card: rect(node), imageBox: rect(imageBox), stateRect: state ? rect(state) : null,
+            filter: getComputedStyle(imageBox).filter, transform: getComputedStyle(node).transform,
+            liftY: new DOMMatrixReadOnly(getComputedStyle(node).transform).m42,
+            imageComplete: image.complete, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight,
+            imageOpacity: Number.parseFloat(getComputedStyle(image).opacity), clippingAncestors,
+          }
+        })
+        selectedPresentation.visualBounds = {
+          left: Math.min(selectedPresentation.card.left, selectedPresentation.imageBox.left - 9, selectedPresentation.stateRect?.left ?? Infinity),
+          top: Math.min(selectedPresentation.card.top, selectedPresentation.imageBox.top - 9, selectedPresentation.stateRect?.top ?? Infinity),
+          right: Math.max(selectedPresentation.card.right, selectedPresentation.imageBox.right + 9, selectedPresentation.stateRect?.right ?? -Infinity),
+          bottom: Math.max(selectedPresentation.card.bottom, selectedPresentation.imageBox.bottom + 9, selectedPresentation.stateRect?.bottom ?? -Infinity),
+        }
+        selectedPresentation.visualBounds.width = selectedPresentation.visualBounds.right - selectedPresentation.visualBounds.left
+        selectedPresentation.visualBounds.height = selectedPresentation.visualBounds.bottom - selectedPresentation.visualBounds.top
+        assert.equal(selectedPresentation.selected, true, JSON.stringify(selectedPresentation))
+        assert.equal(selectedPresentation.ariaPressed, 'true', JSON.stringify(selectedPresentation))
+        assert.match(selectedPresentation.state, /已选择/, JSON.stringify(selectedPresentation))
+        assert.match(selectedPresentation.filter, /grayscale\(0\.24\).*brightness\(0\.82\)/, JSON.stringify(selectedPresentation))
+        assert.ok(selectedPresentation.transform !== 'none' && selectedPresentation.liftY <= -10,
+          `selected mulligan card did not lift slightly: ${JSON.stringify(selectedPresentation)}`)
+        assert.ok(selectedPresentation.imageComplete && selectedPresentation.naturalWidth > 0 && selectedPresentation.naturalHeight > 0 && selectedPresentation.imageOpacity > .95, JSON.stringify(selectedPresentation))
+        assert.ok(selectedPresentation.clippingAncestors.length > 0, JSON.stringify(selectedPresentation))
+        assert.ok(selectedPresentation.clippingAncestors.every(item => inside(selectedPresentation.visualBounds, item.rect)),
+          `selected mulligan art, marker or glow crossed a clipping ancestor: ${JSON.stringify(selectedPresentation)}`)
+        await page.screenshot({ path: path.join(screenshotRoot, `mulligan-${viewport.key}.png`) })
         await page.locator('[data-tutorial-action="confirm-mulligan"]').click()
         const commands = await page.evaluate(() => window.__sentCommands)
-        assert.ok(firstId && JSON.stringify(commands).includes(firstId), 'confirm mulligan did not submit the selected real hand card')
-        await page.screenshot({ path: path.join(screenshotRoot, `mulligan-${viewport.key}.png`) })
-        return { visibleLayout, actions, cardRects, firstId, commandCount: commands.length }
+        assert.ok(JSON.stringify(commands).includes(firstId), 'confirm mulligan did not submit the selected real hand card')
+        return { visibleLayout, actions, cardRects, mulliganPresentation, hoveredImage, selectedPresentation, firstId, commandCount: commands.length }
       } finally { await context.close() }
     })
   }
@@ -412,8 +589,8 @@ try {
       const { context, page } = await openingPage(baseUrl, { width: 1366, height: 768 }, { 'opening-rolls': 'zero', motion: motion.key }, motion.reduced)
       try {
         await page.waitForSelector('[data-ui-contract="match-opening-stage"]')
-        const animationDurations = await page.evaluate(() => [...document.querySelectorAll('.opening-master-card,.opening-versus,.opening-dice-row')].flatMap(element => element.getAnimations().map(animation => Number(animation.effect?.getTiming().duration) || 0)))
-        const computedMotion = await page.evaluate(() => [...document.querySelectorAll('.opening-master-card,.opening-versus,.opening-dice-row,.opening-die b')].map(element => {
+        const animationDurations = await page.evaluate(() => [...document.querySelectorAll('.opening-master-card,.opening-master-card .l12-card-image,.opening-versus,.opening-versus-player,.opening-dice-row')].flatMap(element => element.getAnimations().map(animation => Number(animation.effect?.getTiming().duration) || 0)))
+        const computedMotion = await page.evaluate(() => [...document.querySelectorAll('.opening-master-card,.opening-master-card .l12-card-image,.opening-versus,.opening-versus-player,.opening-dice-row,.opening-die b')].map(element => {
           const style = getComputedStyle(element)
           return { animationName: style.animationName, animationDuration: style.animationDuration, transitionDuration: style.transitionDuration }
         }))

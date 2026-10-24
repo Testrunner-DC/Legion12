@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-waiting-master-layout",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "对战提示与主宰区",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "无需选择时，等待提示放在场面右侧空位，不再遮蔽场面或阻挡操作；主宰休整只旋转卡图，名称与生命保持正向，作为军团登场后原主宰区仅保留名称和生命。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/game/PlayerMat.vue"
+      ]
+    }
+  ]
+}

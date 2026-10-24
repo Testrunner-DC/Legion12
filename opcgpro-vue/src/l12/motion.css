@@ -39,7 +39,7 @@
 .site-sidebar { transition-timing-function: var(--l12-ease-standard) !important; transition-duration: var(--l12-dur-3) !important; }
 .battle-settings-mask > *, .game-over { animation: l12-modal-in var(--l12-dur-3) var(--l12-ease-standard) both; }
 .l12-prompt-overlay, .graveyard-overlay, .master-overlay, .mobile-safe-overlay { animation: l12-fade-in var(--l12-dur-2) linear both; }
-.l12-prompt-overlay > .prompt-panel, .graveyard-overlay > .graveyard-window, .master-overlay > :not(button), .mobile-safe-overlay > :not(button) { animation: l12-modal-in var(--l12-dur-3) var(--l12-ease-standard) both; }
+.l12-prompt-overlay:not(.passive-waiting) > .prompt-panel, .graveyard-overlay > .graveyard-window, .master-overlay > :not(button), .mobile-safe-overlay:not(.passive-waiting) > :not(button) { animation: l12-modal-in var(--l12-dur-3) var(--l12-ease-standard) both; }
 .archive-card:nth-child(-n+12), .deck-card:nth-child(-n+12), .deck-entry-row, .online-entry { animation: l12-list-in var(--l12-dur-3) var(--l12-ease-standard) both; }
 .archive-card:nth-child(2), .deck-card:nth-child(2) { animation-delay: 25ms; }
 .archive-card:nth-child(3), .deck-card:nth-child(3) { animation-delay: 50ms; }

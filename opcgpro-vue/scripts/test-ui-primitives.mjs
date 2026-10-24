@@ -6,6 +6,7 @@ import { createServer } from 'vite'
 import './test-site-ui-state-scope.mjs'
 import './test-e1-ranking-state-contract.mjs'
 import './test-sticky-dialog-headers-20261024.mjs'
+import './test-waiting-master-layout-20261024.mjs'
 
 const root=path.resolve(import.meta.dirname,'..')
 const require=createRequire(import.meta.url)

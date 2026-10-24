@@ -94,6 +94,7 @@ const {
 })
 const mobileRecordOpen = ref(false)
 const mobileRecordMinimized = ref(false)
+const passiveWaitTarget = ref<HTMLElement | null>(null)
 const mobileMoralePickerOpen = ref(false)
 const mobileMoralePickerMinimized = ref(false)
 const mobileMoraleReason = ref('')
@@ -1560,6 +1561,7 @@ function statusTexts(card: Card) {
           </div>
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
             <span class="presentation-zone-anchor" data-l12-zone="resolving" aria-hidden="true" />
+            <div ref="passiveWaitTarget" class="passive-wait-slot" data-ui-contract="passive-wait-slot" />
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
               :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
@@ -1892,7 +1894,7 @@ function statusTexts(card: Card) {
               ? '确认支付' : '确认选择' }}</button>
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :data-tutorial-action="resourceSelectionPrompt ? 'restore-payment' : undefined" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
-      <PromptOverlay v-if="promptOverlayMounted" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
+      <PromptOverlay v-if="promptOverlayMounted" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport" :passive-wait-target="passiveWaitTarget"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="freeCommand('mulligan')" @mulligan-keep-all="keepAllMulligan" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
@@ -1926,6 +1928,7 @@ function statusTexts(card: Card) {
   justify-self:center;
   align-items:stretch;
 }
+.passive-wait-slot{--l12-passive-wait-width:220px;--l12-passive-wait-height:128px;position:absolute;z-index:34;right:8px;top:50%;box-sizing:border-box;width:var(--l12-passive-wait-width);height:var(--l12-passive-wait-height);transform:translateY(-50%);pointer-events:none}
 .presentation-zone-anchor{position:absolute;z-index:-1;left:50%;top:50%;width:72px;height:101px;transform:translate(-50%,-50%);visibility:hidden;pointer-events:none}
 .board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:auto;min-height:0;justify-content:flex-end;overflow:hidden;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;width:100%;max-width:var(--l12-clock-track-width);transform:none}.opponent-status-lane{grid-row:1;align-self:stretch;align-items:flex-end}.my-status-lane{grid-row:3;align-self:stretch;align-items:flex-start}.opponent-status-lane,.my-status-lane{order:0}
 .player-panel{display:grid;box-sizing:border-box;height:auto!important;min-height:0;flex:none;gap:8px;overflow:hidden!important}.player-panel :deep(.battle-player-identity){padding:2px}.player-panel :deep(.battle-player-identity__facts>div){grid-template-columns:64px minmax(0,1fr)}.player-panel :deep(.battle-player-identity__name>strong){font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))}.player-panel :deep(.battle-player-identity dd){font-size:calc(var(--l12-board-copy,13px) - 1px)}.player-panel :deep(.battle-player-identity .ranked-identity-badge){max-width:100%}.player-panel :deep(.battle-player-identity .ranked-identity-badge>span){min-width:0;overflow-wrap:anywhere;white-space:normal}

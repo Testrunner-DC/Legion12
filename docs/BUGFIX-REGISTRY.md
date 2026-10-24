@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## UI-20261025-OPENING-WAITING-MASTER｜真实透视、调度净空与非模态等待
+
+- P4呈现族仅改既有PromptOverlay／GameBoard／PlayerMat及共享CSS，不改权威命令、费用、计时、牌序或投影隐私。开场卡面内层perspective(760px)／rotateY±18度，外侧边比内侧约长16%；保高低方向、原真实主宰绑定／落位／跳过／off-reduce。ID固定界面青色，不再随阵营；调度真实手牌局部大卡无框，选中抬12px／轻灰，桌面28px和短屏20px空间覆盖图、标记与阴影，保原确认／全部保留命令。
+- 等待根因是全视口及移动模态CSS与共享modal-in覆盖，不是锚点本身错误；具名passive分支同时排除两入口，board-local空位透明、不拦输入，普通本人选择／等待／最小化继续原规则。主宰休整只内图旋转且在框内，名血不转，不保留人为新增的中间旋转transition；主宰作军团时仅名血，不添状态文案。共享扫描两modal选择器、移动viewport规则、被动／可操作提示及主宰双方ready/rest/deployed。
+- 原视觉否决／B六轮失败原件不改。A v6四点4/4，主宰实际四角和选中态祖先包含；实卡两图Main独看，噪声与夹具范围明示。B r8四点＋原owner/deployed两绿复用，非新full6。Main最终组合65277实际exit0：UI361／motion49／原语21／账目276、完整类型与双Vite，14叶前后全等，9DDE98CF原生日志。唯一opening main-acceptance及waiting main-review；非新Release／真机／人类最终视觉批准／服务端ACK，未部署或线上关单。回滚只这一呈现族及QA，不回写数据。
+
 ## REPLAY-20261024-PLAYER-PAGING｜本人分段播放、原格式导出与取消生命周期
 
 - 单场短号已索引绑定402命令／14检查点，原6个499无耗时字段，不据此捏造唯一10秒成因。P2/P3新本人GET页沿旧归属/7天最近10场/载荷保留策略，每页前后复验，回包前复核token；原唯一Sanitize生成viewer0/1与空牌库名摘要，复用唯一Journal循环/实际最近检查点逐帧还原验证，不预存raw列表。100条／整公开包4MiB，PageBytes为实际HTTP编码items；私密原始累计量不决定游标，新单输入4MiB保护仅opt-in新页，超限/损坏/取消不回部分页。原完整签名wrapper及admin默认、schema/hash/权威规则不改。

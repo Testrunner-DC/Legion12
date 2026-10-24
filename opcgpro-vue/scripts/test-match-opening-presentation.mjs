@@ -193,8 +193,26 @@ assert.doesNotMatch(template, /opening-initiative-panel|initiative-opening-stage
   'the accepted opening must not return to the framed two-banner panel')
 assert.match(template, /class="opening-versus"[^>]*>对阵<\/strong>/,
   'the centered versus beat must remain plain settlement-style text')
+assert.match(script, /import \{ getFactionPresentation \} from '\.\.\/factionPresentation'/,
+  'master entrance glow must reuse the shared faction presentation registry')
+assert.match(script, /function openingPlayerIdentity\([\s\S]*props\.readOnly[\s\S]*player\.name[\s\S]*player\.playerIndex === props\.game\.you \? '你' : player\.name \|\| '对手'/,
+  'live opening must show self as you and the opponent public player id while replay shows both ids')
+assert.match(template, /class="opening-versus-player"[\s\S]*player\.playerIndex !== game\.you[\s\S]*player\.master\.masterName[\s\S]*openingPlayerIdentity\(player\)[\s\S]*<template v-else>[\s\S]*openingPlayerIdentity\(player\)[\s\S]*player\.master\.masterName/,
+  'opponent identity/master must sit above versus while self identity/master sits below it')
+assert.match(template, /opening-versus-player[\s\S]*opening-die[\s\S]*openingPlayerIdentity\(player\)/,
+  'central versus identities and dice labels must share the same live/replay identity rule')
+assert.doesNotMatch(template, /class="opening-versus-player"[^>]*:style=/,
+  'central player ids must not inherit a faction-colored inline style')
+assert.match(script, /'--opening-perspective': mine \? '-18deg' : '18deg'[\s\S]*'--opening-depth-origin': mine \? '100% 50%' : '0% 50%'/,
+  'outer edges must stay near the camera while both inner edges recede toward versus')
+assert.doesNotMatch(template, /opening-master-card[\s\S]{0,420}opening-master-name/,
+  'player identity must not remain attached below either flying master card')
 assert.match(template, /class="mulligan-stage"[\s\S]*你是先手[\s\S]*你是后手[\s\S]*请确认调度的手牌/,
   'mulligan must explain the player role above the real hand without a modal panel')
+assert.match(template, /class="mulligan-card"[\s\S]*:name="card\.name"/,
+  'mulligan cards need a dedicated local presentation hook')
+assert.doesNotMatch(template, /data-tutorial-mulligan-card[\s\S]{0,260}meta="手牌"/,
+  'mulligan cards must not repeat the obvious hand-zone label')
 assert.match(template, /data-tutorial-action="keep-all-mulligan"[\s\S]*>全部保留<\/button>[\s\S]*data-tutorial-action="confirm-mulligan"[\s\S]*确认调度/,
   'mulligan must expose the two approved actions below the hand')
 assert.match(gameBoardSource, /function keepAllMulligan\(\) \{\s*mulliganIds\.value = \[\]\s*freeCommand\('mulligan'\)/,
@@ -214,6 +232,32 @@ assert.match(style, /\.l12-prompt-overlay\.mobile-safe-overlay \.mulligan-stage 
   'the mulligan hand must override the generic mobile strip cap so fixed-height cards are not clipped')
 assert.match(style, /\.l12-prompt-overlay\.mobile-safe-overlay \.prompt-card-strip\{[^}]*max-height:54vh/,
   'other mobile prompt strips must retain their bounded scrolling height')
+assert.match(style, /\.opening-master-card\{[^}]*drop-shadow\(0 0 24px var\(--opening-faction-color/,
+  'each master must carry its shared faction-color glow')
+assert.match(style, /\.opening-versus-player\.opponent\{top:calc\(43% - clamp\([^}]+\}[\s\S]*\.opening-versus-player\.mine\{top:calc\(43% \+ clamp\(/,
+  'opponent information must be above versus while self information remains below it')
+assert.match(style, /\.opening-versus-player small\{color:#76dce3/,
+  'both player ids must use the fixed interface cyan instead of faction colors')
+assert.match(style, /\.opening-master-card :deep\(\.l12-card-image\)\{[^}]*transform-origin:var\(--opening-depth-origin\)[^}]*animation:opening-master-depth/,
+  'the card plane itself must own the depth projection instead of relying on two-dimensional article tilt')
+assert.match(style, /@keyframes opening-master-sequence[\s\S]*var\(--opening-side-x\)[\s\S]*var\(--opening-side-y\)/,
+  'the split beat must retain the accepted opponent-high and viewer-low placement')
+assert.match(style, /@keyframes opening-master-depth\{[^}]*perspective\(760px\) rotateY\(0\)[\s\S]*perspective\(760px\) rotateY\(var\(--opening-perspective\)\)/,
+  'the master face must become a projected quadrilateral with a materially strong Y-depth angle')
+assert.match(style, /\.opening-die b\{[^}]*font-size:clamp\(88px,12vw,156px\)/,
+  'desktop dice must occupy the central opening composition')
+assert.match(style, /\.mulligan-card-row :deep\(\.mulligan-card\.prompt-card-candidate\)\{[^}]*width:150px[^}]*border:0[^}]*background:transparent/,
+  'only mulligan cards must use the larger frameless presentation')
+assert.match(style, /\.mulligan-card-row :deep\(\.mulligan-card \.prompt-card-candidate__meta\)\{display:none\}/,
+  'the mulligan-only zone meta line must not reserve visual space')
+assert.match(style, /\.mulligan-card-row :deep\(\.mulligan-card\.selected \.l12-card-image\)\{[^}]*grayscale\(\.24\)[^}]*brightness\(\.82\)[^}]*transform:none/,
+  'selected mulligan cards must retain the light gray image state')
+assert.match(style, /\.mulligan-card-row\{[^}]*padding:28px 2px 16px[^}]*\}[\s\S]*\.mulligan-card-row :deep\(\.mulligan-card\.selected\)\{transform:translateY\(-12px\)\}/,
+  'selected mulligan cards must lift slightly inside explicit desktop headroom')
+assert.match(style, /\.l12-prompt-overlay\.mobile-safe-overlay \.mulligan-stage \.mulligan-card-row\{[^}]*padding:20px 2px 8px[^}]*overflow-y:hidden/,
+  'mobile mulligan rows must reserve enough top headroom before clipping overflow')
+assert.match(style, /data-l12-rotated="true"[^}]*\.mulligan-card\.prompt-card-candidate\)[^{]*\{[^}]*height:184px!important/,
+  'rotated portrait must use logical short-landscape mulligan card dimensions')
 assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)/,
   'short landscape battle canvases need a bounded opening layout')
 assert.match(style, /\.opening-presentation\.skipped[^}]*opening-master-card/,

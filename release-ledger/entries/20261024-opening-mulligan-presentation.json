@@ -7,7 +7,7 @@
   "changes": [
     {
       "category": "battle",
-      "text": "对局开场使用双方主宰卡连续演出，掷骰后直接选择先后手；手牌调度改为中央展示，提供“全部保留”和“确认调度”，并适配手机横竖屏。",
+      "text": "对局开场以阵营光效呈现双方主宰卡，对阵中央显示玩家身份与主宰名称，掷骰后直接选择先后手；调度手牌集中展示，选中卡面轻微灰置，提供“全部保留”和“确认调度”，并适配手机横竖屏。",
       "paths": [
         "opcgpro-vue/src/l12/game/PromptOverlay.vue",
         "opcgpro-vue/src/l12/game/GameBoard.vue"

@@ -66,7 +66,7 @@ html[data-l12-viewport] #l12-landscape-teleports > .mobile-safe-overlay.minimize
 }
 .board-viewport.compact-viewport::after { display: none; }
 
-html[data-l12-viewport] :is(.l12-prompt-overlay,.graveyard-overlay,.master-overlay,.builder-modal-mask,.battle-settings-mask,.game-over) {
+html[data-l12-viewport] :is(.l12-prompt-overlay:not(.passive-waiting),.graveyard-overlay,.master-overlay,.builder-modal-mask,.battle-settings-mask,.game-over) {
   max-width: var(--l12-viewport-width);
   max-height: var(--l12-viewport-height);
   overflow: auto;
@@ -108,12 +108,12 @@ html[data-l12-viewport=landscape]:not([data-l12-mobile=true]) .deck-builder-grid
   min-width: 980px;
 }
 html[data-l12-viewport=landscape] .deck-side-column { display: grid; }
-html[data-l12-viewport] :is(.prompt-panel,.graveyard-window,.master-dialog,.l12-settings-modal,.builder-modal,.deck-image-dialog,.delete-confirm-dialog,.archive-modal) {
+html[data-l12-viewport] :is(.prompt-panel:not(.passive-wait-panel),.graveyard-window,.master-dialog,.l12-settings-modal,.builder-modal,.deck-image-dialog,.delete-confirm-dialog,.archive-modal) {
   max-width: calc(var(--l12-viewport-width) - 36px) !important;
   max-height: calc(var(--l12-viewport-height) - 36px) !important;
   overflow: auto;
 }
-html[data-l12-viewport] .l12-prompt-overlay:not(.minimized) {
+html[data-l12-viewport] .l12-prompt-overlay:not(.minimized):not(.passive-waiting) {
   width: var(--l12-viewport-width) !important;
   height: var(--l12-viewport-height) !important;
 }
@@ -137,10 +137,10 @@ html[data-l12-viewport] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe
   width: auto !important;
   height: auto !important;
 }
-html[data-l12-viewport=landscape] .l12-prompt-overlay:not(.minimized) .prompt-panel {
+html[data-l12-viewport=landscape] .l12-prompt-overlay:not(.minimized):not(.passive-waiting) .prompt-panel {
   width: min(920px,calc(var(--l12-viewport-width) - 36px)) !important;
 }
-html[data-l12-viewport] .l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel {
+html[data-l12-viewport] .l12-prompt-overlay.inspector-active:not(.minimized):not(.passive-waiting) .prompt-panel {
   max-width: calc(var(--l12-viewport-width) - var(--inspector-safe-lane) - 18px) !important;
 }
 
@@ -148,8 +148,8 @@ html[data-l12-viewport] .l12-prompt-overlay.inspector-active:not(.minimized) .pr
    overlay remains responsible for focus and dimming, while the actual dialog
    occupies at most 75% of the safe logical canvas and scrolls internally. */
 html[data-l12-mobile=true][data-l12-viewport] :is(
-  .prompt-panel,
-  .waiting-panel,
+  .prompt-panel:not(.passive-wait-panel),
+  .waiting-panel:not(.passive-wait-panel),
   .graveyard-window,
   .master-dialog,
   .faction-effect-dialog,
@@ -432,7 +432,7 @@ html[data-l12-mobile=true][data-l12-viewport] .mobile-resource-row {
 html[data-l12-mobile=true][data-l12-viewport] .mobile-rune-row > div {
   justify-content: safe center;
 }
-html[data-l12-mobile=true][data-l12-viewport=landscape] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay:not(.minimized) :is(.prompt-panel,.waiting-panel) {
+html[data-l12-mobile=true][data-l12-viewport=landscape] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay:not(.minimized):not(.passive-waiting) :is(.prompt-panel:not(.passive-wait-panel),.waiting-panel:not(.passive-wait-panel)) {
   /* Center the decision in the reading lane between the board's left rail and
      the fixed action/clock dock. A full-canvas centered frame clips that dock
      on 320px portrait and short landscape phones. */
@@ -496,20 +496,20 @@ html[data-l12-mobile=true][data-l12-viewport] {
   --l12-dialog-card-w: clamp(104px, calc(var(--l12-mobile-dialog-width) * .23), 148px);
   --l12-dialog-card-h: max(160px, 10rem, calc(var(--l12-mobile-dialog-height) * .57));
 }
-html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel,.waiting-panel,.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal,.single-card-picker) {
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel:not(.passive-wait-panel),.waiting-panel:not(.passive-wait-panel),.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal,.single-card-picker) {
   --l12-board-copy: var(--l12-dialog-copy);
   --l12-board-meta: var(--l12-dialog-meta);
   --l12-board-micro: var(--l12-dialog-meta);
   --l12-effect-copy: var(--l12-dialog-copy);
   font-size: var(--l12-dialog-copy);
 }
-html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel,.waiting-panel,.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal) h2 {
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel:not(.passive-wait-panel),.waiting-panel:not(.passive-wait-panel),.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal) h2 {
   margin: 0;
   font-size: var(--l12-dialog-title) !important;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
-html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel,.waiting-panel,.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal) button {
+html[data-l12-mobile=true][data-l12-viewport] :is(.prompt-panel:not(.passive-wait-panel),.waiting-panel:not(.passive-wait-panel),.master-dialog,.faction-effect-dialog,.graveyard-window,.mobile-record-overlay,.battle-dialog,.l12-settings-modal) button {
   box-sizing: border-box;
   min-width: 44px;
   min-height: 44px !important;

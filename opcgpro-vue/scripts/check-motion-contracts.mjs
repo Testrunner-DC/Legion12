@@ -86,7 +86,9 @@ const checks = [
     && board.includes('lastPublicRevealSequence.value = baseline')
     && board.includes('lastHiddenRevealSequence.value = baseline')
     && board.includes('lastDiceSequence.value = baseline')],
-  ['site and battle modal language', motion.includes('.site-modal-mask > .site-modal') && motion.includes('.l12-prompt-overlay > .prompt-panel')],
+  ['site and battle modal language', motion.includes('.site-modal-mask > .site-modal')
+    && motion.includes('.l12-prompt-overlay:not(.passive-waiting) > .prompt-panel')
+    && motion.includes('.mobile-safe-overlay:not(.passive-waiting) > :not(button)')],
   ['ready and rest snapshot handoff', board.includes('<CardStateTransitionLayer') && stateTransition.includes("flush: 'pre', immediate: true")
     && stateTransition.includes('const sourceGhost = source.cloneNode(true)') && stateTransition.includes('sourceGhost.style.visibility = \'visible\'')
     && stateTransition.includes('sourceRect: { left: sourceRect.left') && stateTransition.includes('acquireAuthoritativeCardVisibility(target)')],
