@@ -50,7 +50,7 @@ const declared=structuredClone(fixture);declared.completeLegacyCodeClosure=false
 declared.legacyExecutableInputs=[{path:'D:/legacy.mjs',sha256:crypto.createHash('sha256').update('legacy').digest('hex').toUpperCase(),execution:'module-import',role:'executed legacy fixture'}]
 assert.equal(inspectQaOwnership(declared,{tracked:fakeTracked,read:file=>Buffer.from(file==='D:/legacy.mjs'?'legacy':'export const valid=true')}).completeLegacyCodeClosure,false);cases++
 assert.equal(manifest.legacyExecutableInputs.length,0);assert.equal(manifest.immutableEvidenceInputs.length,19)
-assert.equal(actual.sourceCount,86)
+assert.equal(actual.sourceCount,93)
 assert.equal(actual.ownedLedgerPins.consumerPins,9)
 assert.equal(actual.ownedLedgerPins.repositoryPaths,7)
 assert.equal(manifest.immutableEvidenceInputs.filter(row=>row.path.includes('/ledger-r5/')).length,3)
