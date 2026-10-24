@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-card-image-recovery",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "卡图加载与展示",
+  "changes": [
+    {
+      "category": "content",
+      "text": "图鉴与画廊列表优先读取缩略图，详情保留大图；网络恢复后重新加载当前可见的失败卡图，已经正常显示的卡图不重复加载。",
+      "paths": ["opcgpro-vue/src/l12/CardArchive.vue", "opcgpro-vue/src/l12/CardImage.vue"]
+    },
+    {
+      "category": "ui",
+      "text": "统一无框卡图与牌库代表牌的圆角，减少切换卡片、失败回退和退出界面时旧图片的无效重复读取。",
+      "paths": ["opcgpro-vue/src/l12/CardImage.vue"]
+    }
+  ]
+}

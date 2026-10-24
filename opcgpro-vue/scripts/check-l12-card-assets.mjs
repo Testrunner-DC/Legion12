@@ -216,3 +216,10 @@ if (failures.length) {
 }
 
 console.log(`L12 卡图架构契约通过（${contracts.length} 项，${cards.length} 张卡）`)
+const { runCardImageRecoveryTests } = await import('./test-card-image-recovery.mjs')
+const imageRecoveryCases = await runCardImageRecoveryTests()
+const imageRecoveryFailures = imageRecoveryCases.filter(test => !test.passed)
+console.log(JSON.stringify({ suite: 'card image recovery', total: imageRecoveryCases.length,
+  passed: imageRecoveryCases.length - imageRecoveryFailures.length, failed: imageRecoveryFailures.length,
+  failures: imageRecoveryFailures }, null, 2))
+if (imageRecoveryFailures.length) process.exitCode = 1

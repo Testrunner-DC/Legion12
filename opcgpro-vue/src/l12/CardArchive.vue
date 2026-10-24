@@ -9,7 +9,7 @@ import CardDetailContent from './CardDetailContent.vue'
 import { alternateArtApi, type AlternateArt, type AlternateArtProduct } from './platform'
 import MobileFilterSheet from './site/MobileFilterSheet.vue'
 
-type CatalogCard = DeckCard & { galleryStandalone?: boolean; artist?: string }
+type CatalogCard = DeckCard & { galleryStandalone?: boolean; artist?: string; thumbnailUrl?: string }
 type ArchivePage = 'catalog' | 'gallery'
 
 const typeLabels: Record<string, string> = {
@@ -80,6 +80,7 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
       product: '',
       faction: '',
       imageUrl: art.imageUrl,
+      thumbnailUrl: art.thumbnailUrl,
       rarity: art.rarities?.map(item => item.name).join(' / ') || undefined,
       traits: [],
       effect: art.effect || '',
@@ -97,6 +98,7 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
     number: art.artCode || `ALT-${art.id.slice(0, 8)}`,
     nameZh: gallery ? alternateArtArchiveName(base.nameZh, art.displayName) : base.nameZh,
     imageUrl: art.imageUrl,
+    thumbnailUrl: art.thumbnailUrl,
     archiveBaseCardId: base.id,
     products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : base.products),
     rarity: art.rarities != null ? art.rarities.map(item => item.name).join(' / ') || undefined : base.rarity,
@@ -110,6 +112,7 @@ function withRegularGalleryMetadata(card: CatalogCard): CatalogCard {
   return {
     ...card,
     imageUrl: overlay.imageUrl || card.imageUrl,
+    thumbnailUrl: overlay.thumbnailUrl || card.thumbnailUrl,
     products: overlay.products !== undefined && overlay.products !== null
       ? overlay.products.map(item => item.name)
       : card.products,
@@ -135,6 +138,7 @@ function withGalleryMetadata(card: CatalogCard): CatalogCard {
   return {
     ...card,
     imageUrl: overlay.imageUrl || card.imageUrl,
+    thumbnailUrl: overlay.thumbnailUrl || card.thumbnailUrl,
     products: overlay.products != null
       ? overlay.products.map(item => item.name)
       : overlay.productName ? [overlay.productName] : card.products,
@@ -151,6 +155,11 @@ const galleryCards = computed(() => {
     .filter((card): card is CatalogCard => Boolean(card))
   return [...legacy, ...uploaded].sort(compareArchiveVersions)
 })
+function archiveListImageUrl(card: DeckCard) {
+  const thumbnail = (card as CatalogCard).thumbnailUrl?.trim() ?? ''
+  return /^\/api\/site\/media\/[a-f0-9]{32}\/thumbnail\/[a-f0-9]{64}\.webp$/.test(thumbnail)
+    ? thumbnail : card.imageUrl
+}
 const productOptions = computed(() => {
   const visibleNames = new Set(galleryFilterProducts.value
     .filter(item => item.showInGalleryFilter !== false)
@@ -406,7 +415,7 @@ function resetFilters() {
             @click="selectLogicalFromPointer(entry, $event)" @keydown.enter.prevent="selectLogical(entry); openDetail(displayedVersion(entry), $event, entry.versions)" @keydown.space.prevent="selectLogical(entry)">
             <div class="archive-card-image">
               <div class="archive-image-open" @dblclick.stop="openDetail(displayedVersion(entry), $event, entry.versions)">
-                <MobileDeferredCardImage :card-id="displayedVersion(entry).id" :legacy-url="displayedVersion(entry).imageUrl" :alt="displayedVersion(entry).nameZh"/>
+                <MobileDeferredCardImage :card-id="displayedVersion(entry).id" :legacy-url="archiveListImageUrl(displayedVersion(entry))" :alt="displayedVersion(entry).nameZh"/>
               </div>
               <b v-if="hasCostDimension(displayedVersion(entry))" class="archive-cost">{{ displayedVersion(entry).cost }}</b>
               <b v-if="displayedVersion(entry).disasterLevel" class="archive-disaster">{{ displayedVersion(entry).disasterLevel }}</b>
@@ -429,7 +438,7 @@ function resetFilters() {
             @click="selectGalleryFromPointer(card, $event)" @keydown.enter.prevent="selectGallery(card); openDetail(card, $event)" @keydown.space.prevent="selectGallery(card)">
             <div class="archive-card-image">
               <div class="archive-image-open" @dblclick.stop="openDetail(card, $event)">
-                <MobileDeferredCardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh"/>
+                <MobileDeferredCardImage :card-id="card.id" :legacy-url="archiveListImageUrl(card)" :alt="card.nameZh"/>
               </div>
               <b v-if="hasCostDimension(card)" class="archive-cost">{{ card.cost }}</b>
               <b v-if="card.disasterLevel" class="archive-disaster">{{ card.disasterLevel }}</b>

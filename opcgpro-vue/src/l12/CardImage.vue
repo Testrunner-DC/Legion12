@@ -1,5 +1,28 @@
+<script lang="ts">
+// Stagger only recovery triggers; native images and the existing source retry budget own loading.
+const cardRecoveryQueue = new Map<object, () => void>()
+let cardRecoveryTimer: number | null = null
+function drainCardRecovery() {
+  cardRecoveryTimer = null
+  const next = cardRecoveryQueue.entries().next().value
+  if (next) { cardRecoveryQueue.delete(next[0]); next[1]() }
+  if (cardRecoveryQueue.size) cardRecoveryTimer = window.setTimeout(drainCardRecovery, 200)
+}
+function enqueueCardRecovery(owner: object, run: () => void) {
+  if (cardRecoveryQueue.has(owner)) return
+  cardRecoveryQueue.set(owner, run)
+  if (cardRecoveryTimer === null) cardRecoveryTimer = window.setTimeout(drainCardRecovery, 200)
+}
+function cancelCardRecovery(owner: object) {
+  cardRecoveryQueue.delete(owner)
+  if (!cardRecoveryQueue.size && cardRecoveryTimer !== null) {
+    window.clearTimeout(cardRecoveryTimer); cardRecoveryTimer = null
+  }
+}
+</script>
+
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type VNode } from 'vue'
 import {
   CARD_IMAGE_PLACEHOLDER,
   fallbackCardAsset,
@@ -41,6 +64,16 @@ const highRequested = ref(false)
 const avifDisabled = ref(false)
 const renderKey = ref(0)
 const sourceRetryCounts = new Map<string, number>()
+const sourceRetryTimers = new Set<number>()
+const imageRoot = ref<HTMLElement | null>(null)
+const recoveryOwner = {}
+let recoveryObserver: IntersectionObserver | null = null
+let recoveryWatchGeneration = 0
+let recoverableFailure = false
+let recoveryRequested = false
+let recoveryVisible = false
+let lastRecoveryAt = Number.NEGATIVE_INFINITY
+const RECOVERY_COOLDOWN_MS = 30_000
 const MAX_SOURCE_RETRIES = 2
 const SOURCE_RETRY_DELAY_MS = 300
 let resolvedIdentity = `${props.cardId}\n${props.legacyUrl ?? ''}\n${props.intent}`
@@ -57,9 +90,68 @@ const avifUrl = computed(() => useHigh.value && !avifDisabled.value ? activeSour
 const landscapeImage = computed(() => resolved.value.orientation === 'landscape')
 const imageReady = computed(() => resolutionComplete.value || activeSource.value.kind !== 'placeholder')
 
+function clearSourceRetryTimers() {
+  for (const timer of sourceRetryTimers) window.clearTimeout(timer)
+  sourceRetryTimers.clear()
+}
+function stopRecoveryMonitoring() {
+  recoveryWatchGeneration++
+  recoveryObserver?.disconnect(); recoveryObserver = null
+  window.removeEventListener('online', onNetworkRecovery)
+  document.removeEventListener('visibilitychange', onRecoveryVisibility)
+  cancelCardRecovery(recoveryOwner)
+  recoverableFailure = false; recoveryRequested = false; recoveryVisible = false
+}
+function maybeRecoverImage() {
+  if (disposed || !recoverableFailure || !recoveryRequested || !recoveryVisible
+    || document.visibilityState !== 'visible' || navigator.onLine === false) return
+  const generation = refreshGeneration, identity = resolvedIdentity
+  enqueueCardRecovery(recoveryOwner, () => {
+    if (disposed || generation !== refreshGeneration || identity !== resolvedIdentity
+      || !recoverableFailure || !recoveryRequested || !recoveryVisible
+      || document.visibilityState !== 'visible' || navigator.onLine === false) return
+    recoveryRequested = false
+    if (performance.now() - lastRecoveryAt < RECOVERY_COOLDOWN_MS) return
+    lastRecoveryAt = performance.now()
+    clearSourceRetryTimers(); sourceRetryCounts.clear()
+    highResolutionGeneration++; highResolutionPending = false
+    highRequested.value = false; avifDisabled.value = false; sourceIndex.value = 0
+    renderKey.value++
+  })
+}
+function onNetworkRecovery() {
+  if (!recoverableFailure || performance.now() - lastRecoveryAt < RECOVERY_COOLDOWN_MS) return
+  recoveryRequested = true
+  maybeRecoverImage()
+}
+function onRecoveryVisibility() {
+  if (document.visibilityState !== 'visible') cancelCardRecovery(recoveryOwner)
+  else maybeRecoverImage()
+}
+function monitorFailedImage() {
+  if (recoverableFailure || disposed) return
+  recoverableFailure = true
+  const generation = ++recoveryWatchGeneration
+  window.addEventListener('online', onNetworkRecovery)
+  document.addEventListener('visibilitychange', onRecoveryVisibility)
+  if (imageRoot.value && typeof IntersectionObserver !== 'undefined') {
+    recoveryObserver = new IntersectionObserver(entries => {
+      if (disposed || generation !== recoveryWatchGeneration) return
+      recoveryVisible = entries.some(entry => entry.target === imageRoot.value && entry.isIntersecting
+        && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0)
+      if (!recoveryVisible) cancelCardRecovery(recoveryOwner)
+      else maybeRecoverImage()
+    })
+    recoveryObserver.observe(imageRoot.value)
+  }
+  // Without an observer fail closed: don't wake offscreen images as a whole-pool fallback.
+}
+
 async function refresh() {
   const expected = `${props.cardId}\n${props.legacyUrl ?? ''}\n${props.intent}`
   const generation = ++refreshGeneration
+  stopRecoveryMonitoring(); clearSourceRetryTimers()
+  lastRecoveryAt = Number.NEGATIVE_INFINITY
   highResolutionGeneration += 1
   highResolutionPending = false
   const identityChanged = expected !== resolvedIdentity
@@ -140,6 +232,15 @@ async function requestHighResolution() {
 }
 
 function onLoad(event: Event) {
+  const loadedImage = event.currentTarget as HTMLImageElement | null
+  if (disposed || !loadedImage || imageRoot.value?.querySelector('img') !== loadedImage) return
+  const loadedUrl = absoluteSourceUrl(loadedImage?.currentSrc || loadedImage?.src)
+  if (loadedUrl && ![imageUrl.value, avifUrl.value].map(absoluteSourceUrl).includes(loadedUrl)) return
+  if (activeSource.value.kind !== 'placeholder') {
+    if (loadedImage?.naturalWidth) {
+      stopRecoveryMonitoring(); clearSourceRetryTimers()
+    }
+  }
   emit('load', activeSource.value)
   if (props.intent === 'detail' && !highRequested.value && activeSource.value.kind !== 'placeholder') {
     const image = event.currentTarget as HTMLImageElement | null
@@ -158,6 +259,7 @@ function absoluteSourceUrl(value: string | undefined) {
 
 function onError(event: Event) {
   const image = event.currentTarget as HTMLImageElement | null
+  if (disposed || !image || imageRoot.value?.querySelector('img') !== image) return
   // A late/synthetic error must not evict pixels that the browser has already
   // decoded successfully for the active element.
   if (image?.complete && image.naturalWidth > 0) return
@@ -176,10 +278,13 @@ function onError(event: Event) {
   if (activeSource.value.kind !== 'placeholder' && retryCount < MAX_SOURCE_RETRIES) {
     sourceRetryCounts.set(retryKey, retryCount + 1)
     const expectedUrl = imageUrl.value
-    window.setTimeout(() => {
-      if (imageUrl.value !== expectedUrl) return
+    const generation = refreshGeneration
+    const timer = window.setTimeout(() => {
+      sourceRetryTimers.delete(timer)
+      if (disposed || generation !== refreshGeneration || imageUrl.value !== expectedUrl) return
       renderKey.value += 1
     }, SOURCE_RETRY_DELAY_MS * (retryCount + 1))
+    sourceRetryTimers.add(timer)
     return
   }
   if (sourceIndex.value < resolved.value.sources.length - 1) {
@@ -187,13 +292,26 @@ function onError(event: Event) {
     avifDisabled.value = false
     renderKey.value += 1
     emit('fallback', activeSource.value.kind)
+    if (activeSource.value.kind === 'placeholder') monitorFailedImage()
   }
 }
 
-watch(() => [props.cardId, props.legacyUrl, props.intent] as const, refresh)
+function retireImage(vnode: VNode) {
+  // Retiring a picture child with its old src can start an unwanted native reread.
+  // Clear only this vnode, after Vue decides to replace/unmount it, never the live successor.
+  const image = vnode.el as HTMLImageElement | null
+  image?.removeAttribute('src')
+  image?.removeAttribute('srcset')
+}
+function retireAvifSource(vnode: VNode) {
+  ;(vnode.el as HTMLSourceElement | null)?.removeAttribute('srcset')
+}
+
+watch(() => [props.cardId, props.legacyUrl, props.intent] as const, refresh, { flush: 'sync' })
 onMounted(refresh)
 onBeforeUnmount(() => {
   disposed = true
+  stopRecoveryMonitoring(); clearSourceRetryTimers()
   refreshGeneration += 1
   highResolutionGeneration += 1
   highResolutionPending = false
@@ -202,6 +320,7 @@ onBeforeUnmount(() => {
 
 <template>
   <picture
+    ref="imageRoot"
     class="l12-card-image"
     :class="{ 'l12-card-image--landscape': landscapeImage }"
     :data-source="activeSource.kind"
@@ -209,7 +328,7 @@ onBeforeUnmount(() => {
     @mouseenter="requestHighResolution"
     @focusin="requestHighResolution"
   >
-    <source v-if="avifUrl" :key="`avif-${renderKey}`" type="image/avif" :srcset="avifUrl" />
+    <source v-if="avifUrl" :key="`avif-${renderKey}`" type="image/avif" :srcset="avifUrl" @vue:before-unmount="retireAvifSource" />
     <img
       v-if="imageReady"
       :key="`img-${renderKey}`"
@@ -222,15 +341,16 @@ onBeforeUnmount(() => {
       :style="{ objectFit: fit, objectPosition }"
       @load="onLoad"
       @error="onError"
+      @vue:before-unmount="retireImage"
     />
     <span v-else class="l12-card-image__resolving" aria-hidden="true"></span>
   </picture>
 </template>
 
 <style scoped>
-.l12-card-image{display:block;width:100%;height:100%;overflow:hidden;background:#090d0e;line-height:0}
-.l12-card-image__img{display:block;width:100%;height:100%;background:#090d0e}
-.l12-card-image__resolving{display:block;width:100%;height:100%;background:#090d0e}
-.l12-card-image--landscape{position:static!important;left:auto!important;top:auto!important;width:100%!important;height:100%!important;transform:none!important}
+.l12-card-image{--l12-card-image-default-radius:4% / 2.86%;display:block;width:100%;height:100%;overflow:hidden;border-radius:var(--l12-card-image-radius,var(--l12-card-image-default-radius));background:#090d0e;line-height:0}
+.l12-card-image__img{display:block;width:100%;height:100%;border-radius:var(--l12-card-image-radius,var(--l12-card-image-default-radius));clip-path:inset(0 round var(--l12-card-image-radius,var(--l12-card-image-default-radius)));background:#090d0e}
+.l12-card-image__resolving{display:block;width:100%;height:100%;border-radius:var(--l12-card-image-radius,var(--l12-card-image-default-radius));clip-path:inset(0 round var(--l12-card-image-radius,var(--l12-card-image-default-radius)));background:#090d0e}
+.l12-card-image--landscape{--l12-card-image-default-radius:4% / 6.4%;position:static!important;left:auto!important;top:auto!important;width:100%!important;height:100%!important;transform:none!important}
 .l12-card-image--landscape .l12-card-image__img{object-position:center}
 </style>

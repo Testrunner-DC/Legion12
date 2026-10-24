@@ -1,5 +1,10 @@
 # 十二军团任务台账
 
+## 2026-10-25 卡图恢复／缩略图／共享圆角（P4）
+
+- 五叶最终D1F92／7399／F2C1／5F4A／A175冻结；原42/324与新增31全过。原生退休源重读有真实baseline/control，Vue before-unmount仅清自己的旧IMG/SOURCE属性，不清活节点、不设空src；同URL迟到事件、AVIF／跨卡／卸载及同节点高清保。共用clip覆盖DeckCover overflow-visible，原大图字段／Round／零半径不变。
+- r5原3profile111成功0失败，原3+1、重复online／unmount、原像素与高分辨率全部保；Main核B436DBDA、计数和两图，所有旧失败保留。Main92627完整类型／双Vite及受影响合同过、8pins同，D2893D5B。仅本地独立接受与源码同步，Git见C唯一回执；非新Release／真实图库／真机／线上根治，不重复24a部署或正式维护。
+
 ## 2026-10-25 公开匹配异画绑定（P2）
 
 - 来源人类批准已核，不改卡效或当前对战UI。真实匹配初始custom-alt及同ID/revision更新／替换／Poll两场2/2目标RED，错误在主宰图URL，不是注册／资源／编译失败；未授权对手保护直到GREEN才真实执行。两叶最小tuple绑定进入原权益／copies函数，不提前改会话，其他三个factory维持语义。

@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## IMAGE-20261025-RECOVERY-LIFECYCLE｜可见失败恢复、退休源及共享圆角
+
+- 人类直接要求图片恢复／列表缩略图，另要求所有无框卡图正确圆角。P4只沿原CardImage源链／两次短重试加有界online恢复：真实失败、正面积交集、前台、30秒单调冷却、200ms错峰／代际与卸载；当前IMG身份拦同URL旧节点load/error。Archive四类元数据局部传thumbnail，原大图／共享DTO不动；不加分页、HTTP框架或轮询。
+- 同类扫描CardImage／Deferred／Detail／Archive两列／DeckCover／Round及AVIF／源重试。CSS radius在DeckCover的overflow-visible下不裁像素；同源／同bbox／校准PNG对照0→186，img/占位同public radius clip修正，原0／Round控制保。真正旧IMG离开picture会原生再读旧src；限定remove前清源对照4/4/5/5→3/3/4/4后，原Vue vnode退休IMG清src/srcset、退休SOURCE只清自身srcset，不碰活节点／不设src=''，保高清同节点。
+- 14、21、23、27、31分阶段原RED／GREEN、QA wrapper错误与r1—r4失败不相加不覆盖。最终原42合同/324卡＋31全过，真实产品r5三档111成功0失败，原3+1和全部像素阈值不降；Main核B436DBDA／计数／两图。92627受影响合同/UI361/motion49／账目279／完整类型双Vite过，8源全等，D2893D5B。唯一`card-image-recovery-20261025/main-review.json`与synchronization.json；合成SVG不冒真实WebP上传／全图库／物理断网／429全恢复／真机或线上节流。不部署、不关线上Bug；回滚本族呈现与QA，不改数据／规则／状态协议。
+
 ## IMAGE-20261025-MATCHMAKING-MASTER｜匹配捕获牌库与主宰外观绑定
 
 - 原反馈为已选择异画主宰但对战显示原画，来源人类已明确批准。P2根因：公开匹配新局用queue的`opponent.Deck/entry.Deck`，异画解析却读取稍后才更新的session.CustomDeck。最小改同序`(Session, Deck)`显式解析；原按账号权益／每副本映射不变，session-only入口委托同一解析，沙盒／赛事／好友三调用保原捕获语义。不提前改变session／room、匹配锁／重排、卡效、隐私、Journal或统计。

@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-25 卡图生命周期独验完成｜源码同步，不重复两服发布
+
+- C原五叶已冻结：仅可见且实际失败的卡图在online后有界错峰恢复，正面积／前台／单调冷却、换卡／卸载及真实当前IMG围栏；列表用可信现成thumbnail，详情原图不改。共用圆角覆盖root/img/占位，DeckCover overflow-visible另用同变量clip真实裁像素，Round50%与零覆盖保。31纯回归／原42卡图合同与324卡通过，分阶段RED不相加。
+- 原浏览器r1—r4与三个paired失败全部保：先修本地延迟回包flag竞态／多根宿主定位，再实证DeckCover差0→186；旧IMG离开picture会额外读旧src，真实清退休源对照4/4/5/5→3/3/4/4，原阈值不放宽。最终原Vue退休hook、非诊断包装，r5三档111成功／0失败，B436DBDA、5源稳定，Main独读计数／像素并看两图。合成SVG/online事件不冒真实图库、429全恢复、物理手机或线上流量收益。
+- Main92627一次当前组合UI361／motion49／提示与移动合同／账目279、完整Vue类型及双Vite实际通过，8源前后全等，D2893D5B原日志；未重复未变规则／平台2462／30＋10，不冒干净Release。Git见`card-image-recovery-20261025/main-review.json`与synchronization.json；开场新放大布局三叶独立相邻批次。正式3a／测试24a是最后独验版本，本片两服与维护0写。
+
 ## 2026-10-25 公开匹配主宰异画｜真实RED与Main完整平台接受
 
 - 已实际读来源人类“批准”，只改RoomManager与新测试两叶。旧匹配factory使用queue捕获牌库，但外观仍取session旧牌库；现在同一组`(Session, Deck)`显式配对进入原权益／copies解析，不提前写session／room、不动队列／锁／重连。其余沙盒、赛事、好友三个factory仍原入口；Main完整读diff／新测试／所有调用点。
