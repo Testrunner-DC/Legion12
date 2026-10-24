@@ -5,7 +5,7 @@
 - 人类报告测试服开场与新对局动效不可见，明确游戏内为标准；源码发现三处JS直接读OS reduce及五组件CSS独立压制。人类本轮明确同意游戏设置优先并更新测试服。P4仅呈现，不改规则、计时、命令、隐私、Journal或结果；过去off/reduce合并预期由本次裁定取代，不追改旧回执。
 - 全src扫描prefers-reduced-motion，游戏内命中Prompt、ZoneMovement、CardStateTransition、AttackConnection、ActionPresentation、PlayerMat、Osiris；统一显式off，JS复用audioPreferences.l12BattleMotionDisabled，CSS保原off简化。站点背景与非对战motion.css系统偏好不改，关动画的必要公开信息/最短交接继续保留。
 - 原真实函数RED为standard＋reduce得到0ms/直接settled，应1250ms/滚动；新41函数／SFC编译检查过。开场既有浏览器8项实际过（标准reduce1323ms／快速717ms／off42ms），骰点、跳过与换局保；登场原矩阵＋新增两档共19组264断言过，原生命周期、隐私、重复快照和换局不变，C398743C／C78C92DA原报告。局部夹具可选图库API未启动／favicon噪声原留，不冒零资源错误、真实玩家WS或真机。
-- 原低成本性能/前端链有效前缀与精确旧断言续验通过（UI361／motion49），旧失败保；移区AST仍保同数量破坏反例，以off旁路／OS重新覆盖替代旧双来源假设。下一步只做隔离完整前端构建与测试静态更新，未变后端复用8e完整8415／2462。唯一`battle-motion-precedence-20261025`回执，正式服不动。
+- 原低成本性能/前端链有效前缀与精确旧断言续验通过（UI361／motion49），旧失败保；移区AST仍保同数量破坏反例，以off旁路／OS重新覆盖替代旧双来源假设。干净d13完整原生隔离前端/类型/双构建95.98s通过，02:24:29+08仅测试静态热更完成；186磁盘／6入口／4公网GameBoard与index JS/CSS独验，真实CSS无OS压制且保off，两服原WS不断。未变后端复用8e完整8415／2462；正式3a与两PID不动。唯一`battle-motion-precedence-20261025/release-session-summary.json`，不冒真机、零可选资源错误或线上Bug关闭。
 
 ## UI-20261025-OPENING-EXPANSION｜放大对峙卡面与逻辑画布响应
 

@@ -18,6 +18,8 @@
 | 环境文件 | `/etc/legion12-testrun.env` |
 | Nginx 路径片段 | `/etc/nginx/snippets/legion12-testrun-path.conf` |
 
+2026-10-25 02:24:29+08动画优先级静态热更新已完成：前端`d13a5cd475fd6ddbdeaab94b779ecb5364de4a31`，后端仍上述8e/PID720731，两服后端／库／维护不动。游戏内standard/fast/off现在优先于OS reduce；完整隔离前端与8开场／19组264登场、44静态工具检查通过，186文件／六入口／四公网JS/CSS和两原WS连续性独验。测试受管路径四个分享location含精确旧模板资源映射，下次标准`activate-l12-testrun-path.sh`替换该受管snippet时撤除，不删除仍被引用的旧资源。唯一`D:/GPT/Legion12/artifacts/battle-motion-precedence-20261025/release-session-summary.json`，不要把前端d13误写成后端健康身份或再次重发8e。
+
 正式首页、正式 `/api`、正式 `/ws` 和正式 `/health` 仍按原配置工作；只有 `/testrun/`、`/testrun/api/`、`/testrun/ws` 与 `/testrun/health` 进入测试服务。测试服前端使用独立的 `dist-testrun`，构建资源路径固定带 `/testrun/` 前缀，避免刷新子路由或加载资源时落回正式站。
 
 卡图等不可变资源继续使用正式站的内容寻址公开资源，不因测试服发版重复上传。发布包仍携带卡图版本清单用于一致性校验；服务器已有相同内容哈希时直接复用缓存，只有缺失的新哈希才上传。
