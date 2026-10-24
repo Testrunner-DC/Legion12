@@ -57,9 +57,21 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./scripts/test-l12-build-host.ps1 -WorkRoot $env:L12_WORK_CACHE
-          node scripts/test-ci-host-step.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'CI native failure propagation fixture failed' }
+          $PSNativeCommandUseErrorActionPreference = $false
+          $hostLog = Join-Path $env:L12_ARTIFACT_ROOT 'host-native.log'
+          New-Item -ItemType Directory -Path $env:L12_ARTIFACT_ROOT -Force | Out-Null
+          try {
+            & ./scripts/test-l12-build-host.ps1 -WorkRoot $env:L12_WORK_CACHE 2>&1 | Tee-Object -FilePath $hostLog
+            node scripts/test-ci-host-step.mjs 2>&1 | Tee-Object -FilePath $hostLog -Append
+            if ($LASTEXITCODE -ne 0) { throw 'CI native failure propagation fixture failed' }
+          } catch {
+            $tail = ($_ | Out-String)
+            if (Test-Path -LiteralPath $hostLog) { $tail += (Get-Content -LiteralPath $hostLog -Tail 24) -join "`n" }
+            if ($tail.Length -gt 8000) { $tail = $tail.Substring($tail.Length - 8000) }
+            $tail = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Host "::error title=L12 host boundary actual failure::$tail"
+            throw
+          }
 
       - name: P0-P4 架构退出锁
         run: node scripts/check-l12-architecture-lock.mjs

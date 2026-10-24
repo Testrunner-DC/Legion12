@@ -27,12 +27,18 @@ export function check(source) {
     'runner context is unavailable before steps: never place runner.temp in workflow/job env')
   for (const command of ['& ./ops/windows/Initialize-L12BuildEnvironment.ps1 | Out-Null',
     '& ./scripts/test-l12-build-host.ps1 -WorkRoot $env:L12_WORK_CACHE',
+    '::error title=L12 host boundary actual failure::',
     'node scripts/test-ci-host-step.mjs',
     "@('L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','L12_PWSH','TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME')",
     'npm run build 2>&1 | Tee-Object -FilePath $log', '$buildExit = $LASTEXITCODE',
     'if ($buildExit -ne 0)', 'exit $buildExit',
     '$tail = $tail.Replace(\'%\',\'%25\').Replace("`r",\'%0D\').Replace("`n",\'%0A\')'])
     assert.ok(source.includes(command), `CI must retain host/failure binding: ${command}`)
+  for (const name of ['构建宿主边界验证', '前端生产构建']) {
+    const step = source.split(`      - name: ${name}\n`)[1]?.split('\n      - ')[0] || ''
+    assert.ok(step.includes('$tail = $tail.Replace(\'%\',\'%25\').Replace("`r",\'%0D\').Replace("`n",\'%0A\')'),
+      `CI host/failure binding must escape each actual step: ${name}`)
+  }
   assert.ok(source.indexOf('& ./ops/windows/Initialize-L12BuildEnvironment.ps1') < source.indexOf('npm ci '),
     'CI must bind host and all generated roots before dependency install and frontend execution')
   assert.equal((source.match(/^          npm run build 2>&1 \| Tee-Object -FilePath \$log$/gm) || []).length, 1,

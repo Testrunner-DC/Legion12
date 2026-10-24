@@ -58,6 +58,24 @@ try {
   const later = JSON.parse(laterStep.stdout)
   for (const name of Object.keys(later)) assert.equal(later[name], exported[name], `fresh later step lost ${name}`)
   cases++
+  const boundaryLines = workflow.split('      - name: 构建宿主边界验证\n')[1]?.split('\n      - ')[0]
+    ?.split('        run: |\n')[1]?.trimEnd().split('\n')
+  assert(boundaryLines?.length && boundaryLines.every(line => line.startsWith('          ')))
+  const actualHostCall = '& ./scripts/test-l12-build-host.ps1 -WorkRoot $env:L12_WORK_CACHE 2>&1 | Tee-Object -FilePath $hostLog'
+  const boundaryBody = boundaryLines.map(line => line.slice(10)).join('\n')
+  assert(boundaryBody.includes(actualHostCall))
+  const failureBody = boundaryBody.replace(actualHostCall, "throw 'synthetic host 7% failure'")
+  const boundaryFailure = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(failureBody, 'utf16le').toString('base64')], {
+    cwd: repo, env: { ...process.env, L12_ARTIFACT_ROOT: path.join(root, 'host-failure') },
+    encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 100000,
+  })
+  assert.ifError(boundaryFailure.error)
+  assert.equal(boundaryFailure.status, 1)
+  assert(boundaryFailure.stdout.includes('::error title=L12 host boundary actual failure::'))
+  assert(boundaryFailure.stdout.includes('synthetic host 7%25 failure'))
+  assert(boundaryFailure.stdout.split(/\r?\n/).find(line => line.startsWith('::error title=L12 host boundary actual failure::'))?.includes('%0A'))
+  cases++
   for (const scenario of [{ code: 0, tail: 'synthetic success' },
     { code: 7, tail: 'synthetic 7% failure\nsecond line' },
     { code: 13, tail: 'X'.repeat(10000) + '\nsynthetic 13% stderr' }]) {
@@ -86,9 +104,17 @@ try {
   }
 } finally {
   for (const directory of fs.readdirSync(root)) {
-    assert(['host', '0', '7', '13'].includes(directory))
+    assert(['host', 'host-failure', '0', '7', '13'].includes(directory))
     const child = path.join(root, directory)
     assert(fs.lstatSync(child).isDirectory() && !fs.lstatSync(child).isSymbolicLink())
+    if (directory === 'host-failure') {
+      for (const name of fs.readdirSync(child)) {
+        assert.equal(name, 'host-native.log')
+        const log = path.join(child, name)
+        assert(fs.lstatSync(log).isFile() && !fs.lstatSync(log).isSymbolicLink()); fs.unlinkSync(log)
+      }
+      fs.rmdirSync(child); continue
+    }
     if (directory === 'host') {
       const removeHost = current => {
         for (const name of fs.readdirSync(current)) {
@@ -109,4 +135,4 @@ try {
   }
   fs.rmdirSync(root)
 }
-console.log(`Actual CI step bodies passed: ${cases} groups (13 exported bindings plus fresh later step;3 native exit/stdout/stderr/annotation cases); standard npm mocked, no dependency install/product load; fixtures removed.`)
+console.log(`Actual CI step bodies passed: ${cases} groups (13 bindings/fresh later step;host-error annotation;3 native exit/stdout/stderr cases); standard npm mocked, no dependency install/product load; fixtures removed.`)
