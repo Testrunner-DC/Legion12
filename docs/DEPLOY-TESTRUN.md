@@ -4,6 +4,8 @@
 
 测试服固定入口为 `https://legion-12.com/testrun/`。它复用正式域名和 HTTPS 证书，但不复用正式服务、端口、活动版本或运行数据；因此不需要新增 DNS、子域名或证书。
 
+2026-10-24当前测试版本为`24a348fcb4bc8b684bdc6e1d10350155a1c23577`，11:32:08Z发布、11:34:23Z独立读回通过；正式仍`3a376f17e5a6f9431303b35775977fabd2083b6a`、PID698071、维护false，不重启或重发。唯一回执`D:/GPT/Legion12/artifacts/test-release-20261024-9e054e7e/release-session-summary.json`；上线可用不冒新30＋10或真机通过，后续纯记录提交不重建此包。
+
 | 边界 | 测试服固定值 |
 | --- | --- |
 | 公网路径 | `https://legion-12.com/testrun/` |
@@ -86,6 +88,8 @@ Bootstrap 创建独立管理员密钥和 root-only `0600` 环境文件；邮件�
 
 先在干净提交上运行发布验证，获得 `l12-release-<commit>.json`。随后使用唯一 Windows 入口：
 
+发布验证须显式将活动前端/打包输出放在已过物理路径检查的D cache，例如向`ops/windows/verify-l12.ps1`传`-OutputDirectory D:/GPT/Legion12/cache/primary/release/current-test-20261024`；紧凑会话回执仍放D artifacts。不要沿用把可执行QA暂存到`artifacts`的旧调用默认值：原代码读取保护会正确拒绝；改输出位置，不放宽保护或重做同源已过后端。本轮资格为完整后端前缀＋原canonical前端/包后缀，须如实分段记录，不称新单轮完整运行。
+
 ```powershell
 pwsh -NoProfile -File .\ops\windows\deploy-l12-testrun.ps1 `
   -ArtifactManifest D:\path\to\l12-release-<commit>.json `
@@ -106,7 +110,9 @@ pwsh -NoProfile -File .\ops\windows\deploy-l12-testrun.ps1 `
 5. 核验本机及公网提交身份、`/testrun/` 首页、`/testrun/health`、卡牌页和 `/testrun/ws`。
 6. 新版本失败时只恢复上一测试版本；旧版本也无法验证时保持测试服务停止并写入阻断标记，绝不切换正式版本。
 
-成功后只保留当前与上一测试程序、最新一份测试 runtime 快照、这两个版本实际引用的测试缓存，以及两天内 incoming 文件。正式服目录不在清理范围。
+程序和缓存按既有固定保留规则收敛，PINNED、失败/诊断绑定及未确认资料不删；测试runtime备份按2026-10-24已批准的最近两组、每轮最多一旧组规则处理，详见`SERVER-STORAGE-MAINTENANCE.md`，不是只留一份。正式服目录不在清理范围。确认停服前容量失败后，核对精确可再生旧测试程序，在原部署flock保护下清理并重进同一已上传且SHA确认的标准完整入口，不重新上传或增预算。若外层持续持锁，子入口`L12_TESTRUN_DEPLOY_LOCKED=1`仅在原真实锁整个子进程期间仍持有时使用，不可先解锁再借变量跳锁。
+
+本轮程序保留消费者因历史完整正常诊断目录仍保守拒绝自动清理；六份证据全部保留，未全局豁免。一次精确旧TEST57程序清理及随后标准部署已完成；分类工具修正另列，不把收尾清理跳过写成部署失败，也不反复切包。
 
 ## 本地与上线验收
 
