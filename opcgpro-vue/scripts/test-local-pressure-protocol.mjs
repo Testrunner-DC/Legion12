@@ -5,6 +5,7 @@ import {pathToFileURL} from 'node:url'
 import {assertLocalPressureTarget, adaptFrozenPressureCore, createLocalQualificationProtocol, cleanupLocalQualificationAccounts, digest} from './local-pressure-protocol.mjs'
 import {createLocalWireCostObserver} from './local-pressure-wire-cost.mjs'
 import './test-local-pressure-wire-cost.mjs'
+import {OWNED_FROZEN_CORE} from './owned-workload-sources.mjs'
 
 const repo = path.resolve(import.meta.dirname, '../..')
 let cases = 0
@@ -14,7 +15,7 @@ for (const url of ['https://127.0.0.1:34567/', 'http://localhost:34567/', 'http:
   'http://127.0.0.1:34567/#x', 'http://127.0.0.1/']) {
   assert.throws(() => assertLocalPressureTarget(url)); cases++
 }
-const frozenPath = 'D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/preparation-cadence-r6/pressure-load-r7-approved-preparation-cadence-r6.mjs'
+const frozenPath = OWNED_FROZEN_CORE
 const bytes = fs.readFileSync(frozenPath)
 assert.equal(digest(bytes), 'F737052DCBFDA4A29FF53BA5DFAD76E771774C1C89C993275FFAFEAA023684FD'); cases++
 const source = bytes.toString('utf8')

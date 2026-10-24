@@ -8,6 +8,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import ts from 'typescript'
 import { propertyFrameSourceModuleUrl } from './property-frame-source-module.mjs'
+import {inspectOwnedWorkloadSources,ownedWorkloadFile} from './owned-workload-sources.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const hash = value => crypto.createHash('sha256').update(value).digest('hex').toUpperCase()
@@ -114,7 +115,8 @@ async function main() {
   const rebuild = new Function('lastGameStateEnvelope', 'negotiatedEventWindowDelta', 'negotiatedHandArrayDelta',
     'restoreHandSplices', 'validHandDeltaChangePath', 'delta', netBody + ';return rebuildDeltaGameState(delta)')
   // Reuse the frozen original workload selector, not a newly easier policy.
-  const selectorPath = 'C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/placement-selector-r1.mjs'
+  inspectOwnedWorkloadSources()
+  const selectorPath = ownedWorkloadFile('selector')
   const parentPath = path.resolve(path.dirname(selectorPath), '../large-terminal-public/large-terminal-contract.mjs')
   assert.equal(hash(fs.readFileSync(selectorPath)), '94222135D91627B18C1D13067A4A141C6AAA901A090C79980C882B5ED5449AF1')
   assert.equal(hash(fs.readFileSync(parentPath)), 'D328933729E54167078F123329A0880981C8C5A55771E32865F77B9DEAE1B456')

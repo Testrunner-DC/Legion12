@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 import {execFileSync} from 'node:child_process'
 import {fileURLToPath} from 'node:url'
 import ts from 'typescript'
+import {OWNED_WORKLOAD_SOURCES,inspectOwnedWorkloadSources} from './owned-workload-sources.mjs'
 
 export const QA_REPO=path.resolve(import.meta.dirname,'../..')
 export const QA_MANIFEST='ops/qa/toolchain-sources.json'
@@ -70,7 +71,7 @@ export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.
   assert.equal(manifest.schema,1)
   assert.equal(manifest.formalMutationsAllowed,false)
   assert.equal(manifest.normalConfirmationMs,3000);assert.equal(manifest.normalLifecycleMs,900000)
-  assert.ok(Array.isArray(manifest.sources)&&manifest.sources.length>0&&manifest.sources.length<=80)
+  assert.ok(Array.isArray(manifest.sources)&&manifest.sources.length>0&&manifest.sources.length<=96)
   assert.ok(tracked instanceof Set)
   if(sourceMirror){
     assert.ok(path.isAbsolute(sourceMirror.root)&&path.resolve(sourceMirror.root)!==path.resolve(repo),'QA_STAGED_SOURCE_ROOT_INVALID')
@@ -181,15 +182,20 @@ export function readQaOwnership({verifyLocalInputs=false}={}) {
     assert.ok(original&&!Object.hasOwn(original,'execution'),'QA_ORIGINAL_LEDGER_EVIDENCE_MISSING')
     assert.ok(!manifest.legacyExecutableInputs.some(input=>input.path===original.path),'QA_ORIGINAL_LEDGER_STILL_EXECUTED')
   }
-  const expected=[
-    [exact(protocol,/export const FROZEN_CORE = '([^']+)'/g),exact(protocol,/export const FROZEN_SHA = '([A-F0-9]{64})'/g)],
-  ]
-  const declared=new Map(manifest.legacyExecutableInputs.map(value=>[value.path,value.sha256]))
-  for(const [file,sha256]of expected)assert.equal(declared.get(file),sha256,'QA_DECLARED_EXECUTABLE_DIFFERS_FROM_RUNTIME_PIN: '+file)
+  assert.ok(protocol.includes('export const FROZEN_CORE = OWNED_FROZEN_CORE'),'QA_FROZEN_WORKLOAD_NOT_REPOSITORY_BOUND')
+  assert.equal(exact(protocol,/export const FROZEN_SHA = '([A-F0-9]{64})'/g),'F737052DCBFDA4A29FF53BA5DFAD76E771774C1C89C993275FFAFEAA023684FD')
+  assert.ok(code('opcgpro-vue/scripts/qualify-local-pressure.mjs').includes('const originalCore = OWNED_FROZEN_CORE'),'QA_LOCAL_WORKLOAD_NOT_REPOSITORY_BOUND')
+  assert.ok(code('opcgpro-vue/scripts/measure-terminal-wire-fields.mjs').includes("const selectorPath = ownedWorkloadFile('selector')"),'QA_WIRE_SELECTOR_NOT_REPOSITORY_BOUND')
+  const workloadPins=inspectOwnedWorkloadSources()
+  for(const row of OWNED_WORKLOAD_SOURCES){
+    assert.ok(manifest.sources.includes(row.path),'QA_WORKLOAD_SOURCE_NOT_OWNED')
+    assert.ok(manifest.immutableEvidenceInputs.some(input=>input.path===row.originalPath&&input.sha256===row.originalSha256),'QA_ORIGINAL_WORKLOAD_EVIDENCE_MISSING')
+    assert.ok(!manifest.legacyExecutableInputs.some(input=>input.path===row.originalPath),'QA_ORIGINAL_WORKLOAD_STILL_EXECUTED')
+  }
   const names=git(['-c','core.quotepath=false','ls-files'])
   const tracked=new Set(names.trim().split(/\r?\n/))
   assert.ok(tracked.has(QA_MANIFEST),'QA_MANIFEST_NOT_VERSIONED')
-  return {...inspectQaOwnership(manifest,{tracked,verifyLocalInputs,sourceMirror}),ownedGuardPins:guardPins,ownedLedgerPins:ledgerPins}
+  return {...inspectQaOwnership(manifest,{tracked,verifyLocalInputs,sourceMirror}),ownedGuardPins:guardPins,ownedLedgerPins:ledgerPins,ownedWorkloadPins:workloadPins}
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   assert.ok(process.argv.length===2||(process.argv.length===3&&process.argv[2]==='--verify-local-inputs'),'Only optional local immutable-input verification is supported')

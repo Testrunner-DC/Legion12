@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import {createRequire} from 'node:module'
+import {FROZEN_WORKLOAD_SHA,rebaseFrozenWorkloadSource} from './owned-workload-sources.mjs'
 export {createLocalWireCostObserver} from './local-pressure-wire-cost.mjs'
 
 export function assertLocalPressureTarget(base) {
@@ -117,7 +118,9 @@ export async function createLocalQualificationProtocol(binding, {handArrayDeltaV
 }
 
 // A generated, local-only adapter; the frozen remote entry and its binding are never modified.
-export function adaptFrozenPressureCore(source, adapterUrl) {
+export function adaptFrozenPressureCore(source, adapterUrl, {withEvidence=false} = {}) {
+  assert.equal(digest(Buffer.from(source)),FROZEN_WORKLOAD_SHA,'local workload must be the exact original F737 source')
+  assert.equal(typeof withEvidence,'boolean')
   const replacements = [
     ['reconstructCandidateDelta as reduceEnvelope', 'reconstructCandidateDelta as remoteReduceEnvelope'],
     ['let productionCodec=null', `import {createLocalQualificationProtocol,assertLocalPressureTarget,cleanupLocalQualificationAccounts,createLocalWireCostObserver} from ${JSON.stringify(adapterUrl)}\nlet reduceEnvelope=remoteReduceEnvelope\nlet localProtocolBase=null\nlet localHandArrayDelta=false\nlet localWireCostEnabled=false\nexport async function initializeLocalQualificationProtocol(binding,options={}){\n const loaded=await createLocalQualificationProtocol(binding,options)\n productionCodec=loaded.codec;reduceEnvelope=loaded.reduce;deployedNetSha=binding.deployedNetSha256\n initializePresenceConsumer(binding);localProtocolBase=assertLocalPressureTarget(binding.baseUrl)\n localHandArrayDelta=loaded.handArrayDeltaV1;localWireCostEnabled=loaded.wireCost\n}\nlet productionCodec=null`],
@@ -146,8 +149,12 @@ export function adaptFrozenPressureCore(source, adapterUrl) {
     assert.equal(result.split(before).length, 2, 'unique frozen adapter anchor required')
     result = result.replace(before, after)
   }
-  let roundtrip = result
+  const relocated = rebaseFrozenWorkloadSource(result,adapterUrl,{mode:'local'})
+  let roundtrip = relocated.restored
   for (const [before, after] of replacements.toReversed()) roundtrip = roundtrip.replace(after, before)
   assert.equal(roundtrip, source, 'all original workload, cleanup and remote guards must survive')
-  return result
+  const evidence={frozenSha256:FROZEN_WORKLOAD_SHA,adaptedSha256:digest(relocated.source),restoredSha256:digest(roundtrip),
+    byteExactRoundtrip:true,pathRelocation:relocated.evidence,
+    changes:replacements.map(([before,after])=>({beforeSha256:digest(before),afterSha256:digest(after)}))}
+  return withEvidence ? {source:relocated.source,evidence} : relocated.source
 }

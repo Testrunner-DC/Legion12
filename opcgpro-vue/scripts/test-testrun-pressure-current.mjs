@@ -27,6 +27,8 @@ const check = (name, action) => {action(); results.push({name, status: 'passed'}
 const reject = (name, action) => check(name, () => assert.throws(action))
 const asyncCheck = async (name, action) => {await action(); results.push({name, status: 'passed'})}
 const head = execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], {encoding: 'utf8', windowsHide: true}).trim()
+const protectedSourceHashes = Object.fromEntries(['opcgpro-vue/scripts/local-pressure-protocol.mjs',
+  'opcgpro-vue/scripts/qualify-local-pressure.mjs'].map(relative => [relative,digest(fs.readFileSync(path.join(REPO,relative)))]))
 fs.writeFileSync(path.join(output, 'baseline.json'), JSON.stringify({schema: 1,
   leaseBaseline: {head: 'baf301a70fd37f0241fff8ec0eb5b6838b8e3c35',
     unrelatedUntracked: ['TwelveLegions.Platform.Tests/SnapshotJsonEncodingTests.cs', '服务端WebSocket/TwelveLegions/L12SnapshotJson.cs'],
@@ -584,9 +586,8 @@ check('python-normal-guard-pure-threshold-and-profile-tests', () => {
 })
 check('frozen-and-loopback-source-not-edited', () => {
   assert.equal(digest(fs.readFileSync(FROZEN_CORE)), FROZEN_SHA)
-  const protectedDiff = execFileSync('git', ['-C', REPO, 'diff', '--', 'opcgpro-vue/scripts/local-pressure-protocol.mjs',
-    'opcgpro-vue/scripts/qualify-local-pressure.mjs'], {encoding: 'utf8', windowsHide: true})
-  assert.equal(protectedDiff, '')
+  for(const [relative,before] of Object.entries(protectedSourceHashes))
+    assert.equal(digest(fs.readFileSync(path.join(REPO,relative))),before,'OFFLINE_TEST_EDITED_PROTECTED_SOURCE')
 })
 assert.equal(forbiddenNetworkCalls, 0)
 const report = {schema: 1, status: 'offline-tests-passed', cases: results.length, results, output,

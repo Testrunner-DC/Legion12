@@ -5,3 +5,4 @@
 /ops/qa/ledger/account-ledger-sink-r2.ps1 -text
 /ops/qa/ledger/account-ledger-client-r2.mjs -text
 /ops/qa/ledger/AccountLedgerReader.ps1 -text
+/ops/qa/workload/** -text

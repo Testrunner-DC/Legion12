@@ -12,6 +12,18 @@ const fixture={schema:1,formalMutationsAllowed:false,normalConfirmationMs:3000,n
   sources:['opcgpro-vue/scripts/probe.mjs'],entries:[{path:'opcgpro-vue/scripts/probe.mjs',mode:'test-only',target:'https://legion-12.com/testrun/'}],
   legacyExecutableInputs:[],immutableEvidenceInputs:[],completeLegacyCodeClosure:true}
 const fakeTracked=new Set(fixture.sources)
+// The connected workload family requires 86 catalogued leaves, not larger
+// executable inputs or a relaxed workload deadline. Keep a bounded catalogue.
+for(const count of [86,96]){
+ const value=structuredClone(fixture);value.sources=Array.from({length:count},(_,i)=>'ops/qa/owned-'+i+'.mjs')
+ value.entries[0].path=value.sources[0]
+ assert.equal(inspectQaOwnership(value,{tracked:new Set(value.sources),read:()=>Buffer.from('export const valid=true')}).sourceCount,count);cases++
+}
+{
+ const value=structuredClone(fixture);value.sources=Array.from({length:97},(_,i)=>'ops/qa/owned-'+i+'.mjs');value.entries[0].path=value.sources[0]
+ assert.throws(()=>inspectQaOwnership(value,{tracked:new Set(value.sources),read:()=>Buffer.from('export const valid=true')}));cases++
+}
+assert.throws(()=>inspectQaOwnership(fixture,{tracked:fakeTracked,read:()=>Buffer.alloc(256*1024+1)}),/QA_SOURCE_SIZE_INVALID/);cases++
 for(const [name,mutate]of[
  ['unversioned source',value=>value.sources.push('ops/qa/missing.py')],
  ['escaping path',value=>value.sources.push('ops/qa/../secret.py')],
@@ -37,7 +49,8 @@ assert.throws(()=>inspectQaOwnership(pinned,{tracked:fakeTracked,read:()=>Buffer
 const declared=structuredClone(fixture);declared.completeLegacyCodeClosure=false
 declared.legacyExecutableInputs=[{path:'D:/legacy.mjs',sha256:crypto.createHash('sha256').update('legacy').digest('hex').toUpperCase(),execution:'module-import',role:'executed legacy fixture'}]
 assert.equal(inspectQaOwnership(declared,{tracked:fakeTracked,read:file=>Buffer.from(file==='D:/legacy.mjs'?'legacy':'export const valid=true')}).completeLegacyCodeClosure,false);cases++
-assert.equal(manifest.legacyExecutableInputs.length,11);assert.equal(manifest.immutableEvidenceInputs.length,8)
+assert.equal(manifest.legacyExecutableInputs.length,0);assert.equal(manifest.immutableEvidenceInputs.length,19)
+assert.equal(actual.sourceCount,86)
 assert.equal(actual.ownedLedgerPins.consumerPins,9)
 assert.equal(actual.ownedLedgerPins.repositoryPaths,7)
 assert.equal(manifest.immutableEvidenceInputs.filter(row=>row.path.includes('/ledger-r5/')).length,3)
@@ -158,6 +171,7 @@ if(args.length){
  const sourceHead=execFileSync('git',['-C',QA_REPO,'rev-parse','HEAD'],{encoding:'utf8',windowsHide:true}).trim()
  assert.equal(execFileSync('git',['-C',QA_REPO,'status','--porcelain=v1','--untracked-files=all'],{encoding:'utf8',windowsHide:true}).trim(),'','STAGING_PROBE_SOURCE_MUST_BE_COMMITTED_AND_CLEAN')
  const paths=new Set([...manifest.sources,QA_MANIFEST])
+ paths.add('ops/windows/L12GeneratedStorage.ps1')
  for(const relative of manifest.sources)if(relative.endsWith('.mjs')){
   const ast=ts.createSourceFile(relative,fs.readFileSync(path.join(QA_REPO,relative),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS)
   for(const node of ast.statements)if(ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&node.moduleSpecifier.text.startsWith('.'))
@@ -181,10 +195,19 @@ if(args.length){
   fs.writeFileSync(entry,currentBytes)
   const green=child();assert.equal(green.status,0,green.stderr)
   const accepted=JSON.parse(green.stdout);assert.equal(accepted.stagedSourceBound,true);assert.equal(accepted.sourceCount,actual.sourceCount)
+  // The ownership checker alone does not execute the newly rebound graph.
+  // Load all three actual adapters from the no-Git mirror as well; their own
+  // children reject historical executable reads and every network/process start.
+  const imports=spawnSync(process.execPath,[path.join(root,'opcgpro-vue/scripts/test-owned-workload-sources.mjs')],
+   {encoding:'utf8',env,windowsHide:true,timeout:60000,maxBuffer:65536})
+  assert.equal(imports.status,0,imports.stderr||imports.stdout)
+  const importProof=JSON.parse(imports.stdout)
+  assert.equal(importProof.actualFreshProcessImports.length,3)
+  assert.ok(importProof.actualFreshProcessImports.every(row=>row.actualModuleLoaded&&row.legacyReads===0&&row.networkCalls===0&&row.childProcesses===0))
   const changed=path.join(root,'opcgpro-vue/scripts/run-testrun-representative-pressure.mjs')
   fs.appendFileSync(changed,'\n// synthetic changed staged source\n')
   const corrupted=child();assert.notEqual(corrupted.status,0);assert.match(corrupted.stderr,/QA_STAGED_SOURCE_DIFFERS/)
-  stagingProbe={stagedRootHasNoGit:true,oldEntryRejectedWithCurrentDependency:true,oldEntryFirstRejection:'QA_PIN_ANCHOR_CHANGED',currentBoundEntryPassed:true,changedCopyRejected:true,sourceHead,copiedFiles:paths.size,networkCalls:0,cleanup:'pending'}
+  stagingProbe={stagedRootHasNoGit:true,oldEntryRejectedWithCurrentDependency:true,oldEntryFirstRejection:'QA_PIN_ANCHOR_CHANGED',currentBoundEntryPassed:true,actualReboundModuleImports:importProof.actualFreshProcessImports,changedCopyRejected:true,sourceHead,copiedFiles:paths.size,networkCalls:0,cleanup:'pending'}
  }finally{
   if(fs.existsSync(dependencyLink)){assert.ok(fs.lstatSync(dependencyLink).isSymbolicLink());if(process.platform==='win32')fs.rmdirSync(dependencyLink);else fs.unlinkSync(dependencyLink)}
   // Only the exact new fixture root and the files copied above are reclaimed.

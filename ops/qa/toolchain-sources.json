@@ -74,7 +74,23 @@
     "ops/qa/ledger/AccountLedgerReader.ps1",
     "ops/qa/Verify-LocalPressureLedgers.ps1",
     "opcgpro-vue/scripts/qualify-local-pressure.mjs",
-    "opcgpro-vue/scripts/test-owned-ledger-sources.mjs"
+    "opcgpro-vue/scripts/test-owned-ledger-sources.mjs",
+    "opcgpro-vue/scripts/owned-workload-sources.mjs",
+    "opcgpro-vue/scripts/test-owned-workload-sources.mjs",
+    "opcgpro-vue/scripts/local-pressure-protocol.mjs",
+    "opcgpro-vue/scripts/local-pressure-cost.mjs",
+    "opcgpro-vue/scripts/local-pressure-wire-cost.mjs",
+    "ops/qa/workload/pressure-load-r7-approved-preparation-cadence-r6.mjs",
+    "ops/qa/workload/full-workload-contract-r7.mjs",
+    "ops/qa/workload/load-v2-r2/pressure-pure-selftest.mjs",
+    "ops/qa/workload/cohort30-candidate-frame-r6/cohort30-terminal-v2-r6.mjs",
+    "ops/qa/workload/cohort30-candidate-frame-r6/large-terminal-contract-notes-base-r3.mjs",
+    "ops/qa/workload/cohort30-candidate-frame-r6/large-terminal-contract-r6.mjs",
+    "ops/qa/workload/cohort30-candidate-frame-r6/cohort30-contract-r6.mjs",
+    "ops/qa/workload/load-r7-markers.mjs",
+    "ops/qa/workload/client-boundaries.mjs",
+    "ops/qa/workload/cohort30-terminal-v2/placement-selector-r1.mjs",
+    "ops/qa/workload/large-terminal-public/large-terminal-contract.mjs"
   ],
   "entries": [
     {
@@ -148,74 +164,7 @@
       "mode": "offline-preparer"
     }
   ],
-  "legacyExecutableInputs": [
-    {
-      "path": "D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/preparation-cadence-r6/pressure-load-r7-approved-preparation-cadence-r6.mjs",
-      "sha256": "F737052DCBFDA4A29FF53BA5DFAD76E771774C1C89C993275FFAFEAA023684FD",
-      "execution": "adapted-module",
-      "role": "Original workload source adapted into the executable normal-pressure core."
-    },
-    {
-      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-full-workload-r7/full-workload-contract-r7.mjs",
-      "sha256": "92497819602F4C2719FE80DF29FD5CF7626AA410F2D816058FF97504E4724BFA",
-      "execution": "module-import",
-      "role": "Transitive executable import of the adapted original workload."
-    },
-    {
-      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/load-v2-r2/pressure-pure-selftest.mjs",
-      "sha256": "C431C0BF87072655487DDF6C103062D9DC46E20FCDC127AB435BF44F98C03838",
-      "execution": "module-import",
-      "role": "Transitive cleanup and selector code imported by the executable workload."
-    },
-    {
-      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-candidate-frame-r6/cohort30-terminal-v2-r6.mjs",
-      "sha256": "D0A3E0AA64156E95DC60C40BA197339B5A315316A2E5BDC5FAD3DAA9E76C4531",
-      "execution": "module-import",
-      "role": "Transitive protocol module imported by the executable workload."
-    },
-    {
-      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-candidate-frame-r6/large-terminal-contract-notes-base-r3.mjs",
-      "sha256": "DFC4FD2AF1C87EE987212A652704FC35961B4D00C14D9797984835545F8BD756",
-      "execution": "module-import",
-      "role": "Transitive validation module imported by the executable workload."
-    },
-    {
-      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-candidate-frame-r6/large-terminal-contract-r6.mjs",
-      "sha256": "EC10922545EECB76831A79C5B65935D2EFC6AAAA945FAC9646F38AC1CE512841",
-      "execution": "module-import",
-      "role": "Shared transitive contract imported by historical workload modules."
-    },
-    {
-      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-candidate-frame-r6/cohort30-contract-r6.mjs",
-      "sha256": "0D8F8DF28798B0A3C4AA4A0775766ABAF4BFDC0A3088BC9786DEF9406B60176D",
-      "execution": "module-import",
-      "role": "Transitive cohort contract imported by the executable workload."
-    },
-    {
-      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-full-workload-r7/load-r7-markers.mjs",
-      "sha256": "41544DFB2A7327239ED4EF55BD654D7CA352A3FF9621F7676CB7F40CFBD1D4D9",
-      "execution": "module-import",
-      "role": "Marker implementation imported by the workload and confirmation regression."
-    },
-    {
-      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/client-boundaries.mjs",
-      "sha256": "E62BF9BCEC47C06727CA75D3ADF5C278E4FB5ACD6F0302E40531262A1DED06AB",
-      "execution": "module-import",
-      "role": "Transitive marker and cohort client-boundary implementation."
-    },
-    {
-      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/placement-selector-r1.mjs",
-      "sha256": "94222135D91627B18C1D13067A4A141C6AAA901A090C79980C882B5ED5449AF1",
-      "execution": "module-import",
-      "role": "Command selector imported by the workload and terminal-wire measurement."
-    },
-    {
-      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/large-terminal-public/large-terminal-contract.mjs",
-      "sha256": "D328933729E54167078F123329A0880981C8C5A55771E32865F77B9DEAE1B456",
-      "execution": "module-import",
-      "role": "Transitive selector contract executed by the terminal-wire measurement."
-    }
-  ],
+  "legacyExecutableInputs": [],
   "immutableEvidenceInputs": [
     {
       "path": "D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/guard-deadline-r4/resource-guard-deadline-r4.py",
@@ -256,12 +205,67 @@
       "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/test-account-ledger-real-r4.ps1",
       "sha256": "C991435C5E18FC8A26D9F57264E25BC38F4D1B4D4CC79DAF395D1C0EFCC6BECE",
       "role": "Original reader test-runner source retained only as evidence; only its four exact function ASTs now live in the repository."
+    },
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/preparation-cadence-r6/pressure-load-r7-approved-preparation-cadence-r6.mjs",
+      "sha256": "F737052DCBFDA4A29FF53BA5DFAD76E771774C1C89C993275FFAFEAA023684FD",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-full-workload-r7/full-workload-contract-r7.mjs",
+      "sha256": "92497819602F4C2719FE80DF29FD5CF7626AA410F2D816058FF97504E4724BFA",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/load-v2-r2/pressure-pure-selftest.mjs",
+      "sha256": "C431C0BF87072655487DDF6C103062D9DC46E20FCDC127AB435BF44F98C03838",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-candidate-frame-r6/cohort30-terminal-v2-r6.mjs",
+      "sha256": "D0A3E0AA64156E95DC60C40BA197339B5A315316A2E5BDC5FAD3DAA9E76C4531",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-candidate-frame-r6/large-terminal-contract-notes-base-r3.mjs",
+      "sha256": "DFC4FD2AF1C87EE987212A652704FC35961B4D00C14D9797984835545F8BD756",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-candidate-frame-r6/large-terminal-contract-r6.mjs",
+      "sha256": "EC10922545EECB76831A79C5B65935D2EFC6AAAA945FAC9646F38AC1CE512841",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-candidate-frame-r6/cohort30-contract-r6.mjs",
+      "sha256": "0D8F8DF28798B0A3C4AA4A0775766ABAF4BFDC0A3088BC9786DEF9406B60176D",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-full-workload-r7/load-r7-markers.mjs",
+      "sha256": "41544DFB2A7327239ED4EF55BD654D7CA352A3FF9621F7676CB7F40CFBD1D4D9",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/client-boundaries.mjs",
+      "sha256": "E62BF9BCEC47C06727CA75D3ADF5C278E4FB5ACD6F0302E40531262A1DED06AB",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/placement-selector-r1.mjs",
+      "sha256": "94222135D91627B18C1D13067A4A141C6AAA901A090C79980C882B5ED5449AF1",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/large-terminal-public/large-terminal-contract.mjs",
+      "sha256": "D328933729E54167078F123329A0880981C8C5A55771E32865F77B9DEAE1B456",
+      "role": "Original workload code retained only as immutable evidence; executable successor is repository-owned and reverse-exact to this SHA."
     }
   ],
-  "completeLegacyCodeClosure": false,
+  "completeLegacyCodeClosure": true,
   "limits": [
     "No private key, credential, DPAPI ledger, runtime database, screenshot or generated fixture is versioned by this catalog.",
-    "Immutable legacy workload imports remain explicit external acceptance inputs; the repository is not yet a standalone portable copy of that historical dependency closure.",
+    "Legacy executable code closure is complete for the catalogued active QA chain; runtime binaries, package dependencies, private credentials and immutable acceptance evidence remain explicit external inputs.",
     "Fixture generator only creates a new isolated Linux /tmp database; it cannot select a production source directory or either live database.",
     "Node browser entry temp roots are applied in the parent process only after the physical selected cache has passed the existing PowerShell storage guard."
   ]

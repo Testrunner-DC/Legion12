@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## QA-20261024-WORKLOAD-CODE-OWNERSHIP｜消除最后11份历史执行源码依赖
+
+- 共因是F737原核心、R6传递依赖和独立测量入口仍加载历史artifact代码，单改顶层入口不闭合。全族11份264511B原代码逐SHA读取后，8份原字节纳仓库，3份13处仅代码位置／数据根绑定衍生可逆回原SHA；不读取真实账本／凭据／业务数据。normal/local共用精确重绑器，原F737 SHA、3秒／900秒、30＋10、隐私与清退不改；R6数据和代码根分离，防止stop/output随源码搬进仓库。
+- 全同类扫描覆盖F737双import/re-export、顶层selector/R6 hash、R6 ledger／boundaries／pure／TS、两协议转换、local qualifier和wire测量独立消费者。归属86源／0旧执行／19历史证据；catalogue有界80→96，单叶256KiB及运行准入不变；实际库／依赖／凭据和历史证据仍外置，不冒完整CI或跨平台资格。
+- 新77例覆盖每叶篡改、逆还原、丢失／重复锚点、两R6根回退、真实三fresh-process导入与all-bottom共享选择器，并拒历史执行／网络／子进程；归属51、原normal136、local49＋12＋5、实际Windows执行21、测量纯11通过。独审无实质阻断。原normal dirty-tree假失败保留，防改写改以运行前后两源SHA核对；冻结selector EOF空行原字节保留。提交后干净镜像和标准Batch尚待，不将本地专项冒线上性能或部署。
+
 ## UI-20261024-FREE-ACTION-PRESENTATION-GATE｜演出完成后才开放自由操作
 
 - 人类直接要求动作和观战连续、相关动效未播完不释放下一自由操作。共因是pendingAction只管权威往返，回包清掉它后真实presentation仍忙，出牌／移动／进攻／主动能力／结束回合表面与命令边界提前开放。本片沿既有cardPresentationBusy加合并门，不新增服务端锁或暂停计时；提示仅按当前promptId回传原不可变绑定，DefenseChoice受控防守者保必要续办，持久连线不当busy。

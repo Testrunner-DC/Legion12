@@ -6,11 +6,12 @@ import {execFileSync} from 'node:child_process'
 import {createRequire} from 'node:module'
 import {pathToFileURL} from 'node:url'
 import {propertyFrameSourceModuleUrl} from './property-frame-source-module.mjs'
+import {OWNED_FROZEN_CORE,rebaseFrozenWorkloadSource} from './owned-workload-sources.mjs'
 
 export const REPO = path.resolve(import.meta.dirname, '../..')
 export const EVIDENCE_ROOT = 'D:/GPT/Legion12/artifacts/representative-load-current-20261022'
 export const CACHE_ROOT = 'D:/GPT/Legion12/cache/primary/representative-load-current-20261022'
-export const FROZEN_CORE = 'D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/preparation-cadence-r6/pressure-load-r7-approved-preparation-cadence-r6.mjs'
+export const FROZEN_CORE = OWNED_FROZEN_CORE
 export const FROZEN_SHA = 'F737052DCBFDA4A29FF53BA5DFAD76E771774C1C89C993275FFAFEAA023684FD'
 export const KNOWN_HOSTS = 'D:/GPT/Legion12/artifacts/security-reinstall-prep-20261009/ssh-reinstall-pinned-20261011.known_hosts'
 export const KNOWN_HOSTS_SHA = '8D0F71B88C9488400B7157CC84B77774D68BFA4E15F79E259656C81C6C2FC0C9'
@@ -231,11 +232,12 @@ export function adaptFrozenCore(source, adapterUrl) {
     adapted = adapted.replace(before, after)
     changes.push({beforeSha256: digest(before), afterSha256: digest(after)})
   }
-  let restored = adapted
+  const relocated = rebaseFrozenWorkloadSource(adapted,adapterUrl,{mode:'normal'})
+  let restored = relocated.restored
   for (const [before, after] of replacements.toReversed()) restored = restored.replace(after, before)
   assert.equal(restored, source, 'reverse restoration must preserve every byte of the original workload and cleanup')
-  return {source: adapted, evidence: {schema: 1, frozenSha256: FROZEN_SHA, adaptedSha256: digest(adapted),
-    restoredSha256: digest(restored), byteExactRoundtrip: true, changes, executionEnabled: false}}
+  return {source: relocated.source, evidence: {schema: 1, frozenSha256: FROZEN_SHA, adaptedSha256: digest(relocated.source),
+    restoredSha256: digest(restored), byteExactRoundtrip: true, changes, pathRelocation:relocated.evidence, executionEnabled: false}}
 }
 
 // Request is injected: this helper never opens a socket. The caller must retain

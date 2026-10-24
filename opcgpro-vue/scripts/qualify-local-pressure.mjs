@@ -7,6 +7,7 @@ import {pathToFileURL} from 'node:url'
 import {adaptFrozenPressureCore, assertLocalPressureTarget, cleanupLocalQualificationAccounts, digest} from './local-pressure-protocol.mjs'
 import {summarizeLocalPressureCost} from './local-pressure-cost.mjs'
 import {AccountLedgerClient, NamedPipeLedgerTransport, registrationFingerprint} from '../../ops/qa/ledger/account-ledger-client-r2.mjs'
+import {OWNED_FROZEN_CORE} from './owned-workload-sources.mjs'
 
 const repo = path.resolve(import.meta.dirname, '../..')
 const LEDGER_SINK_SHA = 'B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81'
@@ -47,19 +48,20 @@ for (const leaf of acceptedBinding.sources) {
   assert.equal(digest(fs.readFileSync(path.join(repo, leaf.path))), leaf.sha256)
 }
 fs.writeFileSync(path.join(root, 'owner.json'), JSON.stringify(owner), {flag: 'wx'})
-const originalCore = 'D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/preparation-cadence-r6/pressure-load-r7-approved-preparation-cadence-r6.mjs'
+const originalCore = OWNED_FROZEN_CORE
 const originalBytes = fs.readFileSync(originalCore)
 assert.equal(digest(originalBytes), 'F737052DCBFDA4A29FF53BA5DFAD76E771774C1C89C993275FFAFEAA023684FD')
 const adaptedPath = path.join(root, 'local-core.mjs')
-fs.writeFileSync(adaptedPath, adaptFrozenPressureCore(originalBytes.toString('utf8'),
-  pathToFileURL(path.join(import.meta.dirname, 'local-pressure-protocol.mjs')).href), {flag: 'wx'})
+const adaptedCore=adaptFrozenPressureCore(originalBytes.toString('utf8'),
+  pathToFileURL(path.join(import.meta.dirname, 'local-pressure-protocol.mjs')).href,{withEvidence:true})
+fs.writeFileSync(adaptedPath, adaptedCore.source, {flag: 'wx'})
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 const processes = [], ledgers = []
 const report = {schema: 1, status: 'starting', runId, scope: 'local Windows real HTTP/WS qualification only',
   productionTouched: false, testServiceTouched: false, onlineCapacityAccepted: false, runtimeRoot: root,
   handArrayDeltaRequested: handArrayDeltaV1,
   wireCostRequested: wireCost,
-  originalCoreSha256: digest(originalBytes), adaptedCoreSha256: digest(fs.readFileSync(adaptedPath)),
+  originalCoreSha256: digest(originalBytes), adaptedCoreSha256: digest(fs.readFileSync(adaptedPath)), sourceRelocation:adaptedCore.evidence,
   hostAssemblySha256: digest(fs.readFileSync(hostAssembly)), owner, ownedProcesses: [],
   acceptedServerSourceEvidence: {path: acceptedBindingPath, sha256: digest(acceptedBindingBytes),
     sourceBefore: acceptedBinding.head, sourceLeavesVerified: acceptedBinding.sources.length,
