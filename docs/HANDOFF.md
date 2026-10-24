@@ -1,10 +1,17 @@
 # 十二军团简短交接
 
+## 2026-10-25 公开匹配主宰异画｜真实RED与Main完整平台接受
+
+- 已实际读来源人类“批准”，只改RoomManager与新测试两叶。旧匹配factory使用queue捕获牌库，但外观仍取session旧牌库；现在同一组`(Session, Deck)`显式配对进入原权益／copies解析，不提前写session／room、不动队列／锁／重连。其余沙盒、赛事、好友三个factory仍原入口；Main完整读diff／新测试／所有调用点。
+- 两Fact实际2/2目标RED：注册／派发／保存／排队和双方gameState前置均过，主宰应异画却回原图；6FEEEA40 TRX／0EC9D5A7日志及失败临时根保。GREEN7/7零失败跳过含原三个公开牌库模式、观战匹配与busy-requeue，已到达原RED之后的无权益对手原画保护；416FAE3D TRX／D1643B07监督正常清退。
+- 两源EFC3FA5B／B9F1BAF3及4C8CD8E8程序、03A9A6D4测试程序集冻结。Main新一次完整平台95376实际exit0，2462/2462零失败跳过，11m17s；5D44D9D0 TRX／5E312D10完整原生日志、两源及三DLL前后全等、8C5D128B监督一次清退。不借旧回放2460、不重跑未变规则／前端或30＋10；玩家账目已备，Git见唯一`matchmaking-master-art-20261024/main-review.json`及synchronization.json。不部署、不关线上Bug。
+- A人类又要求增强透视，但已纠正“未裁切，是圆角视觉”，不加净空或重跑原裁切矩阵。A仅原三叶，C唯一CardImage writer补共用root／img／占位圆角、图片恢复／缩略图五叶；先纯合同，浏览器／整构建仍串行。原24a部署已完不重新执行，正式3a／维护不动。
+
 ## 2026-10-25 开场与等待共享界面收尾｜仅源码同步，不重复测试发布
 
 - A最终三叶已冻结：主宰卡面独立760px／±18度透视、外侧边近／内侧边远，保对方左上／己方右下；玩家ID固定界面青色。调度选中卡抬起12px、轻灰，并留桌面28px／移动20px净空。v6只续四受影响点4/4，6273059D报告；实卡两图AFCEC26B、sourceStable，Main已实际看图。局部fixture404／未启动可选API噪声原记，不冒零错误／26项新整轮／人类最终视觉认可，禁止据此部署正式。
 - B纯等待退出共享模态尺寸与modal-in规则，沿felt-board右中空位Teleport，透明无blur、不拦输入；主宰只有内图休整，姓名／生命正向，登场后不留“已登场”字样。r8四定向4393E8FD与原owner／deployed两绿复用，Main独看宽屏等待／手机休整；前六轮失败保留，不能再凭位置试错或为原两绿重开整矩阵。
-- Main最终组合native65277实际exit0：开场、等待、motion49／UI361／相关移动与提示合同、21原语、276账目、完整Vue类型及双Vite通过，14叶前后SHA全等；唯一`match-opening-presentation-20261024/main-final-ui-acceptance.log` 9DDE98CF。仅按受影响面续验，不重跑已过2460平台／规则／30＋10，不冒新完整Batch/Release。Git见同目录synchronization.json。原测试24a已发布独验、正式3a及维护结束不重开；本片未部署／线上关单／真机验收。
+- Main最终组合native65277实际exit0：开场、等待、motion49／UI361／相关移动与提示合同、21原语、277账目、完整Vue类型及双Vite通过，14叶前后SHA全等；唯一`match-opening-presentation-20261024/main-final-ui-acceptance.log` 9DDE98CF。仅按受影响面续验，不重跑已过2460平台／规则／30＋10，不冒新完整Batch/Release。Git见同目录synchronization.json。原测试24a已发布独验、正式3a及维护结束不重开；本片未部署／线上关单／真机验收。
 - 新公开匹配主宰异画：Main已读来源明确“批准”，仅新测试两Fact进入有界RED重窗，产品RoomManager尚未改；图片在线恢复／列表可信缩略图仍只读冻结待下一精确片，不混本次。实际新需求与已完成发布分开，消息来源不触发再次部署。
 
 ## 2026-10-24 本人回放分页收尾｜与反复细化的开场视觉分离

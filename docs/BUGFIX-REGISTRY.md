@@ -1,10 +1,16 @@
 # Legion12 Bug 修复记录
 
+## IMAGE-20261025-MATCHMAKING-MASTER｜匹配捕获牌库与主宰外观绑定
+
+- 原反馈为已选择异画主宰但对战显示原画，来源人类已明确批准。P2根因：公开匹配新局用queue的`opponent.Deck/entry.Deck`，异画解析却读取稍后才更新的session.CustomDeck。最小改同序`(Session, Deck)`显式解析；原按账号权益／每副本映射不变，session-only入口委托同一解析，沙盒／赛事／好友三调用保原捕获语义。不提前改变session／room、匹配锁／重排、卡效、隐私、Journal或统计。
+- 同类扫描四factory与全部ResolveAlternateArtUrls调用。新两真实Fact先校注册／Admin派发及持有／同主宰预组／私人牌库／入队、版本替换及Poll、matchmakingFound和双方gameState，实际2RED均错在异画URL，6FEEEA40原TRX保；旧超长用户名夹具预先修正，不充作目标失败。GREEN新2＋原模式3／观战2=7过，已核双方owner异画与无权益对手原画，416FAE3D；原RED之后未执行的断言只按GREEN计。
+- Main两叶完整独审，EFC3FA5B／B9F1BAF3与4C8／03A9冻结，新一次完整平台95376实际2462/2462、0失败／0跳过、exit0，11m17s；5D44D9D0原TRX与5E312D10完整日志、源／DLL前后全等、监督清退，不借旧2460。唯一`matchmaking-master-art-20261024/main-review.json`及synchronization.json记精确Git；未部署、未关线上反馈。回滚仅捕获牌库的外观传参和同族QA，不改已有数据或当前UI。
+
 ## UI-20261025-OPENING-WAITING-MASTER｜真实透视、调度净空与非模态等待
 
 - P4呈现族仅改既有PromptOverlay／GameBoard／PlayerMat及共享CSS，不改权威命令、费用、计时、牌序或投影隐私。开场卡面内层perspective(760px)／rotateY±18度，外侧边比内侧约长16%；保高低方向、原真实主宰绑定／落位／跳过／off-reduce。ID固定界面青色，不再随阵营；调度真实手牌局部大卡无框，选中抬12px／轻灰，桌面28px和短屏20px空间覆盖图、标记与阴影，保原确认／全部保留命令。
 - 等待根因是全视口及移动模态CSS与共享modal-in覆盖，不是锚点本身错误；具名passive分支同时排除两入口，board-local空位透明、不拦输入，普通本人选择／等待／最小化继续原规则。主宰休整只内图旋转且在框内，名血不转，不保留人为新增的中间旋转transition；主宰作军团时仅名血，不添状态文案。共享扫描两modal选择器、移动viewport规则、被动／可操作提示及主宰双方ready/rest/deployed。
-- 原视觉否决／B六轮失败原件不改。A v6四点4/4，主宰实际四角和选中态祖先包含；实卡两图Main独看，噪声与夹具范围明示。B r8四点＋原owner/deployed两绿复用，非新full6。Main最终组合65277实际exit0：UI361／motion49／原语21／账目276、完整类型与双Vite，14叶前后全等，9DDE98CF原生日志。唯一opening main-acceptance及waiting main-review；非新Release／真机／人类最终视觉批准／服务端ACK，未部署或线上关单。回滚只这一呈现族及QA，不回写数据。
+- 原视觉否决／B六轮失败原件不改。A v6四点4/4，主宰实际四角和选中态祖先包含；实卡两图Main独看，噪声与夹具范围明示。B r8四点＋原owner/deployed两绿复用，非新full6。Main最终组合65277实际exit0：UI361／motion49／原语21／账目277、完整类型与双Vite，14叶前后全等，9DDE98CF原生日志。唯一opening main-acceptance及waiting main-review；非新Release／真机／人类最终视觉批准／服务端ACK，未部署或线上关单。回滚只这一呈现族及QA，不回写数据。
 
 ## REPLAY-20261024-PLAYER-PAGING｜本人分段播放、原格式导出与取消生命周期
 

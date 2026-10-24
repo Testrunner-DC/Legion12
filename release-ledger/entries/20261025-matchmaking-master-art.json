@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-matchmaking-master-art",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "匹配主宰异画",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修正公开匹配中主宰异画显示为原画的问题，排队后更新牌库或重新匹配时也使用当前选择。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs"
+      ]
+    }
+  ]
+}

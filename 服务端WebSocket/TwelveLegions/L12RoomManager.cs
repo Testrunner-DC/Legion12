@@ -560,7 +560,8 @@ public sealed partial class L12RoomManager
                 operationsPolicy: policy,
                 stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
                 effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
-                alternateArtUrls: ResolveAlternateArtUrls([other, session]), utcNow: _utcNow,
+                alternateArtUrls: ResolveAlternateArtUrls(
+                    [(other, opponent.Deck), (session, entry.Deck)]), utcNow: _utcNow,
                 responseModes: responsePreferences.Select(item => item.Mode).ToArray());
         }
         catch { return RequeueMatchmakingPair(opponent, entry, "建立匹配房间失败"); }
@@ -2647,8 +2648,12 @@ public sealed partial class L12RoomManager
         => session.CustomDeck ?? _catalog.DeckAt(session.SelectedDeckIndex);
 
     private IReadOnlyDictionary<string, string>[] ResolveAlternateArtUrls(IEnumerable<Session> sessions)
-        => sessions.Select(session => _platform?.ResolveOwnedAlternateArtUrls(session.AccountId,
-            SelectedDeck(session).AlternateArtSelections, SelectedDeck(session).AlternateArtCopies)
+        => ResolveAlternateArtUrls(sessions.Select(session => (session, SelectedDeck(session))));
+
+    private IReadOnlyDictionary<string, string>[] ResolveAlternateArtUrls(
+        IEnumerable<(Session Session, L12PresetDeckDefinition Deck)> players)
+        => players.Select(player => _platform?.ResolveOwnedAlternateArtUrls(player.Session.AccountId,
+            player.Deck.AlternateArtSelections, player.Deck.AlternateArtCopies)
             ?? new Dictionary<string, string>()).ToArray();
 
     // Called only while holding this exact room's gate, after any membership captured before an await.
