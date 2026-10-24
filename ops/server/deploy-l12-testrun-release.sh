@@ -502,7 +502,122 @@ assert_cleanup_child() {
   [[ "$parent" == "$root" || "$parent" == "${root}/"* ]] || return 1
 }
 
+completed_diagnostic_has_no_backup_dependencies() {
+  # Historical diagnostic evidence is retained, never deleted here. Recognition
+  # is used only by the backup consumer; program-retention remains fail-closed.
+  timeout 3s python3 -I -B - "$1" <<'PY'
+import json, os, pathlib, re, stat, sys
+
+def require(value):
+    if not value: raise ValueError("invalid completed diagnostic evidence")
+
+def exact(value, keys):
+    require(isinstance(value, dict) and set(value) == set(keys.split()))
+
+def integer(value, minimum=0):
+    require(type(value) is int and value >= minimum)
+
+def sha(value):
+    require(isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value))
+
+def text(value):
+    require(isinstance(value, str) and 0 < len(value) <= 4096 and not any(c in value for c in "\0\r\n"))
+
+def unique(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result); result[key] = value
+    return result
+
+def main():
+    root = pathlib.Path(sys.argv[1])
+    require(root.is_absolute() and root.resolve() == root)
+    match = re.fullmatch(r"terminal-recipient-([0-9a-f]{32})", root.name)
+    require(match)
+    run = match.group(1)
+    info = root.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700)
+    names = {"intent.json", "start-intent.json", "active.json", "restore-intent.json", "stopped.json", "normal-restored.json"}
+    require({item.name for item in root.iterdir()} == names)
+    documents, originals = {}, {}
+    for name in names:
+        file = root / name; before = file.lstat()
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == os.geteuid()
+            and stat.S_IMODE(before.st_mode) == 0o600 and before.st_nlink == 1 and 0 < before.st_size <= 65536)
+        descriptor = os.open(file, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as stream:
+            opened = os.fstat(stream.fileno())
+            require((opened.st_dev, opened.st_ino) == (before.st_dev, before.st_ino))
+            raw = stream.read(65537)
+        require(len(raw) == before.st_size)
+        documents[name] = json.loads(raw, object_pairs_hook=unique,
+            parse_constant=lambda _: require(False))
+        originals[name] = (before, raw)
+    require(originals["intent.json"][1] == originals["start-intent.json"][1])
+    intent, active, restored = [documents[name] for name in ("intent.json", "active.json", "normal-restored.json")]
+    exact(intent, "schema runId envPath envSha256 dropinPath dropinSha256 settingSha256 binding")
+    require(type(intent["schema"]) is int and intent["schema"] == 1 and intent["runId"] == run)
+    require(intent["envPath"] == "/etc/legion12-terminal-" + run + ".env"
+        and intent["dropinPath"] == "/etc/systemd/system/legion12-testrun.service.d/zzzzzzzz-terminal-" + run + ".conf")
+    for key in ("envSha256", "dropinSha256", "settingSha256"): sha(intent[key])
+    require(not os.path.lexists(intent["envPath"]) and not os.path.lexists(intent["dropinPath"]))
+    binding = intent["binding"]
+    exact(binding, "schema kind baseUrl wsUrl client formal test")
+    require(type(binding["schema"]) is int and binding["schema"] == 1 and binding["kind"] == "normal-testrun-pressure-v1"
+        and binding["baseUrl"] == "https://legion-12.com/testrun/" and binding["wsUrl"] == "wss://legion-12.com/testrun/ws")
+    exact(binding["client"], "cardFrameSha256 cardFrameSourcePath handArraySha256 handArraySourcePath netSha256 netSourcePath")
+    for key, value in binding["client"].items():
+        sha(value) if key.endswith("Sha256") else text(value)
+    for role in ("formal", "test"):
+        identity = binding[role]
+        exact(identity, "commit dllSha256 pid" if role == "formal" else "commit dllSha256 pid manifestPath manifestSha256 releaseSha256")
+        require(isinstance(identity["commit"], str) and re.fullmatch(r"[0-9a-f]{40}", identity["commit"]))
+        sha(identity["dllSha256"]); integer(identity["pid"], 1)
+        if role == "test":
+            text(identity["manifestPath"]); sha(identity["manifestSha256"]); sha(identity["releaseSha256"])
+    exact(active, "schema status ownerRoot readiness formal test formalWrites databaseRestores maintenanceWrites")
+    exact(restored, "schema status ownerRoot ownedFilesRemoved formal test formalWrites databaseRestores maintenanceWrites")
+    for row in (active, restored):
+        require(type(row["schema"]) is int and row["schema"] == 1 and row["ownerRoot"] == str(root))
+        for key in ("formalWrites", "databaseRestores", "maintenanceWrites"):
+            require(type(row[key]) is int and row[key] == 0)
+        for role in ("formal", "test"):
+            identity = row[role]; exact(identity, "commit dllSha256 pid restartCount diagnosticsOff")
+            integer(identity["pid"], 1); integer(identity["restartCount"])
+            require(type(identity["diagnosticsOff"]) is bool)
+            require(identity["commit"] == binding[role]["commit"] and identity["dllSha256"] == binding[role]["dllSha256"])
+    require(active["status"] == "DIAGNOSTIC_PROFILE_ACTIVE" and restored["status"] == "NORMAL_PROFILE_RESTORED")
+    require(active["formal"] == restored["formal"] and active["formal"]["pid"] == binding["formal"]["pid"]
+        and active["formal"]["diagnosticsOff"] is True and active["test"]["diagnosticsOff"] is False
+        and restored["test"]["diagnosticsOff"] is True and restored["test"]["pid"] != active["test"]["pid"]
+        and type(restored["ownedFilesRemoved"]) is int and restored["ownedFilesRemoved"] == 2)
+    exact(active["readiness"], "activeGameCount ownedPrestopSessionRevoked401")
+    require(type(active["readiness"]["activeGameCount"]) is int and active["readiness"]["activeGameCount"] == 0
+        and active["readiness"]["ownedPrestopSessionRevoked401"] is True)
+    restore_intent, stopped = documents["restore-intent.json"], documents["stopped.json"]
+    exact(restore_intent, "schema testPid")
+    require(type(restore_intent["schema"]) is int and restore_intent["schema"] == 1
+        and type(restore_intent["testPid"]) is int and restore_intent["testPid"] == active["test"]["pid"])
+    exact(stopped, "ActiveState SubState MainPID ExecMainStatus Result NRestarts")
+    require(stopped == dict(ActiveState="inactive", SubState="dead", MainPID="0", ExecMainStatus="0", Result="success", NRestarts="0"))
+    # No hidden backup dependencies may be admitted inside a context/path field.
+    serialized = json.dumps(documents, sort_keys=True).lower()
+    require("runtimebackup" not in serialized and "runtime-backups" not in serialized and "runtime-before-" not in serialized)
+    require({item.name for item in root.iterdir()} == names)
+    for name, (before, raw) in originals.items():
+        file = root / name; after = file.lstat()
+        require((before.st_dev, before.st_ino, before.st_mode, before.st_nlink, before.st_size, before.st_mtime_ns)
+            == (after.st_dev, after.st_ino, after.st_mode, after.st_nlink, after.st_size, after.st_mtime_ns)
+            and not file.is_symlink() and file.read_bytes() == raw)
+
+try: main()
+except Exception: sys.exit(1)
+PY
+}
+
 load_failure_records() {
+  local allow_completed_diagnostic="${1:-0}"
+  [[ "$allow_completed_diagnostic" == 0 || "$allow_completed_diagnostic" == 1 ]] || return 1
   failure_records=()
   if [[ ! -e "$failure_dir" && ! -L "$failure_dir" ]]; then return 0; fi
   assert_cleanup_root "$failure_dir" || { log "storage cleanup refused: failure receipt root is unsafe or unreadable"; return 1; }
@@ -514,6 +629,12 @@ load_failure_records() {
     kind="${row%%:*}"
     record="${row#*:}"
     name="$(basename "$record")" || return 1
+    if [[ "$allow_completed_diagnostic" == 1 && "$kind" == d && "$name" =~ ^terminal-recipient-[0-9a-f]{32}$ ]]; then
+      assert_cleanup_child "$record" "$failure_dir" && completed_diagnostic_has_no_backup_dependencies "$record" \
+        || { log "runtime snapshot cleanup refused: diagnostic evidence is incomplete or not restored: ${record}"; return 1; }
+      log "runtime snapshot cleanup preserved completed diagnostic evidence without backup dependencies: ${record}"
+      continue
+    fi
     if [[ "$kind" != "f" || ! "$name" =~ ^deploy-[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z[.]txt$ || ! -f "$record" || -L "$record" || ! -r "$record" ]]; then
       log "storage cleanup refused: failure receipt is partial, unsafe, or unowned: ${record}"
       return 1
@@ -673,7 +794,7 @@ prune_runtime_backup_groups() {
     || { log "runtime snapshot cleanup refused: retain 2-20 groups"; return 1; }
   keep="$runtime_backup_keep_groups"
   (( ${#backup_rows[@]} > keep )) || return 0
-  load_failure_records || return 1
+  load_failure_records 1 || return 1
   for record in "${failure_records[@]}"; do
     reference="$(awk -F= '$1 == "runtimeBackup" { print $2 }' "$record")" || return 1
     [[ -n "$reference" ]] || continue

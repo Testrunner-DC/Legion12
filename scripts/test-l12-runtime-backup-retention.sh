@@ -17,7 +17,7 @@ cleanup() {
 }
 trap cleanup EXIT
 helpers="$owner_root/actual-functions.sh"
-for name in assert_cleanup_root assert_cleanup_child load_failure_records runtime_backup_pair_verified prune_runtime_backup_groups; do
+for name in assert_cleanup_root assert_cleanup_child completed_diagnostic_has_no_backup_dependencies load_failure_records runtime_backup_pair_verified prune_runtime_backup_groups; do
   awk -v start="$name() {" '
     { sub(/\r$/, "") }
     $0 == start { copying=1; found=1 }
@@ -59,10 +59,91 @@ failure_record() {
     1 2 "$1" > "$failure_dir/deploy-000000000001-20261001T000001Z.txt"
 }
 case_passed() { printf 'PASS %s\n' "$1"; }
+seed_diagnostic() {
+  diagnostic="$failure_dir/terminal-recipient-11111111111111111111111111111111"
+  mkdir -m 0700 "$diagnostic"
+  python3 - "$diagnostic" <<'PY'
+import json,os,pathlib,sys
+r=pathlib.Path(sys.argv[1]);run=r.name.removeprefix('terminal-recipient-');h='A'*64
+formal={'commit':'3'*40,'dllSha256':h,'pid':11}
+test={'commit':'2'*40,'dllSha256':h,'pid':22,'manifestPath':'/synthetic/manifest.json','manifestSha256':h,'releaseSha256':h}
+client={k+suffix:h if suffix=='Sha256' else '/synthetic/'+k for k in ['net','cardFrame','handArray'] for suffix in ['Sha256','SourcePath']}
+binding={'schema':1,'kind':'normal-testrun-pressure-v1','baseUrl':'https://legion-12.com/testrun/','wsUrl':'wss://legion-12.com/testrun/ws','client':client,'formal':formal,'test':test}
+intent={'schema':1,'runId':run,'envPath':'/etc/legion12-terminal-'+run+'.env','envSha256':h,'dropinPath':'/etc/systemd/system/legion12-testrun.service.d/zzzzzzzz-terminal-'+run+'.conf','dropinSha256':h,'settingSha256':h,'binding':binding}
+f={**formal,'restartCount':0,'diagnosticsOff':True}
+t={'commit':test['commit'],'dllSha256':h,'pid':33,'restartCount':0,'diagnosticsOff':False}
+common={'schema':1,'ownerRoot':str(r),'formal':f,'formalWrites':0,'databaseRestores':0,'maintenanceWrites':0}
+rows={'intent.json':intent,'start-intent.json':intent,
+ 'active.json':{**common,'status':'DIAGNOSTIC_PROFILE_ACTIVE','test':t,'readiness':{'activeGameCount':0,'ownedPrestopSessionRevoked401':True}},
+ 'normal-restored.json':{**common,'status':'NORMAL_PROFILE_RESTORED','test':{**t,'pid':44,'diagnosticsOff':True},'ownedFilesRemoved':2},
+ 'restore-intent.json':{'schema':1,'testPid':33},
+ 'stopped.json':{'ActiveState':'inactive','SubState':'dead','MainPID':'0','ExecMainStatus':'0','Result':'success','NRestarts':'0'}}
+for name,row in rows.items():
+ p=r/name;p.write_text(json.dumps(row));p.chmod(0o600)
+PY
+}
+
+mutate_diagnostic() {
+  python3 - "$diagnostic" "$1" <<'PY'
+import json,os,pathlib,sys
+r=pathlib.Path(sys.argv[1]);mode=sys.argv[2]
+def update(name,change):
+ p=r/name;v=json.loads(p.read_text());change(v);p.write_text(json.dumps(v))
+if mode=='missing-restored':(r/'normal-restored.json').unlink()
+elif mode=='active-status':update('normal-restored.json',lambda v:v.update(status='DIAGNOSTIC_PROFILE_ACTIVE'))
+elif mode=='boolean-schema':update('normal-restored.json',lambda v:v.update(schema=True))
+elif mode=='extra-key':update('normal-restored.json',lambda v:v.update(runtimeBackup='/synthetic/backup'))
+elif mode=='mismatched-run':update('intent.json',lambda v:v.update(runId='f'*32))
+elif mode=='duplicate-key':
+ p=r/'normal-restored.json';p.write_text(p.read_text()[:-1]+',"status":"NORMAL_PROFILE_RESTORED"}')
+elif mode=='changed-formal':update('normal-restored.json',lambda v:v['formal'].update(pid=99))
+elif mode=='test-diagnostics-on':update('normal-restored.json',lambda v:v['test'].update(diagnosticsOff=False))
+elif mode=='owned-removal-wrong':update('normal-restored.json',lambda v:v.update(ownedFilesRemoved=True))
+elif mode=='restore-pid':update('restore-intent.json',lambda v:v.update(testPid=99))
+elif mode=='bad-stopped':update('stopped.json',lambda v:v.update(ExecMainStatus='1'))
+elif mode=='backup-reference':
+ for name in ['intent.json','start-intent.json']:
+  update(name,lambda v:v['binding']['test'].update(manifestPath='/synthetic/runtime-backups/x'))
+elif mode=='different-start-intent':update('start-intent.json',lambda v:v.update(settingSha256='B'*64))
+elif mode=='permissive-file':(r/'normal-restored.json').chmod(0o644)
+elif mode=='symlink-file':
+ p=r/'normal-restored.json';p.rename(r.parent/'outside.json');p.symlink_to(r.parent/'outside.json')
+elif mode=='hardlink-file':os.link(r/'normal-restored.json',r.parent/'outside.json')
+elif mode=='unknown-file':(r/'unknown.txt').write_text('synthetic')
+elif mode=='nested-directory':(r/'unknown').mkdir()
+elif mode=='formal-write':update('normal-restored.json',lambda v:v.update(formalWrites=1))
+elif mode=='wrong-url':
+ for name in ['intent.json','start-intent.json']:update(name,lambda v:v['binding'].update(baseUrl='https://example.invalid/'))
+elif mode=='wrong-owner-root':update('normal-restored.json',lambda v:v.update(ownerRoot='/synthetic/elsewhere'))
+else:raise ValueError('unknown synthetic mutation')
+PY
+}
 
 seed_case default-off; prune_runtime_backups_enabled=0
 printf partial > "$backup_dir/runtime-before-synthetic.partial"
 ok; assert_count 5; assert_exists "$backup_dir/runtime-before-synthetic.partial"; case_passed default-off
+
+seed_case completed-diagnostic; seed_diagnostic
+before_diagnostic="$(find "$diagnostic" -type f -exec sha256sum {} \; | LC_ALL=C sort)"
+prune_runtime_backup_groups plan || fail 'completed diagnostic plan refused'
+assert_count 5
+[[ "$(find "$diagnostic" -type f -exec sha256sum {} \; | LC_ALL=C sort)" == "$before_diagnostic" ]] || fail 'plan changed diagnostic evidence'
+ok; assert_count 4
+[[ "$(find "$diagnostic" -type f -exec sha256sum {} \; | LC_ALL=C sort)" == "$before_diagnostic" ]] || fail 'synthetic backup pruning changed diagnostic evidence'
+case_passed completed-diagnostic-preserved-plan-and-backup-only-apply
+
+seed_case diagnostic-program-guard; seed_diagnostic
+if load_failure_records; then fail 'program retention ignored diagnostic dependencies'; fi
+assert_count 5; case_passed diagnostic-does-not-relax-program-retention
+if load_failure_records invalid; then fail 'unknown diagnostic recognition mode accepted'; fi
+case_passed unknown-diagnostic-mode-refused
+
+for mutation in missing-restored active-status boolean-schema extra-key mismatched-run duplicate-key changed-formal \
+  test-diagnostics-on owned-removal-wrong restore-pid bad-stopped backup-reference different-start-intent permissive-file \
+  symlink-file hardlink-file unknown-file nested-directory formal-write wrong-url wrong-owner-root; do
+  seed_case "diagnostic-$mutation"; seed_diagnostic; mutate_diagnostic "$mutation"
+  refused; case_passed "diagnostic-$mutation-refused"
+done
 
 seed_case bounded-one; ok; assert_count 4
 [[ ! -e "${snapshots[0]}" && ! -e "${snapshots[0]}.sha256" ]] || fail 'oldest pair not removed'
@@ -163,4 +244,4 @@ if cli_run > "$case_root/corrupt.log" 2>&1; then fail 'CLI accepted a corrupt re
 case_passed cli-plan-refuses-corrupt-proof-without-deletion
 
 passed=1
-printf 'PASS all 33 synthetic retention cases; no service, real backup, database or player data accessed\n'
+printf 'PASS all 57 synthetic retention cases; completed diagnostic evidence preserved, program retention unchanged; no service, real backup, database or player data accessed\n'
