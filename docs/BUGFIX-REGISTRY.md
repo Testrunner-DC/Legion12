@@ -1,5 +1,20 @@
 # Legion12 Bug 修复记录
 
+## UI-20261024-OPENING-FOUNDATION｜卡面落位与可达调度基础
+
+- 人类批准现有美术方向后，开场沿原生命周期改连续主宰卡面、中央对阵、内联先后手；调度蒙版中央真实手牌，仅“全部保留／确认调度”。全部保留先清选择再复用原命令，不改起手数量或服务器校验。P4共享扫描initiative、骰点修订、结果独立层、off/reduce、换局清退、mulligan及逻辑横屏；已登场主宰保留非零占位不能作为目标，缺锚点就地退场；局部逻辑尺寸与专属选择器覆盖旧54vh避免手牌裁切，不侵入其他候选区。
+- 原23项有效前缀、r3/r4两种失败与定向r5/r6/r7真实通过分列；Main看竖屏最终图。正文旧头像断言精确替换为人类要求的真实卡面绑定，并补缺源／错源破坏反例，其他头像消费者不改。组合前端有效前缀＋原后缀361 UI／类型／双Vite及22源稳定通过，非新单轮Batch/Release。唯一`match-opening-presentation-20261024/main-acceptance.json`。人类新提张力／辉光／身份及骰子细化另片，不冒本基础片为最终视觉批准；七张图前两张同阶段、早飞入未独拍。不部署、不关线上Bug、真机未验；回滚只展示/QA及原mulligan调用，不改P0—P3。
+
+## UI-20261024-DIALOG-DECK-ACCESS｜弹框顶缘与牌库单卡详情
+
+- 人类直接要求滚动时标题／关闭可见、公开牌库双击查看。沿共享role=dialog直接标题与原生关闭按钮sticky，顶部32px不透明遮挡且不截点击，不改变关闭／焦点／布局；扫描11入口仅结构覆盖。公开构筑独立open事件进入原唯一CatalogCardDetails，原select、手机单击及随机起手保留；原精确模板合同接纳具名aria-label／dblclick／open并保数量／隐私约束，58／43及排序12反例通过，原禁止双击断言由新需求精确替换。
+- 原六尺寸牌库循环及48图有效前缀；夹具缺生产CSS、padding透字及98%透明两次视觉拒绝都留。最终opaque宽窄2场真实滚到底、标题/关闭/焦点与点击、零页面错误，Main独看两图通过，不冒11入口浏览器或新全矩阵。原UI链接入结构guard；组合前端361／后缀／类型／双Vite通过，唯一`dialog-deck-access-20261024/main-review.json`。未部署/关单/真机；回滚本族CSS、事件及QA，不改牌库内容/API。
+
+## NET-20261024-PUBLIC-MEDIA-ADMISSION｜公开卡图与业务读取额度分离
+
+- 大量匿名公开卡图原与图鉴元数据共用120/min，结构性风险已复现，原CID不能唯一归因。P2沿原limiter加独立600/min可信client内容桶，同客户端跨variant/account/token共享；60秒、8192分区、原子拒绝、过期与Retry均保。严格32小写hex／三variant／64小写hex.webp的canonical GET且raw路径一致，仅query不改变归类；编码／坏路径／HEAD／写入／鉴权／管理与元数据仍走原保护，业务120／账号240／聚合1200及其他上限不改。
+- 扫描公开上传内容路由与全部limiter消费者。RED36中7失败、首GREEN49中编码反例1失败留存；最终类50/50含真实Kestrel 600/599内容404、编码120/119、query598、元数据118/117，非真实图片送达证明。Main固定E51服务端与5E96测试DLL一次全平台2434/2434零失败跳过、EC611AE0完整TRX/监督清退，未编译分页测试明确排除。未变规则不重跑，未部署/线上关单，唯一`http-replay-catalog-20261024/public-media/main-review.json`；回滚只本族准入/回归，不改媒体、数据、隐私或客户端协议。
+
 ## UI-20261024-DISASTER-CENTER-REVEAL｜天灾中央翻面与完整卡面交接
 
 - 旧直飞天灾框偏离中央、无可读停驻且沿用竖卡形状。沿既有reservation/owner/visibility/busy/coverTarget生命周期，仅公开天灾先卡背准备、真实图解码后8:5横框中央翻面停驻，再落到battle-layout内唯一current-disaster-card；不另建队列、不改规则/日志/音效。prompt让位、重传一次、换局取消及reduce/off必要两端点保留，普通移区四帧与原21反例不放宽。
