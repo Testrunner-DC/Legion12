@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { platformState, type RankedIntegrityAudit } from '../platform'
-import { integrityApi, integrityLabel, integrityRequestId, type IntegrityAction, type IntegrityPreview, type IntegrityDecision, type IntegrityAppeal, type IntegrityDisposition } from '../rankedIntegrity'
+import { integrityApi, integrityLabel, integrityNotificationMessage, integrityRequestId, type IntegrityAction, type IntegrityPreview, type IntegrityDecision, type IntegrityAppeal, type IntegrityDisposition } from '../rankedIntegrity'
 const props = defineProps<{ rows: RankedIntegrityAudit[]; selected: string[] }>()
 const emit = defineEmits<{ refresh: [] }>()
 const form = reactive({ disposition: 'review' as IntegrityDisposition, days: 7, restricted: [] as string[], reason: '', evidence: '', revoke: '' })
@@ -45,7 +45,7 @@ async function confirm() {
   busy.value = true; notice.value = ''
   try {
     const decision = await integrityApi.confirm(frozenInput.value, preview.value.revision)
-    notice.value = `已登记：${integrityLabel(decision.disposition)}。对应玩家将收到结果通知。`
+    notice.value = `已登记：${integrityLabel(decision.disposition)}。${integrityNotificationMessage(decision.playerNotificationAccountIds, true)}`
     preview.value = null; frozenInput.value = null; form.revoke = ''; await loadHistory(); emit('refresh')
   } catch (cause) { notice.value = cause instanceof Error ? cause.message : '确认失败；请核对状态后重试' }
   finally { busy.value = false }
@@ -80,10 +80,10 @@ onMounted(loadHistory)
       <label>结论<select v-model="form.disposition" :disabled="!!form.revoke"><option value="review">待复核</option><option value="normal">复核正常</option><option value="insufficient">证据不足，不处罚</option><option value="system-error">系统异常，纠正结果</option><option value="confirmed">确认违规，撤销相关收益</option><option v-if="form.revoke" value="revoked">撤销原处置</option></select></label>
       <div v-if="form.disposition === 'confirmed' && !form.revoke" class="restriction"><b>另行限制排位的账号（不勾选则不封禁）：</b><label v-for="player in participants" :key="player.id"><input v-model="form.restricted" type="checkbox" :value="player.id"/>{{ player.name }}<small>{{ player.id }}</small></label><label v-if="form.restricted.length">封禁天数<input v-model.number="form.days" type="number" min="1" max="3650" step="1" required/><small>按完整天数设置；预览显示确切解禁时间。只限制排位，不阻断登录及申诉。</small></label></div>
       <label>核查证据<textarea v-model="form.evidence" required maxlength="2000" rows="3" placeholder="填写服务器记录、结算及对局证据，不以玩家猜测直接判罚。"/></label>
-      <label>给玩家的处置原因<textarea v-model="form.reason" required maxlength="1000" rows="3" placeholder="说明违规事实或复核结论，不包含IP、设备标识、其他玩家隐私。"/></label>
+      <label>复核或处置原因<textarea v-model="form.reason" required maxlength="1000" rows="3" placeholder="说明违规事实或复核结论；实际影响排位资格或收益时会告知玩家，不包含IP、设备标识、其他玩家隐私。"/></label>
       <button :disabled="!targets.length || targets.length > 50">预览影响</button><button v-if="form.revoke" type="button" @click="form.revoke = ''; form.disposition = 'review'">取消撤销操作</button>
     </fieldset></form>
-    <div v-if="preview" class="preview"><h4>确认前预览</h4><p v-for="reason in preview.blockingReasons" :key="reason" class="error">{{ reason }}</p><article v-for="effect in preview.accountEffects" :key="effect.accountId"><b>{{ effect.username }}</b><span>七曜值调整 {{ effect.scoreDelta > 0 ? '+' : '' }}{{ effect.scoreDelta }}</span><span>{{ integrityLabel(effect.rewardOutcome) }}</span><span v-if="effect.restrictionUntil">排位限制截至 {{ new Date(effect.restrictionUntil).toLocaleString() }}</span><span v-if="effect.blockedReason" class="error">{{ effect.blockedReason }}</span></article><p>确认后会保存处置证据并通知相关玩家。无需第二名管理员批准。</p><button :disabled="busy || !preview.canConfirm" @click="confirm">{{ busy ? '处理中…' : '确认执行本次处置' }}</button></div>
+    <div v-if="preview" class="preview"><h4>确认前预览</h4><p v-for="reason in preview.blockingReasons" :key="reason" class="error">{{ reason }}</p><article v-for="effect in preview.accountEffects" :key="effect.accountId"><b>{{ effect.username }}</b><span>七曜值调整 {{ effect.scoreDelta > 0 ? '+' : '' }}{{ effect.scoreDelta }}</span><span>{{ integrityLabel(effect.rewardOutcome) }}</span><span v-if="effect.restrictionUntil">排位限制截至 {{ new Date(effect.restrictionUntil).toLocaleString() }}</span><span v-if="effect.blockedReason" class="error">{{ effect.blockedReason }}</span></article><p v-if="preview.canConfirm">{{ integrityNotificationMessage(preview.playerNotificationAccountIds) }}处置证据会保存在后台，无需第二名管理员批准。</p><p v-else>本次暂不能执行，不会保存处置或发送通知。</p><button :disabled="busy || !preview.canConfirm" @click="confirm">{{ busy ? '处理中…' : '确认执行本次处置' }}</button></div>
     <p v-if="notice" role="status" class="notice">{{ notice }}</p>
     <h3>处置历史 <button :disabled="busy" @click="loadHistory">刷新</button></h3>
     <div class="history"><article v-for="decision in decisions" :key="decision.decisionId">

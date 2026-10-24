@@ -29,7 +29,10 @@ public sealed record L12RankedIntegrityActionPreviewView(
     bool CanConfirm,
     IReadOnlyList<string> BlockingReasons,
     IReadOnlyList<string> MatchIds,
-    IReadOnlyList<L12RankedIntegrityAccountEffectView> AccountEffects);
+    IReadOnlyList<L12RankedIntegrityAccountEffectView> AccountEffects)
+{
+    public IReadOnlyList<string> PlayerNotificationAccountIds { get; init; } = [];
+}
 
 public sealed record L12RankedIntegrityDecisionView(
     string DecisionId,
@@ -47,7 +50,10 @@ public sealed record L12RankedIntegrityDecisionView(
     DateTimeOffset CreatedAt,
     string? RevokesDecisionId,
     string? RevokedByDecisionId,
-    IReadOnlyList<L12RankedIntegrityAccountEffectView> AccountEffects);
+    IReadOnlyList<L12RankedIntegrityAccountEffectView> AccountEffects)
+{
+    public IReadOnlyList<string> PlayerNotificationAccountIds { get; init; } = [];
+}
 
 public sealed record L12RankedIntegrityDecisionPageView(
     IReadOnlyList<L12RankedIntegrityDecisionView> Items,
@@ -284,7 +290,10 @@ public sealed partial class L12PlatformStore
                 EnsureRequestFingerprint(replay.RequestFingerprint, normalized.RequestFingerprint);
                 return new L12RankedIntegrityActionPreviewView(_data.RankedIntegrityRevision,
                     normalized.RequestId, normalized.Disposition, true, [], normalized.MatchIds,
-                    replay.AccountEffects.Select(AccountEffectViewWithName).ToArray());
+                    replay.AccountEffects.Select(AccountEffectViewWithName).ToArray())
+                {
+                    PlayerNotificationAccountIds = RankedIntegrityNotifiedAccountIdsLocked(replay.Id),
+                };
             }
             var plan = BuildRankedIntegrityActionPlanLocked(normalized, DateTimeOffset.UtcNow);
             return PreviewViewLocked(plan);
@@ -1056,9 +1065,10 @@ public sealed partial class L12PlatformStore
     private List<RankedIntegrityAccountEffectRow> BuildAccountEffectsLocked(
         RankedIntegrityActionPlan plan, DateTimeOffset now)
     {
-        var participants = plan.Input.MatchIds.Select(matchId => _data.RankedIntegrityAudits.Single(row =>
+        var audits = plan.Input.MatchIds.Select(matchId => _data.RankedIntegrityAudits.Single(row =>
                 row.MatchId.Equals(matchId, StringComparison.OrdinalIgnoreCase)))
-            .SelectMany(row => new[] { row.FirstAccountId, row.SecondAccountId })
+            .ToArray();
+        var participants = audits.SelectMany(row => new[] { row.FirstAccountId, row.SecondAccountId })
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return participants.Select(accountId =>
@@ -1072,10 +1082,12 @@ public sealed partial class L12PlatformStore
                 "confirmed" or "system-error" when plan.PreservesProfilesForDownstreamSettlements
                     => "voided-profile-preserved",
                 "confirmed" or "system-error" => "voided",
-                "normal" or "insufficient" when plan.ReleasedHeldMatchIds.Count > 0 => "released",
-                "review" when plan.Input.MatchIds.Any(matchId => _data.RankedHeldRewards.Any(row =>
-                    row.MatchId.Equals(matchId, StringComparison.OrdinalIgnoreCase))) => "held",
+                "normal" or "insufficient" when audits.Any(audit =>
+                    (audit.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
+                     || audit.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase))
+                    && plan.ReleasedHeldMatchIds.Contains(audit.MatchId)) => "released",
                 "revoked" => "restored",
+                // A manual review registers evidence; it does not impose another automatic hold.
                 _ => "unchanged",
             };
             return new RankedIntegrityAccountEffectRow
@@ -1097,7 +1109,12 @@ public sealed partial class L12PlatformStore
             foreach (var effect in effects) effect.BlockedReason = string.Join("；", blocked);
         return new(_data.RankedIntegrityRevision, plan.Input.RequestId, plan.Input.Disposition,
             blocked.Length == 0, blocked, plan.Input.MatchIds,
-            effects.Select(AccountEffectViewWithName).ToArray());
+            effects.Select(AccountEffectViewWithName).ToArray())
+        {
+            PlayerNotificationAccountIds = blocked.Length == 0
+                ? effects.Where(ShouldNotifyRankedIntegrityEffect).Select(effect => effect.AccountId).ToArray()
+                : [],
+        };
     }
 
     private bool TryHoldRankedMatchLocked(string matchId, RankedProfileRow first,
@@ -1461,7 +1478,7 @@ public sealed partial class L12PlatformStore
 
     private void AddRankedIntegrityNotificationsLocked(RankedIntegrityDecisionRow decision)
     {
-        foreach (var effect in decision.AccountEffects)
+        foreach (var effect in decision.AccountEffects.Where(ShouldNotifyRankedIntegrityEffect))
         {
             _data.RankedIntegrityNotifications.Add(new RankedIntegrityNotificationRow
             {
@@ -1478,6 +1495,19 @@ public sealed partial class L12PlatformStore
             });
         }
     }
+
+    private static bool ShouldNotifyRankedIntegrityEffect(RankedIntegrityAccountEffectRow effect)
+        // Placement, held rewards and historical voids can change rights without changing SevenValue.
+        => effect.ScoreDelta != 0 || effect.RestrictionUntil is not null
+            || effect.RewardOutcome is "held" or "released" or "voided" or "voided-profile-preserved" or "restored";
+
+    private string[] RankedIntegrityNotifiedAccountIdsLocked(string decisionId)
+        // Read the actual saved notifications, including legacy rows; do not rewrite their history
+        // according to today's policy or let an unrelated appeal reply expand a decision's recipients.
+        => _data.RankedIntegrityNotifications.Where(row => row.DecisionId == decisionId
+                && !row.Outcome.StartsWith("appeal-", StringComparison.Ordinal))
+            .Select(row => row.AccountId).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray();
 
     private void RecordAutomaticHoldDecisionLocked(RankedHeldRewardRow hold)
     {
@@ -1522,7 +1552,10 @@ public sealed partial class L12PlatformStore
             revokedBy is null ? row.Disposition : "revoked", row.MatchIds.ToArray(),
             row.RestrictedAccountIds.ToArray(), row.RestrictionDays, row.Evidence, row.Reason,
             row.ActorId, row.ActorName, row.CreatedAt, row.RevokesDecisionId, revokedBy?.Id,
-            row.AccountEffects.Select(AccountEffectViewWithName).ToArray());
+            row.AccountEffects.Select(AccountEffectViewWithName).ToArray())
+        {
+            PlayerNotificationAccountIds = RankedIntegrityNotifiedAccountIdsLocked(row.Id),
+        };
     }
 
     private L12RankedIntegrityNotificationView RankedIntegrityNotificationViewLocked(

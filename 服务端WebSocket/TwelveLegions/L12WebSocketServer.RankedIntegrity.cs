@@ -34,7 +34,8 @@ public sealed partial class L12WebSocketServer
                     body.ExpectedRevision, RequestAuditContext(request,
                         L12Permission.AdminMatchGovernanceWrite));
                 _recorder.InvalidateAnalyticsCache();
-                NotifyIntegrityChanged(decision.AccountEffects.Select(effect => effect.AccountId));
+                if (decision.PlayerNotificationAccountIds.Count > 0)
+                    NotifyIntegrityChanged(decision.PlayerNotificationAccountIds);
                 return decision;
             });
         });

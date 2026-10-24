@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261024-RANKED-INTEGRITY-QUIET-REVIEW｜无实际影响的复核不通知玩家
+
+- 人类直接需求拆为三片：A无判罚复核静默，B可仅处置单方，C账号管理按天排位禁赛。本片仅A，B/C未实施；不把关联排位问题混成已完成。P2/P3沿原处置事务与通知投影，不改积分、收益纠正、限制或持久格式。
+- 根因：原通知写入遍历全部AccountEffects，HTTP又按全部参与者推送，后台文案固定承诺通知；manual review还把既有自动hold误投影为本次再次冻结。现按实际ScoreDelta／限制／held、released、voided、voided-profile-preserved、restored决定通知，review只存证；混合release仅匹配该账号关联的真实已释放场次。
+- preview复用同一效果策略，confirm／history／replay读取实际已有非申诉通知行；不重写旧通知或未读，私人申诉仍仅本人。Save成功后才对真实收件人推资源；前端表述为生成通知而非声称送达，旧响应缺字段使用保守说明。已有有影响决定的HTTP重放仍可能沿既有行为再次resourceChanged，不能声称所有重放零推送。
+- 同类扫描：全部AddRankedIntegrityNotificationsLocked、NotifyIntegrityChanged调用，预览／确认／历史／幂等、自动冻结／解除、零分历史作废、限制／撤销、私人申诉及失败事务；对照原已处置队列与历史档案保留修复，未改变它们的权威规则。
+- 证据：ranked-integrity-notify-20261024/acceptance.json保留用户名、异常包装及503夹具错与真实RED的分别记录；最终新16例、原关联29例及5前端文案／实际app类型证据保留。Main逐六叶读diff／核SHA及独立只读复核无阻断，完整平台2338/2338零失败跳过、干净候选标准前端Batch实际exit0（原性能／UI／类型与双Vite），两构建均含新通知文案。唯一main-acceptance.json绑定CB4BDB53 TRX和实际进程结果；Windows transcript仅包装器记录，不冒完整native输出。未变规则8378同源复用，无新Release／真实WS或浏览器送达／部署／线上关单断言。Git实况见同目录synchronization.json。
+
 ## QA-20261024-FROZEN-GUARD-OWNERSHIP｜冻结原字节纳管与默认来源闭合
 
 - 最终补充：a08e3bb4标准Focused实际通过，已提交blob／Windows过滤／干净副本两Python原字节全等。首次stage失败来自旧负例的literal路径先验早于Git，原件保留；92302ced只将无Git直接验证与旧parser准确首因分开，不改变任何当前镜像／运行断言。真实最终镜像47例／87文件成功、坏源拒绝、夹具精确清退。唯一Main回执引用C9236E0E／103C68BB／5495B10F，150MB级可再生临时副本已删，未部署或冒远端已同步。

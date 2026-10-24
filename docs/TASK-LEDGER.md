@@ -1,5 +1,9 @@
 # 十二军团任务台账
 
+接续2026-10-24排位通知A片（P2/P3）Main接受：完整读六叶／核冻结SHA与独审无阻断，真实完整平台2338/2338零失败跳过、隔离标准前端Batch exit0／类型和双Vite通过，两产物均核新文案；不含开局三草稿或动效新QA。纯review／normal／insufficient保审计但无通知／未读／资源推送，真实处罚、冻结／解除与私人申诉保留，mixed release按账号关联场次。CB4BDB53 TRX、实际进程返回及wrapper transcript的日志边界在唯一ranked-integrity-notify-20261024/main-acceptance.json明确；未变规则8378复用，不冒新Release／部署／线上关单。B单方处置／C账号按天禁赛仍待实施，源码同步实况见同目录synchronization.json。
+
+并行协调2026-10-24：人类已在“L12-卡牌区域移动动画专项”直接要求分阶段升级、Main验收及双方／观战连续性。Main逐读新增QA并收束初始化器调用／合成边界／逐断言执行口径，最终C87E8A63；当前Main重型验收结束后只给一次有界本地执行槽，无产品／测试服／Git租约，GameBoard原4F57BA5E只读。必须真实组件与命令入口证成RED，不能由pendingAction与watcher先后臆断生产竞态；提示仅放行自身续办，持久连线不当作busy，无新网络锁或计时暂停。假socket与直接状态写入、非真实触摸／恢复／观战全链均明示，首UI失败不冒后续command已执行；不与开局specialAssets／DeckCover／PromptOverlay三草稿冲突。
+
 接续2026-10-24 QA源镜像收口：a08e3bb4实际标准Focused通过；两hash-bound Python的Git blob／Windows过滤／干净副本逐字节读回同549BC／8CE69。首stage负例仍依赖退役literal路径而先拒绝，原失败保留；92302ced只修该负例因果口径，直接证无Git、单列旧parser首因，新绑定成功和篡改拒绝均保。最终47例／87文件实际镜像成功、无网络并精确清退，149409992B源副本＋64797B夹具删除，原证据保留；唯一qa-frozen-guard-20261024/main-acceptance.json。14执行／5证据、闭包false，不冒完整CI／Linux信号／两服变更，远端DNS待同步。排位通知六叶已冻交回，16新＋29关联／5前端／类型尚待Main独验与完整平台，不遗漏B/C等后续项。
 
 接续2026-10-24唯一冻结资源守卫迁移（P2外围QA，不改产品）：11叶将原549BC守卫17107B原字节纳Git，normal仅默认路径改仓库sibling并保str，新8CE69E70／三消费者hash一致。根锚定-text保两Python跨平台字节；线上显式remote别名不变。旧源从execution移到immutableEvidence，实际14执行／5证据共19，closure仍false。47归属、26runtime、15qualification、40诊断Python、70原normal子进程自测均过，旧源不可读时默认loader仍可用；可选历史审计仍缺件拒绝，Windows不冒POSIX。独审无阻断；提交后干净镜像probe／blob过滤字节读回尚待，唯一qa-frozen-guard-20261024，不部署、不重复负载。并行通知A片保持独立6叶与Main串行构建安排，其他请求队列见上一接续。

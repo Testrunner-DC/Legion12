@@ -9,6 +9,11 @@ export const integrityOutcomeLabels: Record<string, string> = {
   'appeal-reply': '申诉处理回复',
 }
 export const integrityLabel = (value: string) => integrityOutcomeLabels[value] || value
+export function integrityNotificationMessage(accountIds: readonly string[] | undefined, confirmed = false) {
+  if (!accountIds) return '仅在实际影响排位资格或收益时通知相关玩家。'
+  if (!accountIds.length) return '本次仅保存后台复核记录，不通知玩家。'
+  return `${confirmed ? '已为' : '确认后将为'} ${accountIds.length} 名受影响玩家生成结果通知。`
+}
 export interface IntegrityAction {
   requestId: string; disposition: IntegrityDisposition; matchIds: string[]; restrictedAccountIds: string[]
   restrictionDays: number | null; evidence: string; reason: string; revokesDecisionId?: string | null
@@ -19,13 +24,13 @@ export interface IntegrityEffect {
 }
 export interface IntegrityPreview {
   revision: number; requestId: string; disposition: string; canConfirm: boolean; blockingReasons: string[]
-  matchIds: string[]; accountEffects: IntegrityEffect[]
+  matchIds: string[]; accountEffects: IntegrityEffect[]; playerNotificationAccountIds: string[]
 }
 export interface IntegrityDecision {
   decisionId: string; requestId: string; revision: number; disposition: string; effectiveDisposition: string
   matchIds: string[]; restrictedAccountIds: string[]; restrictionDays?: number | null; evidence: string; reason: string
   actorName: string; createdAt: string; revokesDecisionId?: string | null; revokedByDecisionId?: string | null
-  accountEffects: IntegrityEffect[]
+  accountEffects: IntegrityEffect[]; playerNotificationAccountIds: string[]
 }
 export interface IntegrityNotification {
   id: string; decisionId: string; matchIds: string[]; outcome: string; reason: string; decidedAt: string
