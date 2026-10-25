@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-G2-DEPENDENCIES｜最小公告修复，独立依赖验收
+
+- 本批沿综合报告F02和人类按序推进授权，只更新Vue3.5.42、Vite8.1.6、sharp0.35.5及必要传递闭包，source-map-js收敛1.2.2；保G1新检查、现有LAN工作方式，不加override或全面升级。公告与入口已核：Vite开发端口有暴露面但未证公网利用；Sharp仅构建/QA，生产图像上传非Sharp；四个SSR回归真实执行可信夹具，不把5个HIGH包条目冒成5个独立漏洞或正式已被攻击。
+- 新lock SHA133355C50FDE022BCC9776E6DB324185E21661C303B74CC9D4820756F88F3D68在D primary独立环境npm ci成功147包/6秒，禁lifecycle；repo与隔离manifest/lock逐SHA相同。Main只切已核node_modules联接，原共享依赖完整保留；Windows Sharp实际生成/读取PNG、Rolldown和lightningcss原生加载过，首次ESM探针缺file URL的工具错误不冒产品失败。
+- 原前端125命令、完整类型及双Vite一次通过105.073秒，四SSR与Sharp二维码包含其中；新依赖真实正式静态产物20存储/登录/首屏恢复场景全过、零脚本错误。G3并行源码上下文与其后快速关闭补丁分别绑定，不冒新干净Release、性能收益或真机。唯一stage-goals-20261025/g2-main-acceptance.json引用原安装/构建/浏览器证据与公告；G3最终页面闭环另记。
+- 回滚面仅本片manifest/lock与受控依赖联接；不删除共享旧依赖、不改业务库、鉴权规则或两服。源码同步与部署分开，当前未部署。
+
 ## FIX-20261025-G1-BROWSER-RECOVERY｜存储拒绝与首页首屏故障，本地接受未部署
 
 - 人类确认综合报告阶段目标后要求按序推进，覆盖F01/F03具名方案。P2/P4外围改动，不改引擎、权限、数据库或部署。实际扫描当前`localStorage|sessionStorage`全src及L12调用：模块初始化platform/net、首页缓存默认参数、个人页偏好、牌库缓存/滚动为本片；已有音频/通知/教学/滚动try保护保留，旧未达组件不凭名称清理，不冒全部路由均验。
