@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-25 G2/G3/G5已同步757fd020｜G6合同校正与G4兼容基础继续
+
+- 三批独立提交1fa11aa1/d3696880/757fd020已同源验收，非强推origin/main并独立ls-remote精确读回；初次安全审查要求信任/授权依据，补原origin、G1已验证同步和AGENTS第46行长期授权后同一精确push通过，未重复问人类。唯一stage-goals-20261025/g2-g3-g5-synchronization.json；两服与维护不动。
+- G5附加旧后台合同4失败已逐路径确认为QA漂移，Main仅校正4子条件，不改产品迎合旧字面。原12合同/真实账号分页13场/资料20合同通过，四内存反例均准确被拦。证据g6-admin-contract/main-acceptance.json；不为QA-only再构建，G6其余工程收敛未实施。
+- G4关键writer仅三叶兼容基础，实际120k保持；原异常salt/hash长度3真实RED已证，正在补规范Base64/完整元数据/固定长度/旧binary兼容及Store拒绝未激活600k。Main要求未来600k门限仍可读显式120k，保原Verify异常→false边界；不启用高成本、不迁schema/线上数据、不冒G4目标全部完成。
+
 ## 2026-10-25 G2/G3/G5本地接受｜未部署，后续密码兼容基础片
 
 - G2最小升级Vue3.5.42/Vite8.1.6/sharp0.35.5/source-map-js1.2.2，独立D依赖ci与raw hash同源，Main只切junction、旧共享环境保留。实际Sharp PNG/原生Rolldown/lightningcss过，原125前端命令/类型/双Vite105.073秒一次通过；正式静态产物20浏览器场景全过，不冒新Release、性能或正式上线。

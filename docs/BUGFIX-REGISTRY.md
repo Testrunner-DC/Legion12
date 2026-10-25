@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## MAINT-20261025-G6-ADMIN-CONTRACT｜校正四处合同漂移，未改产品
+
+- Main执行旧check-admin-routing-contracts发现4失败；同脚本HEAD基线对照完全同。独立只读逐路径确认全为已存在重构的字面漂移：Capture增加Storage阶段；详情先快照id并拒迟到；目录拒绝访问不能静默跳过；账号列表已用服务器分页。不能把这些当新产品缺陷，更不能恢复全量读取/静默跳过权限错误来满足旧字符串。
+- 仅更新原QA四条件：保Storage阶段与分区对应、详情快照/generation/单ID与禁全量、IgnoreInaccessible=false并捕获不可读→complete=false、accountsPage(10条)与禁accounts()。原12项均通过，13个真实账号分页SFC场景和20资料/后台合同通过；4个内存反例逐项恰好命中对应失败，全部抓住，未删门槛/加豁免。产品源码0改，不重建已验前端或重跑后端。
+- 唯一stage-goals-20261025/g6-admin-contract/main-acceptance.json，引用原HEAD同结果失败证明；后端专门恢复/分页测试沿未变实现既有证据保留，不冒本轮新运行。G6大文件/旧代码候选仍后续，129候选不是删除许可；不触及两服/维护/业务数据/线上关单。
+
 ## FIX-20261025-G5-NOT-FOUND｜未知网址明确提示，本地接受未部署
 
 - 人类已选择未知地址显示“页面不存在”并可返回主页。只替换router最终catch-all，不重排已有路由、旧入口redirect、分享参数或登录/管理员guard；新普通页沿SiteShell深色黑体，不读/回显任意URL，不新增认证请求，也不假称服务器HTTP404已配置。
