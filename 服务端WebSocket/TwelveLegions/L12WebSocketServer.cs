@@ -3462,8 +3462,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var command = CommandEnvelope(request, authenticated.Account, permission,
                 "account.password-admin-reset", $"account:{id}", payload, idempotencyKey, expectedVersion,
                 body.DryRun, body.Reason);
-            var outcome = _adminCommands.Execute(command, permission,
-                current => ExecuteAdminPasswordReset(current.Actor, current.Payload, current.AuditContext, true),
+            var outcome = _adminCommands.ExecuteAccountPasswordReset(command,
+                request.Headers.Authorization, authenticated.SessionId,
+                (current, prepared) => ExecuteAdminPasswordReset(current.Actor, current.Payload, current.AuditContext, true, prepared),
                 current => ExecuteAdminPasswordReset(current.Actor, current.Payload, current.AuditContext, false));
             return AdminCommandResponse(request, command, outcome);
         });
@@ -3479,8 +3480,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var command = CommandEnvelope(request, authenticated.Account, permission,
                 "account.logical-delete", $"account:{id}", payload, idempotencyKey, expectedVersion,
                 body.DryRun, body.Reason);
-            var outcome = _adminCommands.Execute(command, permission,
-                current => ExecuteAccountDeletion(current.Actor, current.Payload, current.AuditContext, true),
+            var outcome = _adminCommands.ExecuteAccountDeletion(command,
+                request.Headers.Authorization, authenticated.SessionId,
+                (current, prepared) => ExecuteAccountDeletion(current.Actor, current.Payload, current.AuditContext, true, prepared),
                 current => ExecuteAccountDeletion(current.Actor, current.Payload, current.AuditContext, false));
             return AdminCommandResponse(request, command, outcome);
         });
@@ -6981,11 +6983,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     }
 
     private L12AdminCommandResult<L12AdminPasswordResetView> ExecuteAdminPasswordReset(L12AccountView actor,
-        AccountPasswordResetCommandPayload payload, L12AdminAuditContext audit, bool apply)
+        AccountPasswordResetCommandPayload payload, L12AdminAuditContext audit, bool apply,
+        L12PlatformStore.PreparedAdminPassword? prepared = null)
     {
         try
         {
-            var operation = _platform.AdminResetPassword(actor, payload.AccountId, payload.Reason, audit, apply);
+            var operation = apply
+                ? _platform.ApplyAdminResetPassword(actor, payload.AccountId, payload.Reason, audit,
+                    prepared ?? throw new InvalidOperationException("Prepared credential required."))
+                : _platform.AdminResetPassword(actor, payload.AccountId, payload.Reason, audit, false);
             return L12AdminCommandResult<L12AdminPasswordResetView>.Ok(operation,
                 apply ? "账号密码已重置" : "干运行验证通过");
         }
@@ -7003,11 +7009,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     }
 
     private L12AdminCommandResult<L12AccountDeletionView> ExecuteAccountDeletion(L12AccountView actor,
-        AccountDeletionCommandPayload payload, L12AdminAuditContext audit, bool apply)
+        AccountDeletionCommandPayload payload, L12AdminAuditContext audit, bool apply,
+        L12PlatformStore.PreparedAdminPassword? prepared = null)
     {
         L12ChatAccountRegistry.MutationLease? mutation = null;
         try
         {
+            if (apply)
+                _platform.ValidatePreparedAdminPassword(actor, payload.AccountId, payload.Reason, "delete",
+                    prepared ?? throw new InvalidOperationException("Prepared credential required."), audit.CommandId);
             var preview = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
                 audit, false);
             if (!apply)
@@ -7018,8 +7028,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var prior = _platform.Account(payload.AccountId)!;
             var cleanedMatches = _recorder.AnonymizeAccountAsync(prior.Id, prior.Username,
                 L12PlatformStore.DeletedAccountName(prior.Id)).GetAwaiter().GetResult();
-            var operation = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
-                audit, true) with { CleanedMatchRecords = cleanedMatches };
+            var operation = _platform.ApplyAccountDeletion(actor, payload.AccountId, payload.Reason,
+                audit, prepared!) with { CleanedMatchRecords = cleanedMatches };
             mutation?.Complete(L12ChatMutationOutcome.Committed);
             _recorder.InvalidateAnalyticsCache();
             return L12AdminCommandResult<L12AccountDeletionView>.Ok(operation, "账号已逻辑删除并清理个人数据");

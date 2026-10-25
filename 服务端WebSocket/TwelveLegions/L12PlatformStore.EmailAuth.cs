@@ -95,6 +95,15 @@ public sealed partial class L12PlatformStore
     public L12AdminPasswordResetView AdminResetPassword(L12AccountView actor, string accountId, string reason,
         L12AdminAuditContext context, bool apply)
     {
+        if (!apply) return AdminResetPasswordCore(actor, accountId, reason, context, false, null);
+        RequirePasswordWorkOutsideTransaction();
+        var prepared = PrepareAdminPassword(actor, accountId, reason, "reset", context.CommandId);
+        return ApplyAdminResetPassword(actor, accountId, reason, context, prepared);
+    }
+
+    private L12AdminPasswordResetView AdminResetPasswordCore(L12AccountView actor, string accountId,
+        string reason, L12AdminAuditContext context, bool apply, PreparedAdminPassword? prepared)
+    {
         EnsureAccountAdministrationAllowed(actor, accountId, reason, "reset");
         string[] revokedIds = [];
         L12AdminPasswordResetView result;
@@ -113,8 +122,9 @@ public sealed partial class L12PlatformStore
             }
             // Return a unique high-entropy one-time credential only in this successful response.
             // Only its salted hash is persisted. The command layer keeps retries idempotent.
-            var temporaryPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-            SetPassword(account, temporaryPassword);
+            if (prepared is null) throw new InvalidOperationException("Prepared credential required.");
+            ValidatePreparedAdminPassword(actor, accountId, reason, "reset", prepared, context.CommandId);
+            ApplyPassword(account, prepared.Credential);
             account.MustChangePassword = true;
             account.PermissionVersion++;
             revokedIds = RevokeActiveSessions(account.Id, DateTimeOffset.UtcNow);
@@ -122,7 +132,7 @@ public sealed partial class L12PlatformStore
             AddAdminAudit(actor, "account", "password-admin-reset", account.Username, null,
                 "temporary-password-required", reason.Trim(), context with { Reason = reason.Trim() });
             Save();
-            result = new(true, ToView(account), revokedIds.Length, temporaryPassword);
+            result = new(true, ToView(account), revokedIds.Length, prepared.TemporaryPassword);
         }
         NotifySessionsRevoked(revokedIds);
         return result;
@@ -130,6 +140,15 @@ public sealed partial class L12PlatformStore
 
     public L12AccountDeletionView DeleteAccountPersonalData(L12AccountView actor, string accountId, string reason,
         L12AdminAuditContext context, bool apply)
+    {
+        if (!apply) return DeleteAccountPersonalDataCore(actor, accountId, reason, context, false, null);
+        RequirePasswordWorkOutsideTransaction();
+        var prepared = PrepareAdminPassword(actor, accountId, reason, "delete", context.CommandId);
+        return ApplyAccountDeletion(actor, accountId, reason, context, prepared);
+    }
+
+    private L12AccountDeletionView DeleteAccountPersonalDataCore(L12AccountView actor, string accountId,
+        string reason, L12AdminAuditContext context, bool apply, PreparedAdminPassword? prepared)
     {
         EnsureAccountAdministrationAllowed(actor, accountId, reason, "delete");
         string[] revokedIds = [];
@@ -156,6 +175,8 @@ public sealed partial class L12PlatformStore
                 }
                 return new(false, ToView(account) with { Deleted = true, Disabled = true }, 0, privateRecords);
             }
+            if (prepared is null) throw new InvalidOperationException("Prepared credential required.");
+            ValidatePreparedAdminPassword(actor, accountId, reason, "delete", prepared, context.CommandId);
             var now = DateTimeOffset.UtcNow;
             var oldUsername = account.Username;
             revokedIds = RevokeActiveSessions(account.Id, now);
@@ -213,7 +234,7 @@ public sealed partial class L12PlatformStore
             // 墓碑名使用完整且平台内唯一的账号 ID。不能截断后再依赖概率避碰，
             // 否则恶意预注册同名账号会让快照唯一性校验在删除落盘时失败。
             account.Username = DeletedAccountName(account.Id);
-            SetPassword(account, Convert.ToHexString(RandomNumberGenerator.GetBytes(32)));
+            ApplyPassword(account, prepared.Credential);
             account.MustChangePassword = false;
             account.Disabled = true;
             account.DisabledAt = now;
@@ -245,6 +266,11 @@ public sealed partial class L12PlatformStore
         {
             var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId)
                 ?? throw new KeyNotFoundException("账号不存在");
+            var currentActor = _data.Accounts.FirstOrDefault(row => row.Id == actor.Id && !row.Disabled && !row.Deleted);
+            if (currentActor is null || currentActor.PermissionVersion != actor.PermissionVersion
+                || currentActor.Role != actor.Role || currentActor.MustChangePassword || currentActor.MustChangeUsername
+                || !L12Authorization.HasPermission(ToView(currentActor), L12Permission.AdminAccountStatusWrite))
+                throw new L12SecurityPolicyException("permission_denied", "当前账号没有执行此操作的权限");
             if (string.Equals(account.Username, "Admin", StringComparison.Ordinal))
                 throw new L12SecurityPolicyException("root_admin_protected", $"根 Admin 账号不能执行{action}操作");
             if (account.Id == actor.Id)

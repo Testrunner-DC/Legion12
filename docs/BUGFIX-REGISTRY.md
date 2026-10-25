@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-G4-ADMIN-PASSWORD-WORK｜管理重置与逻辑删除计算锁隔离，本地接受未部署
+
+- 授权与根因：人类明确批准两入口限定重构；原reset/delete的SetPassword在平台gate及管理总线外层事务内做KDF。真实HTTP两屏障red-02证明无关Version读取被阻塞；此前安全拒绝/草稿撤回保留，不在批准前间接实施。
+- 同类扫描：`rg -n 'SetPassword\(|L12PasswordCredential.Create\(|PasswordWorkBudget.Acquire\(|HashPassword\(' 服务端WebSocket/TwelveLegions -g 'L12PlatformStore*.cs'`，并查CreateAccount/Verify及全部纯helper调用。在线注册、登录、改密、两改名沿原已验锁隔离；管理两入口本片迁移，邮箱永久停用。残余旧SetPassword/Verify仅启动EnsureRootAdmin及CreateAccount，不扩本片。
+- 修复：只加两个具体payload/result的内部适配，固定type/scope/permission；原通用Execute主体逐字不变。首段只决定是否准备，不落requested；完整按值快照、锁外共享预算KDF，最终外层事务重验原bearer同SessionId/actor及当前权限，沿原总线幂等优先版本。prepared绑Store/action/command/actor/目标全凭据、用户名、权限代、角色及状态，删除在preview/chat/recorder前CAS且实际apply再验。临时明文只首成功响应，持久命令/重放脱敏，撤权通知提交后；原删除规则不变。
+- 验证：有效2RED→59初验；一次冻结完整平台2613/2613、11分45秒零失败跳过，十源与双DLL稳定。独审无产品阻断，指出QA收尾/recorder对照缺口；完整后只强化QA，最终55/55过，服务DLL和六产品源不变。原完整QA源码参考/双阶段程序集/原TRX及监督receipt见唯一`D:/GPT/Legion12/artifacts/stage-goals-20261025/g4-admin-password/main-acceptance.json`。int/long及含http合成名失败分别保，非产品RED；架构锁、69内核边界、差异与原总线正文对等过。
+- 回滚与边界：外层事务内直接调用公开有KDF入口在任何计算/副作用前拒绝，内部prepared apply保提交语义；两旧生命周期夹具只迁prepare位置，原断言保。仍120k，无schema/成本启用/成功登录升级；容量与回滚策略后续，不冒F06全部关闭。原recorder与平台跨库原子性未重设，动态chat-fence进入探针未覆盖。两服/维护/线上账号/现库/统计零写，无新Release、30＋10或真机声明。
+
 ## FEAT-20261025-EMAIL-RETIRE｜按人类决定完全停用邮箱，保留历史资料
 
 - 最新裁定取代FEAT-20260830-05的可选启用方向及本轮未提交邮箱KDF优化；不是把配置默认false冒永久停用。全仓检索EmailFeature/SMTP/EmailAuth及前端emailApi/Recovery消费者，移除唯一实际SMTP与异步发信队列；环境开关/构造注入不可再启用。绑定、解绑、验证、忘记/邮件重置密码无锁无写同码拒绝，旧HTTP仍按认证/限流先行并稳定503停用，不保偷偷可用的解绑例外。

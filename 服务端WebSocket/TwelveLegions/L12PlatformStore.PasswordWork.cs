@@ -6,6 +6,7 @@ public sealed partial class L12PlatformStore
     internal Action? BeforePasswordChangeVerificationForTesting { get; set; }
     internal Action? BeforeRegistrationPasswordWorkForTesting { get; set; }
     internal Action? BeforeUsernameChangePasswordVerificationForTesting { get; set; }
+    internal Action<string>? BeforeAdminPasswordWorkForTesting { get; set; }
 
     // Values only: no mutable account row may escape the platform gate for password work.
     private sealed record PasswordSnapshot(string Id, string Username, string Hash, string Salt,
@@ -17,7 +18,9 @@ public sealed partial class L12PlatformStore
             row.PasswordCredentialVersion, row.PermissionVersion, row.MustChangePassword, row.MustChangeUsername);
 
         internal bool Matches(AccountRow row) => !row.Disabled && !row.Deleted
-            && Id == row.Id && Username == row.Username && Hash == row.PasswordHash && Salt == row.Salt
+            && MatchesValues(row);
+
+        internal bool MatchesValues(AccountRow row) => Id == row.Id && Username == row.Username && Hash == row.PasswordHash && Salt == row.Salt
             && Algorithm == row.PasswordAlgorithm && Iterations == row.PasswordIterations
             && Version == row.PasswordCredentialVersion && PermissionVersion == row.PermissionVersion
             && MustChangePassword == row.MustChangePassword && MustChangeUsername == row.MustChangeUsername;
@@ -33,7 +36,7 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private void RequirePasswordWorkOutsideTransaction()
+    internal void RequirePasswordWorkOutsideTransaction()
     {
         if (Monitor.IsEntered(_gate))
             throw new InvalidOperationException("Password work cannot run inside a platform transaction.");

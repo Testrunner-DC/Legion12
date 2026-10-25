@@ -248,6 +248,8 @@ public sealed class CommittedRankedIdentityTests
         using var fixture = new RankedIdentityFixture();
         var player = fixture.CreateAccount("ranklife");
         fixture.CommitProfile(player.Id, "fate", sevenValue: 100_000, placementPlayed: 5);
+        var prepared = action == "delete"
+            ? fixture.Store.PrepareAdminPassword(fixture.Admin, player.Id, "synthetic", "delete", fixture.Context.CommandId) : null;
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         fixture.Store.StorageFailureInjector = stage =>
@@ -263,8 +265,8 @@ public sealed class CommittedRankedIdentityTests
                 fixture.Store.SetAccountDisabled(fixture.Admin, player.Id, true, "synthetic",
                     fixture.Context, true);
             else
-                fixture.Store.DeleteAccountPersonalData(fixture.Admin, player.Id, "synthetic",
-                    fixture.Context, true);
+                fixture.Store.ApplyAccountDeletion(fixture.Admin, player.Id, "synthetic",
+                    fixture.Context, prepared!);
             return true;
         }), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         try

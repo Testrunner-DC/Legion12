@@ -1,8 +1,10 @@
 # 十二军团简短交接
 
-## 2026-10-25 持续接续：G4管理新路径挂起，G6合同抽离接受
+## 2026-10-25 持续接续：G4管理两入口本地接受，仍120k，未部署
 
-- 人类要求不能因邮箱单项结束而中断。Main继续实测管理reset/delete两HTTP共用gate阻塞，red-02两例有效RED；首次合成官方保留名夹具失败不计。通用总线扩展、后续原Execute不变的两入口适配均被安全审批拒绝，理由高权限新路径未明确授权。已集中异步请人类批准限定本地重构；不以独审意见替代审批、不间接执行。未验收Store/QA草稿已归档到g4-admin-password并用apply_patch撤回da505622，active无失败草稿；总线零改。等待时仅挂该项，不部署、不启600k。
+- 人类本次明确“批准两入口限定重构与验收”，Main才接续red-02两真实HTTP阻塞；此前两次安全拒绝/撤回草稿保留历史。原Execute主体逐字不变（仅partial），两具名reset/delete适配沿同预算锁外计算，最终同会话/权限/完整目标CAS，原幂等优先版本、busy零写、删除副作用前验证；不新建通用gate、不部署、不启600k。59初验及并发/HTTP续验过，关键只读审查无产品阻断；一次冻结完整平台2613/2613、11分45秒零失败跳过，十源/双DLL稳定。
+- 完整后仅加强QA任务finally收齐、prepared目标绑定及真实合成recorder拒绝不匿名化/阳性对照，55/55定向通过；产品六叶和服务DLL8FF4D2C6不变，原完整QA源参考/指纹与新QA双程序集分别绑定，不冒最终QA全量。两个旧事务生命周期夹具迁锁外prepare/锁内apply，断言保留；初次int/long与含http用户名夹具失败保原件、非产品RED。唯一g4-admin-password/main-acceptance.json及synchronization.json。未变规则/前端复用；无两服/维护/线上账号/业务库/统计写。
+- G4下一片仍为成本容量、成功登录渐进升级与回滚；不要直接提常量或把锁隔离冒全部完成。在线KDF全查询已核：剩余SetPassword/旧Verify只启动EnsureRootAdmin与其CreateAccount，另列，邮箱不恢复。原删除跨库事务语义保持，动态chat-fence进入次数未探针覆盖。不重复已完成部署或旧沙盒处置。
 - Main继续独立G6首片：WebSocketServer末尾110个顶层record原样移L12HttpContracts.cs，同namespace/签名/字段/默认值，原服务逻辑正文与da505622归一化全等，声明块SHA90BEE15B。编译＋86 HTTP/账号和33原控制面回归均零失败跳过，架构锁/差异过；最后只有EOF空白清理，未为纯迁文件重跑无关规则/前端/完整平台。不冒G6全收口；唯一g6-http-contracts/main-acceptance与synchronization。
 - 邮箱已非强推同步da505622并独立读回，完整2558/SFC16/9页面证据有效，尚未部署。其余G4容量/渐进升级依赖锁隔离，G7真机条件原未验、代表性负载仅在授权切到新版本后推进，G8仍无账号/外传授权；旧已完成两服/维护不回流。当前热后端构建复用g4-admin-password根且已替换原失败assembly，引用RED原TRX而非冒其旧bin仍在；前端热产物在email-disabled对应根保留。
 

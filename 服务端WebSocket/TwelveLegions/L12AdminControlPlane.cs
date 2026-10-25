@@ -253,7 +253,7 @@ public sealed record L12AdminCommandResult<T>(
         => new(false, code, message, default, statusCode, Command: command);
 }
 
-public sealed class L12AdminCommandBus
+public sealed partial class L12AdminCommandBus
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly L12PlatformStore _platform;

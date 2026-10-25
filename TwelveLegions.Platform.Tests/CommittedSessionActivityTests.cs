@@ -231,6 +231,9 @@ public sealed class CommittedSessionActivityTests
             events.AddRange(ids);
             foreach (var id in ids) activeAtNotification.Add(store.IsSessionActive(id));
         };
+        var prepared = operation is "delete" or "reset-password"
+            ? store.PrepareAdminPassword(fixture.Admin, fixture.Owner.Account.Id, "synthetic",
+                operation == "delete" ? "delete" : "reset", fixture.Context.CommandId) : null;
         store.ExecuteAdminTransaction(() =>
         {
             switch (operation)
@@ -240,8 +243,8 @@ public sealed class CommittedSessionActivityTests
                 case "admin-one": store.RevokeAccountSession(fixture.Admin, fixture.Owner.Account.Id, fixture.Owner.SessionId); break;
                 case "admin-all": store.RevokeAccountSessions(fixture.Admin, fixture.Owner.Account.Id); break;
                 case "disable": store.SetAccountDisabled(fixture.Admin, fixture.Owner.Account.Id, true, "synthetic", fixture.Context, true); break;
-                case "delete": store.DeleteAccountPersonalData(fixture.Admin, fixture.Owner.Account.Id, "synthetic", fixture.Context, true); break;
-                case "reset-password": store.AdminResetPassword(fixture.Admin, fixture.Owner.Account.Id, "synthetic", fixture.Context, true); break;
+                case "delete": store.ApplyAccountDeletion(fixture.Admin, fixture.Owner.Account.Id, "synthetic", fixture.Context, prepared!); break;
+                case "reset-password": store.ApplyAdminResetPassword(fixture.Admin, fixture.Owner.Account.Id, "synthetic", fixture.Context, prepared!); break;
                 default: throw new ArgumentOutOfRangeException(nameof(operation));
             }
             return true;
