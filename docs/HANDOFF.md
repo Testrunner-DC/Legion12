@@ -386,6 +386,11 @@
 - 原normal-pressure-acceptance.json仍NOT_ACCEPTED，唯一final-original-contract拒绝来自QA错误等式：cleanupRoom marker起点早于WsClient.send，而二者共用同一接收回调，真实差值0.029—0.280ms不应要求相等。改为两者各自有限／非负／≤3000ms且marker≥frame，wire／parse／slot／命令绑定及所有后续断言不变；真实源提取RED→136离线GREEN与独审接受。只改QA，不重新构建产品、部署或原样负载。
 - 固定此单次run的只读复验入口ops/qa/revalidate-pressure-clock-origin-3a376f17.mjs已纳既有QA清单，逐SHA绑定原失败／独立report／binding／实际适配及三个历史marker依赖；完整原合同继续验证，原始文件不写。13种逐输入字节变动均拒绝；独审补齐真实冷账本complete／run绑定及136GREEN原报告固定SHA，排除泛化错误来自其他前置检查。签发须干净已提交QA版本，新normal-clock-revalidation.json用exclusive write并分开记录被测3a与裁定提交。最终裁定以stage-goals-20261024/property-frame/main-acceptance.json及新复验回执为准，不把纯validator返回冒新线上执行。
 - 最终同包315份实际完整报文／重建6277553→3736436B（−40.48%），9终局1059539→592183B（−44.11%）；额外分配23596264B／顺序组件准备178.4344ms成本保留。当前原30＋10达标不代表真机帧率、长稳态或正式全环境根治。下一继续真实移动／线性教学和受控备份恢复／可信CI素材／QA历史闭包；正式部署与维护仍不在本阶段范围，未验反馈不关闭。
+## 2026-10-26 共享图库正式窄修复准备（原旁支历史，已由顶部实际回执收口）
+
+- 来源人类在L12-牌库界面优化明确“授权”，Main直接读回原问题及答复：仅准备/验收/单独上线共享图库限流，不能把当前主线全包部署正式。TEST c875已独验发布，不重做；当前formal仍3a，原历史部署/沙盒/维护不重放。
+- 本D独立工作树从真实formal3a建立，仅摘取已验351ca5fe的L12HttpReliability及50项HTTP回归；新日期玩家日志说明结果。原canonical GET媒体独立600/min可信client桶，metadata/认证/账户桶及原权限不改，无规则/图库数据/教学/邮箱/动画新功能变更。
+- 新CID18e9证据gallery-429-20261026-cid18e9/result.json已交回：TEST共享formal旧120/min链，CID未唯一匹配。窄包需标准资格、最新真实排空/备份及独验，不能当前主线旧绿代替；正式合成对局/账号/统计零写。正式切换前本次只本地准备，实际状态以本轮唯一发布汇总为准。
 
 ## 2026-10-24 固定公开字段编码已接真实收发｜冻结候选做最终资格
 

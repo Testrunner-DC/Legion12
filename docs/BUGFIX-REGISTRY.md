@@ -404,6 +404,11 @@
 - 同型扫描冻结F737的cleanupRoom／WsClient.send／onmessage与marker／client-boundaries：marker取t0，send稍后取t1并覆盖双方terminalTrace，同一arrivedAt产生两耗时，故应marker≥frame而非相等。六组实际差0.029—0.280ms，wire／parse逐组相等；不是NIC／first-byte计时。原真正超3秒的旧失败不能据此升格。
 - finalizer只改此等式为marker有限、非负、≤3000ms且不短于frame；60终局自身原≤3000ms及所有slot／room／receiver／wire／parse、阶段、载荷、冷账本、清退／资源／身份断言全保。用真实源提取的cleanupRoom及send虚拟时钟编码RED1500≠1499.72，136 GREEN含逆序、超时假flag、NaN／Infinity／负值、parse／wire／slot／命令错配；独立关键复核未见过宽。
 - 固定run的只读adjudicator不接收可选run／阈值／原件／输出覆盖，绑定13份原始输入、F737实际适配／prepared源及三历史marker依赖，逐输入变动拒绝；136GREEN源码只允许后续测量边界注释更正。独审指出原报告及冷账本前置检查须独立绑定，已补固定SHA／精确5源码、complete／run／binding／两组cipher，以及六组实际marker>frame；旧finalizer内容SHA及wx前HEAD／源码再次核对。完整原合同验证后，须在干净已提交QA版本下exclusive新写复验回执，区分被测应用3a与裁定提交。原prospective函数仍不能签发线上容量，固定复验不冒新的线上执行；证据与最终结果在stage-goals-20261024/property-frame，不改变产品、正式服务或维护，不据此关闭真机／全部性能反馈。
+## FIX-20261026-SHARED-GALLERY-MEDIA｜正式旧基线的媒体额度窄修复
+
+- 人类在来源L12-牌库界面优化批准单独准备/验收/上线，Main直接读回原问及“授权”。新CID18e9未唯一绑定；6有界匿名GET/受限日志已证TEST虽c875但共享formal3a旧120/min媒体与元数据共桶，不再靠TEST重发或前端重试冒根治。
+- 独立正式3a基线只复用351ca5fe已验产品及HTTP测试补丁：canonical GET媒体按可信client独立600/min，metadata/上传/畸形/编码路径维持原分类；账户240/客户端聚合1200、窗口/有界分区/重试/原权限均保。跨变体/账户/token仍共媒体client桶，query不改分类，raw编码不借PathString解码绕过。
+- 原50 HTTP及2434平台证据为原实现历史，不冒本窄包资格；本候选须实际标准Release/包哈希和最新正式排空/备份/独验。仅内部接入P2，无卡效/数据库/统计/新功能变更；正式不造合成业务记录，不冒CID逐请求归因或全部卡图问题已根治。
 
 ## PERF-20261024-FIXED-PROPERTY-FRAME｜真实收发与隐私边界，尚未线上验收
 
