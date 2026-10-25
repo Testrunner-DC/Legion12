@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-G4-CREDENTIAL-FOUNDATION｜密码格式兼容基础接受，成本升级未完成
+
+- 本片仅承接F06的兼容前置，不将报告建议直接变成线上成本。扫描Store/EmailAuth/UsernameChanges的全部SetPassword/Verify入口，仍复用原共享方法；AccountRow增加内部算法/成本/格式元数据，null不写出，玩家ToView白名单不含这些字段。三项全缺才唯一解释为PBKDF2-SHA256/120000、16字节盐与32字节哈希；部分/未知元数据、非白名单成本、坏长度及非规范Base64在派生前拒绝，不再按任意expected.Length工作。
+- 新写显式v1仍120000；Store最大激活成本仍120000，纯helper识别600000不等于启用，600k进入Store即拒绝。未来600k门限仍接受旧显式120k；保随机盐、恒定时比较、原Verify异常→false及现有登录/限流/审计/会话流程，临时密码字节与派生结果用后清零。未改schema/账户库、未批量重哈希，现有KDF仍在原锁中，不冒锁隔离或CPU收益。
+- 原真实3RED证明旧校验接受salt8/hash32、salt16/hash16、salt16/hash64；最终10专项通过，包括旧行保存后重载且元数据仍缺、同解码字节但非零padding位的等价Base64拒绝、未激活成本拦截与原固定成本派生可读。Main完整三叶独审，补未来成本兼容及原失败边界；最终源码/程序集SHA前后相同。
+- Main复用同一已验程序集一次完整平台2482/2482、零失败跳过，原生10分47秒；原监督器已解析默认私有TRX后按设计删除，耐久计数receipt与真实执行输出为证，不引用不存在原件、不为补文件重跑。10专项显式TRX及3RED原件仍保，未变8417规则/前端证据复用，不冒新Release或完整旧binary回滚演练。唯一stage-goals-20261025/g4-foundation-main-acceptance.json。
+- G4尚缺：在线KDF锁外有界执行、整组凭据CAS/限流竞态、容量/延迟、持久单向启用、渐进升级与兼容回滚。此基础片不允许跳过这些条件直接改600k；源码同步见g4-foundation-synchronization.json，未部署/维护/业务数据/线上关单写。
+
 ## MAINT-20261025-G6-ADMIN-CONTRACT｜校正四处合同漂移，未改产品
 
 - Main执行旧check-admin-routing-contracts发现4失败；同脚本HEAD基线对照完全同。独立只读逐路径确认全为已存在重构的字面漂移：Capture增加Storage阶段；详情先快照id并拒迟到；目录拒绝访问不能静默跳过；账号列表已用服务器分页。不能把这些当新产品缺陷，更不能恢复全量读取/静默跳过权限错误来满足旧字符串。

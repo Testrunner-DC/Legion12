@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
 
@@ -103,6 +104,12 @@ public sealed partial class L12PlatformStore
         public string Username { get; set; } = string.Empty;
         public string PasswordHash { get; set; } = string.Empty;
         public string Salt { get; set; } = string.Empty;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? PasswordAlgorithm { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? PasswordIterations { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? PasswordCredentialVersion { get; set; }
         public string Role { get; set; } = "player";
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public bool PublicHistory { get; set; } = true;
@@ -1787,20 +1794,20 @@ public sealed partial class L12PlatformStore
 
     private static void SetPassword(AccountRow row, string password)
     {
-        var salt = RandomNumberGenerator.GetBytes(16);
-        var hash = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, 120_000, HashAlgorithmName.SHA256, 32);
-        row.Salt = Convert.ToBase64String(salt);
-        row.PasswordHash = Convert.ToBase64String(hash);
+        var credential = L12PasswordCredential.Create(password);
+        row.Salt = credential.Salt;
+        row.PasswordHash = credential.PasswordHash;
+        row.PasswordAlgorithm = credential.Algorithm;
+        row.PasswordIterations = credential.Iterations;
+        row.PasswordCredentialVersion = credential.Version;
     }
 
     private static bool Verify(string password, AccountRow row)
     {
         try
         {
-            var salt = Convert.FromBase64String(row.Salt);
-            var expected = Convert.FromBase64String(row.PasswordHash);
-            var actual = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, 120_000, HashAlgorithmName.SHA256, expected.Length);
-            return CryptographicOperations.FixedTimeEquals(actual, expected);
+            return L12PasswordCredential.Verify(password, row.PasswordHash, row.Salt, row.PasswordAlgorithm,
+                row.PasswordIterations, row.PasswordCredentialVersion, L12PasswordCredential.ActiveIterations);
         }
         catch { return false; }
     }
