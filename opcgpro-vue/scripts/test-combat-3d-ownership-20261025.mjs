@@ -259,6 +259,17 @@ await test('retired or old-generation image callbacks cannot install a cached pu
     assert.equal(f.state.fieldSnapshots.has('target'),false);assert.equal(f.host.children.length,0)
   }finally{f.dispose()}
 })
+await test('a delayed public image cannot refresh a now-concealed but still mounted instance',async()=>{
+  const f=fixture();try{
+    await f.advance();const image=f.target.querySelector('img')
+    f.apply([combat(1,undefined,[publicCard('unit'),publicCard('target',{hidden:true})])])
+    assert.equal(f.live.get('target'),f.target,'DOM retirement has not happened yet')
+    assert.equal(f.state.concealedInstances.has('target'),true)
+    f.state.cardFaceLoaded({target:image});await f.advance()
+    assert.equal(f.state.fieldSnapshots.has('target'),false,'pre-paint old public pixels cannot reenter the concealed cache')
+    await f.settle()
+  }finally{f.dispose()}
+})
 await test('later concealed authority retires a previously prepared public death face',async()=>{
   const f=fixture({paused:true});try{await f.advance();f.apply([leave(1)],{remove:['target']});await f.advance()
     assert.equal(f.host.children.length,1)

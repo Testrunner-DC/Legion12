@@ -5,7 +5,7 @@ import GameBoard from './game/GameBoard.vue'
 import L12SettingsModal from './site/L12SettingsModal.vue'
 import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './site/bugFeedbackEntry'
 import { loadDeckCatalog, type DeckCard } from './decks'
-import { adminApi, PlatformRequestError, platformState } from './platform'
+import { adminApi, authState, PlatformRequestError, platformState } from './platform'
 import { adminReplayDetail, consumeImportedReplay, replayFocusCardAt, replayGameAt, type MatchDetail } from './replayModel'
 import { isMobileDeviceExperience, landscapeTeleportTarget } from './mobileViewport'
 import { buildReplayIndex, createReplayIndexAccumulator, type ReplayIndexCategory } from './replayIndex'
@@ -99,7 +99,9 @@ const replayResult = computed(() => {
       result: outcome.kind === 'decided' ? outcome.winner === index ? '胜' : '负'
         : outcome.kind === 'invalid' ? '无效' : outcome.kind === 'draw' ? '平' : '无法确认' })) }
 })
-function isCurrentRead(generation: number) { return !disposed && generation === readGeneration }
+function requiresVerifiedAccount() { return route.name === 'admin-match-replay' || route.name === 'match-replay' }
+function replayReadAuthorized() { return !requiresVerifiedAccount() || authState.verified }
+function isCurrentRead(generation: number) { return !disposed && generation === readGeneration && replayReadAuthorized() }
 function clearReadSession() {
   readGeneration++
   initialReadController?.abort(); initialReadController = null
@@ -112,6 +114,10 @@ function clearReadSession() {
 watch(() => [platformState.token, platformState.account?.id, platformState.account?.role,
   platformState.account?.permissionVersion, platformState.account?.disabled] as const,
 () => { clearReadSession(); error.value = '账号或权限已变化，请返回重新打开回放' }, { flush: 'sync' })
+watch(() => authState.verified, () => {
+  if (!requiresVerifiedAccount()) return
+  clearReadSession(); error.value = '账号或权限已变化，请返回重新打开回放'
+}, { flush: 'sync' })
 watch(() => [route.name, route.params.matchId] as const,
 () => { clearReadSession(); error.value = '回放入口已变化，请重新打开' }, { flush: 'sync' })
 watch(selectedStep, step => { archive.value?.focus(step); archive.value?.prefetch(step) })
@@ -125,6 +131,7 @@ onBeforeUnmount(() => {
 })
 async function loadReplay() {
   clearReadSession()
+  if (!replayReadAuthorized()) { error.value = '账号或权限已失效，请返回重新打开回放'; return }
   const generation = readGeneration
   const controller = new AbortController()
   initialReadController = controller

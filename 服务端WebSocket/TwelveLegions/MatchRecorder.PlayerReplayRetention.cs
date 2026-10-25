@@ -18,6 +18,16 @@ public sealed partial class MatchRecorder
     private readonly SemaphoreSlim _playerReplayCleanupGate = new(1, 1);
     private long _nextPlayerReplayCleanupUtcTicks = DateTimeOffset.MaxValue.UtcDateTime.Ticks;
 
+    // Private replay access requires immutable ownership. Old display/user names
+    // can be reused; a legacy row may only fall back to its recorded participant
+    // account ID, never to the caller's current name. Retention remains unchanged.
+    private const string PlayerReplayOwner0Sql = "COALESCE(NULLIF(m.account_0,''),"
+        + "(SELECT NULLIF(p.account_id,'') FROM match_participants p WHERE p.match_id=m.match_id AND p.player_index=0))";
+    private const string PlayerReplayOwner1Sql = "COALESCE(NULLIF(m.account_1,''),"
+        + "(SELECT NULLIF(p.account_id,'') FROM match_participants p WHERE p.match_id=m.match_id AND p.player_index=1))";
+    private const string PlayerReplayAccountOwnershipSql = "("
+        + PlayerReplayOwner0Sql + "=$account OR " + PlayerReplayOwner1Sql + "=$account)";
+
     private const string PlayerReplayWindowCte = """
         WITH replay_entries AS (
             SELECT m.match_id,m.ended_utc,m.started_utc,
@@ -143,7 +153,7 @@ public sealed partial class MatchRecorder
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
                    m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id),
                    COALESCE(NULLIF(p0.master_name,''),NULLIF(p0.master_id,'')),
@@ -154,18 +164,13 @@ public sealed partial class MatchRecorder
             WHERE m.mode_id <> 'sandbox' AND m.ended_utc IS NOT NULL
               AND julianday(m.ended_utc)>=julianday($cutoff)
               AND NOT EXISTS(SELECT 1 FROM player_replay_payload_expirations x WHERE x.match_id=m.match_id)
-              AND (
-                    m.account_0=$account OR m.account_1=$account
-                    OR ((m.account_0 IS NULL AND m.player_0=$player)
-                        OR (m.account_1 IS NULL AND m.player_1=$player))
-                  )
+              AND {PlayerReplayAccountOwnershipSql}
             GROUP BY m.match_id
             ORDER BY julianday(m.ended_utc) DESC,m.ended_utc DESC,
                      julianday(m.started_utc) DESC,m.started_utc DESC,m.match_id DESC
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$account", accountId);
-        command.Parameters.AddWithValue("$player", legacyPlayerName);
         command.Parameters.AddWithValue("$cutoff", cutoff);
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, PlayerReplayWindowSize));
         var matches = new List<L12MatchSummary>();
@@ -183,18 +188,14 @@ public sealed partial class MatchRecorder
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             SELECT COUNT(*) FROM (
                 SELECT m.match_id
                 FROM matches m
                 WHERE m.mode_id <> 'sandbox' AND m.ended_utc IS NOT NULL
                   AND julianday(m.ended_utc)>=julianday($cutoff)
                   AND NOT EXISTS(SELECT 1 FROM player_replay_payload_expirations x WHERE x.match_id=m.match_id)
-                  AND (
-                        m.account_0=$account OR m.account_1=$account
-                        OR ((m.account_0 IS NULL AND m.player_0=$player)
-                            OR (m.account_1 IS NULL AND m.player_1=$player))
-                      )
+                  AND {PlayerReplayAccountOwnershipSql}
                 ORDER BY julianday(m.ended_utc) DESC,m.ended_utc DESC,
                          julianday(m.started_utc) DESC,m.started_utc DESC,m.match_id DESC
                 LIMIT $window
@@ -202,7 +203,6 @@ public sealed partial class MatchRecorder
             """;
         command.Parameters.AddWithValue("$match", matchId.Trim());
         command.Parameters.AddWithValue("$account", accountId);
-        command.Parameters.AddWithValue("$player", legacyPlayerName);
         command.Parameters.AddWithValue("$window", PlayerReplayWindowSize);
         command.Parameters.AddWithValue("$cutoff", cutoff);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 1;

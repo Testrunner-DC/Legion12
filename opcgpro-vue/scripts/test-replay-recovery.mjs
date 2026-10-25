@@ -142,11 +142,12 @@ if(process.argv.includes('--baseline')){
   const mounted=[],unmounted=[],timers=new Map(),listeners=new Map();let timerId=0
   const route=vue.reactive({name:options.routeName||'admin-match-replay',params:{matchId:'synthetic-only'},query:{}})
   const platformState=vue.reactive({token:'synthetic-token',account:{id:'synthetic-admin',role:'admin',permissionVersion:1,disabled:false}})
+  const authState=vue.reactive({initialized:true,verified:options.verified??true,refreshing:false})
   const scope=vue.effectScope(),calls=[]
   const summary={summary:{matchId:'synthetic-only',status:'completed',players:[{displayName:'A'},{displayName:'B'}],startedUtc:'2026-10-16T00:00:00Z',commandCount:total}}
   const environment={...model,...index,ReplayArchiveLoader,computed:vue.computed,ref:vue.ref,shallowRef:vue.shallowRef,watch:vue.watch,nextTick:vue.nextTick,
    onMounted:fn=>mounted.push(fn),onBeforeUnmount:fn=>unmounted.push(fn),useRoute:()=>route,useRouter:()=>({push(){}}),
-   platformState,PlatformRequestError:RequestError,loadDeckCatalog:options.catalog||(async()=>[]),isMobileDeviceExperience:()=>false,landscapeTeleportTarget:()=>'body',
+   platformState,authState,PlatformRequestError:RequestError,loadDeckCatalog:options.catalog||(async()=>[]),isMobileDeviceExperience:()=>false,landscapeTeleportTarget:()=>'body',
    adminApi:{match:async()=>summary,replayPage:async(match,cursor,limit,signal)=>{calls.push({match,cursor,signal});return read(cursor,signal)}},
    createPlayerReplayReader:match=>async(cursor,signal)=>{calls.push({match,cursor,signal,player:true});return read(cursor,signal)},
    consumeImportedReplay:()=>options.imported??model.consumeImportedReplay(),
@@ -157,8 +158,55 @@ if(process.argv.includes('--baseline')){
   const names=ast.statements.flatMap(n=>ts.isFunctionDeclaration(n)&&n.name?[n.name.text]:ts.isVariableStatement(n)?n.declarationList.declarations.flatMap(d=>ts.isIdentifier(d.name)?[d.name.text]:[]):[])
   const code=ts.transpileModule(stripped+'\nglobalThis.__state={'+names.join(',')+',getPlaybackGeneration:()=>playbackGeneration}',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText
   vm.createContext(environment);scope.run(()=>vm.runInContext(code,environment))
-  return {state:environment.__state,route,platformState,calls,timers,listeners,dispose(){unmounted.forEach(fn=>fn());scope.stop()}}
+  return {state:environment.__state,route,platformState,authState,calls,timers,listeners,dispose(){unmounted.forEach(fn=>fn());scope.stop()}}
  }
+  const replayRoutePage=(routeName,n)=>routeName==='match-replay'
+   ? {...makePage(n),match:detail(all).match,viewerPlayerIndex:1,limit:50}
+   : makePage(n)
+  for(const routeName of ['match-replay','admin-match-replay'])await test(`actual SFC verified normal control/${routeName}`,async()=>{
+   const f=fixture(async cursor=>replayRoutePage(routeName,pageNumber(cursor)),{routeName})
+   try{await f.state.loadReplay();await flush();assert.equal(f.authState.verified,true)
+    assert(f.state.detail.value);assert(f.state.currentGame.value);assert(f.state.archive.value)
+    assert.equal(await f.state.archive.value.ensure(2),true);assert(f.state.archive.value.commandAt(2))
+   }finally{f.dispose()}
+  })
+  for(const routeName of ['match-replay','admin-match-replay'])await test(`actual SFC initial unverified fails closed/${routeName}`,async()=>{
+   let catalogCalls=0
+   const f=fixture(async cursor=>replayRoutePage(routeName,pageNumber(cursor)),{routeName,verified:false,catalog:async()=>{catalogCalls++;return[]}})
+   try{await f.state.loadReplay();await flush();assert.equal(catalogCalls,0);assert.equal(f.calls.length,0)
+    assert.equal(f.state.detail.value,null);assert.equal(f.state.currentGame.value,null);assert.equal(f.state.archive.value,null);assert(f.state.error.value)
+    f.authState.verified=true;await flush();assert.equal(catalogCalls,0);assert.equal(f.calls.length,0)
+    assert.equal(f.state.detail.value,null);assert.equal(f.state.currentGame.value,null);assert.equal(f.state.archive.value,null)
+   }finally{f.dispose()}
+  })
+  for(const routeName of ['match-replay','admin-match-replay'])for(const late of ['success','failure'])await test(`actual SFC verified loss during catalog read/${routeName}/${late}`,async()=>{
+   const catalogWait=deferred();const f=fixture(async cursor=>replayRoutePage(routeName,pageNumber(cursor)),{routeName,catalog:()=>catalogWait.promise})
+   try{const pending=f.state.loadReplay();await flush();assert.equal(f.calls.length,0);f.authState.verified=false
+    if(late==='success')catalogWait.resolve([]);else catalogWait.reject(new Error('synthetic catalog failure'))
+    await pending;await flush();assert.equal(f.calls.length,0);assert.equal(f.state.detail.value,null);assert.equal(f.state.currentGame.value,null);assert.equal(f.state.archive.value,null)
+    f.authState.verified=true;await flush();assert.equal(f.calls.length,0);assert.equal(f.state.detail.value,null);assert.equal(f.state.currentGame.value,null)
+   }finally{f.dispose()}
+  })
+  for(const routeName of ['match-replay','admin-match-replay'])await test(`actual SFC clears a loaded private replay on verified loss/${routeName}`,async()=>{
+   const f=fixture(async cursor=>replayRoutePage(routeName,pageNumber(cursor)),{routeName})
+   try{await f.state.loadReplay();await flush();assert(f.state.currentGame.value);const calls=f.calls.length
+    f.authState.verified=false;assert.equal(f.state.detail.value,null);assert.equal(f.state.currentGame.value,null);assert.equal(f.state.archive.value,null)
+    assert.equal(f.state.playing.value,false);assert(f.state.error.value);f.authState.verified=true;await flush()
+    assert.equal(f.state.detail.value,null);assert.equal(f.state.currentGame.value,null);assert.equal(f.state.archive.value,null);assert.equal(f.calls.length,calls)
+   }finally{f.dispose()}
+  })
+  for(const routeName of ['match-replay','admin-match-replay'])for(const phase of ['initial','continuation'])for(const transition of ['loss','ABA'])for(const late of ['success','failure'])await test(`actual SFC verified invalidation/${routeName}/${phase}/${transition}/${late}`,async()=>{
+   const wait=deferred();let pendingSignal
+   const f=fixture((cursor,signal)=>{if(phase==='initial'||cursor==='p1'){pendingSignal=signal;return wait.promise}
+    return Promise.resolve(replayRoutePage(routeName,0))},{routeName})
+   try{const pending=f.state.loadReplay();await flush();if(phase==='continuation')await pending;await flush();assert(pendingSignal)
+    f.authState.verified=false;if(transition==='ABA')f.authState.verified=true
+    assert(pendingSignal.aborted);const calls=f.calls.length
+    if(late==='success')wait.resolve(replayRoutePage(routeName,phase==='initial'?0:1));else wait.reject(new RequestError(503,'storage_unavailable'))
+    await pending;await flush();assert.equal(f.state.detail.value,null);assert.equal(f.state.currentGame.value,null);assert.equal(f.state.archive.value,null)
+    assert.equal(f.state.playing.value,false);assert.equal(f.calls.length,calls)
+   }finally{f.dispose()}
+  })
  await test('actual SFC preserves board during prefetch failure and recovers without page error',async()=>{
   let failures=0;const f=fixture(async cursor=>{if(cursor==='p1'&&failures++===0)throw new RequestError(503,'storage_unavailable');return makePage(pageNumber(cursor))})
   try{await f.state.loadReplay();assert(f.state.currentGame.value);assert.equal(f.state.error.value,'');await new Promise(resolve=>setTimeout(resolve,600));await flush()
@@ -271,9 +319,9 @@ if(process.argv.includes('--baseline')){
    assert(!JSON.stringify(f.state.replayIndex.value).includes('OPPONENT_PRIVATE_INDEX_SENTINEL'))
   }finally{f.dispose()}
  })
- await test('actual imported SFC keeps local viewpoint and never reads an archive provider',async()=>{
-  const imported={...detail(all),viewerPlayerIndex:1},f=fixture(async()=>{throw Error('unexpected archive read')},{routeName:'json-replay',imported})
-  try{await f.state.loadReplay();assert(f.state.currentGame.value);assert.equal(f.state.currentGame.value.you,1)
+  await test('actual imported SFC keeps local viewpoint without a verified account and never reads an archive provider',async()=>{
+   const imported={...detail(all),viewerPlayerIndex:1},f=fixture(async()=>{throw Error('unexpected archive read')},{routeName:'json-replay',imported,verified:false})
+   try{await f.state.loadReplay();assert.equal(f.authState.verified,false);assert(f.state.currentGame.value);assert.equal(f.state.currentGame.value.you,1)
    assert.equal(f.state.archive.value,null);assert.equal(f.state.isAdminReplay.value,false);assert.equal(f.calls.length,0)
   }finally{f.dispose()}
  })

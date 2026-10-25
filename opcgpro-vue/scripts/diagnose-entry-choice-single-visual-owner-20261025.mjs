@@ -18,6 +18,12 @@ const output = process.env.L12_ENTRY_CHOICE_OUT
 const cache = process.env.L12_WORK_CACHE || 'D:/GPT/Legion12/cache/primary'
 const temp = path.join(cache, 'temp', 'entry-choice-single-owner-20261025')
 const expectation = String(process.env.L12_ENTRY_CHOICE_EXPECT || 'red').trim().toLowerCase()
+const perspective = process.env.L12_ENTRY_CHOICE_VIEW || 'owner'
+const profileKey = process.env.L12_ENTRY_CHOICE_PROFILE || 'desktop'
+assert.ok(['owner','spectator'].includes(perspective), 'unsupported stored snapshot perspective')
+const profile = {desktop:{width:1366,height:768,mobile:false},'short-landscape':{width:844,height:390,mobile:true},
+  'portrait-rotated':{width:390,height:844,mobile:true}}[profileKey]
+assert.ok(profile, 'unsupported measured viewport')
 const fixturePath = path.join(front, 'scripts/fixtures/battle-authority-engine-v5.json.gz.b64')
 
 assert.ok(output && path.isAbsolute(output), 'L12_ENTRY_CHOICE_OUT must be an absolute controlled path')
@@ -56,8 +62,9 @@ const chain = fixture.galahadEntry
 assert.ok(Array.isArray(chain), 'actual command-generated galahadEntry chain missing')
 const frame = label => {
   const found = chain.find(item => item.label === label)
-  assert.ok(found?.player, `missing actual player frame: ${label}`)
-  return structuredClone(found.player)
+  const snapshot=found?.[perspective==='spectator'?'spectator':'player']
+  assert.ok(snapshot, `missing actual ${perspective} frame: ${label}`)
+  return structuredClone(snapshot)
 }
 const baseline = frame('entry-baseline-hand')
 const committed = frame('entry-committed-declaration')
@@ -76,13 +83,14 @@ const sequence = sequenceLabels.map(label => ({ label, snapshot:frame(label) }))
 const trialCostPaid = sequence.find(item => item.label === 'entry-trial-cost-paid')?.snapshot
 const instanceId = 'real-galahad'
 const cardName = '加拉哈德'
-const prompt = committed.prompts?.[0]
+const prompt = chain.find(item=>item.label==='entry-committed-declaration').player.prompts?.[0]
 assert.equal(prompt?.sourceInstanceId, instanceId, 'actual choice prompt is not bound to Galahad')
 assert.equal(prompt?.kind, 'option', 'actual Galahad frame is not the entry effect choice')
-assert.equal(trialCostPaid?.prompts?.[0]?.data?.sourceInstanceId, instanceId,
+assert.equal(chain.find(item=>item.label==='entry-trial-cost-paid').player.prompts?.[0]?.data?.sourceInstanceId, instanceId,
   'actual response prompt is not bound to Galahad through prompt.data.sourceInstanceId')
-assert.ok((baseline.players?.[0]?.hand ?? []).some(card => card.instanceId === instanceId),
+if(perspective==='owner') assert.ok((baseline.players?.[0]?.hand ?? []).some(card => card.instanceId === instanceId),
   'actual baseline does not contain Galahad in hand')
+else assert.equal(baseline.players?.[0]?.hand,undefined,'stored public spectator projection must not expose the private hand')
 assert.ok((committed.players?.[0]?.field ?? []).flat().some(card => card?.instanceId === instanceId),
   'actual committed frame does not contain Galahad on the field')
 const snapshotCards = committed.players.flatMap(player => [
@@ -114,7 +122,8 @@ const report = {
   schema:1,
   contract:'entry-choice-single-visual-owner-20261025',
   expectation,
-  scope:'Actual command-generated Galahad owner snapshots mounted into the real GameBoard. No live socket, server ACK, persistence, physical device or production write.',
+  scope:`Actual command-generated Galahad ${perspective} snapshots mounted into the real GameBoard. No live socket, server ACK, persistence, physical device or production write.`,
+  perspective, profile:{key:profileKey,...profile},
   fixture:{
     path:fixturePath,
     containerSha256:sha256(fixtureContainer),
@@ -132,7 +141,7 @@ const report = {
   },
   interaction:{ clicks:0, manualInspectorOpen:false, animationSeek:false, animationPause:false, mousePark:null },
   delivered:[],
-  validity:{ promptDomVisible:false, decodedVisibleSource:false, movementVisible:false,
+  validity:{ promptDomVisible:false, spectatorPromptsAbsent:false, decodedVisibleSource:false, movementVisible:false,
     sourceEvidence:null, promptEvidence:null, movementEvidence:null },
   frames:[],
   worstFrame:null,
@@ -211,7 +220,8 @@ try {
   const address = server.httpServer?.address()
   assert.ok(address && typeof address === 'object', 'Vite did not expose a local port')
   browser = await chromium.launch({ headless:true, channel:'msedge' })
-  context = await browser.newContext({ viewport:{ width:1366, height:768 } })
+  context = await browser.newContext({ viewport:{ width:profile.width, height:profile.height },
+    isMobile:profile.mobile,hasTouch:profile.mobile })
   const page = await context.newPage()
   await page.route('http://127.0.0.1:8080/api/alternate-arts**', route => route.fulfill({
     status:200, contentType:'application/json', body:'[]',
@@ -225,7 +235,7 @@ try {
   await page.addInitScript(() => localStorage.setItem('l12-audio-preferences-v1', JSON.stringify({
     animation:'standard', mobileLayout:'auto', cardSize:'medium', fontSize:'standard',
   })))
-  await page.goto(`http://127.0.0.1:${address.port}/__entry-choice-single-owner?viewer=0&interactive=1`, {
+  await page.goto(`http://127.0.0.1:${address.port}/__entry-choice-single-owner?viewer=0&interactive=1${perspective==='spectator'?'&spectator=1':''}${profile.mobile?'&landscape=1':''}`, {
     waitUntil:'networkidle', timeout:30_000,
   })
   await page.waitForSelector('[data-l12-game-stage]')
@@ -371,7 +381,7 @@ try {
   }, { instanceId, cardName })
 
   let duplicateCaptured = false
-  const screenshot = path.join(output, 'desktop-owner-entry-choice-worst.png')
+  const screenshot = path.join(output, `${profileKey}-${perspective}-entry-choice-worst.png`)
   for (const item of sequence) {
     await page.evaluate(({ label, snapshot }) => {
       window.__entryChoicePhase = label
@@ -384,7 +394,7 @@ try {
       waitingKind:item.snapshot.waitingPrompt?.kind ?? null,
     })
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-    if (item.label === 'entry-committed-declaration') {
+    if (item.label === 'entry-committed-declaration' && perspective==='owner') {
       await page.waitForSelector(`.l12-prompt-overlay[data-tutorial-prompt-id="${prompt.promptId}"]`, {
         state:'visible', timeout:5_000,
       })
@@ -400,9 +410,13 @@ try {
       assert.ok(report.validity.promptDomVisible,
         `prompt DOM exists but visibility measurement rejected it: ${JSON.stringify(report.validity.promptEvidence)}`)
     }
+    if(item.label==='entry-committed-declaration' && perspective==='spectator'){
+      report.validity.spectatorPromptsAbsent=await page.locator('.l12-prompt-overlay').count()===0
+      assert.ok(report.validity.spectatorPromptsAbsent,'public spectator must not receive the private choice overlay')
+    }
     if (item.label === 'entry-trial-cost-paid') {
       const responsePromptId = item.snapshot.prompts?.[0]?.promptId
-      await page.waitForSelector(`.l12-prompt-overlay[data-tutorial-prompt-id="${responsePromptId}"]`, {
+      if(perspective==='owner') await page.waitForSelector(`.l12-prompt-overlay[data-tutorial-prompt-id="${responsePromptId}"]`, {
         state:'visible', timeout:5_000,
       })
       await page.waitForFunction(name => {
@@ -470,7 +484,8 @@ try {
 
   const maxVisible = report.worstFrame?.total ?? 0
   const kinds = report.worstFrame?.surfaces?.map(item => item.kind) ?? []
-  const validMeasurement = report.validity.promptDomVisible && report.validity.decodedVisibleSource
+  const promptGate=perspective==='owner'?report.validity.promptDomVisible:report.validity.spectatorPromptsAbsent
+  const validMeasurement = promptGate && report.validity.decodedVisibleSource
     && report.validity.movementVisible
   report.result = {
     status:!validMeasurement ? 'INVALID_MEASUREMENT'
@@ -497,7 +512,8 @@ try {
   assert.equal(report.interaction.animationPause, false)
   assert.deepEqual(report.pageErrors, [])
 } catch (error) {
-  const validityPassed = report.validity.promptDomVisible && report.validity.decodedVisibleSource
+  const promptGate=perspective==='owner'?report.validity.promptDomVisible:report.validity.spectatorPromptsAbsent
+  const validityPassed = promptGate && report.validity.decodedVisibleSource
     && report.validity.movementVisible
   report.result = {
     ...(report.result ?? {}),

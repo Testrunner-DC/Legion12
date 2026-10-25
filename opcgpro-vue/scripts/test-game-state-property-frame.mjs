@@ -104,4 +104,30 @@ const encodedLimit = 2 * 1024 * 1024 + 2 * 100000 + 2048
 const baseRaw = JSON.stringify(packed), paddedRaw = baseRaw + ' '.repeat(encodedLimit - Buffer.byteLength(baseRaw))
 assert.deepEqual(restore(packed, paddedRaw), plain)
 assert.equal(restore(packed, paddedRaw + ' '), null); cases++
+// Deterministic cross-key graphs exercise vocabulary tokens, literal escapes,
+// prototypes, Unicode, arrays and scalar values in combination, not only alone.
+let seed=0x102325
+const random=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return(seed>>>0)/4294967296}
+const keys=['state','cards','troops','hand','recentEvents','__proto__','constructor','~escape','@0','','中文😀','quote"\\\n']
+const texts=['','"','\\','\n','\u0000','<>&','𠮷😀','\\u0040']
+function graph(depth){
+  const kind=depth?Math.floor(random()*6):Math.floor(random()*4)
+  if(kind===0)return null
+  if(kind===1)return random()<.5
+  if(kind===2)return Math.floor(random()*200000)-100000
+  if(kind===3)return texts[Math.floor(random()*texts.length)]
+  if(kind===4)return Array.from({length:Math.floor(random()*5)},()=>graph(depth-1))
+  const value={}
+  for(const key of new Set(Array.from({length:Math.floor(random()*5)},()=>keys[Math.floor(random()*keys.length)])))
+    Object.defineProperty(value,key,{value:graph(depth-1),enumerable:true})
+  return value
+}
+for(let index=0;index<256;index++){
+  const value={type:'gameState',state:{matchId:'synthetic',syntheticGraph:graph(4)}}
+  const expected=JSON.parse(JSON.stringify(value)),packet=frame(value),raw=JSON.stringify(packet)
+  let originalSource=''
+  assert.deepEqual(restore(packet,raw,source=>{originalSource=source}),expected,'seeded graph '+index)
+  assert.equal(originalSource,JSON.stringify(expected),'exact value lexemes/field order '+index)
+  assert.equal({}.injected,undefined);cases++
+}
 console.log(JSON.stringify({ status: 'passed', cases, actualClientDecoder: true, networkCalls: 0, onlineCapacityAccepted: false }))

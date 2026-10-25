@@ -1,5 +1,21 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-AUDIT-IDENTITY｜三项本地验收通过，未部署
+
+- 人类“推进所有修复”批准前项两处隔离与在途排位缺口。扩P2/P3/P4身份/生命周期边界，不改P0/P1卡效、Journal格式、统计事实或留存策略。扫描ReadPlayerReplayViewer/IsWithinRecentPlayerReplayWindow/ListMatchesForAccount及HTTP调用链，玩家入口均走固定身份；内部旧by-name辅助无HTTP消费者，不将其当作授权端口。前端同类MatchRecords已有verified同步退休，保持原行为。
+- 旧录像共享三处SQL改用matches.account_n，缺失时仅用match_participants同席account_id；完全无不可变归属则拒读，正常绑定优先于participant，不把显示名恢复成身份。真实HTTP改名+新账号注册旧名覆盖两席×格式0/2×有/无participant绑定，原8场错误200；修复及原分页/全文/牌库隐私44场通过，原主账号有绑定仍能读取、无绑定不猜、admin原档与SHA不变。最初过长合成用户名的无效失败保，不能当产品RED。
+- ReplayPage在原同步身份监听旁加入verified失效退休，isCurrentRead持续要求私密路由已验证，初始失效在目录和API前拒绝；false→true不自动载入旧数据。保本地导入原有token/account清理与无私密API行为。新增真实SFC已加载/首屏/续页、成功失败、ABA、初始未验证及目录途中失效，共155/155；最初149运行仅工具回执，新155完整JSON原件保于cache/primary/qa/replay-verified-loss，不补造旧日志。
+- 排位新确定性hook仅在慢准备后、任何Room/platform gate之前；真实HTTP禁赛事务200后释放，原两席都错误创建新排位，2RED已证。TryCommitRankedPairAdmission在平台原gate内核两席并同步执行原成员迁移/clock/_rooms.TryAdd，杜绝检查后发布尾窗；原观察室/房间锁先持有，clock仅同线程平台Monitor重入。异常原样进入旧回滚；发布后才await记录，既有对局不因禁赛踢出。38专项过，独立五叶锁序/SQL/回滚审查无阻断。
+- 最终完整平台2472/2472及规则8417/8417零失败跳过，均真实完整TRX与监督；前端原123标准命令、类型和双Vite完整通过96.87秒，155真实SFC包含其中，不冒原生npm或干净Release。未部署/维护/线上关单，无业务数据或统计写。回滚六个产品叶与具名回归，不回写旧库、不清历史。唯一D:/GPT/Legion12/artifacts/replay-isolation-20261025/main-acceptance.json，Git精确同步见synchronization.json；原7叶审查QA保留，不重跑未变浏览器矩阵。
+
+## AUDIT-20261025-THREE-DAYS｜两处隔离缺陷确认，产品尚未修复
+
+- 人类要求对抗测试北京时间10月23—25日全部修改；冻结6af977c3→c9a0c922共104提交/403文件，既有同源全套证据复用，不把测试数量当作完备证明。仅新增4个QA叶；101现存产品源SHA及1已删除旧入口均未变，未部署/维护/读真实玩家数据或关闭线上Bug。
+- P1 ReplayPage认证失效清理遗漏：仅监听token/id/role/permissionVersion/disabled，不监听authState.verified；平台403/refresh失败会独立置false，沉浸路由不卸载。Main用原真实SFC/Vue夹具加合成API，玩家/管理员各4场证明已加载私有game保留、首屏迟到回填、续页请求未取消。实际RED8/8，产品SHA D6D58092前后同；修复应统一认证epoch/验证状态的失效清理、abort/dispose与迟到结果拒收，不是清空历史录像。`replay-verification-loss-r2.json`与原日志；早期夹具少player summary及eval相对import无效原件保留。待明确产品修复授权。
+- P2旧录像NULL账号回退：ReadPlayerReplayViewer及RecentWindow用account_n=NULL/player_n=当前用户名授权，改名后旧名可复用。原生产SQL在独立内存SQLite执行两席8对照，新同名无关账号在NULL兼容行获得旧viewer；写有固定账号ID的正反控正确。只影响近7日/前10/未过期兼容记录，正常现局双账号ID不受影响；HTTP和注册全链未执行、未查线上是否存该条件、未冒发生泄露。应按不可变归属绑定或失败关闭，不凭可复用名认领；`legacy-replay-ownership.json`。底层回退旧有，本期分页继承，待修复批准。
+- 排位准入静态缺口：配对521复核后555异步取偏好，598—609建房/记录前无禁赛版本线性化。列并发契约/确定性测试待补，未运行真实竞态、不擅自决定“进行中”起点。共享图库双generation疑点经独审发放前失败关闭，不报确定Bug；规则回库隐私、天灾换代/已结算回合效果、暴怒合法目标、须佐及设值后持续增减未发现确定缺陷。
+- QA本身两漏测已补：同revision矛盾载荷不能重写基线，已concealed仍mounted的旧public IMG load不能回填。原8护栏内存变异6抓住/2幸存，补后8/8均由真实断言抓住，无语法故障替代；14/25纯与新增256组合总293解码过。三自然本人/公开观战横竖屏854帧max1，沿原引擎存档，不冒真机/服务器ACK/全卡所有路径。唯一D:/GPT/Legion12/artifacts/adversarial-three-days-20261025/main-acceptance.json。
+
 ## UI-20261025-VISUAL-OWNER-PHYSICS｜单一卡面、状态时机与兵力强弱演出
 
 - 人类连续明确：登场选择不可出现多个视觉副本；状态只在确定时机切换；落位必须有三维下坠接触、高兵力震动整个战场；效果/进攻/受击统一立体动作、动画不要额外UI外框，进攻兵力越高动作越强。只扩P4共享呈现，不改变引擎权威状态、规则、费用、计时、可见性或网络协议。扫描`autoFocusCard|focusCard|publicReveal|prepareVisualOwner|claimCardStateTransitions|combatDamageValue|legionEntryFrames`，覆盖Prompt、GameBoard、Zone、CardState、Combat、coordinator与projection，而非逐卡补丁；打印卡图边框、静态选择框和不同实例保留。

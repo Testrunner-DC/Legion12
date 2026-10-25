@@ -318,6 +318,66 @@ public sealed class AccountRankedRestrictionTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CommittedBanDuringPairPreparationRejectsBothWithoutPublishingMatch(bool banTriggeringSeat)
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var first = f.Store.Authenticate("Bearer " + f.PlayerToken)!;
+        var registered = f.Store.Register("racepair", "Password123!");
+        Assert.True(registered.Success, registered.Message);
+        var second = registered.Account!;
+        f.Store.SelectRankedFaction(first.Id, "order");
+        f.Store.SelectRankedFaction(second.Id, "chaos");
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+        await using var recorder = new MatchRecorder(Path.Combine(Path.GetDirectoryName(f.MirrorPath)!, "pair-race.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(catalog, recorder, f.Store);
+        var sessions = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        manager.Connect(sessions[0], first.Id, first.Username);
+        manager.Connect(sessions[1], second.Id, second.Username);
+        var reached = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager.RankedMatchmakingBeforeFinalAdmissionInjector = async () =>
+        {
+            reached.TrySetResult(true);
+            await release.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        };
+        Task<IReadOnlyList<OutgoingMessage>>? pairing = null;
+        try
+        {
+            await manager.JoinMatchmakingAsync(sessions[0], "ranked", null);
+            pairing = manager.JoinMatchmakingAsync(sessions[1], "ranked", null);
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var banned = banTriggeringSeat ? second : first;
+            using var response = await Mutate(f, banned.Id, new { restrictionDays = 7,
+                reason = "synthetic-inflight-pair", expectedVersion = f.Store.Version,
+                idempotencyKey = "inflight-pair-" + banTriggeringSeat });
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode); // real committed admin transaction
+            release.TrySetResult(true);
+            var messages = await pairing.WaitAsync(TimeSpan.FromSeconds(5));
+            var wire = messages.Select(message => JsonSerializer.SerializeToElement(message.Payload,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))).ToArray();
+            Assert.DoesNotContain(wire, row => row.GetProperty("type").GetString() is "matchmakingFound" or "gameState");
+            foreach (var session in sessions)
+                Assert.Contains(messages, message => message.SessionId == session
+                    && JsonSerializer.SerializeToElement(message.Payload, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                        .GetProperty("type").GetString() == "matchmakingRejected");
+            Assert.Contains(wire, row => row.TryGetProperty("message", out var text)
+                && text.GetString()!.Contains("排位资格", StringComparison.Ordinal));
+            Assert.Equal(0, manager.RuntimeStats().RoomCount);
+            Assert.Equal(0, manager.RuntimeStats().ActiveGameCount);
+            Assert.Empty(await recorder.ListMatchesAsync());
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            manager.RankedMatchmakingBeforeFinalAdmissionInjector = null;
+            if (pairing is not null) await pairing.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
     [Fact]
     public async Task ManualBanDatabaseCannotBeDowngradedByTheExistingOfflineRehearsal()
     {

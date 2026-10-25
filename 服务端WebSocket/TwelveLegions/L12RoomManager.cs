@@ -565,6 +565,8 @@ public sealed partial class L12RoomManager
                 responseModes: responsePreferences.Select(item => item.Mode).ToArray());
         }
         catch { return RequeueMatchmakingPair(opponent, entry, "建立匹配房间失败"); }
+        if (normalizedMode == "ranked" && RankedMatchmakingBeforeFinalAdmissionInjector is { } beforeAdmission)
+            await beforeAdmission(); // Test seam before any Room/platform gate or membership mutation.
         _ = TryGetMatchmakingObservation(other, out var tentativeOtherObservation);
         _ = TryGetMatchmakingObservation(session, out var tentativeSessionObservation);
         var observationRooms = new[] { tentativeOtherObservation?.Room, tentativeSessionObservation?.Room }
@@ -595,17 +597,32 @@ public sealed partial class L12RoomManager
                 return RequeueMatchmakingPair(opponent, entry, "匹配期间房间状态已变化");
             }
 
-            RetireMatchmakingObservation(other, otherObservation);
-            RetireMatchmakingObservation(session, sessionObservation);
-            other.RoomCode = room.Code; other.PlayerIndex = 0; other.CustomDeck = opponent.Deck;
-            other.IsSpectator = false;
-            session.RoomCode = room.Code; session.PlayerIndex = 1; session.CustomDeck = entry.Deck;
-            session.IsSpectator = false;
-            InitializeRankedClock(room);
-            if (!_rooms.TryAdd(room.Code, room)) throw new InvalidOperationException("匹配房间码冲突");
+            void PublishPreparedRoom()
+            {
+                // Only existing in-memory membership/clock publication. The
+                // observation and room gates are already held; time-control
+                // reads may reenter the same platform Monitor, never await.
+                RetireMatchmakingObservation(other, otherObservation);
+                RetireMatchmakingObservation(session, sessionObservation);
+                other.RoomCode = room.Code; other.PlayerIndex = 0; other.CustomDeck = opponent.Deck;
+                other.IsSpectator = false;
+                session.RoomCode = room.Code; session.PlayerIndex = 1; session.CustomDeck = entry.Deck;
+                session.IsSpectator = false;
+                InitializeRankedClock(room);
+                if (!_rooms.TryAdd(room.Code, room)) throw new InvalidOperationException("匹配房间码冲突");
+            }
+            if (normalizedMode == "ranked")
+            {
+                var admission = CommitRankedPairAdmission(session.AccountId, other.AccountId!, PublishPreparedRoom);
+                if (admission.FirstBlock is not null || admission.SecondBlock is not null)
+                    return MatchmakingError(sessionId, admission.FirstBlock ?? "匹配对象暂不可进行排位，请重新匹配")
+                        .Concat(MatchmakingError(other.Id, admission.SecondBlock ?? "匹配对象暂不可进行排位，请重新匹配")).ToArray();
+            }
+            else PublishPreparedRoom();
             for (var index = acquiredObservationRooms.Count - 1; index >= 0; index--)
                 acquiredObservationRooms[index].Gate.Release();
             acquiredObservationRooms.Clear();
+            // Persistence/await stays outside the platform admission gate.
             await StartRecordedGameAsync(room, [other, session], [opponent.Deck, entry.Deck]);
         }
         catch

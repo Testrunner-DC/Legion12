@@ -91,6 +91,55 @@ public sealed class PlayerReplayPagingTests
     }
 
     [Theory]
+    [InlineData(0, 0, false)]
+    [InlineData(0, 1, false)]
+    [InlineData(2, 0, false)]
+    [InlineData(2, 1, false)]
+    [InlineData(0, 0, true)]
+    [InlineData(0, 1, true)]
+    [InlineData(2, 0, true)]
+    [InlineData(2, 1, true)]
+    public async Task ReusedUsernameCannotClaimLegacyReplayAndImmutableParticipantStillWorks(
+        int format, int viewer, bool missingParticipantIdentity)
+    {
+        await using var fixture = await Fixture.CreateAsync(format);
+        var oldName = fixture.OwnerNames[viewer];
+        var ownerId = fixture.OwnerIds[viewer];
+        var newName = "renamed" + viewer;
+        await fixture.SqlAsync($"UPDATE matches SET account_{viewer}=NULL WHERE match_id=$match;", "unused");
+        if (missingParticipantIdentity)
+            await fixture.SqlAsync($"UPDATE match_participants SET account_id=NULL WHERE match_id=$match AND player_index={viewer};", "unused");
+        var before = await fixture.ArchiveDigestAsync();
+        var renamed = fixture.Store.SelfServiceChangeUsername(ownerId, "ReplayTest-123!", newName);
+        Assert.True(renamed.Success, renamed.Message);
+        var ownerToken = fixture.Store.Login(newName, "ReplayTest-123!").Token!;
+        var registration = fixture.Store.Register(oldName, "ReplayTest-123!");
+        Assert.True(registration.Success, registration.Message);
+        var unrelated = Assert.IsType<L12AccountView>(registration.Account);
+        Assert.NotEqual(ownerId, unrelated.Id);
+        var unrelatedToken = fixture.Store.Login(oldName, "ReplayTest-123!").Token!;
+
+        var page = await fixture.PageAsync(token: unrelatedToken);
+        var full = await fixture.MatchAsync(unrelatedToken);
+        Assert.Equal(HttpStatusCode.NotFound, page.Status);
+        Assert.Equal(HttpStatusCode.NotFound, full.Status);
+        Assert.DoesNotContain("\"items\"", page.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain(PrivateDeck0, full.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain(PrivateDeck1, full.Body, StringComparison.Ordinal);
+        Assert.Empty(await fixture.Recorder.ListMatchesForAccountAsync(unrelated.Id, oldName));
+        Assert.False(await fixture.Recorder.IsWithinRecentPlayerReplayWindowAsync(fixture.MatchId, unrelated.Id, oldName));
+
+        var expected = missingParticipantIdentity ? HttpStatusCode.NotFound : HttpStatusCode.OK;
+        Assert.Equal(expected, (await fixture.PageAsync(token: ownerToken)).Status);
+        Assert.Equal(expected, (await fixture.MatchAsync(ownerToken)).Status);
+        Assert.Equal(missingParticipantIdentity ? 0 : 1,
+            (await fixture.Recorder.ListMatchesForAccountAsync(ownerId, newName)).Count);
+        Assert.Equal(before, await fixture.ArchiveDigestAsync());
+        Assert.NotNull(await fixture.Recorder.GetMatchAsync(fixture.MatchId)); // admin/history is preserved
+        fixture.Succeeded = true;
+    }
+
+    [Theory]
     [InlineData(-1, 1)]
     [InlineData(0, 1)]
     [InlineData(1_000, 100)]
@@ -458,6 +507,8 @@ public sealed class PlayerReplayPagingTests
         }
 
         internal Task<Response> LegacyAsync(int viewer) => SendAsync($"/api/matches/{MatchId}", Tokens[viewer]);
+
+        internal Task<Response> MatchAsync(string token) => SendAsync($"/api/matches/{MatchId}", token);
 
         internal Task<Response> PageAsync(int viewer = 0, string? cursor = null, int limit = 2,
             string? matchId = null, string? token = null, bool anonymous = false)

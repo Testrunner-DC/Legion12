@@ -565,8 +565,29 @@ public sealed partial class L12PlatformStore
 
     internal string? RankedEntryBlock(string accountId, DateTimeOffset now)
     {
+        lock (_gate) return RankedEntryBlockLocked(accountId, now);
+    }
+
+    // Same gate as committed restrictions/admin transactions. The callback is
+    // synchronous, in-memory room publication only: never await or perform I/O.
+    // Either the ban commits first and publication is refused, or the room is
+    // published first and the existing in-progress-game exemption applies.
+    internal (string? FirstBlock, string? SecondBlock) TryCommitRankedPairAdmission(
+        string firstAccountId, string secondAccountId, DateTimeOffset now, Action publish)
+    {
+        ArgumentNullException.ThrowIfNull(publish);
         lock (_gate)
         {
+            var first = RankedEntryBlockLocked(firstAccountId, now);
+            var second = RankedEntryBlockLocked(secondAccountId, now);
+            if (first is not null || second is not null) return (first, second);
+            publish(); // Exceptions propagate into the room manager's existing rollback.
+            return (null, null);
+        }
+    }
+
+    private string? RankedEntryBlockLocked(string accountId, DateTimeOffset now)
+    {
             if (IsRankedSeasonCutoverFenced(now))
                 return "赛季正在切换，暂不接受新的排位对局；已开始的对局仍可恢复并完成";
             var integrityUntil = RankedIntegrityRestrictionUntilLocked(accountId, now);
@@ -584,7 +605,6 @@ public sealed partial class L12PlatformStore
                 .OrderByDescending(row => row.CooldownUntil).FirstOrDefault();
             return cooldown is null ? null
                 : $"异常极短排位奖励正在暂扣复核，请于 {cooldown.CooldownUntil.ToOffset(TimeSpan.FromHours(8)):HH:mm}（UTC+8）后重试";
-        }
     }
 
     public IReadOnlyCollection<string> RankedIntegrityProtectedMatchIds()

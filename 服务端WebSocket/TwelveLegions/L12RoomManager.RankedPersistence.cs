@@ -17,6 +17,7 @@ public sealed partial class L12RoomManager
     };
 
     internal Func<Task>? RankedSeasonCutoverFinalCheckInjector { get; set; }
+    internal Func<Task>? RankedMatchmakingBeforeFinalAdmissionInjector { get; set; }
     private int _rankedSeasonCutoverInProgress;
 
     private string? RankedAdmissionBlock(string accountId, DateTimeOffset now)
@@ -25,6 +26,20 @@ public sealed partial class L12RoomManager
             || (_platform?.IsRankedSeasonCutoverFenced(now) ?? false))
             return "赛季正在切换，暂不接受新的排位对局；已开始的对局仍可恢复并完成";
         return _platform?.RankedEntryBlock(accountId, now);
+    }
+
+    private (string? FirstBlock, string? SecondBlock) CommitRankedPairAdmission(
+        string firstAccountId, string secondAccountId, Action publish)
+    {
+        if (Volatile.Read(ref _rankedSeasonCutoverInProgress) > 0)
+        {
+            const string blocked = "赛季正在切换，暂不接受新的排位对局；已开始的对局仍可恢复并完成";
+            return (blocked, blocked);
+        }
+        if (_platform is not null)
+            return _platform.TryCommitRankedPairAdmission(firstAccountId, secondAccountId, _utcNow(), publish);
+        publish();
+        return (null, null);
     }
 
     private async Task StartRecordedGameAsync(Room room, IReadOnlyList<Session> members,

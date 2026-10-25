@@ -377,17 +377,16 @@ public sealed partial class MatchRecorder
         {
             await connection.OpenAsync(cancellationToken);
             var visible = connection.CreateCommand();
-            visible.CommandText = """
+            visible.CommandText = $"""
                 SELECT CASE
-                    WHEN account_0=$account OR (account_0 IS NULL AND player_0=$player) THEN 0
-                    WHEN account_1=$account OR (account_1 IS NULL AND player_1=$player) THEN 1
+                    WHEN {PlayerReplayOwner0Sql}=$account THEN 0
+                    WHEN {PlayerReplayOwner1Sql}=$account THEN 1
                     ELSE -1 END
-                FROM matches
-                WHERE match_id=$match AND ended_utc IS NOT NULL AND mode_id <> 'sandbox';
+                FROM matches m
+                WHERE m.match_id=$match AND m.ended_utc IS NOT NULL AND m.mode_id <> 'sandbox';
                 """;
             visible.Parameters.AddWithValue("$match", matchId);
             visible.Parameters.AddWithValue("$account", accountId);
-            visible.Parameters.AddWithValue("$player", legacyPlayerName);
             var scalar = await visible.ExecuteScalarAsync(cancellationToken);
             if (scalar is null) return -1;
             viewer = Convert.ToInt32(scalar);

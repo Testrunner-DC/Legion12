@@ -138,6 +138,16 @@ await test('actual claim function ignores repeated revisions and recovery baseli
     assert.equal(f.claims.claimCardStateTransitions(state, 7, active, events).length, 0)
   } finally { f.dispose() }
 })
+await test('a conflicting payload at the accepted revision cannot create motion or rewrite the visual baseline', () => {
+  const f=fixture();try{
+    const state=f.claims.createCardStateClaimState(),baseline=new Map([['unit',{instanceId:'unit',tapped:false}]])
+    f.claims.resetCardStateClaimState(state,7,baseline,30)
+    const contradictory=new Map([['unit',{instanceId:'unit',tapped:true}]])
+    assert.equal(f.claims.claimCardStateTransitions(state,7,contradictory,[]).length,0)
+    assert.equal(state.states.get('unit').tapped,false,'same-revision object replacement is not a new authoritative fact')
+    assert.equal(state.revision,7);assert.equal(state.lastEventSequence,30)
+  }finally{f.dispose()}
+})
 for (const [from, to] of [[false, true], [true, false]]) await test(`ready/rest has one lifted 3D motion and an exact terminal authority/${from}`, async () => {
   const f = fixture(); try {
     const transition = f.prepare(from, to); f.state.queue.push(transition); f.state.showNext(); await f.advance()
