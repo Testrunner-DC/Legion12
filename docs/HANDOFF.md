@@ -1,6 +1,15 @@
 # 十二军团简短交接
 
-## 2026-10-26 当前优先：一次完整测试部署，再推进G4/G6/G7
+## 2026-10-26 测试部署已完成｜G6画廊拆分与G4数据工具本地接受
+
+- 唯一`stage-goals-20261025/test-deployment/release-session-summary.json`：干净c8750df9一次canonical完整通过8417规则/2650平台、零失败跳过、完整前端/类型/双构建及八计时阶段。原473后只补QA和账本，不混产品；旧拒绝保原日志。TEST16:37:37Z上线、16:38:16Z独验，PID745761/重启0；363磁盘/12公网SHA、三入口/四health/四匿名WS、schema10/七配置/85项最新快照通过，教学聊天true、共享资料保。正式仍3a/PID698071/维护false，本轮正式业务/统计/维护零写，不重开已完成发布。
+- 程序预算在停服前拒绝后，原flock精确清未被进程/回滚/诊断引用的旧TEST24a程序251461295B，仅解链接，不动runtime/备份/六证据。核同一uploaded D316包和原工具LF SHA后原入口成功重进，四预算未改；通用retention保守跳过旧完整诊断另列，不冒本次部署失败。
+- 新鲜binding F945C94B真实绑c875包/DLL、两PID及五client leaf；normal首轮13秒以`NORMAL_PRESSURE_REQUIRED_DATA_ABSENT`准入退出，未发30＋10，不报性能失败/通过。双运维会话撤销、guard/control退出、两服身份不变；原件representative-load-current-20261022/20261026-c8750df9。实读analytics=0/audit=50/tournaments=3；准备已批16纯合成前，TEST已出现非本轮1场/27条命令，严格空库守卫在生成前拒绝，fixture目录不存在、未生成/导入任何样本。保原失败和fixture-scope-readback.json，不擅清未知对局或降低非空/3秒/大载荷；需独占测试窗口。生命周期总字段未全通过不改写成压测验收。认证专用HTTP及600k写/迁移仍未完成，仍写120k。
+- G6四叶已交回冻结、本地接受：两画廊块172行/24路由保原序及中间server-storage；Main独立重插全文件LF等价。63定向/4架构/两尺寸公开投影过，同源三DLL一次完整平台2650/2650、零失败跳过，3CAF77B7 TRX/1DD067D6监督回执及临时树清退；console日志仅部分，不冒完整stdout。唯一g6-gallery-extraction/main-acceptance.json及synchronization.json；未改隐私/权限/限流、不重跑未变规则/前端、不再部署c875或冒G6全完成。
+- normal导入新增显式11字段绑定入口，仍固定TEST库、原首追加/全依赖/备份/正式inode隔离/35秒核心。48离线SQLite/CLI反例过；Main独立AST证明全部旧模块语义（除说明和新增main前缀）不变，source8882E8DE/QA3DCA5B3E。唯一normal-analytics-binding-green-20261026d/main-acceptance.json及synchronization.json；仅工具本地接受，外层绑定及真实Linux调用未验，当前非空TEST禁止执行。
+- 动画专项01a0dedd已获三产品/四既有QA叶精确租约，修真实主宰受击、加拉哈德首paint唯一owner与厚重关键帧；Main仅docs/两已验族同步，无交叠，focused构建串行，交回后Main独验，不自部署。图库新CID18e9来源只读已交回：TEST c875实际共享formal 3a旧120/min，正式根媒体/元数据仍共桶；不把新CID唯一归因或重发TEST冒解决。既有独立媒体桶可复用，正式新发布尚待来源人类决定。G7真机/G8外传原缺口保留。
+
+## 2026-10-26 测试部署准备阶段（历史，不重放）
 
 - 人类已明确测试部署及子对话并行授权；Main唯一发布，正式服务/维护/数据不动。固定IP/原RUD指纹/原key实际只读连通，原formal3a/PID698071/maintenance=false、TEST1fc/PID732779/7隔离功能标记健康。两个子代理仅只读准备G4目标容量边界/G6画廊领域块，不写源码或并发构建。
 - 性能前检已过，完整UI前检捕获旧admin safety合同仍读EmailAuth旧随机/返回变量；产品已在c605迁到prepared路径。Main仅修QA映射、保20约束+5反例，保原失败并续尾，不为工具误配重做旧前缀或询问。下一冻结QA-only干净提交走canonical完整Release，产物cache/primary/release/current-test-20261025；证据单一stage-goals-20261025/test-deployment。SDK已实际核ArtifactsPath指向原D热构建，短PATH实测工具齐。

@@ -18,7 +18,12 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8')
 const archivePath = 'opcgpro-vue/src/l12/CardArchive.vue'
 const testPath = 'opcgpro-vue/scripts/test-card-archive-public-alternate-art-versions.mjs'
 const archive = read(archivePath)
-const serverSource = read('服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
+const serverDirectory = path.join(root, '服务端WebSocket', 'TwelveLegions')
+const serverSource = fs.readdirSync(serverDirectory, { withFileTypes: true })
+  .filter(entry => entry.isFile() && /^L12WebSocketServer(?:\..+)?\.cs$/.test(entry.name))
+  .sort((left, right) => left.name.localeCompare(right.name, 'en'))
+  .map(entry => fs.readFileSync(path.join(serverDirectory, entry.name), 'utf8'))
+  .join('\n')
 const store = read('服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs')
 
 assert.match(archive,

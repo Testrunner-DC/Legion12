@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-gallery-route-extraction-internal",
+  "date": "2026-10-26",
+  "audience": "internal",
+  "reason": "画廊目录和异画管理24条HTTP路由原样迁入同类partial，保持顺序、权限、审计、异常、存储及通知；完整平台2650项通过。仅内部组织，不改变玩家行为或限流策略，不宣称已部署。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.Gallery.cs",
+    "TwelveLegions.Tests/ArchitectureP2P3BoundaryTests.cs",
+    "opcgpro-vue/scripts/test-card-archive-public-alternate-art-versions.mjs"
+  ]
+}

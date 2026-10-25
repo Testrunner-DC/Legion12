@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## MAINT-20261026-G6-GALLERY-ROUTES｜画廊HTTP领域等价拆分，本地接受未部署
+
+- P2接入层只组织路由，画廊目录和异画管理两块移入同类partial；24个method/path及原权限/审计/异常/通知主体保留，两调用原位保server-storage夹在中间。全仓L12WebSocketServer partial消费者检索，架构和公开异画QA改读完整partial集合，原断言不删；标准构建原本包含全部.cs，无打包旁路。
+- Main独立将两方法正文移回主文件、恢复原receiver，整文件LF字节等于c875；不是只看路由数。63真实HTTP/共享资料/媒体/权限定向、4架构和1440×900/390×844公开投影过；同源四叶/三DLL一次完整平台2650/2650、零失败跳过，TRX3CAF77B7/监督1DD067D6及临时树清退。日志仅部分console，完整TRX/监督原件保；未变规则/前端映射证据复用，不另跑Release。
+- 唯一stage-goals-20261025/g6-gallery-extraction/main-acceptance.json及synchronization.json。实际c875测试发布已独验完成，当前拆分属于其后本地片，不混称已上线；不改限流/隐私/库、无正式/测试服务或维护写，回滚只恢复原文件布局。G6其余候选逐叶核对，129项不作可直接删除名单。
+
+## MAINT-20261026-NORMAL-ANALYTICS-BINDING｜正常负载数据工具入口，本地离线接受
+
+- 复用人类已批TEST专用16纯合成完整事实边界，仅补独立normal显式模式，11字段含准确qualification绑定SHA/两PID/提交DLL/数据proof/templateSHA，diagnosticsOff必须严格true；路径仍固定TEST库及run派生目录，不冒terminal诊断profile。
+- 48离线SQLite/CLI正反例全过；Main独立AST证明原常量/TerminalBinding/解析/append_fixture/live_guard/apply_fixed等全部旧模块节点不变，main只加明确前缀。原首追加空库、全表/依赖/哈希/备份、正式inode隔离、35秒与失败UNKNOWN不自动重试均保持。源码8882E8DE/QA3DCA5B3E，唯一normal-analytics-binding-green-20261026d/main-acceptance.json及synchronization.json。
+- 不把工具绿当真实Linux/外层adapter或性能合格：本轮normal准入仅缺analytics；生成前TEST新增非本轮1场/27命令，原空库守卫正确在创建目录前拒绝，fixture不存在，未生成/导入。保失败/核对证据，需独占窗口，不能清未知对局、放宽首追加或补造proof；无正式库/统计/服务/维护写。
+
 ## MAINT-20261025-G6-EMAIL-CLIENT｜停用邮箱的客户端冗余整理，本地接受未部署
 
 - 人类已明确永久停用邮箱；G6检索确认platform.ts的3DTO、emailApi及两恢复函数无生产消费者，仅5个旧浏览器mock和1个轻量mock。删除这些死代码；不删服务端503兼容/历史字段、低层匿名旧请求保护、恢复页零请求拦截，也不碰正常管理resetPassword局部函数。

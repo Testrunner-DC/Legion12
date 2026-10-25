@@ -15,7 +15,7 @@ public sealed class ArchitectureP2P3BoundaryTests
             .Concat([Path.Combine(sourceRoot, "L12RankedClock.cs")])
             .Select(path => (Path: path, Source: File.ReadAllText(path)))
             .ToArray();
-        var transport = File.ReadAllText(Path.Combine(sourceRoot, "L12WebSocketServer.cs"));
+        var transport = WebSocketServerSources(sourceRoot);
 
         var directStateWrite = new Regex(
             @"(?:room\.Game|engine|game)\.State(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\]]+\])+\s*(?:(?<![=!<>])=(?!=)|\+\+|--|\+=|-=)",
@@ -34,7 +34,7 @@ public sealed class ArchitectureP2P3BoundaryTests
     {
         var sourceRoot = Path.Combine(RepositoryRoot(), "服务端WebSocket", "TwelveLegions");
         var room = File.ReadAllText(Path.Combine(sourceRoot, "L12RoomManager.cs"));
-        var transport = File.ReadAllText(Path.Combine(sourceRoot, "L12WebSocketServer.cs"));
+        var transport = WebSocketServerSources(sourceRoot);
 
         Assert.Contains("L12KernelProjection.ForPlayer", room, StringComparison.Ordinal);
         Assert.Contains("L12KernelProjection.ForSpectator", room, StringComparison.Ordinal);
@@ -82,6 +82,11 @@ public sealed class ArchitectureP2P3BoundaryTests
         Assert.Contains("事务各阶段失败会恢复最后确认检查点", journalTests, StringComparison.Ordinal);
         Assert.Contains("EpochInvalidationRejectsStaleStatistics", analyticsTests, StringComparison.Ordinal);
     }
+
+    private static string WebSocketServerSources(string sourceRoot)
+        => string.Join("\n", Directory.EnumerateFiles(sourceRoot, "L12WebSocketServer*.cs")
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .Select(path => File.ReadAllText(path)));
 
     private static string RepositoryRoot([CallerFilePath] string sourcePath = "")
         => Directory.GetParent(Path.GetDirectoryName(sourcePath)!)!.FullName;
