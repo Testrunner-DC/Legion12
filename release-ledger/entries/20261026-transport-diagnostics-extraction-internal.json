@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-transport-diagnostics-extraction-internal",
+  "date": "2026-10-26",
+  "audience": "internal",
+  "reason": "五个合成传输诊断顶层类型原样迁入同前缀文件，类型正文、时序、收件者归属与权限不变；逐字回插、编译及111项平台/7项消费者架构回归通过。只调整内部职责，不改变玩家行为，不为本片再次部署。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.TransportDiagnostics.cs"
+  ]
+}

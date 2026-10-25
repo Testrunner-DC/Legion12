@@ -1,5 +1,7 @@
 # Legion12 正式服快速部署
 
+> **2026-10-26最新终态**：正式及TEST同一稳定97a7a71b0f84ac83b4bbcd9a90e95c08d54d88bf完整发布、独立核验完成，PID774133/788923、重启0。按人类随后“部署好了就解除维护”，19:58:55Z当前即时维护CAS133→134结束，health ok、权威entryBlocked=false/v1 open、三围栏缺席、原进程及未来预约/其他配置保留，临时会话401撤销；两服maintenance=false。正式最新两库/WAL与3.154GB备份持久raw proof、TEST363磁盘/12公网SHA及88项备份通过，正式零合成统计。唯一D盘full-deployment-20261026/release-session-summary.json引用maintenance-completion.json；不重放本次切包、开服或旧87b窄发布。
+
 > **2026-10-23最新终态**：最终57ef89b3726f96c06ff1a44d1c073f525669ec6b／包4b5778c7完整8286规则、2230平台、九阶段通过；正式PID577290、测试594892同包独立核验。正式当前维护CAS129→130结束、入口开放，未来计划及其他配置保留；正式零合成统计。唯一D盘return-library-release-20261023/release-session-summary.json。正式首缺incoming与测试首超数据预算均在停服前，原件保留；分别补同SHA与两组最旧测试快照核验转E后续办成功，不重放本次事务或解除维护。
 
 > **2026-10-22 15:36 UTC实际读回**：测试服独立切到4ddd51b6217b0c7829579b5368d5873e990ca7a9/PID568859，规则8200/平台2172及9阶段、38测试静态资源/News同进程分享页/HTTP/匿名WS/新备份独立核验成功；正式仍546187bc/PID534086、本轮无正式启停或维护变更、无业务写。唯一D盘stable-content-release-20261022/release-session-summary.json。本次仅测试发布，不重放正式切换或旧解除维护；后续本地HR摘要/教学完成页/备份预览不在4ddd包内。

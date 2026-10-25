@@ -1,11 +1,17 @@
 # Legion12 Bug 修复记录
 
+## MAINT-20261026-TRANSPORT-DIAGNOSTICS-EXTRACTION｜G6原样职责拆分
+
+- 只移动WebSocketServer前5个合成诊断顶层类型至同前缀TransportDiagnostics.cs，保类型/可见性/所有时序与数值内容；不是Bug行为修正或删除未达功能。P2/P3守卫通配继续覆盖，Program/RoomManager/Outbound/入站/终局/聊天/恢复实际消费者保持。
+- 唯一`stage-goals-20261025/g6-transport-diagnostics/main-acceptance.json`：两个项目编译、111平台＋7消费者/架构全过，两个监督exit0/临时树一次清退；Main独立41818B正文＋原分隔0D0A回插整文件精确49CAE498。测试DE349与最终BABF只差新EOF空行，明确不冒新构建/重测。Main旧区间边界断言失败与原proof保留解释，不算产品RED；原全套不因纯移动重跑。
+- 两产品叶精确租约已返Main，其他源未改；本片不部署、不改维护或业务数据，当前已发布97a和已完成开服不重做。回滚只把原类型放回原文件并移除新叶，不触碰诊断协议。
+
 ## FIX-20261026-PREPARED-PHYSICAL-PAINT｜预备本体裁切与独立效果图
 
 - P4共享原因：State/Zone/Combat预备wrapper的visibility:hidden可被子卡visibility:visible覆盖，原先“有hidden祖先即不可见”的QA错误。真实加拉哈德命令夹具＋原生最小化1050帧中72/72阶段同时两本体；三层改为不可被后代覆盖的零面积clip，只有原owner.show放开，hide恢复，布局/WAAPI/清退/唯一队列不变，无卡号特判。
 - 人类最新明确效果卡图＋文字可以与已落位本体并行。GameBoard仅对结构化full-card效果、同instance、当前公开field/relic/master、无physical owner且DOM仍在对应区的源牌免额外隐藏；隐藏区、手牌/墓地、普通展示、移动中和迟到load继续原lease/owner-key保护，不改权威事实、隐私或卡效。
 - 冻结证据`battle-motion-weight-20261026/galahad-new-feedback/final-handoff.json`：六视角prefix均maxPhysical1、19档264及Combat像素反例有效；最终GameBoard另有组合owner GREEN和效果并行真实RED15/16→GREEN16/16，State14/Combat30/zone31反例/生命周期44过。Main独立只读审查无阻断，精确证据前缀不冒最终全矩阵、真机、FPS或线上全部玩法。原夹具错误/失败保存，不作通过证据。
-- 同批开场延长标准4000ms（fast2200/off即时），沿用两侧主宰＋唯一身份舞台至掷骰选择，移除骰子重复ID，观战只读不获选择权。Main完整31场的28场＋三处旧QA采样同产品续验3/3通过；原失败保留，非新全31。完整性能/UI原前缀续尾、双类型过；旧1600及挂载表达式QA精确迁移，token比较只忽略trivia，保literal/运算符；回放66含独审新发现的旧inline遗漏负控。`full-deployment-20261026/ui-acceptance.json`绑最终源，稳定候选完整Release与两服发布仍由后续记录，不预称完成。回滚只本族五产品及具名QA。
+- 同批开场延长标准4000ms（fast2200/off即时），沿用两侧主宰＋唯一身份舞台至掷骰选择，移除骰子重复ID，观战只读不获选择权。Main完整31场的28场＋三处旧QA采样同产品续验3/3通过；原失败保留，非新全31。完整性能/UI原前缀续尾、双类型过；旧1600及挂载表达式QA精确迁移，token比较只忽略trivia，保literal/运算符；回放66含独审新发现的旧inline遗漏负控。`full-deployment-20261026/ui-acceptance.json`绑最终源。稳定97a包原canonical剩余全过、未变8417/2650同源复用，正式PID774133与TEST788923均已部署独验；唯一同根release-session-summary，正式维护保持、无合成正式统计、不据静态marker关线上Bug。回滚只本族五产品及具名QA。
 
 ## MAINT-20261026-PINNED-GALLERY-BINDING｜固定窄包消费，本地接受未执行正式切换
 
