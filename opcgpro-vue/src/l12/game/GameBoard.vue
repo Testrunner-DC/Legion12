@@ -210,6 +210,7 @@ type PublicRevealPresentation = {
   text: string
   kind: 'full-card' | 'entry-continuation' | 'fact-continuation' | 'linked-public-continuation'
   transactionKey?: string
+  independentEffectSourceInstanceId?: string
 }
 type PublicRevealQueueItem = {
   sequence: number
@@ -278,10 +279,27 @@ function releasePublicRevealAuthority() {
 }
 function acquirePublicRevealAuthority(card: Card) {
   if (publicRevealAuthorityReleases.has(card.instanceId)) return
+  // A structured ability image is an independent reading surface, not a second
+  // physical card. Preserve only its exact public, already-settled board source;
+  // hand/graveyard reveals and a source still owned by physical motion retain
+  // the existing authority lease and privacy/handoff behavior.
+  const independentSettledSource = publicReveal.value?.kind === 'full-card'
+    && publicReveal.value.independentEffectSourceInstanceId === card.instanceId
+    && !card.hidden && !presentationVisualOwnerKeys.value.has(card.instanceId)
+    && props.game.players.some(player => {
+      const samePublicCard = (current: Card | null | undefined) => current?.instanceId === card.instanceId && !current.hidden
+      return player.field.flat().some(samePublicCard) || samePublicCard(player.relic)
+        || (player.extraRelics ?? []).some(samePublicCard)
+        || (card.instanceId === `master-${player.playerIndex}` && !player.master.deployedAsLegion)
+    })
   const targets = new Set<HTMLElement>()
   const selector = `[data-card-instance-id="${CSS.escape(card.instanceId)}"]`
   document.querySelectorAll(`[data-l12-game-stage] ${selector}, .graveyard-overlay ${selector}`)
-    .forEach(node => { if (node instanceof HTMLElement) targets.add(node) })
+    .forEach(node => {
+      if (!(node instanceof HTMLElement)) return
+      if (independentSettledSource && node.closest('[data-l12-zone="field"],[data-l12-zone="relic"],[data-l12-zone="master"]')) return
+      targets.add(node)
+    })
   publicRevealAuthorityReleases.set(card.instanceId,
     [...targets].map(acquireAuthoritativeCardVisibility))
 }
@@ -752,7 +770,8 @@ const activeBoardPromptIds = computed(() => [
   resourceSelectionPrompt.value?.promptId,
 ].filter((promptId): promptId is string => Boolean(promptId)))
 const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null)
-const promptOverlayMounted = computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')
+const promptOverlayMounted = computed(() => !props.readOnly
+  || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative')
 const visibleBoardPromptIds = computed(() => !props.readOnly && !boardControlMinimized.value
   ? activeBoardPromptIds.value : [])
 const visibleBoardPromptId = computed(() => visibleBoardPromptIds.value[0] ?? null)
@@ -997,6 +1016,8 @@ async function showNextPublicReveal() {
     text: [next.text, ...next.linkedContinuationTexts].join('\n'),
     kind,
     transactionKey: presentationFacts ? `facts:${presentationFacts.join(',')}` : entryTransactionKey ?? undefined,
+    independentEffectSourceInstanceId: kind === 'full-card' && isCardEffectPresentationEvent(next.event)
+      && next.cards[0] && !next.cards[0].hidden ? next.cards[0].instanceId : undefined,
   }
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   const duration = publicRevealDuration(publicReveal.value.kind)

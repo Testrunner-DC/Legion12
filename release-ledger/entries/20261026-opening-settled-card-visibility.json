@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-opening-settled-card-visibility",
+  "date": "2026-10-26",
+  "audience": "players",
+  "title": "开场衔接与卡牌显示",
+  "changes": [
+    {"category":"battle","text":"开场标准演出延长至4秒，双方主宰卡图与对阵身份持续保留到掷骰、先后手选择；观战者也能观看，但不能代替玩家选择。","paths":["opcgpro-vue/src/l12/game/PromptOverlay.vue","opcgpro-vue/src/l12/game/GameBoard.vue"]},
+    {"category":"battle","text":"修正加拉哈德等军团在登场选择、响应框收起及活跃休整交接时提前显示另一张本体的问题；已落位卡牌发动效果时保留场上卡，同时展示效果卡图和说明，不再把场上本体隐藏或移到中央。","paths":["opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue","opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue","opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue","opcgpro-vue/src/l12/game/GameBoard.vue"]}
+  ]
+}

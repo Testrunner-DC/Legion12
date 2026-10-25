@@ -261,7 +261,9 @@ function prepareDefeat(captured: CapturedCard, event: ActionEvent, index: number
     position: 'fixed', left: `${captured.rect.left}px`, top: `${captured.rect.top}px`,
     width: `${captured.rect.width}px`, height: `${captured.rect.height}px`, zIndex: '901',
     pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform, opacity, filter',
-    visibility: 'hidden', border: '0', outline: 'none', background: 'transparent', boxShadow: 'none',
+    // The decoded face explicitly restores visibility. Keep its pixels clipped
+    // while prepared; descendants and opacity animations cannot bypass this.
+    visibility: 'hidden', clipPath: 'inset(50%)', border: '0', outline: 'none', background: 'transparent', boxShadow: 'none',
     transform: `rotate(${captured.card.tapped ? 90 : 0}deg)`,
   })
   ghost.removeAttribute('id')
@@ -385,8 +387,18 @@ function presentDefeats(job: DefeatJob) {
       reservation.prepareVisualOwner({
         // Survivors keep the real authoritative DOM as their only visual. A
         // previous holder disposes its lease in this same coordinator handoff.
-        show: () => { if (defeat && !presentation.closed && !cardElement(captured.card.instanceId)) defeat.wrapper.style.visibility = 'visible' },
-        hide: () => { if (defeat) defeat.wrapper.style.visibility = 'hidden' },
+        show: () => {
+          if (defeat && !presentation.closed && !cardElement(captured.card.instanceId)) {
+            defeat.wrapper.style.clipPath = 'none'
+            defeat.wrapper.style.visibility = 'visible'
+          }
+        },
+        hide: () => {
+          if (defeat) {
+            defeat.wrapper.style.visibility = 'hidden'
+            defeat.wrapper.style.clipPath = 'inset(50%)'
+          }
+        },
         dispose: () => finishPresentation(presentation, false),
       })
       const release = await reservation.waitUntilGranted()

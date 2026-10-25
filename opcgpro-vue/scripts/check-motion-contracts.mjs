@@ -317,7 +317,7 @@ const checks = [
     && coordinator.includes('current.item.released') && coordinator.includes('owner.dispose()')
     && !coordinator.includes('presentedVisualTransactions') && !coordinator.includes('motionRequired')],
   ['only actually mounted prompts block spectator card presentations',
-    board.includes("const promptOverlayMounted = computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')")
+    board.replace(/\s+/g, ' ').includes("const promptOverlayMounted = computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative')")
     && board.includes('const visibleBoardPromptIds = computed(() => !props.readOnly && !boardControlMinimized.value')
     && board.includes('visibleBoardPromptId.value') && board.includes('|| visiblePromptModal.value')
     && board.includes('<PromptOverlay v-if="promptOverlayMounted"')

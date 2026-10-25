@@ -9,7 +9,7 @@ const opening = component('src/l12/game/PromptOverlay.vue')
 const movement = component('src/l12/game/ZoneMovementPresentationLayer.vue')
 const state = component('src/l12/game/CardStateTransitionLayer.vue')
 const openingDuration = Number(opening.scriptSetup.content.match(/const openingIntroDurationMs = (\d+)/)?.[1])
-assert.equal(openingDuration, 1600, 'the accepted opening cadence is 1.6 seconds')
+assert.equal(openingDuration, 4000, 'the accepted standard opening cadence is 4 seconds')
 function runtime(source, name, bindings) {
   const ast = ts.createSourceFile('motion.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const node = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)

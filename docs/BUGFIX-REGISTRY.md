@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261026-PREPARED-PHYSICAL-PAINT｜预备本体裁切与独立效果图
+
+- P4共享原因：State/Zone/Combat预备wrapper的visibility:hidden可被子卡visibility:visible覆盖，原先“有hidden祖先即不可见”的QA错误。真实加拉哈德命令夹具＋原生最小化1050帧中72/72阶段同时两本体；三层改为不可被后代覆盖的零面积clip，只有原owner.show放开，hide恢复，布局/WAAPI/清退/唯一队列不变，无卡号特判。
+- 人类最新明确效果卡图＋文字可以与已落位本体并行。GameBoard仅对结构化full-card效果、同instance、当前公开field/relic/master、无physical owner且DOM仍在对应区的源牌免额外隐藏；隐藏区、手牌/墓地、普通展示、移动中和迟到load继续原lease/owner-key保护，不改权威事实、隐私或卡效。
+- 冻结证据`battle-motion-weight-20261026/galahad-new-feedback/final-handoff.json`：六视角prefix均maxPhysical1、19档264及Combat像素反例有效；最终GameBoard另有组合owner GREEN和效果并行真实RED15/16→GREEN16/16，State14/Combat30/zone31反例/生命周期44过。Main独立只读审查无阻断，精确证据前缀不冒最终全矩阵、真机、FPS或线上全部玩法。原夹具错误/失败保存，不作通过证据。
+- 同批开场延长标准4000ms（fast2200/off即时），沿用两侧主宰＋唯一身份舞台至掷骰选择，移除骰子重复ID，观战只读不获选择权。Main完整31场的28场＋三处旧QA采样同产品续验3/3通过；原失败保留，非新全31。完整性能/UI原前缀续尾、双类型过；旧1600及挂载表达式QA精确迁移，token比较只忽略trivia，保literal/运算符；回放66含独审新发现的旧inline遗漏负控。`full-deployment-20261026/ui-acceptance.json`绑最终源，稳定候选完整Release与两服发布仍由后续记录，不预称完成。回滚只本族五产品及具名QA。
+
 ## MAINT-20261026-PINNED-GALLERY-BINDING｜固定窄包消费，本地接受未执行正式切换
 
 - 原`Test-L12AcceptedApplicationBinding`3890字逐字SHA8F3F29C1不变，通用规则不放宽；仅私有固定3a→8300、非rollback且显式manifest的fallback，raw B3327D79、单父3a、tree15f4fd01、六叶全部status/mode/blob、原351产品/QA对象及祖先绑定严格相等。工具HEAD仍要求fresh origin/main；无外部白名单/任意候选参数，包哈希/更新日志基线/runtime/标准停服与最新备份规则保持。

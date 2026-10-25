@@ -14,6 +14,8 @@ const baselineSources = {
   gameBoard: read('../src/l12/game/GameBoard.vue'),
   profilePage: read('../src/l12/site/ProfilePage.vue'),
 }
+const actualPromptMount = baselineSources.gameBoard.match(/computed\(\(\) => !props\.readOnly\s*\|\| props\.game\.phase === 'DisasterPreparation' \|\| props\.game\.phase === 'Initiative'\)/)?.[0]
+assert.ok(actualPromptMount, 'current read-only opening/preparation mount declaration must exist')
 
 const replaceOnce = (source, before, after) => {
   const index = source.indexOf(before)
@@ -211,23 +213,27 @@ reject('opponent hand loses mobile layout model', 'boardMobileLayoutConsumers', 
   ':confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"',
   ':confirm-all-playable="mobileLandscapeViewport"'))
 accept('inline prompt mount condition remains semantically equivalent', changed('gameBoard',
+  'v-if="promptOverlayMounted"', 'v-if="!readOnly || game.phase === \'DisasterPreparation\' || game.phase === \'Initiative\'"'))
+reject('inline prompt mount cannot omit spectator initiative', 'boardMobileLayoutConsumers', changed('gameBoard',
   'v-if="promptOverlayMounted"', 'v-if="!readOnly || game.phase === \'DisasterPreparation\'"'))
 accept('computed prompt mount allows expression parentheses', changed('gameBoard',
-  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')",
-  "computed(() => ( !props.readOnly || props.game.phase === 'DisasterPreparation' ))"))
+  actualPromptMount,
+  "computed(() => ( !props.readOnly || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative' ))"))
 reject('computed prompt mount cannot be permanently hidden', 'boardMobileLayoutConsumers', changed('gameBoard',
-  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')", 'computed(() => false)'))
+  actualPromptMount, 'computed(() => false)'))
 reject('computed prompt mount keeps spectator preparation', 'boardMobileLayoutConsumers', changed('gameBoard',
-  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')",
+  actualPromptMount,
   "computed(() => !props.readOnly || props.game.phase === 'Main')"))
 reject('computed prompt mount cannot reverse player eligibility', 'boardMobileLayoutConsumers', changed('gameBoard',
-  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')",
+  actualPromptMount,
   "computed(() => props.readOnly || props.game.phase === 'DisasterPreparation')"))
 reject('unrelated prompt binding cannot borrow valid computed declaration', 'boardMobileLayoutConsumers', changed('gameBoard',
   'v-if="promptOverlayMounted"', 'v-if="unrelatedPrompt"'))
 reject('prompt mount must use the imported computed function', 'boardMobileLayoutConsumers', changed('gameBoard',
-  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')",
+  actualPromptMount,
   "fakeComputed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')"))
+reject('computed prompt mount keeps spectator initiative', 'boardMobileLayoutConsumers', changed('gameBoard',
+  actualPromptMount, "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')"))
 reject('prompt receives wrong mobile model', 'boardMobileLayoutConsumers', changed('gameBoard',
   ':inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"',
   ':inspector-visible="modalInspectorVisible" :mobile-layout="compactViewport"'))

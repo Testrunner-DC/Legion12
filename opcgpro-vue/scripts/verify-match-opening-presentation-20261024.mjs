@@ -149,6 +149,11 @@ async function stageSnapshot(page) {
         return label ? getComputedStyle(label).color : ''
       }),
       factionColors: articles.map(article => getComputedStyle(article).getPropertyValue('--opening-faction-color').trim()),
+      versus: (() => {
+        const node = stage.querySelector('.opening-versus')
+        return node ? { text: node.textContent?.trim() || '', opacity: Number.parseFloat(getComputedStyle(node).opacity),
+          display: getComputedStyle(node).display, visibility: getComputedStyle(node).visibility, ...rect(node) } : null
+      })(),
       landingTargets: articles.map(article => ({
         x: article.style.getPropertyValue('--master-target-x'),
         y: article.style.getPropertyValue('--master-target-y'),
@@ -213,7 +218,7 @@ try {
             'the waiting viewer emitted an initiative choice command')
         }
         if ((you === 0 && role === 'owner') || (you === 1 && role === 'waiting')) {
-          await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+          await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
           await page.screenshot({ path: path.join(screenshotRoot, `${name}.png`) })
         }
         return snapshot
@@ -226,7 +231,7 @@ try {
       'opening-rolls': 'valid', 'opening-role': 'owner', markers: '0',
     })
     try {
-      await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
       await waitForArtwork(page)
       const snapshot = await stageSnapshot(page)
       assert.equal(snapshot.factionColors.length, 2)
@@ -260,13 +265,34 @@ try {
       })))
       assert.ok(masterVisibility.every(item => item.opacity > .9 && item.imageOpacity > .9 && item.visibility === 'visible'),
         `settled master faces were not visibly rendered: ${JSON.stringify(masterVisibility)}`)
+      const matchup = await page.evaluate(() => ({
+        versus: (() => { const node = document.querySelector('.opening-versus'); if (!(node instanceof HTMLElement)) return null
+          const style = getComputedStyle(node); const rect = node.getBoundingClientRect()
+          return { text: node.textContent?.trim() || '', opacity: Number.parseFloat(style.opacity), display: style.display,
+            visibility: style.visibility, left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } })(),
+        identities: [...document.querySelectorAll('.opening-versus-player')].map(node => {
+          const style = getComputedStyle(node); const rect = node.getBoundingClientRect()
+          return { text: node.textContent?.trim() || '', role: node.classList.contains('mine') ? 'mine' : 'opponent',
+            opacity: Number.parseFloat(style.opacity), display: style.display, visibility: style.visibility,
+            left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+        }),
+        paintedDiceIds: document.querySelectorAll('.opening-die small').length,
+        diceLabels: [...document.querySelectorAll('.opening-die')].map(node => node.getAttribute('aria-label') || ''),
+      }))
+      assert.ok(matchup.versus && matchup.versus.text === '对阵' && matchup.versus.opacity > .9
+        && matchup.versus.display !== 'none' && matchup.versus.visibility === 'visible', JSON.stringify(matchup))
+      assert.deepEqual(matchup.identities.map(item => item.role), ['opponent', 'mine'], JSON.stringify(matchup))
+      assert.ok(matchup.identities.every(item => item.text && item.opacity > .9 && item.display !== 'none' && item.visibility === 'visible'), JSON.stringify(matchup))
+      assert.equal(matchup.paintedDiceIds, 0, `dice painted a second player id: ${JSON.stringify(matchup)}`)
+      assert.equal(matchup.diceLabels.length, 2, JSON.stringify(matchup))
+      assert.ok(matchup.diceLabels.every(Boolean), JSON.stringify(matchup))
       assert.equal(await page.locator('[data-tutorial-choice="first"],[data-tutorial-choice="second"]').count(), 2,
         'choice owner did not retain both initiative controls after dice settled')
       assert.equal(await page.evaluate(() => window.__sentCommands.filter(command => JSON.stringify(command).includes('first') || JSON.stringify(command).includes('second')).length), 0,
         'visual observation emitted an initiative command before the owner acted')
       await page.screenshot({ path: path.join(screenshotRoot, 'visual-dramatic-versus.png') })
       return { state: 'settled-owner-choice', articleRects: snapshot.articleRects, faces,
-        masterVisibility, factionColors: snapshot.factionColors, choiceCount: 2, emittedChoices: 0 }
+        masterVisibility, matchup, factionColors: snapshot.factionColors, choiceCount: 2, emittedChoices: 0 }
     } finally { await context.close() }
   })
 
@@ -274,7 +300,7 @@ try {
     await runCase(name, async () => {
       const { context, page } = await openingPage(baseUrl, viewport, { 'opening-rolls': 'valid', markers: '0', ...params })
       try {
-        await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+        await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
         await waitForArtwork(page)
         const geometry = await page.evaluate(() => {
           const rect = node => {
@@ -324,20 +350,40 @@ try {
     mobile: '1', canvas: '1', 'opening-role': 'waiting',
   })
 
+  await runCase('spectator-shared-opening-no-authority', async () => {
+    const { context, page } = await openingPage(baseUrl, { width: 1366, height: 768 }, {
+      referee: '1', 'opening-rolls': 'valid', 'opening-role': 'owner', markers: '0',
+    })
+    try {
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
+      await waitForArtwork(page)
+      assert.equal(await page.locator('.opening-master-card').count(), 2)
+      assert.equal(await page.locator('.opening-versus-player').count(), 2)
+      assert.equal(await page.locator('.opening-versus').filter({ hasText: '对阵' }).count(), 1)
+      assert.equal(await page.locator('[data-tutorial-choice="first"],[data-tutorial-choice="second"]').count(), 0,
+        'spectator inherited initiative authority')
+      assert.equal(await page.evaluate(() => window.__sentCommands.length), 0, 'spectator emitted a command')
+      await page.screenshot({ path: path.join(screenshotRoot, 'spectator-shared-opening-no-authority.png') })
+      return { cards: 2, identities: 2, versus: 1, choices: 0, commands: 0 }
+    } finally { await context.close() }
+  })
+
   await runCase('visual-large-dice', async () => {
     const { context, page } = await openingPage(baseUrl, { width: 1440, height: 900 }, { 'opening-rolls': 'valid' })
     try {
-      await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
       const dice = await page.locator('.opening-die').evaluateAll(nodes => nodes.map(node => {
         const face = node.querySelector('b')
         const rect = node.getBoundingClientRect()
         const faceRect = face?.getBoundingClientRect()
         const style = face ? getComputedStyle(face) : null
-        return { label: node.querySelector('small')?.textContent?.trim(), width: rect.width, height: rect.height,
+        return { label: node.getAttribute('aria-label'), width: rect.width, height: rect.height,
           faceWidth: faceRect?.width || 0, faceHeight: faceRect?.height || 0, fontSize: Number.parseFloat(style?.fontSize || '0') }
       }))
-      assert.equal(dice.at(-1)?.label, '你', JSON.stringify(dice))
-      assert.ok(dice[0]?.label && dice[0].label !== '对手', JSON.stringify(dice))
+      assert.match(dice.at(-1)?.label || '', /^你.*掷出6点$/, JSON.stringify(dice))
+      assert.match(dice[0]?.label || '', /掷出3点$/, JSON.stringify(dice))
+      assert.ok(!dice[0]?.label?.startsWith('对手掷出'), JSON.stringify(dice))
+      assert.equal(await page.locator('.opening-die small').count(), 0, 'dice must not repeat the persistent identity labels')
       assert.ok(dice.every(item => item.fontSize >= 88 && item.faceWidth >= 80 && item.faceHeight >= 80), JSON.stringify(dice))
       await page.screenshot({ path: path.join(screenshotRoot, 'visual-large-dice.png') })
       return { dice }
@@ -387,7 +433,7 @@ try {
   await runCase('missing-master-anchor-does-not-fabricate-landing', async () => {
     const { context, page } = await openingPage(baseUrl, { width: 1366, height: 768 }, { 'opening-rolls': 'valid' })
     try {
-      await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
       await page.evaluate(() => {
         window.__openingFixture.removeMasterAnchors()
         window.__openingFixture.nextMatch('opening-without-master-anchor', 'Initiative', { rolls: [0, 0], winner: 0, firstPlayer: 0 })
@@ -410,6 +456,13 @@ try {
       })
       try {
         await page.waitForSelector('.mulligan-stage', { state: 'visible' })
+        // Teleport entry scales the overlay briefly. Read all containment boxes
+        // after that finite transition, not across two different animation frames.
+        await page.evaluate(async () => {
+          const finite = document.getAnimations().filter(animation =>
+            Number.isFinite(animation.effect?.getComputedTiming().endTime))
+          await Promise.all(finite.map(animation => animation.finished.catch(() => {})))
+        })
         assert.equal(await page.locator('.mulligan-stage .prompt-panel').count(), 0)
         assert.match(await page.locator('.mulligan-stage header').innerText(), /你是先手[\s\S]*请确认调度的手牌/)
         assert.equal(await page.locator('[data-tutorial-mulligan-card]').count(), 5, 'fixture hand count was not rendered from game state')
@@ -572,7 +625,7 @@ try {
   await runCase('independent-result-visible-click-through-clear-and-unmount', async () => {
     const { context, page } = await openingPage(baseUrl, { width: 1366, height: 768 }, { 'opening-rolls': 'valid', 'opening-underlay': '1' })
     try {
-      await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
       const resultObserved = await page.evaluate(() => new Promise(resolve => {
         const current = () => document.querySelector('.initiative-resolution-message')
         const observer = new MutationObserver(() => {
@@ -617,14 +670,14 @@ try {
       await page.waitForTimeout(700)
       assert.equal(await page.locator('.initiative-resolution-message').count(), 0)
       await page.evaluate(() => window.__openingFixture.nextMatch('opening-D', 'Initiative', { rolls: [6, 3], winner: 0, firstPlayer: 0 }))
-      await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
       await page.evaluate(() => window.__openingFixture.sameMatchPhase('Main'))
       await page.waitForSelector('.initiative-resolution-message', { state: 'visible', timeout: 500 })
       await page.evaluate(() => window.__openingFixture.nextMatch('opening-E', 'DisasterPreparation', { rolls: [6, 3], winner: 1, firstPlayer: 1 }))
       await page.waitForTimeout(80)
       assert.equal(await page.locator('.initiative-resolution-message').count(), 0, 'new match did not clear the old result')
       await page.evaluate(() => window.__openingFixture.nextMatch('opening-F', 'Initiative', { rolls: [6, 3], winner: 0, firstPlayer: 0 }))
-      await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 6500 })
       await page.evaluate(() => window.__openingFixture.sameMatchPhase('Main'))
       await page.waitForSelector('.initiative-resolution-message', { state: 'visible', timeout: 500 })
       await page.evaluate(() => window.__openingFixture.unmount())
@@ -635,11 +688,11 @@ try {
   })
 
   for (const motion of [
-    { key: 'standard', reduced: 'no-preference', expected: [1450, 1950], css: [1550, 1650] },
-    { key: 'fast', reduced: 'no-preference', expected: [700, 1100], css: [850, 930] },
+    { key: 'standard', reduced: 'no-preference', expected: [3850, 4450], css: [3950, 4050] },
+    { key: 'fast', reduced: 'no-preference', expected: [2050, 2550], css: [2150, 2250] },
     { key: 'off', reduced: 'no-preference', expected: [0, 180], css: [0, 1] },
-    { key: 'standard', reduced: 'reduce', expected: [1450, 1950], css: [1550, 1650] },
-    { key: 'fast', reduced: 'reduce', expected: [700, 1100], css: [850, 930] },
+    { key: 'standard', reduced: 'reduce', expected: [3850, 4450], css: [3950, 4050] },
+    { key: 'fast', reduced: 'reduce', expected: [2050, 2550], css: [2150, 2250] },
     { key: 'off', reduced: 'reduce', expected: [0, 180], css: [0, 1] },
   ]) {
     const name = `motion-${motion.key}-${motion.reduced}`
@@ -666,10 +719,20 @@ try {
         if (motion.css[1] === 0) assert.equal(animationDurations.length, 0)
         else if (motion.css[0] === 0) assert.ok(animationDurations.length === 0 || animationDurations.some(duration => duration <= motion.css[1]), `unexpected CSS durations ${animationDurations}`)
         else assert.ok(animationDurations.some(duration => duration >= motion.css[0] && duration <= motion.css[1]), `unexpected CSS durations ${animationDurations}`)
-        const startedAt = Date.now()
-        await page.evaluate(() => window.__openingFixture.nextMatch(`motion-${Date.now()}`, 'Initiative', { rolls: [6, 3], winner: 0, firstPlayer: 0 }))
-        await page.waitForSelector('.opening-presentation.settled', { timeout: 2200 })
-        const elapsed = Date.now() - startedAt
+        // Measure the actual in-page lifecycle, not driver IPC plus selector polling.
+        // Retain the same duration bounds and a separate hard failure deadline.
+        const elapsed = await page.evaluate(() => new Promise((resolve, reject) => {
+          const startedAt = performance.now()
+          let frame = 0
+          const timeout = setTimeout(() => { cancelAnimationFrame(frame); reject(new Error('opening settle deadline')) }, 6500)
+          window.__openingFixture.nextMatch(`motion-${Date.now()}`, 'Initiative', { rolls: [6, 3], winner: 0, firstPlayer: 0 })
+          const sample = () => {
+            if (document.querySelector('.opening-presentation.settled')) {
+              clearTimeout(timeout); resolve(performance.now() - startedAt)
+            } else frame = requestAnimationFrame(sample)
+          }
+          frame = requestAnimationFrame(sample)
+        }))
         assert.ok(elapsed >= motion.expected[0] && elapsed <= motion.expected[1], `${name} settled in ${elapsed}ms`)
         const authoritativeFaces = await page.locator('.opening-die').evaluateAll(nodes => nodes.map((node, index) => ({
           role: index === 0 ? 'opponent' : 'mine', face: node.querySelector('em')?.textContent?.trim() || '',

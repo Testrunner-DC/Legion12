@@ -19,6 +19,8 @@ const singleOwnerOnly = process.env.L12_SINGLE_OWNER_ONLY === '1'
 const frameTimelineOnly = process.env.L12_FRAME_TIMELINE_ONLY === '1'
 const naturalFrameTimelineOnly = process.env.L12_NATURAL_FRAME_TIMELINE_ONLY === '1'
 const attributeRebindOnly = process.env.L12_ATTRIBUTE_REBIND_ONLY === '1'
+const settledEffectOnly = process.env.L12_SETTLED_EFFECT_ONLY === '1'
+const previousEffectAuthority = process.env.L12_SETTLED_EFFECT_PREVIOUS_AUTHORITY === '1'
 
 if (!output || !path.isAbsolute(output)) throw new Error('L12_LEGION_ENTRY_OUT must be an absolute controlled path')
 if (!path.isAbsolute(cache)) throw new Error('L12_WORK_CACHE must be an absolute controlled path')
@@ -95,6 +97,15 @@ const report = {
   checks:[], profiles:[], failures:[], screenshots:[], resourceDiagnostics:[], assertions:0,
   cleanup:{ browserClosed:false, serverClosed:false },
 }
+const effectAuthorityFunction = source => source.slice(source.indexOf('function acquirePublicRevealAuthority(card: Card)'),
+  source.indexOf('\nfunction markPublicRevealCardReady', source.indexOf('function acquirePublicRevealAuthority(card: Card)')))
+const previousAuthorityFunction = previousEffectAuthority ? effectAuthorityFunction(execFileSync('git',
+  ['-c',`safe.directory=${worktree.replaceAll('\\','/')}`,'show','HEAD:opcgpro-vue/src/l12/game/GameBoard.vue'],
+  {cwd:worktree,encoding:'utf8'})) : null
+report.effectAuthorityUnderTest = previousAuthorityFunction ? {
+  mode:'explicit prior-HEAD acquisition function injected into otherwise current real SFC; not fixed-source acceptance',
+  sha256:createHash('sha256').update(previousAuthorityFunction).digest('hex'),
+} : {mode:'unmodified current actual SFC'}
 let current = { profile:'bootstrap', scenario:'bootstrap', stage:'bootstrap' }
 function stage(value) { current.stage = value }
 function record(passed, message, actual, expected) {
@@ -114,6 +125,14 @@ function fixtureSvg(label) {
 }
 const fixturePlugin = {
   name:'legion-entry-presentation-fixture',
+  enforce:'pre',
+  transform(code, id) {
+    if (previousAuthorityFunction && id.replaceAll('\\','/').endsWith('/src/l12/game/GameBoard.vue')) {
+      const current = effectAuthorityFunction(code)
+      if (!current || !previousAuthorityFunction) throw new Error('actual authority function boundaries must exist')
+      return code.replace(current, previousAuthorityFunction)
+    }
+  },
   configureServer(server) {
     server.middlewares.use((request, response, next) => {
       const url = request.url?.split('?')[0] ?? ''
@@ -139,7 +158,7 @@ const fixturePlugin = {
 
 const server = await createServer({
   root:front,
-  cacheDir:path.join(output, 'vite-cache'),
+  cacheDir:path.join(cache, 'qa', 'legion-entry-presentation-vite'),
   configLoader:'runner',
   plugins:[fixturePlugin],
   server:{ host:'127.0.0.1', port:0 },
@@ -432,10 +451,17 @@ async function visibleTransactionSurfaces(page, instanceId) {
   return page.evaluate(instanceId => {
     const visible = node => {
       if (!(node instanceof HTMLElement)) return false
-      const style = getComputedStyle(node)
-      const rect = node.getBoundingClientRect()
-      return style.display !== 'none' && style.visibility !== 'hidden'
-        && Number.parseFloat(style.opacity || '1') > 0 && rect.width > 0 && rect.height > 0
+      const face = node.matches('img,canvas') ? node : node.querySelector('canvas[data-l12-pixel-snapshot="true"],img') ?? node
+      const rect = face.getBoundingClientRect()
+      if (getComputedStyle(face).visibility !== 'visible' || rect.width <= 0 || rect.height <= 0) return false
+      if (face instanceof HTMLImageElement && (!face.complete || face.naturalWidth <= 0)) return false
+      let opacity = 1
+      for (let parent = face; parent instanceof Element; parent = parent.parentElement) {
+        const style = getComputedStyle(parent)
+        if (style.display === 'none' || /^inset\(50%(?:\s+50%){0,3}\)$/.test(style.clipPath)) return false
+        opacity *= Number.parseFloat(style.opacity || '1')
+      }
+      return opacity > .01 && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight
     }
     const movementRoots = [...document.querySelectorAll(
       `.l12-zone-flight-ghost[data-movement-instance-id="${CSS.escape(instanceId)}"],.zone-card-movement[data-movement-instance-id="${CSS.escape(instanceId)}"]`,
@@ -452,7 +478,8 @@ async function visibleTransactionSurfaces(page, instanceId) {
       revealVisible:visible(reveal),
       revealCardCount:revealCards.length,
       revealKind:reveal?.getAttribute('data-presentation-kind') ?? '',
-      visibleCardFaces:movementRoots.length + authority.length + revealCards.length,
+      visibleCardFaces:movementRoots.length + authority.length,
+      independentEffectCardFaces:revealCards.length,
     }
   }, instanceId)
 }
@@ -461,10 +488,17 @@ async function startTransactionFrameTimeline(page, instanceId, cardName) {
   await page.evaluate(({ instanceId, cardName }) => {
     const visible = node => {
       if (!(node instanceof HTMLElement)) return false
-      const style = getComputedStyle(node)
-      const rect = node.getBoundingClientRect()
-      return style.display !== 'none' && style.visibility !== 'hidden'
-        && Number.parseFloat(style.opacity || '1') > 0 && rect.width > 0 && rect.height > 0
+      const face = node.matches('img,canvas') ? node : node.querySelector('canvas[data-l12-pixel-snapshot="true"],img') ?? node
+      const rect = face.getBoundingClientRect()
+      if (getComputedStyle(face).visibility !== 'visible' || rect.width <= 0 || rect.height <= 0) return false
+      if (face instanceof HTMLImageElement && (!face.complete || face.naturalWidth <= 0)) return false
+      let opacity = 1
+      for (let parent = face; parent instanceof Element; parent = parent.parentElement) {
+        const style = getComputedStyle(parent)
+        if (style.display === 'none' || /^inset\(50%(?:\s+50%){0,3}\)$/.test(style.clipPath)) return false
+        opacity *= Number.parseFloat(style.opacity || '1')
+      }
+      return opacity > .01 && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight
     }
     const frames = []
     let running = true
@@ -481,7 +515,8 @@ async function startTransactionFrameTimeline(page, instanceId, cardName) {
           const image = root.matches('img') ? root : root.querySelector('img')
           return visible(root) && image?.getAttribute('alt') === cardName
         }).length
-      frames.push({ at:now, movement, authority, reveal, total:movement + authority + reveal })
+      // Effect-image presentation is independent of the physical card body.
+      frames.push({ at:now, movement, authority, reveal, total:movement + authority })
       if (running) requestAnimationFrame(sample)
     }
     requestAnimationFrame(sample)
@@ -533,8 +568,8 @@ async function singleOwnerScenario(profile, kind, options = {}) {
     const continuation = await visibleTransactionSurfaces(page, instanceId)
     equal(continuation.authorityCount, 1,
       `${profile.name}/${kind}: settled authority card is visible during result text`)
-    equal(continuation.revealCardCount, 0,
-      `${profile.name}/${kind}: the same play transaction must not present a second full card`, continuation, 'text-only continuation')
+    ok(continuation.revealCardCount <= 1,
+      `${profile.name}/${kind}: an independent effect image may coexist with the settled physical card`, continuation, 'zero or one independent effect image')
     equal(continuation.revealKind, 'entry-continuation',
       `${profile.name}/${kind}: the result is classified as the movement transaction continuation`)
     if (options.naturalTimeline && kind === 'artifact') await shot(page, 'natural-single-owner-self-artifact-result')
@@ -633,6 +668,53 @@ async function attributeOnlyDestinationRebindScenario() {
     await page.evaluate(() => window.__l12RestoreAttributeRebind?.()).catch(() => {})
     await context.close()
   }
+}
+
+async function settledEffectSourceScenario() {
+  const profile = { name:'settled-effect-source', viewer:1, interactive:true, viewport:{width:1366,height:768} }
+  const { context, page, errors } = await openProfile(profile)
+  const instanceId = 'triggered-entrant'
+  try {
+    await invoke(page, 'playTriggeredEntrant')
+    await waitForVisibleMovement(page, instanceId)
+    await waitForIdle(page)
+    const readPose = () => page.locator(`[data-l12-game-stage] [data-card-instance-id="${instanceId}"]`).evaluate(node => {
+      const rect = node.getBoundingClientRect()
+      return {x:rect.x,y:rect.y,transform:getComputedStyle(node).transform}
+    })
+    const before = await readPose()
+    await page.evaluate(async instanceId => {
+      let component = document.querySelector('[data-l12-game-stage]')?.__vueParentComponent
+      while (component && !component.props.game) component = component.parent
+      const snapshot = JSON.parse(JSON.stringify(component.props.game))
+      const source = snapshot.players.flatMap(player => player.field.flat()).find(card => card?.instanceId === instanceId)
+      if (!source || source.hidden) throw new Error('public settled source missing')
+      snapshot.revision++
+      snapshot.recentEvents.push({sequence:Math.max(0,...snapshot.recentEvents.map(event => event.sequence))+1,
+        type:'effect-result',playerIndex:1,text:'加拉哈德发动已落位的独立能力',effectText:'合成公开能力事实：卡效展示与场面本体并行。',
+        effectSceneId:'qa-settled-independent-ability',effectResultStatus:'resolved',
+        playerLogGroupId:'effect:qa-settled-independent-ability',playerLogTiming:'activation',cards:[source]})
+      window.__visualTransitionHarness.applyAuthoritySnapshot(snapshot)
+    }, instanceId)
+    await page.waitForFunction(() => {
+      const reveal = document.querySelector('.public-reveal-animation[data-presentation-kind="full-card"]')
+      const image = reveal?.querySelector('.public-reveal-card-ready img')
+      if (!(image instanceof HTMLImageElement) || !image.complete || image.naturalWidth <= 0) return false
+      let opacity = 1
+      for (let node = image; node instanceof Element; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity || 1)
+      return opacity > .9 && image.getBoundingClientRect().width > 0
+    }, null, {timeout:5000})
+    const during = await visibleTransactionSurfaces(page, instanceId)
+    const after = await readPose()
+    equal(during.movementCount, 0, 'settled effect: the physical source never becomes a movement card')
+    equal(during.authorityCount, 1, 'settled effect: the publicly landed physical source remains visible')
+    equal(during.revealCardCount, 1, 'settled effect: one decoded independent effect image is visible alongside the body')
+    ok(Math.abs(after.x-before.x)<.1 && Math.abs(after.y-before.y)<.1 && after.transform===before.transform,
+      'settled effect: independent ability does not move or rotate its physical source', {before,after}, 'unchanged physical pose')
+    await shot(page, 'settled-ability-effect-image-and-physical-source')
+    ok(errors.length === 0, 'settled effect: page errors', errors, [])
+    await waitForIdle(page)
+  } finally { await context.close() }
 }
 
 async function strengthScenario(tier) {
@@ -802,7 +884,9 @@ try {
   await server.listen()
   port = server.httpServer.address().port
   browser = await chromium.launch({ channel:'msedge', headless:true })
-  if (attributeRebindOnly) {
+  if (settledEffectOnly) {
+    await run('settled-effect-source', 'independent-effect-image-and-landed-body', settledEffectSourceScenario)
+  } else if (attributeRebindOnly) {
     await run('attribute-rebind-desktop', 'attribute-only-destination-owner', attributeOnlyDestinationRebindScenario)
   } else if (naturalFrameTimelineOnly) {
     const profile = coreProfiles.find(profile => profile.name === 'self-desktop')
@@ -842,6 +926,7 @@ try {
     await run('animation-off', 'accessibility', () => accessibilityScenario('animation-off', { animation:'off' }))
     await run('retransmit', 'dedupe', retransmitScenario)
     await run('match-switch', 'authority-boundary', matchSwitchScenario)
+    await run('settled-effect-source', 'independent-effect-image-and-landed-body', settledEffectSourceScenario)
   }
 } catch (error) {
   current = { profile:'runner', scenario:'infrastructure', stage:'top-level' }

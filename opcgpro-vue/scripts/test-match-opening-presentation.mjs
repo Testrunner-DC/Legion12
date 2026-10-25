@@ -32,8 +32,8 @@ assert.match(script, /function settleInitiativeDice\(\) \{\s*if \(!hasAuthoritat
   'skip must never settle a temporary random face as the match result')
 assert.match(script, /function skipOpeningIntro\(\)[\s\S]*openingIntroSkipped\.value = true[\s\S]*diceAnimationReadyToSettle\.value = true[\s\S]*settleInitiativeDice\(\)/,
   'skip must accelerate only local presentation and still consume the authoritative result')
-assert.match(script, /const openingIntroDurationMs = 1600/,
-  'the slightly longer standard opening must have one explicit duration source')
+assert.match(script, /const openingIntroDurationMs = 4000/,
+  'the approved four-second standard opening must have one explicit duration source')
 assert.match(template, /'--opening-duration': `\$\{openingIntroDurationMs\}ms`/)
 assert.match(style, /calc\(var\(--opening-duration\) \* var\(--l12-animation-scale,1\)\)/)
 assert.match(script, /const duration = l12AnimationDuration\(openingIntroDurationMs\)[\s\S]*duration <= 0[\s\S]*diceAnimationReadyToSettle\.value = true[\s\S]*settleInitiativeDice\(\)/,
@@ -87,7 +87,7 @@ function executeDiceStart(animation, reduced = false) {
     diceAnimationReadyToSettle: { value: false },
     openingIntroSkipped: { value: false },
     animatedRolls: { value: [1, 1] },
-    openingIntroDurationMs: 1600,
+    openingIntroDurationMs: 4000,
     clearInterval() {},
     clearTimeout() {},
     setInterval() { intervalStarts += 1; return 11 },
@@ -101,11 +101,11 @@ function executeDiceStart(animation, reduced = false) {
   return { delay: timeoutDelay ?? 0, intervalStarts, settles }
 }
 
-assert.deepEqual(executeDiceStart('standard'), { delay: 1600, intervalStarts: 1, settles: 0 })
-assert.deepEqual(executeDiceStart('fast'), { delay: 880, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('standard'), { delay: 4000, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('fast'), { delay: 2200, intervalStarts: 1, settles: 0 })
 assert.deepEqual(executeDiceStart('off'), { delay: 0, intervalStarts: 0, settles: 1 })
-assert.deepEqual(executeDiceStart('standard', true), { delay: 1600, intervalStarts: 1, settles: 0 })
-assert.deepEqual(executeDiceStart('fast', true), { delay: 880, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('standard', true), { delay: 4000, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('fast', true), { delay: 2200, intervalStarts: 1, settles: 0 })
 assert.deepEqual(executeDiceStart('off', true), { delay: 0, intervalStarts: 0, settles: 1 })
 
 function controlledTimers() {
@@ -199,6 +199,10 @@ assert.doesNotMatch(template, /先攻[^<]{0,12}(?:标记|飞向)|后攻[^<]{0,12
   'no first/second marker may fly into or persist in either player area')
 assert.match(template, /:data-tutorial-choice="choice"/,
   'the existing authoritative initiative choice remains the actual interaction')
+assert.match(template, /<template v-if="!readOnly && prompt && diceSettled">/,
+  'a read-only spectator must never inherit the initiative choice controls')
+assert.match(gameBoardSource, /const promptOverlayMounted = computed\(\(\) => !props\.readOnly[\s\S]*props\.game\.phase === 'DisasterPreparation' \|\| props\.game\.phase === 'Initiative'\)/,
+  'read-only spectators must mount the shared opening during Initiative without broadening other prompt phases')
 assert.doesNotMatch(template, /opening-initiative-panel|initiative-opening-stage/,
   'the accepted opening must not return to the framed two-banner panel')
 assert.match(template, /class="opening-versus"[^>]*>对阵<\/strong>/,
@@ -209,8 +213,10 @@ assert.match(script, /function openingPlayerIdentity\([\s\S]*props\.readOnly[\s\
   'live opening must show self as you and the opponent public player id while replay shows both ids')
 assert.match(template, /class="opening-versus-player"[\s\S]*player\.playerIndex !== game\.you[\s\S]*player\.master\.masterName[\s\S]*openingPlayerIdentity\(player\)[\s\S]*<template v-else>[\s\S]*openingPlayerIdentity\(player\)[\s\S]*player\.master\.masterName/,
   'opponent identity/master must sit above versus while self identity/master sits below it')
-assert.match(template, /opening-versus-player[\s\S]*opening-die[\s\S]*openingPlayerIdentity\(player\)/,
-  'central versus identities and dice labels must share the same live/replay identity rule')
+assert.match(template, /class="opening-die"[\s\S]*:aria-label="`\$\{openingPlayerIdentity\(player\)\}掷出\$\{animatedRolls\[player\.playerIndex\] \?\? 1\}点`"/,
+  'each die must keep an accessible player mapping without painting a second visible player id')
+assert.doesNotMatch(template, /class="opening-die"[\s\S]{0,240}<small>\{\{ openingPlayerIdentity\(player\) \}\}<\/small>/,
+  'dice must not replace the persistent matchup identity with a second visible player id')
 assert.doesNotMatch(template, /class="opening-versus-player"[^>]*:style=/,
   'central player ids must not inherit a faction-colored inline style')
 assert.doesNotMatch(script, /--opening-perspective|--opening-depth-origin/,
@@ -266,6 +272,12 @@ assert.match(style, /@keyframes opening-master-sequence\{[\s\S]*45%,100%\{opacit
   'opening masters must finish at their two side positions instead of landing on the board or disappearing')
 assert.match(style, /\.opening-presentation\.settled \.opening-master-card,[^\{]*\.opening-presentation\.skipped \.opening-master-card\{opacity:1;transform:translate3d\(calc\(-50% \+ var\(--opening-side-x\)\),calc\(-50% \+ var\(--opening-side-y\)\),0\) rotateZ\(0\) scale\(1\);animation:none\}/,
   'settled and skipped initiative states must retain both face-on masters at the sides')
+assert.match(style, /\.opening-presentation\.settled \.opening-versus,[^\{]*\.opening-presentation\.skipped \.opening-versus-player\{opacity:1;animation:none\}/,
+  'settled and skipped initiative states must retain the same identities and versus composition')
+assert.doesNotMatch(style, /\.opening-presentation\.settled \.opening-versus[^\{]*\{display:none\}/,
+  'dice settlement must not hide the opening matchup composition')
+assert.match(style, /@keyframes opening-versus-sequence\{[\s\S]*42%,100%\{opacity:1/,
+  'the matchup composition must remain continuous while dice enter')
 assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)\{\.opening-master-card\{width:clamp\(112px,17vw,164px\)/,
   'short landscape must keep the face-on cards contained after reducing their size')
 assert.match(style, /data-l12-rotated="true"[\s\S]*\.opening-master-card\)\{width:164px\}/,
@@ -290,6 +302,8 @@ assert.match(style, /\.opening-presentation\.skipped[^}]*opening-master-card/,
   'skip must end the entrance motion without changing game state')
 assert.match(style, /html\[data-l12-animation="off"\] \.opening-master-card\)\{opacity:1;transform:translate3d\(calc\(-50% \+ var\(--opening-side-x\)\),calc\(-50% \+ var\(--opening-side-y\)\),0\)!important\}/,
   'animation off must retain the same static two-side master layout')
+assert.match(style, /html\[data-l12-animation="off"\] \.opening-versus-player\)\{opacity:1/,
+  'animation off must retain the same static matchup identity and versus')
 assert.doesNotMatch(style, /prefers-reduced-motion/, 'opening CSS cannot override standard/fast with the OS hint')
 assert.match(style, /var\(--l12-animation-scale,1\)/,
   'new opening CSS must consume the existing fast/off animation scale')

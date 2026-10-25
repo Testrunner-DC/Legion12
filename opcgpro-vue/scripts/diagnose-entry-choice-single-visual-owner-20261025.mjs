@@ -20,7 +20,9 @@ const temp = path.join(cache, 'temp', 'entry-choice-single-owner-20261025')
 const expectation = String(process.env.L12_ENTRY_CHOICE_EXPECT || 'red').trim().toLowerCase()
 const perspective = process.env.L12_ENTRY_CHOICE_VIEW || 'owner'
 const profileKey = process.env.L12_ENTRY_CHOICE_PROFILE || 'desktop'
-assert.ok(['owner','spectator'].includes(perspective), 'unsupported stored snapshot perspective')
+const coldStart = process.env.L12_ENTRY_CHOICE_COLD === '1'
+const nativeMinimize = process.env.L12_ENTRY_CHOICE_MINIMIZE === '1'
+assert.ok(['owner','spectator','opponent'].includes(perspective), 'unsupported stored snapshot perspective')
 const profile = {desktop:{width:1366,height:768,mobile:false},'short-landscape':{width:844,height:390,mobile:true},
   'portrait-rotated':{width:390,height:844,mobile:true}}[profileKey]
 assert.ok(profile, 'unsupported measured viewport')
@@ -62,9 +64,13 @@ const chain = fixture.galahadEntry
 assert.ok(Array.isArray(chain), 'actual command-generated galahadEntry chain missing')
 const frame = label => {
   const found = chain.find(item => item.label === label)
-  const snapshot=found?.[perspective==='spectator'?'spectator':'player']
+  const snapshot=found?.[perspective==='owner'?'player':'spectator']
   assert.ok(snapshot, `missing actual ${perspective} frame: ${label}`)
-  return structuredClone(snapshot)
+  const result = structuredClone(snapshot)
+  // The stored public projection has no opposing private hand. Changing only
+  // you exercises the normal opponent waiting UI, not a private player1 export.
+  if (perspective === 'opponent') { result.you = 1; result.prompts = [] }
+  return result
 }
 const baseline = frame('entry-baseline-hand')
 const committed = frame('entry-committed-declaration')
@@ -123,7 +129,7 @@ const report = {
   contract:'entry-choice-single-visual-owner-20261025',
   expectation,
   scope:`Actual command-generated Galahad ${perspective} snapshots mounted into the real GameBoard. No live socket, server ACK, persistence, physical device or production write.`,
-  perspective, profile:{key:profileKey,...profile},
+  perspective, coldStart, nativeMinimize, profile:{key:profileKey,...profile},
   fixture:{
     path:fixturePath,
     containerSha256:sha256(fixtureContainer),
@@ -158,6 +164,13 @@ const html = '<!doctype html><html><head><meta charset="UTF-8"><meta name="viewp
 const fixtureSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350"><rect width="250" height="350" fill="#10262e"/><rect x="12" y="12" width="226" height="326" rx="8" fill="none" stroke="#d5bc70" stroke-width="8"/><text x="125" y="168" text-anchor="middle" fill="#fff2c7" font-size="24">加拉哈德</text><text x="125" y="205" text-anchor="middle" fill="#8fd4df" font-size="18">REAL SNAPSHOT</text></svg>`
 const fixturePlugin = {
   name:'entry-choice-single-owner-fixture',
+  enforce:'pre',
+  transform(code, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/scripts/fixtures/BattleVisualTransitionHarness.vue')) return
+    const anchor = 'Object.assign(window, { __visualTransitionHarness: api })'
+    assert.ok(code.includes(anchor), 'real harness setup anchor changed')
+    return code.replace(anchor, `${anchor}\nif (window.__entryChoiceInitialSnapshot) api.applyAuthoritySnapshot(window.__entryChoiceInitialSnapshot)\nif (window.__entryChoiceRecordCommands) l12State.socket = {readyState:1,send(value){window.__entryChoiceSent.push(JSON.parse(value))}} as WebSocket`)
+  },
   configureServer(server) {
     server.middlewares.use((request, response, next) => {
       const raw = request.url?.split('?')[0] ?? ''
@@ -206,7 +219,7 @@ const fixturePlugin = {
 
 const server = await createServer({
   root:front,
-  cacheDir:path.join(output, 'vite-cache'),
+  cacheDir:path.join(cache, 'qa', 'entry-choice-single-owner-vite'),
   configLoader:'runner',
   plugins:[fixturePlugin],
   server:{ host:'127.0.0.1', port:0 },
@@ -235,7 +248,38 @@ try {
   await page.addInitScript(() => localStorage.setItem('l12-audio-preferences-v1', JSON.stringify({
     animation:'standard', mobileLayout:'auto', cardSize:'medium', fontSize:'standard',
   })))
-  await page.goto(`http://127.0.0.1:${address.port}/__entry-choice-single-owner?viewer=0&interactive=1${perspective==='spectator'?'&spectator=1':''}${profile.mobile?'&landscape=1':''}`, {
+  await page.addInitScript(({ initial, record }) => {
+    window.__entryChoiceInitialSnapshot = initial
+    window.__entryChoiceRecordCommands = record
+    window.__entryChoiceSent = []
+    window.__entryChoiceFirstPaintFrames = []
+    const sample = at => {
+      if (window.__entryChoiceVisualTimeline) return
+      const surfaces = [...document.querySelectorAll('img,canvas')].filter(node => node.getAttribute('alt') === '加拉哈德')
+        .flatMap(node => {
+          const movement = node.closest('.l12-zone-flight-ghost,.zone-card-movement')
+          const state = node.closest('.l12-card-state-transition-ghost')
+          const authority = node.closest('[data-card-instance-id="real-galahad"]')
+          const kind = movement ? 'movement' : state ? 'state' : authority ? 'authority' : 'independent-image'
+          const decoded = node instanceof HTMLImageElement ? node.complete && node.naturalWidth > 0 : node.width > 0 && node.height > 0
+          const rect = node.getBoundingClientRect()
+          let visible = decoded && getComputedStyle(node).visibility === 'visible'
+            && rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight
+          let opacity = 1
+          for (let parent = node; parent instanceof Element; parent = parent.parentElement) {
+            const style = getComputedStyle(parent)
+            if (style.display === 'none' || /^inset\(50%(?:\s+50%){0,3}\)$/.test(style.clipPath)) visible = false
+            opacity *= Number(style.opacity || 1)
+          }
+          return visible && opacity > .01 ? [{kind,instanceId:'real-galahad',decoded,visibility:{visible:true},rect:{left:rect.left,top:rect.top,width:rect.width,height:rect.height}}] : []
+        })
+      const physicalSurfaces = surfaces.filter(item => ['movement','state','authority'].includes(item.kind))
+      window.__entryChoiceFirstPaintFrames.push({at,phase:'initial-first-paint',surfaces,physicalSurfaces,candidates:surfaces,total:physicalSurfaces.length,allImageTotal:surfaces.length})
+      requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+  }, { initial:coldStart ? committed : null, record:nativeMinimize })
+  await page.goto(`http://127.0.0.1:${address.port}/__entry-choice-single-owner?viewer=${perspective==='opponent'?1:0}&interactive=1${perspective==='spectator'?'&spectator=1':''}${profile.mobile?'&landscape=1':''}`, {
     waitUntil:'networkidle', timeout:30_000,
   })
   await page.waitForSelector('[data-l12-game-stage]')
@@ -247,7 +291,7 @@ try {
   })
   await page.mouse.move(mousePark[0], mousePark[1])
   report.interaction.mousePark = mousePark
-  await page.evaluate(snapshot => window.__visualTransitionHarness.applyAuthoritySnapshot(snapshot), baseline)
+  if (!coldStart) await page.evaluate(snapshot => window.__visualTransitionHarness.applyAuthoritySnapshot(snapshot), baseline)
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
   const baselineVisible = await page.evaluate(({ instanceId, cardName }) => {
@@ -276,6 +320,12 @@ try {
       }
       let opacity = 1
       const chain = []
+      // visibility is inherited and may be restored by a visible descendant.
+      // Unlike display/opacity/clipping, hidden on an ancestor is not a veto.
+      const ownVisibility = getComputedStyle(node).visibility
+      if (ownVisibility === 'hidden' || ownVisibility === 'collapse') return {
+        visible:false, rejection:`computed-visibility-${ownVisibility}`, rect:null, chain,
+      }
       for (let current = node; current instanceof Element; current = current.parentElement) {
         const style = getComputedStyle(current)
         const currentRect = current.getBoundingClientRect()
@@ -288,8 +338,8 @@ try {
         }
         chain.push(step)
         if (style.display === 'none') return { visible:false, rejection:`display-none:${step.node}`, rect:null, chain }
-        if (style.visibility === 'hidden' || style.visibility === 'collapse') return {
-          visible:false, rejection:`visibility-${style.visibility}:${step.node}`, rect:null, chain,
+        if (/^inset\(50%(?:\s+50%){0,3}\)$/.test(style.clipPath)) return {
+          visible:false, rejection:`zero-area-clip:${step.node}`, rect:null, chain,
         }
         const ownOpacity = Number.parseFloat(style.opacity || '1')
         if (Number.isFinite(ownOpacity)) opacity *= ownOpacity
@@ -318,6 +368,8 @@ try {
     const classify = visual => {
       const movement = visual.closest('.l12-zone-flight-ghost,.zone-card-movement')
       if (movement) return { kind:'movement', instanceId:movement.getAttribute('data-movement-instance-id') ?? '' }
+      const state = visual.closest('.l12-card-state-transition-ghost')
+      if (state) return { kind:'state', instanceId, transitionKey:state.getAttribute('data-visual-transition-key') }
       const authority = visual.closest(`[data-card-instance-id="${CSS.escape(instanceId)}"]`)
       if (authority) return { kind:'authority', instanceId }
       if (visual.closest('.public-reveal-cards')) return { kind:'publicReveal', instanceId }
@@ -326,7 +378,7 @@ try {
       if (visual.closest('.mobile-card-inspector')) return { kind:'mobile-inspector', instanceId }
       return { kind:'unclassified-same-name', instanceId:'' }
     }
-    const frames = []
+    const frames = window.__entryChoiceFirstPaintFrames ?? []
     let running = true
     let latest = null
     let peak = null
@@ -350,6 +402,7 @@ try {
           naturalHeight:item.visual instanceof HTMLImageElement ? item.visual.naturalHeight : item.visual.height,
         }))
       const surfaces = candidates.filter(item => item.visibility.visible && item.decoded)
+      const physicalSurfaces = surfaces.filter(item => ['movement','state','authority'].includes(item.kind))
       const promptRoot = document.querySelector('.l12-prompt-overlay')
       const promptMeasurement = promptRoot ? measureVisibility(promptRoot) : {
         visible:false, rejection:'prompt-dom-absent', rect:null, chain:[],
@@ -359,7 +412,9 @@ try {
         phase:window.__entryChoicePhase ?? 'baseline',
         candidates,
         surfaces,
-        total:surfaces.length,
+        total:physicalSurfaces.length,
+        allImageTotal:surfaces.length,
+        physicalSurfaces,
         promptVisible:promptMeasurement.visible,
         promptMeasurement,
         promptId:promptRoot?.getAttribute('data-tutorial-prompt-id') ?? '',
@@ -382,6 +437,40 @@ try {
 
   let duplicateCaptured = false
   const screenshot = path.join(output, `${profileKey}-${perspective}-entry-choice-worst.png`)
+  // A raster counterexample prevents returning to the old ancestor-hidden
+  // oracle. The visible canvas must paint through inherited hidden; the same
+  // pixels must not paint through a zero-area clip, even with opacity animated.
+  const oraclePixel = async () => {
+    const bytes = await page.screenshot({ clip:{x:4,y:4,width:24,height:24} })
+    const sharp = require('sharp')
+    const { data, info } = await sharp(bytes).raw().toBuffer({ resolveWithObject:true })
+    return [...data.subarray((12 * info.width + 12) * info.channels, (12 * info.width + 12) * info.channels + 3)]
+  }
+  await page.evaluate(() => {
+    const holder = document.createElement('div')
+    holder.id = 'entry-owner-oracle'
+    Object.assign(holder.style, {position:'fixed',left:'4px',top:'4px',width:'24px',height:'24px',visibility:'hidden',zIndex:'2147483647'})
+    const canvas = document.createElement('canvas')
+    canvas.id = 'entry-owner-oracle-face'; canvas.width = 24; canvas.height = 24
+    Object.assign(canvas.style, {visibility:'visible',display:'block'})
+    canvas.getContext('2d').fillStyle = '#ff00ff'; canvas.getContext('2d').fillRect(0,0,24,24)
+    holder.append(canvas); document.body.append(holder)
+  })
+  const restored = await page.evaluate(() => window.__entryChoiceVisualTimeline.measure('#entry-owner-oracle-face'))
+  assert.equal(restored.measurement.visible, true, 'visible descendant overrides hidden visibility ancestor')
+  const paintedPixel = await oraclePixel()
+  assert.deepEqual(paintedPixel, [255,0,255], 'counterexample canvas actually paints, not just computed-visible')
+  await page.evaluate(() => {
+    const holder = document.querySelector('#entry-owner-oracle')
+    holder.style.clipPath = 'inset(50%)'
+    holder.animate([{opacity:1},{opacity:1}],{duration:1000,fill:'both'})
+  })
+  const clipped = await page.evaluate(() => window.__entryChoiceVisualTimeline.measure('#entry-owner-oracle-face'))
+  assert.equal(clipped.measurement.visible, false)
+  const clippedPixel = await oraclePixel()
+  assert.notDeepEqual(clippedPixel, [255,0,255], 'clip blocks actual descendant pixels despite opacity animation')
+  report.visibilityOracle = { restored, clipped, paintedPixel, clippedPixel }
+  await page.evaluate(() => document.querySelector('#entry-owner-oracle').remove())
   for (const item of sequence) {
     await page.evaluate(({ label, snapshot }) => {
       window.__entryChoicePhase = label
@@ -410,9 +499,31 @@ try {
       assert.ok(report.validity.promptDomVisible,
         `prompt DOM exists but visibility measurement rejected it: ${JSON.stringify(report.validity.promptEvidence)}`)
     }
-    if(item.label==='entry-committed-declaration' && perspective==='spectator'){
-      report.validity.spectatorPromptsAbsent=await page.locator('.l12-prompt-overlay').count()===0
-      assert.ok(report.validity.spectatorPromptsAbsent,'public spectator must not receive the private choice overlay')
+    if(item.label==='entry-committed-declaration' && perspective!=='owner'){
+      report.validity.spectatorPromptsAbsent=await page.locator('.l12-prompt-overlay .prompt-choice-panel').count()===0
+      assert.ok(report.validity.spectatorPromptsAbsent,'public projection must not receive the private choice panel')
+    }
+    if (nativeMinimize && perspective === 'owner' && item.label === 'entry-committed-declaration') {
+      await page.waitForTimeout(1800)
+      await page.locator('[data-tutorial-choice="mode:trial"]').click()
+      report.interaction.clicks++
+    }
+    if (nativeMinimize && perspective === 'owner' && item.label === 'entry-trial-cost-paid') {
+      await page.waitForTimeout(1600)
+      await page.locator('.l12-prompt-overlay .prompt-minimize').click()
+      report.interaction.clicks++
+      await page.evaluate(() => { window.__entryChoicePhase = 'paid-response-minimized' })
+      await page.waitForTimeout(100)
+      await page.screenshot({path:path.join(output, 'native-minimized-response.png'),fullPage:true})
+      await page.evaluate(snapshot => window.__visualTransitionHarness.applyAuthoritySnapshot(snapshot), item.snapshot)
+      await page.waitForTimeout(200)
+      await page.locator('.prompt-minimized-bar button').click()
+      report.interaction.clicks++
+      await page.evaluate(() => { window.__entryChoicePhase = 'paid-response-restored' })
+      await page.waitForTimeout(150)
+      report.interaction.commands = await page.evaluate(() => window.__entryChoiceSent)
+      assert.ok(report.interaction.commands.some(item => item.command?.type === 'resolvePrompt'
+        && item.command.sourceInstanceId === instanceId), 'real choice click emits the exact instance prompt command')
     }
     if (item.label === 'entry-trial-cost-paid') {
       const responsePromptId = item.snapshot.prompts?.[0]?.promptId
@@ -486,7 +597,7 @@ try {
   const kinds = report.worstFrame?.surfaces?.map(item => item.kind) ?? []
   const promptGate=perspective==='owner'?report.validity.promptDomVisible:report.validity.spectatorPromptsAbsent
   const validMeasurement = promptGate && report.validity.decodedVisibleSource
-    && report.validity.movementVisible
+    && (coldStart || report.validity.movementVisible)
   report.result = {
     status:!validMeasurement ? 'INVALID_MEASUREMENT'
       : maxVisible > 1 ? 'RED_DUPLICATE_CONFIRMED' : 'GREEN_SINGLE_VISUAL_OWNER',
@@ -500,13 +611,12 @@ try {
   assert.ok(validMeasurement, `measurement validity gate failed: ${JSON.stringify(report.validity)}`)
   if (expectation === 'red') {
     assert.ok(maxVisible > 1, `expected duplicate visual owner was not reproduced: ${JSON.stringify(report.result)}`)
-    assert.ok(kinds.includes('inspector-auto-focus'), `duplicate did not include the auto-focused inspector: ${JSON.stringify(report.worstFrame)}`)
-    assert.ok(kinds.some(kind => kind === 'movement' || kind === 'authority'),
-      `duplicate did not include an authoritative entry surface: ${JSON.stringify(report.worstFrame)}`)
+    assert.ok((report.worstFrame?.physicalSurfaces?.length ?? 0) > 1,
+      'independent effect image/inspector plus landed authority is allowed, not a physical duplicate')
   } else {
     assert.ok(maxVisible <= 1, `same instance had multiple visible owners: ${JSON.stringify(report.worstFrame)}`)
   }
-  assert.equal(report.interaction.clicks, 0)
+  assert.equal(report.interaction.clicks, nativeMinimize && perspective === 'owner' ? 3 : 0)
   assert.equal(report.interaction.manualInspectorOpen, false)
   assert.equal(report.interaction.animationSeek, false)
   assert.equal(report.interaction.animationPause, false)

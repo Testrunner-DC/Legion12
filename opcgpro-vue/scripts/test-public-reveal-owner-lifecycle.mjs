@@ -8,6 +8,7 @@ const sfc = parse(readFileSync(new URL('../src/l12/game/GameBoard.vue', import.m
 const script = sfc.scriptSetup?.content ?? ''
 const ast = ts.createSourceFile('GameBoard.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 const names = new Set([
+  'acquirePublicRevealAuthority',
   'markPublicRevealCardReady',
   'markPublicRevealMounted',
   'onPublicRevealMounted',
@@ -38,10 +39,19 @@ let presentationEpoch = 4
 let publicRevealOwnerSerial = 0
 const modalPresentationPaused = { value: false }
 const calls = { acquired: [], authorityReleased: 0, ownerReleased: 0 }
-class HTMLElement { constructor(ownerKey = '') { this.dataset = { presentationOwnerKey: ownerKey } } }
+const publicRevealAuthorityReleases = new Map()
+const presentationVisualOwnerKeys = {value:new Set()}
+const props = {game:{players:[]}}
+let authorityZone = 'field'
+const CSS = {escape:value=>value}
+class HTMLElement {
+  constructor(ownerKey = '', instanceId = 'same-instance') { this.dataset = {presentationOwnerKey:ownerKey,cardInstanceId:instanceId} }
+  closest(selector) { return selector.includes('[data-l12-zone="'+authorityZone+'"]') ? this : null }
+}
+const document = {querySelectorAll(selector){return [new HTMLElement('',selector.match(/data-card-instance-id="([^"]+)"/)[1])]}}
+function acquireAuthoritativeCardVisibility(target) { calls.acquired.push(target.dataset.cardInstanceId); return () => {} }
 const nextTick = callback => Promise.resolve().then(callback)
 function releasePublicRevealAuthority() { calls.authorityReleased += 1; publicRevealReadyInstanceIds.value = new Set() }
-function acquirePublicRevealAuthority(card) { calls.acquired.push(card.instanceId) }
 ${functions.join('\n')}
 return {
   calls,
@@ -57,6 +67,13 @@ return {
   markPublicRevealMounted,
   onPublicRevealMounted,
   publicRevealFaces,
+  setAuthority({instanceId='same-instance',zone='field',domZone=zone,hidden=false,moving=false}={}) {
+    authorityZone=domZone
+    const card={instanceId,hidden}
+    props.game.players=[{playerIndex:0,master:{deployedAsLegion:false},field:zone==='field'?[[card]]:[[]],
+      relic:zone==='relic'?card:null,extraRelics:[]}]
+    presentationVisualOwnerKeys.value=moving?new Set([instanceId]):new Set()
+  },
   finishPublicReveal,
   retirePublicReveal,
   showNextPublicReveal,
@@ -118,4 +135,29 @@ assert.equal(api.owner().mounted, true)
 assert.match(sfc.template.content, /@vue:mounted="onPublicRevealMounted"/)
 assert.match(sfc.template.content, /@load="markPublicRevealCardReady\(entry\.ownerKey, entry\.card, \$event\)"/)
 assert.doesNotMatch(sfc.template.content, /@load="markPublicRevealCardReady\(publicReveal\.ownerKey/)
-console.log('Public reveal owner lifecycle passed: 20/20 assertions including real render callback capture')
+const preservationCases = [
+  ['public settled legion effect', {zone:'field'}, {}, true],
+  ['public settled relic effect', {zone:'relic'}, {}, true],
+  ['public settled master effect', {zone:'master',instanceId:'master-0'}, {}, true],
+  ['ordinary public reveal still owns its field pixels', {zone:'field'}, {independent:false}, false],
+  ['private hand is not a settled board effect source', {zone:'hand'}, {}, false],
+  ['graveyard reveal keeps the old lease', {zone:'graveyard'}, {}, false],
+  ['unknown placement does not guess a settled source', {zone:'unknown'}, {}, false],
+  ['hidden current authority is not a public source', {zone:'field',hidden:true}, {}, false],
+  ['hidden event source is not preserved', {zone:'field'}, {hidden:true}, false],
+  ['physical movement owner retains its handoff', {zone:'field',moving:true}, {}, false],
+  ['graveyard overlay is not exempted by a field identity', {zone:'field',domZone:'graveyard'}, {}, false],
+  ['non-full-card presentation is not broadly exempted', {zone:'field'}, {kind:'entry-continuation'}, false],
+]
+for (const [label, authority, presentation, preserve] of preservationCases) {
+  const checked = new Function(output)()
+  checked.setAuthority(authority)
+  const source = {instanceId:authority.instanceId ?? 'same-instance',hidden:Boolean(presentation.hidden)}
+  checked.setOwner('8:1:1')
+  checked.publicReveal.value = {ownerKey:'8:1:1',kind:presentation.kind ?? 'full-card',cards:[source],
+    independentEffectSourceInstanceId:presentation.independent === false ? undefined : source.instanceId}
+  checked.markPublicRevealCardReady('8:1:1',source,{kind:'cdn'})
+  assert.deepEqual(checked.calls.acquired,preserve ? [] : [source.instanceId],label)
+  assert.deepEqual([...checked.ready.value],[source.instanceId],label+': effect image readiness is preserved')
+}
+console.log('Public reveal owner lifecycle passed: original20 + 24 settled-effect/retained-lease assertions including actual acquisition function')

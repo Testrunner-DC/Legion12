@@ -20,7 +20,15 @@ function parsedExpression(value) {
 
 function expressionKey(value) {
   const parsed = parsedExpression(value)
-  return parsed && ts.createPrinter({ removeComments: true }).printNode(ts.EmitHint.Expression, parsed.node, parsed.file)
+  if (!parsed) return null
+  const printed = ts.createPrinter({ removeComments: true }).printNode(ts.EmitHint.Expression, parsed.node, parsed.file)
+  // The printer preserves a multiline binary expression's line-break hints.
+  // Compare its exact tokens, ignoring only trivia, never literal contents.
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, printed)
+  const tokens = []
+  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan())
+    tokens.push([kind, scanner.getTokenText()])
+  return JSON.stringify(tokens)
 }
 
 const expressionIs = (value, expected) => expressionKey(value) === expressionKey(expected)
@@ -375,10 +383,10 @@ export function replayEntryTemplateContract(sources) {
   const master = bound('MasterOverlay', 'master-overlay', { name: 'if', expected: 'masterPlayerIndex !== null' })
   const prompt = [
     ...bound('PromptOverlay', 'prompt-overlay', {
-      name: 'if', expected: "!readOnly || game.phase === 'DisasterPreparation'",
+      name: 'if', expected: "!readOnly || game.phase === 'DisasterPreparation' || game.phase === 'Initiative'",
     }),
     ...(hasExactComputedBoolean(board.script, 'promptOverlayMounted',
-      "!props.readOnly || props.game.phase === 'DisasterPreparation'")
+      "!props.readOnly || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative'")
       ? bound('PromptOverlay', 'prompt-overlay', { name: 'if', expected: 'promptOverlayMounted' }) : []),
   ]
   return {

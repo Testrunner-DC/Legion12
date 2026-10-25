@@ -213,7 +213,10 @@ function createPreparedTransition(transition: Omit<Transition,
     width: `${transition.sourceRect.width}px`, height: `${transition.sourceRect.height}px`,
     zIndex: '902', pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform',
     border: '0', outline: 'none', background: 'transparent', boxShadow: 'none',
-    filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))', visibility: 'hidden',
+    // visibility alone is inheritable: a decoded clone can explicitly restore
+    // visible below this wrapper. The zero-area clip gates every descendant's
+    // pixels until the coordinator grants this physical owner.
+    filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))', visibility: 'hidden', clipPath: 'inset(50%)',
     transform: `rotate(${transition.fromTapped ? 90 : 0}deg)`,
   })
   holderWrapper.appendChild(sourceGhost)
@@ -224,10 +227,12 @@ function createPreparedTransition(transition: Omit<Transition,
     show: () => {
       const target = cardElement(prepared.instanceId)
       if (target instanceof HTMLElement) coverTransitionTarget(prepared, target)
+      holderWrapper.style.clipPath = 'none'
       holderWrapper.style.visibility = 'visible'
     },
     hide: () => {
       holderWrapper.style.visibility = 'hidden'
+      holderWrapper.style.clipPath = 'inset(50%)'
       revealTransitionTarget(prepared)
     },
     dispose: () => {

@@ -845,7 +845,9 @@ function createMovementHolder(movement: Movement, sourceGhost: HTMLElement) {
   Object.assign(wrapper.style, {
     position: 'fixed', left: `${source.x - holderWidth / 2}px`, top: `${source.y - holderHeight / 2}px`,
     width: `${holderWidth}px`, height: `${holderHeight}px`, zIndex: '902', pointerEvents: 'none',
-    visibility: 'hidden', transformOrigin: 'center', willChange: 'transform, opacity',
+    // A descendant may override inherited visibility, and the flight animates
+    // opacity itself. Clip all prepared pixels until this owner is shown.
+    visibility: 'hidden', clipPath: 'inset(50%)', transformOrigin: 'center', willChange: 'transform, opacity',
     transform: movement.disasterReveal
       ? `scale(${Math.max(.12, Math.min(1.2, source.width / Math.max(1, holderWidth)))},${Math.max(.12, Math.min(1.2, source.height / Math.max(1, holderHeight)))})`
       : `rotate(${movement.fromRotation ?? 0}deg)`,
@@ -877,9 +879,11 @@ function createMovementHolder(movement: Movement, sourceGhost: HTMLElement) {
       const destination = destinationElement(movement)
       if (destination instanceof HTMLElement) coverTarget(movement, destination)
       observeDestination(movement)
+      wrapper.style.clipPath = 'none'
       wrapper.style.visibility = 'visible'
     },
     hide: () => {
+      wrapper.style.clipPath = 'inset(50%)'
       wrapper.style.visibility = 'hidden'
       revealTarget(movement)
     },

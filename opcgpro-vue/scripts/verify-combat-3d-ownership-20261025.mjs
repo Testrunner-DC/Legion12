@@ -57,13 +57,23 @@ const events=ref([]), revision=ref(1), paused=ref(false), synchronizing=ref(fals
 const coordinator=createPresentationSequenceCoordinator()
 let componentDebug=null
 let sequence=0, phase='idle', phaseStart=performance.now(), sampling=true
+let targetBlockerRelease=null
 const authority=id=>document.querySelector('[data-l12-game-stage] .formation-slot [data-card-instance-id="'+id+'"]')
 const master=()=>document.querySelector('[data-l12-game-stage] .mini-master[data-card-instance-id="master-1"]')
 const ghosts=()=>[...document.querySelectorAll('.l12-combat-defeat-ghost')]
 const visible=node=>{
   if(!(node instanceof HTMLElement))return false
-  const style=getComputedStyle(node),rect=node.getBoundingClientRect()
-  return style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)>0&&rect.width>0&&rect.height>0
+  const face=node.matches('img,canvas')?node:node.querySelector('canvas[data-l12-pixel-snapshot="true"],img')??node
+  const rect=face.getBoundingClientRect()
+  if(getComputedStyle(face).visibility!=='visible'||rect.width<=0||rect.height<=0)return false
+  if(face instanceof HTMLImageElement&&(!face.complete||face.naturalWidth<=0))return false
+  let opacity=1
+  for(let parent=face;parent instanceof Element;parent=parent.parentElement){
+    const style=getComputedStyle(parent)
+    if(style.display==='none'||/^inset\\(50%(?:\\s+50%){0,3}\\)$/.test(style.clipPath))return false
+    opacity*=Number(style.opacity||1)
+  }
+  return opacity>.01&&rect.right>0&&rect.bottom>0&&rect.left<innerWidth&&rect.top<innerHeight
 }
 const angle=node=>{const m=new DOMMatrixReadOnly(getComputedStyle(node).transform);return(Math.atan2(m.b,m.a)*180/Math.PI+360)%360}
 const publicCard=id=>({instanceId:id,cardId:'qa-public',name:'合成公开军团',cardType:'legion',faction:'qa',
@@ -142,6 +152,12 @@ window.__combat3d={
   kill:()=>emit('',{death:true,onlyLeave:true}),
   hideDeath:()=>emit('',{death:true,onlyLeave:true,hidden:true}),
   async pause(value){paused.value=value;await nextTick()},
+  async blockTarget(){
+    const reservation=coordinator.reserve(sequence+1,0,{visualKey:'target'})
+    reservation.prepareVisualOwner({show(){},hide(){},dispose(){}})
+    targetBlockerRelease=await reservation.waitUntilGranted()
+  },
+  releaseTarget(){targetBlockerRelease?.(true);targetBlockerRelease=null},
   async duplicate(){events.value=[...events.value,...events.value.slice(-1)];revision.value++;await nextTick()},
   async restore(){
     mark('restore');present.value=true;revision.value++;await nextTick()
@@ -331,6 +347,34 @@ try{
     assert(Math.abs(+masterSettle[1])<Math.abs(+masterStrike[1]),'master must decay toward rest without crossing into a rebound')
     result.rows.push({name:'real-master-positive-defense-hit-once-no-clone',middle:masterMiddle,record:masterRecord,
       badgePosition:{start:masterBadgeStart,middle:masterBadgeMiddle,end:masterBadgeEnd}})
+    await page.evaluate(()=>window.__combat3d.restore())
+    await page.evaluate(()=>window.__combat3d.sync())
+    await page.evaluate(async()=>{await window.__combat3d.blockTarget();await window.__combat3d.kill()})
+    await page.waitForSelector('.l12-combat-defeat-ghost canvas[data-l12-pixel-snapshot="true"]',{state:'attached'})
+    await page.waitForTimeout(100)
+    const pending=await page.evaluate(()=>window.__combat3d.read())
+    assert.equal(pending.frame.targetOwners,0,'queued prepared defeat pixels must not paint before their owner grant')
+    const pixel=async()=>{
+      const rect=await page.locator('.l12-combat-defeat-ghost').evaluate(node=>{const r=node.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})
+      const png=await page.screenshot({clip:{x:Math.floor(rect.x),y:Math.floor(rect.y),width:1,height:1}})
+      const {data}=await require('sharp')(png).raw().toBuffer({resolveWithObject:true})
+      return [...data.subarray(0,3)]
+    }
+    const clippedPixel=await pixel()
+    await page.screenshot({path:path.join(output,profile.name+'-prepared-paused-clipped.png'),fullPage:true})
+    // A test-only mutation restores the exact old browser failure. It changes
+    // neither the coordinator nor the actual product source under test.
+    await page.locator('.l12-combat-defeat-ghost').evaluate(node=>{node.style.clipPath='none'})
+    const leaked=await page.evaluate(()=>window.__combat3d.read())
+    const leakedPixel=await pixel()
+    assert.equal(leaked.frame.targetOwners,1,'oracle must see the visible child below a hidden parent')
+    assert.deepEqual(leakedPixel,[21,31,48],'actual source canvas pixels leak when the paint gate is removed')
+    assert.notDeepEqual(clippedPixel,leakedPixel,'the product gate suppresses actual raster pixels, not just a marker')
+    await page.locator('.l12-combat-defeat-ghost').evaluate(node=>{node.style.clipPath='inset(50%)'})
+    assert.deepEqual(await pixel(),clippedPixel,'restoring the gate clears the leaked raster pixels')
+    await page.evaluate(()=>window.__combat3d.releaseTarget())
+    await middle('defeat','prepared-unpaused-death');await waitDone(8)
+    result.rows.push({name:'prepared-defeat-zero-painted-pixels-and-hidden-ancestor-counterexample',clippedPixel,leakedPixel,passed:true})
     await page.evaluate(()=>window.__combat3d.stop());result.samples=hidden.samples;result.records=hidden.records;result.passed=true
     await context.close();activePage=null
   }
