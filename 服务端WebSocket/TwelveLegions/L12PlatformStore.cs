@@ -530,6 +530,8 @@ public sealed partial class L12PlatformStore
 
     public event Action<IReadOnlyList<string>>? SessionsRevoked;
 
+    internal Action? BeforeLoginPasswordVerificationForTesting { get; set; }
+
     public long Version
     {
         get { lock (_gate) return _data.BusinessVersion ?? _data.Version; }
@@ -590,25 +592,40 @@ public sealed partial class L12PlatformStore
 
     public L12AuthenticationResult Login(string username, string password, L12LoginAttemptContext? context = null)
     {
+        RequirePasswordWorkOutsideTransaction();
         context ??= new L12LoginAttemptContext("store-login", "local", "/store/login");
+        var normalizedUsername = username.Trim().ToLowerInvariant();
+        var throttleKeys = LoginThrottleKeys(normalizedUsername, context.ClientKey);
+        PasswordSnapshot? snapshot;
+        lock (_gate)
+        {
+            var retryAfter = LoginRetryAfterSeconds(throttleKeys, DateTimeOffset.UtcNow);
+            if (retryAfter > 0)
+                return LoginThrottled(normalizedUsername, context, retryAfter);
+            var row = _data.Accounts.FirstOrDefault(item =>
+                string.Equals(item.Username, normalizedUsername, StringComparison.OrdinalIgnoreCase));
+            snapshot = row is null || row.Disabled || row.Deleted ? null : PasswordSnapshot.Capture(row);
+        }
+        var verified = false;
+        if (snapshot is not null)
+        {
+            using (PasswordWorkBudget.Acquire())
+            {
+                BeforeLoginPasswordVerificationForTesting?.Invoke();
+                verified = snapshot.Verify(password);
+            }
+        }
+        // Release CPU admission before waiting for persistence. Re-read every credential field
+        // and the two authoritative throttle buckets; concurrent reset/lockout wins.
         lock (_gate)
         {
             var now = DateTimeOffset.UtcNow;
-            var normalizedUsername = username.Trim().ToLowerInvariant();
-            var throttleKeys = LoginThrottleKeys(normalizedUsername, context.ClientKey);
-            PruneLoginThrottles(now);
             var retryAfter = LoginRetryAfterSeconds(throttleKeys, now);
-            if (retryAfter > 0)
-            {
-                AddAuthenticationAudit(null, normalizedUsername, "rate-limited", context, "denied");
-                Save(false);
-                return new(false, "登录尝试过多，请稍后重试", null, null,
-                    "login_rate_limited", retryAfter);
-            }
-
+            if (retryAfter > 0) return LoginThrottled(normalizedUsername, context, retryAfter);
+            PruneLoginThrottles(now);
             var row = _data.Accounts.FirstOrDefault(item =>
                 string.Equals(item.Username, normalizedUsername, StringComparison.OrdinalIgnoreCase));
-            if (row is null || !Verify(password, row) || row.Disabled || row.Deleted)
+            if (!verified || row is null || snapshot?.Matches(row) != true)
             {
                 retryAfter = RegisterLoginFailure(throttleKeys, now);
                 AddAuthenticationAudit(row is null ? null : ToView(row), normalizedUsername,
@@ -720,13 +737,28 @@ public sealed partial class L12PlatformStore
     public (bool Success, string Message) ChangePassword(string accountId, string currentPassword, string newPassword,
         string? currentSessionId = null)
     {
+        RequirePasswordWorkOutsideTransaction();
         if (newPassword.Length is < 8 or > 128) return (false, "新密码长度需为 8–128 个字符");
+        PasswordSnapshot snapshot;
+        lock (_gate)
+        {
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Disabled && !item.Deleted);
+            if (row is null) return (false, "当前密码不正确");
+            snapshot = PasswordSnapshot.Capture(row);
+        }
+        L12PasswordCredentialFields replacement;
+        using (PasswordWorkBudget.Acquire())
+        {
+            BeforePasswordChangeVerificationForTesting?.Invoke();
+            if (!snapshot.Verify(currentPassword)) return (false, "当前密码不正确");
+            replacement = L12PasswordCredential.Create(newPassword);
+        }
         string[] revokedSessionIds;
         lock (_gate)
         {
             var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId);
-            if (row is null || !Verify(currentPassword, row)) return (false, "当前密码不正确");
-            SetPassword(row, newPassword);
+            if (row is null || !snapshot.Matches(row)) return (false, "账号信息已更新，请重新登录后重试");
+            ApplyPassword(row, replacement);
             row.MustChangePassword = false;
             var now = DateTimeOffset.UtcNow;
             var sessionsToRevoke = _data.Sessions.Where(session => session.AccountId == accountId
@@ -1795,6 +1827,11 @@ public sealed partial class L12PlatformStore
     private static void SetPassword(AccountRow row, string password)
     {
         var credential = L12PasswordCredential.Create(password);
+        ApplyPassword(row, credential);
+    }
+
+    private static void ApplyPassword(AccountRow row, L12PasswordCredentialFields credential)
+    {
         row.Salt = credential.Salt;
         row.PasswordHash = credential.PasswordHash;
         row.PasswordAlgorithm = credential.Algorithm;

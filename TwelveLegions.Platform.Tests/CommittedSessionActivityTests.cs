@@ -174,26 +174,28 @@ public sealed class CommittedSessionActivityTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void NewLoginCannotBecomeActiveBeforeOuterCommit(bool fail)
+    public void NewLoginCannotBecomeActiveBeforeItsCommit(bool fail)
     {
         using var fixture = new Fixture();
         var store = fixture.Store;
         string? pendingId = null;
         var pendingIdsObserved = new List<string?>();
         var activityBeforeCommit = new List<bool>();
+        var existingIds = store.Sessions(fixture.Owner.Account.Id).Select(session => session.Id).ToHashSet();
         store.StorageFailureInjector = stage =>
         {
             if (stage != "before-commit") return;
+            pendingId = store.Sessions(fixture.Owner.Account.Id).Single(session => !existingIds.Contains(session.Id)).Id;
             pendingIdsObserved.Add(pendingId);
             activityBeforeCommit.Add(store.IsSessionActive(pendingId!));
             if (fail) throw new IOException("synthetic login commit fault");
         };
-        void Login() => store.ExecuteAdminTransaction(() =>
+        void Login()
         {
             var result = store.Login("indexowner", "password-123");
-            pendingId = store.AuthenticateTokenSession(result.Token)!.SessionId;
-            return result;
-        });
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(pendingId, store.AuthenticateTokenSession(result.Token)!.SessionId);
+        }
         if (fail) Assert.Throws<L12PlatformStorageUnavailableException>(Login);
         else Login();
         store.StorageFailureInjector = null;

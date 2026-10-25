@@ -422,6 +422,12 @@ internal static class L12HttpExceptionBoundary
             if (context.Response.HasStarted) throw;
             await WriteErrorAsync(context, "storage_conflict", "数据已更新，请刷新后重试", StatusCodes.Status409Conflict);
         }
+        catch (L12AuthenticationBusyException)
+        {
+            context.Items[L12HttpPerformanceMonitor.OutcomeStatusItemName] = StatusCodes.Status503ServiceUnavailable;
+            if (context.Response.HasStarted) throw;
+            await WriteErrorAsync(context, "authentication_busy", "登录或密码校验繁忙，请稍后重试", StatusCodes.Status503ServiceUnavailable);
+        }
         catch (L12PlatformStorageUnavailableException error)
         {
             LogStorageFailure(context, error, "storage_unavailable");
@@ -471,6 +477,8 @@ internal static class L12HttpExceptionBoundary
         context.Response.StatusCode = statusCode;
         context.Response.Headers[L12CorrelationIds.HeaderName] = correlationId;
         context.Response.Headers.CacheControl = "no-store";
+        if (code == "authentication_busy")
+            context.Response.Headers.RetryAfter = L12AuthenticationBusyException.RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
         await context.Response.WriteAsJsonAsync(new L12ApiError(code, message, correlationId),
             cancellationToken: CancellationToken.None);
     }

@@ -1,5 +1,14 @@
 # 十二军团任务台账
 
+## 2026-10-25 G4登录与自助改密计算锁隔离｜本地接受，仍120k，未部署
+
+- 人类继续推进，承接已确认的兼容基础39034b51，起始工作区干净。Main领Store/新认证计算辅助/具名并发回归及忙碌HTTP映射；关键只读子任务核现有限流、事务/提交回滚与外层Monitor重入，无写租约。扩P2/P3认证计算与提交边界，不改schema/卡效/线上维护或密码成本。
+- 先以真实Login计算屏障证明平台读取不应等待KDF，再实现按值快照、锁外有界计算、锁内全字段与账号状态重验；五次两桶限流/审计/Save回滚复用。容量busy不得算错密或伪装401/400；外层管理事务不能靠Monitor重入偷偷回退锁内计算。只迁本片具名在线入口，未迁入口单独列明，不冒全部KDF已隔离。
+- 专项先RED→GREEN，最终Main一次完整平台；未变规则/前端复用。所有生成内容按既有D物理路径和监督器/短temp，显式保留具名及完整TRX，不为缺日志重跑已有效测试。本轮不部署/启用高成本/改现库/线上关单。
+- 真实Login屏障已RED（无关Version读被gate挡住）；首次超长合成名夹具失败不算行为证据。现Login/ChangePassword按值捕获整组凭据，锁外同一有界许可校验/派生，许可先归还再进提交gate；稳定账号/用户名/五凭据字段/权限代/两must-change位及active状态CAS，两桶第五次锁定胜过迟到成功。busy明确503/Retry-After1，不扣错密；保存失败/跨Store409不透明重放，令牌/撤销通知只在提交后。
+- 最终专项100/100（新增29锁隔离/并发案例）零跳过，独立关键只读审查无四产品叶阻断；Main同一冻结程序集一次完整平台2511/2511零失败跳过、11分20秒，真实TRX/监督receipt及前后六源/双DLL SHA稳定，原架构守卫过。旧NewLogin事务内夹具迁至真实before-commit钩子，保提交前活跃索引不可见。唯一stage-goals-20261025/g4-auth-isolation/main-acceptance.json；注册、两改名、邮箱绑定/解绑/重置、管理重置/删除仍原锁内KDF，启动root单独，不能冒全部迁移/容量或高成本资格。Git完成状态见同根synchronization.json，不等待CI打包才推进，也不自动部署。
+- 下一同族片已只读准备：Register锁内预查重→锁外同一预算Create→最终gate复查用户名唯一性并创建预组/会话/Save；强制/自助改名复用当前PasswordSnapshot与预算，业务资格/次数/同名最终重验、提交后通知。三生产入口均直接HTTP；9处仅测试中的外层Register须改为非KDF持久变更并保其事务/冲突/通知原断言（AdminTransactionMemory、PlatformSaveConcurrency、CommittedChatAdmissionReads、CommittedSessionActivity），禁止为了兼容测试锁内回退。保注册查重含deleted、改名忽略deleted这一现行区别；待本片冻结完整平台及同步完成后再写，不边测边换源。尚未实施或测试该下一片。
+
 ## 2026-10-25 G4兼容基础接受｜仅源码，不启用更高成本
 
 - 三叶完成：内部算法/格式/成本元数据、规范Base64/固定16盐32哈希与legacy定义、纯helper/Store共享适配。仍写120k，Store不接受未激活600k，未来门限允许旧显式120k，原Verify异常边界保；未触碰schema、限流/会话、线上数据库和两服。Main最终pins与专项程序集相同。

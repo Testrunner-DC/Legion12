@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-G4-AUTH-WORK-ISOLATION｜登录/自助改密本地接受，未部署
+
+- 根因：原Login和ChangePassword在平台共用gate内进行120k验密/派生，无关平台读取会被CPU工作阻塞。具名真实Login屏障一例RED后，锁内只捕获不可变值快照，进程共享有界预算在锁外计算，归还CPU许可后才回原持久gate；无第二认证状态或schema，仍120k。
+- 提交重验稳定Id/精确Username、hash/salt/算法/成本/版本、PermissionVersion及两must-change位，且账号未禁用/删除；Login最终同gate重新核两桶限流，保五次/审计/Save语义，正确密码迟到不能越过第五次锁。忙碌独立503＋Retry-After1/no-store，不写错密/审计/会话；存储失败与跨Store冲突沿原回滚/刷新并明确抛出，不透明重试。ChangePassword派生后CAS，撤销与改密一次提交，通知提交后发。外层Monitor重入明确拒绝，禁止锁内回退计算。
+- 同类查询：rg Verify/SetPassword/L12PasswordCredential.Create/Verify，范围L12PlatformStore*.cs；本片只迁Login/ChangePassword。Register、强制/自助改名、EmailAuth绑定/解绑/重置及管理重置/删除另片；EnsureRootAdmin为启动前路径，不能把本片冒全部KDF隔离或600k启用。
+- 最终100/100专项含新增29场：真实锁读取、八字段真实Save CAS、改密/改名/禁用/禁用后恢复、第五次两桶竞态与重载、繁忙无写、异常许可回收、外层事务快拒、保存失败回滚及跨Store冲突。旧Login提交索引两例改用普通Login的before-commit观察，保新会话提交前不可见。Main独审加关键只读审查无新阻断；同一冻结程序集一次完整平台2511/2511零失败跳过、11分20秒，TRX/监督原件与六源/双DLL pins保留，架构守卫过。唯一stage-goals-20261025/g4-auth-isolation/main-acceptance.json。首次无效用户名夹具及using编译失败原件保，不计RED或产品失败；未部署/维护/线上关单，无新代表性容量/30＋10或真机声明。
+
 ## FIX-20261025-G4-CREDENTIAL-FOUNDATION｜密码格式兼容基础接受，成本升级未完成
 
 - 本片仅承接F06的兼容前置，不将报告建议直接变成线上成本。扫描Store/EmailAuth/UsernameChanges的全部SetPassword/Verify入口，仍复用原共享方法；AccountRow增加内部算法/成本/格式元数据，null不写出，玩家ToView白名单不含这些字段。三项全缺才唯一解释为PBKDF2-SHA256/120000、16字节盐与32字节哈希；部分/未知元数据、非白名单成本、坏长度及非规范Base64在派生前拒绝，不再按任意expected.Length工作。
