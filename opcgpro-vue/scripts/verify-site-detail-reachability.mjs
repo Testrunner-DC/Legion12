@@ -67,7 +67,6 @@ const cover='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.
 const article=(id,kind)=>({id,title:(kind==='product'?'第一弹补充包产品详情':'赛事教学视频详情'),summary:'移动端列表进入详情的验收内容。',body:'这里是应当能够从列表进入阅读的完整正文。',category:kind==='product'?'产品':'视频',coverUrl:cover,link:'/__linked_detail__?kind='+kind,slug:id,pinned:false,status:'published',hasUnpublishedChanges:false,createdAt:'2026-10-21T00:00:00Z',updatedAt:'2026-10-21T00:00:00Z',publishedAt:'2026-10-21T00:00:00Z',author:'十二军团官方',videoAuthorName:kind==='video'?'官方频道':'',updatedBy:'admin',revision:1,kind,sortOrder:1})
 platform.articleApi.list=async({kind}={})=>[article(kind+'-detail',kind)]
 platform.siteContentApi.categories=async kind=>[{id:kind+'-category',kind,name:kind==='product'?'产品':'视频',sortOrder:1,createdAt:'',updatedAt:''}]
-platform.emailApi.capability=async()=>({enabled:true,mailConfigured:true})
 
 const originalFetch=window.fetch.bind(window)
 window.__qaRequests=[]

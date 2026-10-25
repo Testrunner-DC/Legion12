@@ -53,7 +53,6 @@ platform.sessionApi.list=async()=>[
  {id:'session-tablet-long-identifier',createdAt:'2026-09-19T09:00:00Z',expiresAt:'2026-10-19T09:00:00Z',current:false,authStrength:'password',permissionVersion:3}
 ]
 platform.usernameChangeApi.status=async()=>({freeRenameAvailable:true,freeRenameUsed:0})
-platform.emailApi.capability=async()=>({enabled:false,mailConfigured:false})
 
 const coverData='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect width="400" height="300" fill="%230b2830"/%3E%3Ccircle cx="35" cy="150" r="28" fill="%23d9b65f"/%3E%3Ccircle cx="365" cy="150" r="28" fill="%2352c4cb"/%3E%3C/svg%3E'
 const article=(id,kind,index)=>({id,title:'第一弹补充包「诸神黄昏」发售公告与移动端长标题换行验收 '+index,summary:'这是一段用于验收移动端换行与截断的资讯摘要，长度 deliberately 拉长以观察两行以上的排布效果。',body:'正文',category:'公告',coverUrl:coverData,link:'',slug:id,pinned:index===0,status:'published',hasUnpublishedChanges:false,createdAt:'2026-09-01T08:00:00Z',updatedAt:'2026-09-01T08:00:00Z',publishedAt:'2026-09-0'+index+'T08:00:00Z',author:'十二军团官方',updatedBy:'admin',revision:1,kind,sortOrder:index})

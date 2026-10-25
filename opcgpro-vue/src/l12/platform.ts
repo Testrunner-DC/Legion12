@@ -39,12 +39,6 @@ export interface PlayerStatistics {
   range: PlayerStatisticsRange; fromUtc?: string; untilUtc: string; seasonId?: string
 }
 export interface SessionRevocation { sessionId?: string; revokedCount: number; alreadyRevoked: boolean }
-export interface EmailStatus {
-  bound: boolean; verified: boolean; maskedEmail?: string; pendingMaskedEmail?: string
-  pendingExpiresAt?: string; featureEnabled: boolean; mailConfigured: boolean
-}
-export interface EmailCapability { enabled: boolean; mailConfigured: boolean }
-export interface AuthOperation { code: string; message: string }
 export interface AdminPasswordReset { applied: boolean; account: PlatformAccount; revokedSessions: number; temporaryPassword?: string | null }
 export interface AccountDeletion {
   applied: boolean; account: PlatformAccount; revokedSessions: number; removedPrivateRecords: number; cleanedMatchRecords?: number
@@ -1362,28 +1356,6 @@ export const updateAudioPreferences = (value: NonNullable<PlatformAccount['audio
   platformRequest<NonNullable<PlatformAccount['audioPreferences']>>('/api/auth/audio-preferences', {
     method: 'PUT', body: JSON.stringify(value),
   })
-
-export const emailApi = {
-  capability: () => platformRequest<EmailCapability>('/api/auth/email/capability'),
-  status: () => platformRequest<EmailStatus>('/api/auth/email'),
-  bind: (email: string, currentPassword: string) => platformRequest<AuthOperation>('/api/auth/email/bind', {
-    method: 'POST', body: JSON.stringify({ email, currentPassword }),
-  }),
-  verify: (token: string) => platformRequest<AuthOperation>('/api/auth/email/verify', {
-    method: 'POST', body: JSON.stringify({ token }),
-  }),
-  unbind: (currentPassword: string) => platformRequest<AuthOperation>('/api/auth/email/unbind', {
-    method: 'POST', body: JSON.stringify({ currentPassword }),
-  }),
-}
-
-export const requestPasswordReset = (email: string) => platformRequest<AuthOperation>('/api/auth/password/forgot', {
-  method: 'POST', body: JSON.stringify({ email }),
-})
-
-export const resetPassword = (token: string, newPassword: string) => platformRequest<AuthOperation>('/api/auth/password/reset', {
-  method: 'POST', body: JSON.stringify({ token, newPassword }),
-})
 
 export async function submitBug(input: { title: string; description: string; page: string; roomCode?: string; matchId?: string; version: string; clientDiagnostic?: BugClientConnectionDiagnostic }) {
   return platformRequest<BugReport>('/api/bugs', { method: 'POST', body: JSON.stringify(input) })

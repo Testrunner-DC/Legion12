@@ -46,7 +46,6 @@ const net=await import('/src/l12/net.ts')
 net.l12State.status='online'
 platform.sessionApi.list=async()=>[]
 platform.usernameChangeApi.status=async()=>({freeRenameAvailable:true,freeRenameUsed:0})
-platform.emailApi.capability=async()=>({enabled:false,mailConfigured:false})
 platform.friendApi.friends=async()=>[]
 platform.friendApi.requests=async()=>[]
 platform.friendApi.blocked=async()=>[]

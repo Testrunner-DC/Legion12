@@ -212,7 +212,6 @@ platform.playerApi.statistics=async(range='season')=>({range,overall:stat,ranked
 platform.rankedApi.overview=async()=>({profile:{...account,accountId:account.id,placed:false,faction:'',sevenValue:0,placementPlayed:0,placementWins:0,wins:0,losses:0,winStreak:0,tier:'定级中',rankLabel:'定级中',titles:[],masterTitles:[],selectedMasterTitle:null},history:[],config:{placementMatches:10}})
 platform.sessionApi.list=async()=>[]
 platform.usernameChangeApi.status=async()=>({freeRenameAvailable:true,freeRenameUsed:0})
-platform.emailApi.capability=async()=>({enabled:false,mailConfigured:false})
 platform.adminApi.workbenchSummary=async()=>({sampledAt:'2026-10-22T00:00:00Z',pending:[],anomalies:[],recentActivities:[],partial:false,unavailableSections:[]})
 window.history.replaceState(null,'','/me')
 const {router}=await import('/src/router/index.ts')

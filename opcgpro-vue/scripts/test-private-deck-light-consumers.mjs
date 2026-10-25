@@ -306,7 +306,6 @@ const profilePlatformModule = {
   canAccessAdmin: computed(() => false),
   changePassword: async () => ({ message: '密码已更新' }),
   changeUsername: (...args) => changeUsernameBehavior(...args),
-  emailApi: { capability: async () => ({ enabled: false }), status: async () => null },
   login: (...args) => loginBehavior(...args),
   logout: async () => { platformState.account = null; platformState.token = ''; authState.verified = false },
   mfaCapability: async () => null,

@@ -62,7 +62,6 @@ platform.sessionApi.list=async()=>[
  {id:'session-tablet-long-identifier',createdAt:'2026-09-19T09:00:00Z',expiresAt:'2026-10-19T09:00:00Z',current:false,authStrength:'password',permissionVersion:8}
 ]
 platform.usernameChangeApi.status=async()=>({freeRenameAvailable:true,freeRenameUsed:0})
-platform.emailApi.capability=async()=>({enabled:false,mailConfigured:false})
 
 const sampleAccount=(id,username,disabled=false,deleted=false)=>({id,username,role:'player',createdAt:'2026-09-01T00:00:00Z',publicHistory:true,permissionVersion:3,disabled,deleted,disabledReason:disabled?'异常对局复核中':''})
 platform.adminApi.accounts=async()=>[

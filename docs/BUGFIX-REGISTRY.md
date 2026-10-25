@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## MAINT-20261025-G6-EMAIL-CLIENT｜停用邮箱的客户端冗余整理，本地接受未部署
+
+- 人类已明确永久停用邮箱；G6检索确认platform.ts的3DTO、emailApi及两恢复函数无生产消费者，仅5个旧浏览器mock和1个轻量mock。删除这些死代码；不删服务端503兼容/历史字段、低层匿名旧请求保护、恢复页零请求拦截，也不碰正常管理resetPassword局部函数。
+- AST新增守卫先失败于旧EmailStatus，最终28混合SFC/生命周期/导出边界检查过，含独审指出的具名别名/类型/通配重导出反例与管理名正控。26实际轻量消费者、会话边界、UI361、五工具语法、两套完整类型及双Vite过。逐字源码证明只删旧包装/DTO，request/remember/session原样；两个页面SHA不变，复用原9真实页面证据，不再重复截图或全后端。
+- 唯一stage-goals-20261025/g6-email-client/main-acceptance.json及synchronization.json。D热前端原根复用，无新大树；c43工作树前端构建与最终源/双index分别绑定，不冒干净Release。G4完整2650独立有效，规则未变；无两服/维护/账号/现库/统计写，不将这片等同129候选可删或G6全完成。
+
 ## FIX-20261025-G4-COMPATIBLE-READER｜兼容读先行，保120k写入，本地接受未部署
 
 - 承接F06与持续推进授权：历史v1证已知600k旧读者拒绝，直接提ActiveIterations会混读写策略。两条实际持久合成RED证明登录拒绝与root同密启动重置，先分离MaximumReadIterations=600k，两个具名Verify消费点改读上限；ActiveIterations=120k及所有默认Create不变，无自动重哈希/新开关/现库迁移。
