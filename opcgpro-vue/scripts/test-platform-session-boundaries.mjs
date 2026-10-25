@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { persistLoginStorage, clearLoginStorage } from '../src/l12/browserStorage.ts'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -92,6 +93,8 @@ function actualRuntime(initialFetch = async () => json(200, {}), { sharedGallery
   const deps = {
     reactive,
     localStorage,
+    persistLoginStorage: entries => persistLoginStorage(entries, () => localStorage),
+    clearLoginStorage: keys => clearLoginStorage(keys, () => localStorage),
     deploymentStorageKey,
     usesSharedGallery: sharedGallery,
     location: { origin: 'https://legion-12.com' },

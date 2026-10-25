@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-G1-BROWSER-RECOVERY｜存储拒绝与首页首屏故障，本地接受未部署
+
+- 人类确认综合报告阶段目标后要求按序推进，覆盖F01/F03具名方案。P2/P4外围改动，不改引擎、权限、数据库或部署。实际扫描当前`localStorage|sessionStorage`全src及L12调用：模块初始化platform/net、首页缓存默认参数、个人页偏好、牌库缓存/滚动为本片；已有音频/通知/教学/滚动try保护保留，旧未达组件不凭名称清理，不冒全部路由均验。
+- F01：browserStorage惰性区分可丢弃UI偏好和严格持久端口，前者拒绝时不阻止公开页面，后者保私人缓存unavailable/CAS；persistLoginStorage先成功保存account/nickname，原子token最后提交，再发布verified。中途失败保旧内存身份、best-effort回滚；回滚也拒绝时不得留新token。退出先退live身份，再严格首清token，remove失败写空；两者均失败明确警告重载可能恢复，Profile不再声称持久退出；无token访客清理仍不抛以免再次阻断启动。原7/11失败保，最终16/16含quota各键/切号/损坏JSON/拒读/回滚拒绝/退出重载与环境隔离，原34会话和25环境用例在完整链内通过；关键档独读两轮，最终无新阻断。
+- F03：OfficialHomePage首次无已发布快照失败显示说明、重试和卡牌/规则入口，组件单飞保原2/5/10/20秒退避及online/visible；成功快照不被503覆盖，卸载迟到不应用/落缓存。homePublishedCache的localStorage getter由默认参数移入原try，格式/公开载荷校验不改。getter与真实SFC两种RED保留，52断言及SFC编译通过。
+- Main原125前端命令117有效前缀＋2＋6全部通过，类型双构建完成；两处隔离装载器只补新真实依赖，原失败不改绿。真实正式静态产物20浏览器场景：1440/390、四路由×getter/读拒绝、实际quota登录、503→按钮→200，全部通过/零脚本错误，Main看三图。开发态第三方vue-router/devtools-kit的getter拒绝仍为明确边界，原失败保留；不冒真机/真实账号/线上容量或所有路由证明。
+- 回滚面为本片8产品源与具名QA；保原会话epoch、请求协调器、私库持久协议和发布快照，不清浏览器真实资料或改服务。唯一D:/GPT/Legion12/artifacts/stage-goals-20261025/g1-main-acceptance.json与同根Git同步记录；未部署/维护/业务库/线上关单写，原后端8417/2472同源复用。
+
 ## FIX-20261025-AUDIT-IDENTITY｜三项本地验收通过，未部署
 
 - 人类“推进所有修复”批准前项两处隔离与在途排位缺口。扩P2/P3/P4身份/生命周期边界，不改P0/P1卡效、Journal格式、统计事实或留存策略。扫描ReadPlayerReplayViewer/IsWithinRecentPlayerReplayWindow/ListMatchesForAccount及HTTP调用链，玩家入口均走固定身份；内部旧by-name辅助无HTTP消费者，不将其当作授权端口。前端同类MatchRecords已有verified同步退休，保持原行为。

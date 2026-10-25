@@ -192,12 +192,18 @@ function deckCoverModuleUrl() {
   return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#deck-cover-${moduleSerial}`
 }
 
+function browserStorageModuleUrl() {
+  const filename = join(sourceRoot, 'browserStorage.ts')
+  return `data:text/javascript;base64,${Buffer.from(compile(readFileSync(filename, 'utf8'), filename)).toString('base64')}`
+}
+
 async function loadPlatformModule(base = '/') {
   const filename = join(sourceRoot, 'platform.ts')
   const reliabilityFilename = join(sourceRoot, 'platformRequestReliability.ts')
   const reliabilitySource = compile(readFileSync(reliabilityFilename, 'utf8'), reliabilityFilename)
   let source = readFileSync(filename, 'utf8')
   source = source
+    .replace("from './browserStorage'", `from '${browserStorageModuleUrl()}'`)
     .replace("from './chatResource'", `from '${chatResourceModuleUrl()}'`)
     .replace("from './deckCover'", `from '${deckCoverModuleUrl()}'`)
     .replace("import { computed, reactive } from 'vue'", `
@@ -220,6 +226,7 @@ async function loadNetModule(base = '/') {
   const filename = join(sourceRoot, 'net.ts')
   let source = readFileSync(filename, 'utf8')
   source = source
+    .replace("from './browserStorage'", `from '${browserStorageModuleUrl()}'`)
     .replace("from './chatResource'", `from '${chatResourceModuleUrl()}'`)
     .replace("from './gameStateCardFrame'", `from '${gameStateCardFrameModuleUrl()}'`)
     .replace("from './handArrayDelta'", `from '${handArrayDeltaModuleUrl()}'`)

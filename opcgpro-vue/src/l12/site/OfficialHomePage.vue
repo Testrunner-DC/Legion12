@@ -16,6 +16,8 @@ const showRevisit = computed(() => homeAccountVerified(platformState.account?.id
   authState.verified) && !platformState.account?.disabled && !platformState.account?.deleted)
 
 const ready = ref(false)
+const initialLoadFailed = ref(false)
+const retrying = ref(false)
 const composition = ref(defaultHomeComposition())
 const legal = ref(defaultSiteLegal())
 const news = ref<Article[]>([])
@@ -27,6 +29,7 @@ const carouselPaused = ref(false)
 const carouselCycle = ref(0)
 let carouselTimer = 0
 let homeRetryTimer = 0
+let homeRefreshInFlight: Promise<void> | null = null
 let refreshGeneration = 0
 let retryAttempt = 0
 let disposed = false
@@ -95,30 +98,58 @@ function applyPublishedHome(payload: SiteHomePayload) {
   activeIndex.value = Math.min(activeIndex.value, Math.max(0, nextComposition.heroSlides.filter(item => item.enabled).length - 1))
 }
 function scheduleHomeRefresh() {
+  if (disposed) return
   window.clearTimeout(homeRetryTimer)
   const delay = Math.min(30_000, [2_000, 5_000, 10_000, 20_000][Math.min(retryAttempt++, 3)]!)
-  homeRetryTimer = window.setTimeout(() => void refreshPublishedHome(), delay)
+  homeRetryTimer = window.setTimeout(() => {
+    homeRetryTimer = 0
+    void refreshPublishedHome()
+  }, delay)
 }
-async function refreshPublishedHome() {
+function refreshPublishedHome() {
+  if (disposed) return Promise.resolve()
+  if (homeRefreshInFlight) return homeRefreshInFlight
   const generation = ++refreshGeneration
-  try {
-    const payload = await siteContentApi.home()
-    if (disposed || generation !== refreshGeneration) return
-    applyPublishedHome(payload)
-    savePublishedHomeCache(payload)
-    retryAttempt = 0
-    ready.value = hasPublishedSnapshot
-    startCarousel()
-  } catch {
-    if (disposed || generation !== refreshGeneration) return
-    // Keep the last successfully published snapshot. A deploy-window 502 or a
-    // not-yet-ready replacement process must not overwrite it with placeholders.
-    ready.value = hasPublishedSnapshot
-    scheduleHomeRefresh()
-  }
+  if (initialLoadFailed.value) retrying.value = true
+  homeRefreshInFlight = (async () => {
+    // Keep setup synchronous so repeated clicks/events see this shared promise
+    // before the public request begins.
+    await Promise.resolve()
+    try {
+      const payload = await siteContentApi.home()
+      if (disposed || generation !== refreshGeneration) return
+      applyPublishedHome(payload)
+      savePublishedHomeCache(payload)
+      retryAttempt = 0
+      initialLoadFailed.value = false
+      ready.value = hasPublishedSnapshot
+      startCarousel()
+    } catch {
+      if (disposed || generation !== refreshGeneration) return
+      // Keep the last successfully published snapshot. A deploy-window 502 or a
+      // not-yet-ready replacement process must not overwrite it with placeholders.
+      ready.value = hasPublishedSnapshot
+      initialLoadFailed.value = !hasPublishedSnapshot
+      scheduleHomeRefresh()
+    } finally {
+      homeRefreshInFlight = null
+      retrying.value = false
+    }
+  })()
+  return homeRefreshInFlight
+}
+function retryPublishedHome() {
+  if (disposed || homeRefreshInFlight) return
+  window.clearTimeout(homeRetryTimer)
+  homeRetryTimer = 0
+  retrying.value = true
+  void refreshPublishedHome()
 }
 function refreshWhenVisible() {
-  if (!document.hidden) void refreshPublishedHome()
+  if (document.hidden || disposed || homeRefreshInFlight) return
+  window.clearTimeout(homeRetryTimer)
+  homeRetryTimer = 0
+  void refreshPublishedHome()
 }
 onMounted(() => {
   const cached = loadPublishedHomeCache()
@@ -198,11 +229,22 @@ onBeforeUnmount(() => {
       <div class="footer-legal"><p>{{ legal.trademark }}</p><a v-if="legal.contactHref" :href="legal.contactHref" target="_blank" rel="noopener">{{ legal.contactLabel || '联系我们' }}</a><small>{{ legal.copyright }}<template v-if="legal.registration"> · {{ legal.registration }}</template></small></div>
     </footer>
   </div>
+  <section v-else-if="initialLoadFailed" class="official-home-failure" role="alert" aria-live="polite">
+    <small>暂时无法连接</small>
+    <h1>官网内容暂时无法加载</h1>
+    <p>公开内容服务可能正在恢复。你可以立即重试，也可以先前往其他公开页面。</p>
+    <div class="official-home-failure-actions">
+      <button type="button" :disabled="retrying" @click="retryPublishedHome">{{ retrying ? '正在重试…' : '重新加载内容' }}</button>
+      <router-link to="/cards">浏览卡牌</router-link>
+      <router-link to="/rules">查看规则</router-link>
+    </div>
+  </section>
   <div v-else class="official-home-loading" aria-label="正在加载官网内容"><i/><i/><i/></div>
 </template>
 
 <style scoped>
 .home-content-empty{margin:0;padding:24px 0;border-top:1px solid #293941;color:#a8b8bf;font-size:15px;line-height:1.5}
+.official-home-failure{display:grid;min-height:100%;box-sizing:border-box;place-content:center;justify-items:start;gap:14px;padding:clamp(28px,7vw,96px);background:radial-gradient(circle at 76% 30%,rgba(168,38,50,.22),transparent 28%),#0a0f12;color:#eef1ed;font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.official-home-failure small{color:#d4b451;font-size:13px;font-weight:800;letter-spacing:.14em}.official-home-failure h1{margin:0;font-size:clamp(28px,5vw,52px);line-height:1.15}.official-home-failure p{max-width:620px;margin:0;color:#a8b8bf;font-size:15px;line-height:1.75}.official-home-failure-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:8px}.official-home-failure-actions button,.official-home-failure-actions a{display:inline-flex;min-height:44px;box-sizing:border-box;align-items:center;justify-content:center;padding:10px 18px;border:1px solid #d4b451;background:transparent;color:#eef1ed;font:700 14px 'Microsoft YaHei','微软雅黑',system-ui,sans-serif;text-decoration:none}.official-home-failure-actions button{background:#a82632;border-color:#a82632;cursor:pointer}.official-home-failure-actions button:disabled{cursor:wait;opacity:.7}.official-home-failure-actions button:focus-visible,.official-home-failure-actions a:focus-visible{outline:2px solid #f2d372;outline-offset:3px}
 .official-home{--paper:#f1eee5;--ink:#101416;--red:#a82632;--gold:#d4b451;min-height:100%;overflow:hidden;background:var(--paper);color:var(--ink);font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.official-topbar{position:sticky;z-index:30;top:0;display:flex;height:78px;align-items:center;justify-content:space-between;padding:0 clamp(22px,5vw,78px);border-bottom:1px solid rgba(16,20,22,.16);background:rgba(247,244,235,.94);backdrop-filter:blur(14px)}.official-wordmark{display:flex;align-items:center;gap:12px;color:var(--ink);text-decoration:none}.official-wordmark img{width:43px;height:43px;object-fit:contain;filter:brightness(.14)}.official-wordmark span{display:flex;flex-direction:column}.official-wordmark b{font-size:17px;letter-spacing:.12em}.official-wordmark small{font:800 14px monospace;letter-spacing:.18em}.official-topbar :deep(.official-nav){height:100%}.hero-section{position:relative;background:#0b0e10}.hero-stage{position:relative;min-height:calc(100vh - 78px);overflow:hidden}.hero-stage>picture,.hero-stage>picture img{position:absolute;inset:0;width:100%;height:100%}.hero-stage>picture img{object-fit:cover}.hero-fallback{position:absolute;inset:0;background:radial-gradient(circle at 72% 38%,rgba(212,180,81,.28),transparent 24%),radial-gradient(circle at 68% 42%,#28333a,transparent 48%),linear-gradient(135deg,#141d22 0 50%,#781e29 50% 68%,#0c1114 68%)}.hero-fallback i{position:absolute;width:36vw;height:36vw;border:1px solid rgba(255,255,255,.16);border-radius:50%;right:8vw;top:10vh}.hero-fallback i:nth-child(2){width:24vw;height:24vw;right:14vw;top:20vh}.hero-fallback i:nth-child(3){width:12vw;height:12vw;right:20vw;top:30vh;background:rgba(218,183,81,.18)}.hero-shade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,8,10,.88),rgba(5,8,10,.48) 48%,rgba(5,8,10,.12)),linear-gradient(0deg,rgba(5,8,10,.64),transparent 45%)}.hero-copy{position:relative;z-index:2;display:flex;box-sizing:border-box;min-height:calc(100vh - 78px);max-width:820px;flex-direction:column;align-items:flex-start;justify-content:center;padding:80px clamp(26px,8vw,130px) 150px;color:#fff}.hero-copy>small{padding-left:42px;color:#f0d378;font:900 14px monospace;letter-spacing:.28em}.hero-copy>small::before{content:'';position:absolute;width:30px;height:2px;margin:6px 0 0 -42px;background:var(--red)}.hero-copy h1{max-width:760px;margin:18px 0;font-size:clamp(54px,7.5vw,118px);line-height:.96;letter-spacing:.04em;text-shadow:0 8px 38px #000}.hero-copy p{max-width:610px;margin:0 0 28px;color:#d7d7d1;font-size:clamp(14px,1.3vw,18px);line-height:1.8}.hero-copy>a{padding:14px 20px;border:1px solid rgba(255,255,255,.7);background:rgba(8,12,14,.56);color:#fff;text-decoration:none;font-size:14px;font-weight:900}.hero-copy>a b{margin-left:25px;color:#f2d372}.carousel-controls{position:absolute;z-index:4;right:clamp(26px,6vw,90px);bottom:115px;display:flex;align-items:center;gap:15px}.carousel-controls>button{width:42px;height:42px;border:1px solid rgba(255,255,255,.45);border-radius:50%;background:rgba(8,12,14,.6);color:#fff;font-size:24px}.carousel-controls>span{display:flex;gap:7px}.carousel-controls span button{width:28px;height:3px;padding:0;border:0;background:rgba(255,255,255,.4)}.carousel-controls span button.active{background:#f0cf6d}.hero-notices{position:absolute;z-index:5;right:0;bottom:0;left:0;display:flex;overflow-x:auto;gap:1px;padding:0 clamp(20px,6vw,90px);background:rgba(6,9,11,.78);backdrop-filter:blur(12px)}.hero-notices a{display:flex;min-width:min(310px,72vw);align-items:center;gap:11px;padding:19px 22px;border-left:1px solid rgba(255,255,255,.13);color:#ecece7;text-decoration:none;font-size:14px;font-weight:900}.hero-notices a i{display:grid;width:23px;height:23px;place-items:center;border:1px solid #d5b75c;border-radius:50%;color:#f0ce69;font-style:normal}.hero-notices a b{margin-left:auto}.hero-notices a[data-tone="accent"]{background:#9c2530}.hero-notices a[data-tone="dark"]{background:#101719}.news-section,.products-section{padding:100px clamp(26px,8vw,130px);background:var(--paper)}.section-heading{display:grid;grid-template-columns:minmax(240px,.8fr) minmax(280px,1.2fr) auto;align-items:end;gap:35px;margin-bottom:46px}.section-heading small{color:var(--red);font:900 14px monospace;letter-spacing:.32em}.section-heading h2{margin:7px 0 0;font-size:clamp(38px,5vw,68px);letter-spacing:.06em}.section-heading p{max-width:520px;margin:0;color:#62686a;line-height:1.8}.section-heading>a{padding-bottom:8px;border-bottom:2px solid var(--ink);color:var(--ink);text-decoration:none;font-weight:900}.news-stream{display:grid;grid-template-columns:minmax(420px,1.12fr) minmax(340px,.88fr);gap:clamp(30px,5vw,82px)}.lead-news{display:grid;color:var(--ink);text-decoration:none}.lead-news>picture,.lead-news>picture img,.lead-news>img,.lead-news>.news-placeholder{width:100%;aspect-ratio:16/9}.lead-news img{object-fit:cover}.news-placeholder{display:grid;place-items:center;background:linear-gradient(135deg,#1b2529,#982630);color:#e9cd77;font:900 78px Georgia}.lead-news>div{padding:24px 0}.lead-news small,.product-track small{color:var(--red);font:900 14px monospace;letter-spacing:.1em}.lead-news h3{margin:10px 0;font-size:clamp(24px,3vw,40px)}.lead-news p{display:-webkit-box;overflow:hidden;color:#666d6e;line-height:1.8;-webkit-box-orient:vertical;-webkit-line-clamp:3}.lead-news>div>b{font-size:14px;letter-spacing:.16em}.news-lines{border-top:2px solid var(--ink)}.news-lines a{display:grid;grid-template-columns:94px 90px 1fr 25px;align-items:center;gap:12px;padding:22px 3px;border-bottom:1px solid rgba(16,20,22,.2);color:var(--ink);text-decoration:none}.news-lines time{font:700 14px monospace}.news-lines em{color:var(--red);font-size:14px;font-style:normal;font-weight:900}.news-lines b{font-size:14px;line-height:1.55}.community-video-section{position:relative;padding:105px clamp(26px,8vw,130px) 120px;background:linear-gradient(128deg,#10181b,#1a2428 55%,#701b26);color:#fff}.community-video-section::before{content:'MOVIE';position:absolute;right:-1vw;top:-2vw;color:rgba(255,255,255,.035);font:900 clamp(100px,19vw,310px) Arial}.section-heading.inverse{position:relative;z-index:1}.section-heading.inverse small{color:#f0cd68}.section-heading.inverse p{color:#aeb6b7}.video-ribbon{position:relative;z-index:1;display:grid;grid-template-columns:1.35fr 1fr;grid-template-rows:1fr 1fr;gap:12px}.video-ribbon>a{position:relative;min-height:220px;overflow:hidden;color:#fff;text-decoration:none}.video-ribbon>a.feature{grid-row:1/3;min-height:500px}.video-ribbon picture,.video-ribbon picture img,.video-ribbon>a>img,.video-placeholder{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.video-placeholder{background:linear-gradient(135deg,#333f43,#111719)}.video-ribbon>a::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(4,7,8,.88),transparent 62%)}.video-ribbon>a>i{position:absolute;z-index:2;left:25px;top:25px;display:grid;width:52px;height:52px;place-items:center;border:1px solid rgba(255,255,255,.75);border-radius:50%;background:rgba(4,8,10,.42);font-style:normal}.video-ribbon>a>span{position:absolute;z-index:2;right:24px;bottom:24px;left:24px;display:flex;flex-direction:column;gap:6px}.video-ribbon small{color:#e8c85f;font:900 14px monospace}.video-ribbon b{font-size:clamp(17px,2vw,27px)}.video-ribbon em{display:-webkit-box;overflow:hidden;color:#c2c8c7;font-size:14px;font-style:normal;line-height:1.6;-webkit-box-orient:vertical;-webkit-line-clamp:2}.products-section{background:#e6e0d2}.product-track{display:flex;overflow-x:auto;gap:24px;padding:2px 0 24px;scroll-snap-type:x mandatory}.product-track>a{flex:0 0 min(330px,78vw);color:var(--ink);text-decoration:none;scroll-snap-align:start}.product-track picture,.product-track picture img,.product-track>a>img,.product-placeholder{width:100%;aspect-ratio:1/1;object-fit:cover}.product-placeholder{display:grid;place-items:center;background:linear-gradient(145deg,#c6b99a,#7c222b);color:#f1d27a}.product-placeholder span{font:900 92px Georgia}.product-track small{display:block;margin-top:18px}.product-track h3{margin:8px 0;font-size:22px}.product-track p{min-height:44px;color:#676c6d;font-size:14px;line-height:1.7}.product-track b{font-size:14px}.section-empty{display:flex;min-height:260px;flex-direction:column;align-items:center;justify-content:center;border-top:2px solid var(--ink);border-bottom:1px solid rgba(16,20,22,.25);color:#787d7d}.section-empty b{color:var(--ink);font:900 18px monospace;letter-spacing:.2em}.section-empty span{margin-top:10px}.section-empty.inverse{border-color:rgba(255,255,255,.4);color:#93a0a2}.section-empty.inverse b{color:#fff}.official-footer{display:flex;align-items:flex-start;justify-content:space-between;gap:45px;padding:55px clamp(26px,8vw,130px);background:#080c0e;color:#a0a8a8}.official-footer>a{display:flex;align-items:center;gap:13px;color:#fff;text-decoration:none;font:900 14px monospace;letter-spacing:.16em}.official-footer img{width:48px;height:48px;filter:brightness(0) invert(1)}.official-footer>div{max-width:720px;text-align:right}.official-footer p{margin:0 0 12px;font-size:14px;line-height:1.7}.official-footer a{color:#e3c46a}.official-footer small{display:block;margin-top:10px;color:#687375}.official-home-loading{display:grid;min-height:100%;place-content:center;gap:12px;background:#0a0f12}.official-home-loading i{width:min(70vw,720px);height:18px;background:linear-gradient(90deg,#111820,#1c282f,#111820);background-size:200% 100%;animation:home-loading 1.2s linear infinite}.official-home-loading i:nth-child(2){width:min(52vw,520px)}.official-home-loading i:nth-child(3){width:min(34vw,340px)}@keyframes home-loading{to{background-position:-200% 0}}@media(max-width:1000px){.official-wordmark span{display:none}.news-stream{grid-template-columns:1fr}.section-heading{grid-template-columns:1fr auto}.section-heading p{grid-column:1/-1}.video-ribbon{grid-template-columns:1fr 1fr;grid-template-rows:1.3fr 1fr}.video-ribbon>a.feature{grid-column:1/-1;grid-row:auto;min-height:430px}}@media(max-width:700px){.official-topbar{height:auto;min-height:58px;align-items:flex-start;padding:7px 12px}.official-wordmark{padding-top:4px}.official-wordmark img{width:34px;height:34px}.official-topbar :deep(.official-nav){max-width:calc(100vw - 60px)}.hero-stage,.hero-copy{min-height:calc(100svh - 58px)}.hero-stage>picture img{object-position:center}.hero-shade{background:linear-gradient(0deg,rgba(5,8,10,.9),rgba(5,8,10,.18) 80%)}.hero-copy{justify-content:flex-end;padding:80px 22px 165px}.hero-copy h1{font-size:48px}.hero-copy p{font-size:14px}.carousel-controls{right:18px;bottom:116px}.carousel-controls>span{display:none}.hero-notices{padding:0 12px}.hero-notices a{min-width:75vw;padding:16px}.news-section,.products-section,.community-video-section{padding:70px 18px}.section-heading{grid-template-columns:1fr;gap:13px;margin-bottom:28px}.section-heading p{grid-column:auto}.section-heading>a{justify-self:start}.section-heading h2{font-size:40px}.news-lines a{grid-template-columns:75px 70px 1fr}.news-lines a span{display:none}.video-ribbon{display:flex;overflow-x:auto}.video-ribbon>a,.video-ribbon>a.feature{flex:0 0 82vw;min-height:360px}.official-footer{align-items:flex-start;flex-direction:column;padding:45px 22px}.official-footer>div{text-align:left}}
 .official-home{--paper:#0a1014;--surface:#0e171d;--surface-2:#121e25;--ink:#eef1ed;--muted:#89969c;--line:#293941;--red:#a82632;--gold:#d4b451;background:var(--paper);color:var(--ink)}
 .official-topbar{border-color:var(--line);background:rgba(8,14,18,.94)}

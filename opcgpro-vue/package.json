@@ -35,7 +35,8 @@
     "verify:alternate-art-admin-closeout": "node scripts/verify-alternate-art-admin-closeout.mjs",
     "audit:card-assets": "node scripts/audit-l12-card-cdn.mjs",
     "build:card-cdn": "node scripts/build-l12-card-cdn.mjs",
-    "build": "npm run check:performance-architecture && npm run check:release-version && npm run check:ui-contracts && npm run check:stage-usability && npm run check:defense-actions && npm run check:ranked-broadcast && npm run check:deck-sync && npm run check:public-deck-consumers && npm run check:private-deck-consumers && npm run check:card-assets && vue-tsc -b && vite build --configLoader runner && vite build --configLoader runner --mode testrun --outDir dist-testrun",
+    "check:browser-storage": "node scripts/test-browser-storage-failure.mjs && node scripts/test-deployment-auth-isolation.mjs",
+    "build": "npm run check:browser-storage && npm run check:performance-architecture && npm run check:release-version && npm run check:ui-contracts && npm run check:stage-usability && npm run check:defense-actions && npm run check:ranked-broadcast && npm run check:deck-sync && npm run check:public-deck-consumers && npm run check:private-deck-consumers && npm run check:card-assets && vue-tsc -b && vite build --configLoader runner && vite build --configLoader runner --mode testrun --outDir dist-testrun",
     "preview": "vite preview --configLoader runner"
   },
   "dependencies": {

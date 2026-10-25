@@ -133,6 +133,7 @@ async function loadProductionDeckModule() {
   normalOpeningHandCopies,
 } from './openingHandEligibility'`
   const executable = read(sources.decks)
+    .replace("from './browserStorage'", "from '" + moduleUrl(read('src/l12/browserStorage.ts')) + "'")
     .replace("from './deckCover'", "from '" + coverUrl + "'")
     .replace("import { watch } from 'vue'", 'const { watch } = globalThis.__modeConsumerPlatform')
     .replace("from './deckCacheStorage'", "from '" + storageUrl + "'")

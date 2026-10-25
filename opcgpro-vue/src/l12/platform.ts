@@ -6,6 +6,7 @@ import { deploymentStorageKey, endpointHttpBase, usesSharedGallery } from './dep
 import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'
 import { chatResource } from './chatResource'
 import { deckCoverHeadersForOrigin } from './deckCover'
+import { optionalLocalStorage as localStorage, persistLoginStorage, clearLoginStorage } from './browserStorage'
 
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
@@ -1207,6 +1208,12 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
 }
 
 function remember(account: PlatformAccount, token: string) {
+  persistLoginStorage([
+    [deploymentStorageKey('l12-account'), JSON.stringify(account)],
+    [deploymentStorageKey('l12-nickname'), account.username],
+    // Storage.setItem is atomic. Commit the credential last: no fallible write follows it.
+    [deploymentStorageKey('l12-auth-token'), token],
+  ])
   clearAuthRefreshRetry(true)
   if (platformState.token !== token) {
     platformSessionVersion += 1
@@ -1217,10 +1224,7 @@ function remember(account: PlatformAccount, token: string) {
   authState.initialized = true
   authState.verified = true
   authState.refreshing = false
-  localStorage.setItem(deploymentStorageKey('l12-account'), JSON.stringify(account))
-  localStorage.setItem(deploymentStorageKey('l12-auth-token'), token)
   l12State.nickname = account.username
-  localStorage.setItem(deploymentStorageKey('l12-nickname'), account.username)
 }
 
 export function refreshCurrentAccount(options: { force?: boolean } = {}): Promise<PlatformAccount | null> {
@@ -1290,6 +1294,7 @@ export async function login(username: string, password: string) {
 function forgetAccount(expectedToken?: string, expectedSessionVersion?: number) {
   if (expectedToken !== undefined && platformState.token !== expectedToken) return
   if (expectedSessionVersion !== undefined && platformSessionVersion !== expectedSessionVersion) return
+  const hadToken = Boolean(platformState.token)
   clearAuthRefreshRetry(true)
   disconnect()
   if (platformState.token) {
@@ -1301,10 +1306,10 @@ function forgetAccount(expectedToken?: string, expectedSessionVersion?: number) 
   authState.initialized = true
   authState.verified = false
   authState.refreshing = false
-  localStorage.removeItem(deploymentStorageKey('l12-account'))
-  localStorage.removeItem(deploymentStorageKey('l12-auth-token'))
   l12State.nickname = ''
-  localStorage.removeItem(deploymentStorageKey('l12-nickname'))
+  const keys = (['l12-auth-token', 'l12-account', 'l12-nickname'] as const).map(key => deploymentStorageKey(key))
+  if (hadToken) clearLoginStorage(keys)
+  else for (const key of keys) localStorage.removeItem(key)
 }
 
 export async function logout(options: { revokeServer?: boolean } = {}) {

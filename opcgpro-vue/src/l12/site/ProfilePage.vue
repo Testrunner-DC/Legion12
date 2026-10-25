@@ -11,6 +11,7 @@ import CardImage from '@/l12/CardImage.vue'
 import { useSectionScroll } from './useSectionScroll'
 import UiButton from './UiButton.vue'
 import UiNotice from './UiNotice.vue'
+import { optionalLocalStorage as localStorage, optionalSessionStorage as sessionStorage, BrowserLoginStorageError } from '@/l12/browserStorage'
 
 const publicHistory = ref(localStorage.getItem('l12-public-history') === 'true')
 const canUseSandbox = computed(() => canAccessAdmin.value && hasPermission('admin.operations.write'))
@@ -176,6 +177,7 @@ function selectAuthMode(mode: 'login' | 'register') {
   authNotice.value = ''
 }
 function authenticationFailureMessage(error: unknown) {
+  if (error instanceof BrowserLoginStorageError) return error.message
   if (error instanceof PlatformRequestError) {
     // 登录和注册端点不会以 403 表示凭据错误。此状态通常代表浏览器仍连接到已失效的站点节点。
     if (error.status === 403)
@@ -268,7 +270,8 @@ async function submitPassword() {
 async function signOut() {
   authBusy.value = true; notice.value = ''
   try { await logout(); notice.value = '当前设备已退出，服务器会话已撤销' }
-  catch (error) { notice.value = `本机已退出；服务器会话撤销失败：${error instanceof Error ? error.message : '未知错误'}` }
+  catch (error) { notice.value = error instanceof BrowserLoginStorageError ? error.message
+    : `本机已退出；服务器会话撤销失败：${error instanceof Error ? error.message : '未知错误'}` }
   finally { sessions.value = []; renameStatus.value = null; playerStatistics.value = null; ranked.value = null; ownedAlternateArts.value = []; authBusy.value = false }
 }
 async function submitEmailBinding() {
@@ -315,7 +318,11 @@ async function revokeAllSessions() {
   authBusy.value = true; notice.value = ''
   try { await sessionApi.revokeAll(); notice.value = '全部设备会话已撤销' }
   catch (error) { notice.value = error instanceof Error ? error.message : '撤销失败' }
-  finally { await logout({ revokeServer: false }); sessions.value = []; authBusy.value = false }
+  finally {
+    try { await logout({ revokeServer: false }) }
+    catch (error) { notice.value = error instanceof Error ? error.message : '无法清除浏览器登录记录' }
+    finally { sessions.value = []; authBusy.value = false }
+  }
 }
 const wins = computed(() => playerStatistics.value?.overall.wins ?? 0)
 const losses = computed(() => playerStatistics.value?.overall.losses ?? 0)

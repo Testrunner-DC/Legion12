@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import ts from 'typescript'
+import { compileScript, parse as parseSfc } from '@vue/compiler-sfc'
 import { homeAccountVerified, homeCanContinueGame } from '../src/l12/site/homeRevisit.ts'
 import { tournamentHubSection } from '../src/l12/site/tournamentHubNavigation.ts'
 
@@ -21,8 +22,8 @@ equal(homeCanContinueGame(undefined, true, connection), false)
 for (const value of ['discover','mine','history','host','create']) equal(tournamentHubSection(value), value)
 for (const value of [undefined, null, ['mine'], 'other', '/admin']) equal(tournamentHubSection(value), 'discover')
 
-const source = fs.readFileSync(new URL('../src/l12/site/homePublishedCache.ts', import.meta.url),'utf8')
-const module = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{
+const cacheSource = fs.readFileSync(new URL('../src/l12/site/homePublishedCache.ts', import.meta.url),'utf8')
+const module = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(cacheSource,{
   compilerOptions:{ module:ts.ModuleKind.ESNext, target:ts.ScriptTarget.ES2022 },
 }).outputText).toString('base64')}`)
 const payload = { composition:'{}', legal:'{}', news:[], videos:[], products:[], media:[] }
@@ -32,4 +33,140 @@ equal(module.loadPublishedHomeCache({getItem: key => key.endsWith('-v2') ? JSON.
 equal(module.loadPublishedHomeCache({getItem: key => key.endsWith('-v1') ? JSON.stringify(payload) : null}), payload)
 equal(module.savePublishedHomeCache(payload,{setItem:() => { throw Error('quota') }}), false)
 equal(module.savePublishedHomeCache(payload,{setItem:() => undefined}), true)
+
+const homeSource = fs.readFileSync(new URL('../src/l12/site/OfficialHomePage.vue', import.meta.url), 'utf8')
+const descriptor = parseSfc(homeSource, { filename:'OfficialHomePage.vue' }).descriptor
+let compiledHome = compileScript(descriptor, { id:'home-initial-failure-test', genDefaultAs:'__sfc__' }).content
+compiledHome = compiledHome.replace(/^import[^\n]*\n/gm, '')
+compiledHome = `
+const { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } = globalThis.__homeHarness.vue
+const { authState, platformState, siteContentApi } = globalThis.__homeHarness.platform
+const { articleBodyText, defaultHomeComposition, defaultSiteLegal, parseHomeComposition, parseSiteLegal,
+  loadPublishedHomeCache, savePublishedHomeCache, homeAccountVerified, deploymentPath } = globalThis.__homeHarness.dependencies
+const _defineComponent = value => value
+${compiledHome}
+export default __sfc__
+`
+compiledHome = ts.transpileModule(compiledHome, {
+  compilerOptions:{ module:ts.ModuleKind.ESNext, target:ts.ScriptTarget.ES2022 },
+}).outputText
+
+const deferred = () => {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve=yes; reject=no })
+  return { promise, resolve, reject }
+}
+const flush = async () => { for (let index=0;index<8;index++) await Promise.resolve() }
+const publishedPayload = {
+  composition:JSON.stringify({ version:1, heroSlides:[], notices:[] }),
+  legal:'{}', news:[], videos:[], products:[], media:[],
+}
+async function mountHome({ cached=null } = {}) {
+  const mounted=[], unmounted=[], requests=[], saved=[], timers=new Map(), listeners=[]
+  let nextTimer=1
+  const originalWindow=globalThis.window, originalDocument=globalThis.document
+  globalThis.window={
+    matchMedia:() => ({ matches:true }),
+    setTimeout(callback, delay){ const id=nextTimer++; timers.set(id,{callback,delay}); return id },
+    clearTimeout(id){ timers.delete(id) },
+    addEventListener(type,callback){ listeners.push({target:'window',type,callback}) },
+    removeEventListener(type,callback){ const index=listeners.findIndex(item=>item.target==='window'&&item.type===type&&item.callback===callback); if(index>=0)listeners.splice(index,1) },
+  }
+  globalThis.document={
+    hidden:false,
+    addEventListener(type,callback){ listeners.push({target:'document',type,callback}) },
+    removeEventListener(type,callback){ const index=listeners.findIndex(item=>item.target==='document'&&item.type===type&&item.callback===callback); if(index>=0)listeners.splice(index,1) },
+  }
+  const harness={
+    vue:{
+      ref:value=>({value}),
+      computed:read=>({get value(){return read()}}),
+      defineAsyncComponent:()=>({}),
+      onMounted:callback=>mounted.push(callback),
+      onBeforeUnmount:callback=>unmounted.push(callback),
+    },
+    platform:{ authState:{verified:false}, platformState:{account:null,token:''}, siteContentApi:{home(){ const item=deferred(); requests.push(item); return item.promise }} },
+    dependencies:{
+      articleBodyText:()=>'', defaultHomeComposition:()=>({heroSlides:[],notices:[],newsTitle:'',videoEyebrow:'',videoTitle:'',productTitle:'',productEyebrow:''}),
+      defaultSiteLegal:()=>({}), parseHomeComposition:value=>JSON.parse(value), parseSiteLegal:()=>({}),
+      loadPublishedHomeCache:()=>cached, savePublishedHomeCache:value=>{saved.push(value);return true},
+      homeAccountVerified:()=>false, deploymentPath:value=>value,
+    },
+  }
+  globalThis.__homeHarness=harness
+  const url=`data:text/javascript;base64,${Buffer.from(compiledHome).toString('base64')}#${Math.random()}`
+  const component=(await import(url)).default
+  const state=component.setup({}, { expose(){} })
+  mounted.forEach(callback=>callback())
+  return { state, requests, saved, timers, listeners, async unmount(){ unmounted.forEach(callback=>callback()); await flush(); globalThis.window=originalWindow; globalThis.document=originalDocument; delete globalThis.__homeHarness } }
+}
+
+{
+  const home=await mountHome()
+  equal(home.requests.length, 1, 'mount starts one public request')
+  home.listeners.forEach(listener=>listener.callback())
+  await flush()
+  equal(home.requests.length, 1, 'online and visibility recovery events share the active request')
+  home.requests[0].reject(Error('503'))
+  await flush()
+  equal(home.state.initialLoadFailed.value, true, 'first failure replaces the endless skeleton with an explanation')
+  equal(home.state.ready.value, false, 'failure never fabricates published content')
+  equal([...home.timers.values()].map(timer=>timer.delay), [2_000], 'initial failure keeps one bounded background retry')
+  home.state.retryPublishedHome(); home.state.retryPublishedHome()
+  await flush()
+  equal(home.requests.length, 2, 'repeated retry clicks share one in-flight request')
+  equal(home.timers.size, 0, 'manual retry replaces the pending background retry')
+  home.requests[1].resolve(publishedPayload)
+  await flush()
+  equal(home.state.ready.value, true, 'a later success restores the published home')
+  equal(home.state.initialLoadFailed.value, false, 'success clears the initial failure explanation')
+  equal(home.saved.length, 1, 'only a successful published payload is cached')
+  await home.unmount()
+  equal(home.listeners.length, 0, 'unmount removes recovery listeners')
+}
+
+{
+  const home=await mountHome({ cached:publishedPayload })
+  equal(home.state.ready.value, true, 'a cached published snapshot renders immediately')
+  home.requests[0].reject(Error('503'))
+  await flush()
+  equal(home.state.ready.value, true, 'a later failure cannot erase the cached published snapshot')
+  equal(home.state.initialLoadFailed.value, false, 'cached content does not get covered by the initial failure explanation')
+  await home.unmount()
+}
+
+{
+  const home=await mountHome()
+  const timeout=Error('request timed out'); timeout.name='TimeoutError'
+  home.requests[0].reject(timeout)
+  await flush()
+  equal(home.state.initialLoadFailed.value, true, 'a timed-out first request also becomes actionable')
+  const [retryTimer]=home.timers.values()
+  retryTimer.callback()
+  await flush()
+  equal(home.requests.length, 2, 'the bounded background retry can recover without user input')
+  home.requests[1].resolve(publishedPayload)
+  await flush()
+  equal(home.state.ready.value, true, 'background recovery publishes the later successful snapshot')
+  await home.unmount()
+}
+
+{
+  const home=await mountHome()
+  await home.unmount()
+  home.requests[0].resolve(publishedPayload)
+  await flush()
+  equal(home.state.ready.value, false, 'a late response after unmount cannot publish content')
+  equal(home.saved.length, 0, 'a late response after unmount cannot update the cache')
+}
+
+const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+Object.defineProperty(globalThis, 'localStorage', { configurable:true, get:() => { throw Error('storage getter blocked') } })
+try {
+  equal(module.loadPublishedHomeCache(), null, 'a rejected localStorage getter cannot block the public request')
+  equal(module.savePublishedHomeCache(payload), false, 'a rejected localStorage getter cannot report a saved snapshot')
+} finally {
+  if (localStorageDescriptor) Object.defineProperty(globalThis, 'localStorage', localStorageDescriptor)
+  else delete globalThis.localStorage
+}
 console.log(`Home revisit and public empty-state support passed: ${assertions} assertions`)

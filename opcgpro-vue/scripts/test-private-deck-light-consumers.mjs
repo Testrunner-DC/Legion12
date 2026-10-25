@@ -78,6 +78,7 @@ const productionModuleUrl = source => `data:text/javascript;base64,${Buffer.from
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText).toString('base64')}`
 const deckSource = read('src/l12/decks.ts').replaceAll('\r\n', '\n')
+const browserStorageModule = await import(productionModuleUrl(read('src/l12/browserStorage.ts')))
 const coverUrl = productionModuleUrl(read('src/l12/deckCover.ts'))
 const openingHandImport = `import {
   NORMAL_OPENING_HAND_CARD_TYPES,
@@ -93,6 +94,7 @@ const storageUrl = productionModuleUrl(read('src/l12/deckCacheStorage.ts')
   .replace("from './deckCodeCodec'", `from '${binaryUrl}'`)
   .replace("from './deckCacheCodec'", `from '${codecUrl}'`))
 const executableDeckSource = deckSource
+  .replace("from './browserStorage'", `from '${productionModuleUrl(read('src/l12/browserStorage.ts'))}'`)
   .replace("from './deckCover'", `from '${coverUrl}'`)
   .replace("import { watch } from 'vue'", 'const { watch } = globalThis.__deckAuthorityTestPlatform')
   .replace("from './deckCacheStorage'", `from '${storageUrl}'`)
@@ -341,6 +343,7 @@ function tournamentWorkbenchComponent() {
 }
 function profileComponent() {
   return compileComponent('src/l12/site/ProfilePage.vue', {
+    '@/l12/browserStorage': browserStorageModule,
     vue, 'vue-router': routeModule, '@/l12/net': netModule,
     '@/l12/platform': profilePlatformModule, '@/l12/decks': profileDeckModule,
     '@/l12/RankedIdentityBadge.vue': componentModule,

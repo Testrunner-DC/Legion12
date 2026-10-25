@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { persistLoginStorage, clearLoginStorage } from '../src/l12/browserStorage.ts'
 import fs from 'node:fs'
 import ts from 'typescript'
 import path from 'node:path'
@@ -36,8 +37,9 @@ async function runtime(base) {
   let disconnected = 0
   const exports = {}
   const actual = Function('exports', 'reactive', 'localStorage', 'deploymentStorageKey',
-    'l12State', 'clearAuthRefreshRetry', 'disconnect', compiled + '\nreturn { platformState, authState, remember, forgetAccount }')(
-      exports, v => v, storage, deployment.deploymentStorageKey, l12State, () => {}, () => disconnected++)
+    'l12State', 'clearAuthRefreshRetry', 'disconnect', 'persistLoginStorage', 'clearLoginStorage', compiled + '\nreturn { platformState, authState, remember, forgetAccount }')(
+      exports, v => v, storage, deployment.deploymentStorageKey, l12State, () => {}, () => disconnected++,
+      entries => persistLoginStorage(entries, () => storage), keys => clearLoginStorage(keys, () => storage))
   return { ...actual, deployment, l12State, disconnected: () => disconnected }
 }
 
@@ -101,14 +103,19 @@ async function browserContract() {
   const digest = () => crypto.createHash('sha256').update(fs.readFileSync(new URL('../src/l12/platform.ts', import.meta.url))).digest('hex')
   const before = digest()
   const program = compiled + '\nreturn { platformState, authState, remember, forgetAccount }'
+  const storageModule = `data:text/javascript;base64,${Buffer.from(ts.transpileModule(
+    fs.readFileSync(new URL('../src/l12/browserStorage.ts', import.meta.url), 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    }).outputText).toString('base64')}`
   const server = createServer((req, res) => {
     const base = req.url?.startsWith('/testrun/') ? '/testrun/' : '/'
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
     res.end(`<script type="module">
       const {deploymentStorageKey}=await import(${JSON.stringify(deploymentSourceModuleUrl(base))});
+      const {persistLoginStorage,clearLoginStorage}=await import(${JSON.stringify(storageModule)});
       let disconnects=0; const net={nickname:''};
-      window.actualAuth=Function('exports','reactive','localStorage','deploymentStorageKey','l12State','clearAuthRefreshRetry','disconnect',${JSON.stringify(program)})
-        ({},v=>v,localStorage,deploymentStorageKey,net,()=>{},()=>disconnects++);
+      window.actualAuth=Function('exports','reactive','localStorage','deploymentStorageKey','l12State','clearAuthRefreshRetry','disconnect','persistLoginStorage','clearLoginStorage',${JSON.stringify(program)})
+        ({},v=>v,localStorage,deploymentStorageKey,net,()=>{},()=>disconnects++,persistLoginStorage,clearLoginStorage);
       window.actualAuth.disconnected=()=>disconnects;
     </script>`)
   })

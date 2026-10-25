@@ -1500,7 +1500,9 @@ const contracts = [
   [profilePage.includes("if (authMode.value === 'login') await login(auth.username, auth.password)")
     && profilePage.includes('authenticationCompleted = Boolean(platformState.account)')
     && profilePage.includes('账号已登录，但后续数据同步失败')
-    && platform.includes('authState.verified = true') && platform.includes("localStorage.setItem(deploymentStorageKey('l12-auth-token'), token)")
+    && platform.includes('authState.verified = true') && platform.includes('persistLoginStorage([')
+    && platform.includes("[deploymentStorageKey('l12-auth-token'), token]")
+    && platform.indexOf('persistLoginStorage([') < platform.indexOf('authState.verified = true')
     && app.includes('if (token && verified) startAutomaticConnection()'), '登录成功必须先提交权威账号与令牌再启动全站WebSocket；后续牌库或资料同步失败不得把已成功认证伪装成登录失败'],
   [hasProfileStatusNoticeBeforeRank(profilePage)
     && profilePage.includes('.notice{position:fixed;') && profilePage.includes('z-index:90;'), '个人中心的称号、改密、邮箱与会话操作必须共用当前视口可见的状态播报，不得再把唯一反馈放到整页内容末尾'],

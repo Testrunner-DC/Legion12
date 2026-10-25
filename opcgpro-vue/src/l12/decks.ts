@@ -1,4 +1,5 @@
 import { watch } from 'vue'
+import { persistentLocalStorage as localStorage } from './browserStorage'
 import { readDeckCache, requireDeckCache, commitDeckCache, interpretDeckSelection,
   DeckCacheStorageError, type ReadableDeckCache, type DeckSelectionAliases } from './deckCacheStorage'
 import { encodeDeckCache, decodeDeckCache } from './deckCacheCodec'

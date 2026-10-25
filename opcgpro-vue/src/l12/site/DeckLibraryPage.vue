@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { optionalSessionStorage as sessionStorage } from '@/l12/browserStorage'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { captureDeckAccountGuard, deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, loadPrivatePublicationSource, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type PrivateDeckSummary, type PrivateDeckSummaryPage, type PrivateDeckSummaryQuery, type SavedL12Deck } from '@/l12/decks'

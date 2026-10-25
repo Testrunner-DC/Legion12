@@ -9,6 +9,7 @@ import { chatResource } from './chatResource'
 import { GameStateCardFrameRecovery, restoreGameStateCardFrame } from './gameStateCardFrame'
 import { HAND_ARRAY_DELTA_CAPABILITY, restoreHandSplices, validHandDeltaChangePath } from './handArrayDelta'
 import { GAME_STATE_PROPERTY_FRAME_CAPABILITY, restoreGameStatePropertyFrame } from './gameStatePropertyFrame'
+import { optionalLocalStorage as localStorage } from './browserStorage'
 
 export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' | 'session-claimed'
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'

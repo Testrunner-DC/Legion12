@@ -58,6 +58,7 @@ const storageUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCach
 const cacheStorage = await import(storageUrl)
 
 const executableSource = deckSource
+  .replace("from './browserStorage'", "from '" + productionModuleUrl(readFileSync(new URL('../src/l12/browserStorage.ts', import.meta.url), 'utf8')) + "'")
   .replace("from './deckCover'", "from '" + coverUrl + "'")
   .replace("import { watch } from 'vue'", 'const { watch } = globalThis.__deckAuthorityTestPlatform')
   .replace("from './deckCacheStorage'", "from '" + storageUrl + "'")

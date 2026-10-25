@@ -39,6 +39,7 @@ const cache=url(read('src/l12/deckCacheStorage.ts').replace("from './deckCodeCod
 const opening=url(read('src/l12/openingHandEligibility.ts'))
 const cover=url(read('src/l12/deckCover.ts'))
 const executable=read('src/l12/decks.ts')
+  .replace("from './browserStorage'",`from '${url(read('src/l12/browserStorage.ts'))}'`)
   .replace("from './deckCover'",`from '${cover}'`)
   .replace("import { watch } from 'vue'",'const {watch}=globalThis.__deckNameReconciliationTest')
   .replace("from './deckCacheStorage'",`from '${cache}'`)

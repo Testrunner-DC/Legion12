@@ -27,12 +27,13 @@ function parse(value: string | null): SiteHomePayload | null {
   return null
 }
 
-export function loadPublishedHomeCache(storage: Pick<Storage, 'getItem'> = localStorage) {
+export function loadPublishedHomeCache(storage?: Pick<Storage, 'getItem'>) {
   try {
-    const current = parse(storage.getItem(CACHE_KEY))
+    const currentStorage = storage ?? localStorage
+    const current = parse(currentStorage.getItem(CACHE_KEY))
     if (current) return current
     for (const key of LEGACY_KEYS) {
-      const legacy = parse(storage.getItem(key))
+      const legacy = parse(currentStorage.getItem(key))
       if (legacy) return legacy
     }
   } catch { /* Storage restrictions cannot block the public home request. */ }
@@ -40,11 +41,12 @@ export function loadPublishedHomeCache(storage: Pick<Storage, 'getItem'> = local
 }
 
 export function savePublishedHomeCache(payload: SiteHomePayload,
-  storage: Pick<Storage, 'setItem'> = localStorage) {
+  storage?: Pick<Storage, 'setItem'>) {
   if (!isPayload(payload)) return false
   try {
+    const currentStorage = storage ?? localStorage
     const cached: CachedHome = { version: 2, savedAt: new Date().toISOString(), payload }
-    storage.setItem(CACHE_KEY, JSON.stringify(cached))
+    currentStorage.setItem(CACHE_KEY, JSON.stringify(cached))
     return true
   } catch { return false }
 }
