@@ -4,6 +4,8 @@ public sealed partial class L12PlatformStore
 {
     internal L12PasswordWorkBudget PasswordWorkBudget { get; set; } = L12PasswordWorkBudget.Shared;
     internal Action? BeforePasswordChangeVerificationForTesting { get; set; }
+    internal Action? BeforeRegistrationPasswordWorkForTesting { get; set; }
+    internal Action? BeforeUsernameChangePasswordVerificationForTesting { get; set; }
 
     // Values only: no mutable account row may escape the platform gate for password work.
     private sealed record PasswordSnapshot(string Id, string Username, string Hash, string Salt,

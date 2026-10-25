@@ -47,9 +47,13 @@ public sealed class PlatformSaveConcurrencyTests
                 if (stage == "before-conflict-refresh") throw new IOException("injected");
             };
             Assert.ThrowsAny<L12PlatformStorageUnavailableException>(() =>
-                stale.ExecuteAdminTransaction(() => stale.Register("rolledback", "password-123")));
-            Assert.DoesNotContain(stale.Accounts(), account => account.Username == "rolledback");
-            Assert.DoesNotContain(new L12PlatformStore(path).Accounts(), account => account.Username == "rolledback");
+                stale.ExecuteAdminTransaction(() =>
+                {
+                    stale.SetContent("rules.notice", "must-rollback");
+                    return true;
+                }));
+            Assert.NotEqual("must-rollback", stale.GetContent("rules.notice"));
+            Assert.NotEqual("must-rollback", new L12PlatformStore(path).GetContent("rules.notice"));
             if (!refreshFails)
             {
                 Assert.Contains(stale.Accounts(), account => account.Username == "latestuser");

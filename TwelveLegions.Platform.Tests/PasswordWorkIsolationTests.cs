@@ -63,6 +63,7 @@ public sealed class PasswordWorkIsolationTests
     public async Task LoginRechecksActualLifecycleChangesAfterPasswordWork(string change)
     {
         using var f = new Fixture();
+        f.Store.PasswordWorkBudget = new(2, 0, TimeSpan.Zero);
         using var barrier = new Barrier();
         f.Store.BeforeLoginPasswordVerificationForTesting = barrier.Block;
         var attempt = Run(() => f.Store.Login(Fixture.Username, Fixture.Password));
@@ -231,6 +232,7 @@ public sealed class PasswordWorkIsolationTests
     public async Task ChangePasswordCannotOverwriteAnInterveningLifecycleChange(string change)
     {
         using var f = new Fixture();
+        f.Store.PasswordWorkBudget = new(2, 0, TimeSpan.Zero);
         using var barrier = new Barrier();
         f.Store.BeforePasswordChangeVerificationForTesting = barrier.Block;
         var attempt = Run(() => f.Store.ChangePassword(f.Owner.Id, Fixture.Password, "replacement-123"));

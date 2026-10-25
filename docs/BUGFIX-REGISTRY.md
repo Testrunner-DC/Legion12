@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-G4-REGISTRATION-USERNAME-WORK｜注册与两类改名锁隔离本地接受，未部署
+
+- 根因/同类：注册CreateAccount、强制ChangeUsername和SelfServiceChangeUsername也在平台gate内KDF；真实注册屏障RED已保。查询Verify/SetPassword/CreateAccount及所有外层ExecuteAdminTransaction→Register，迁三在线入口，启动EnsureRootAdmin/受控测试播种与EmailAuth/管理入口明确后片，不冒全KDF完成。
+- 修复：Register同一预算锁外Create，初/末两次OrdinalIgnoreCase查重均保deleted保留名，最终同gate新建账号/预组/会话并Save后返回token；两改名复用不可变密码快照和预算，释放后最终gate全字段/状态CAS再按原资格顺序重验、目标唯一性仍忽略deleted，自助次数/姓名/审计/会话原子保存，提交后通知。9处旧事务夹具换SetContent真实持久变更保原回滚/冲突/缓存/通知断言，不保锁内计算特例。
+- Main补32场新入口回归（原writer8），170专项全过；一次冻结完整平台2543/2543、11分34秒零失败跳过，独立关键审查无产品阻断。审查发现失败提交QA回调Assert可被预期异常包装吞掉，Main将观察留回调、断言外移后两例续验过；产品/其余八源/服务DLL完全相同，完整与强化QA两测试程序集分别绑定，不伪装新的单轮全量。原架构守卫过，规则8417/前端未变复用；唯一stage-goals-20261025/g4-registration-username/main-acceptance.json及同根同步。
+- 回滚/边界：仍120k、无schema或现库升级，无两服/维护/统计/线上关单写。Email绑定裸catch的503/409传播、一次token与邮箱CAS、管理总线prepared两阶段及临时密码脱敏为后片；旧邮件测试被项目排除，不能冒活跃门禁。容量/渐进升级/启用与回滚资格仍未完成。
+
 ## FIX-20261025-G4-AUTH-WORK-ISOLATION｜登录/自助改密本地接受，未部署
 
 - 根因：原Login和ChangePassword在平台共用gate内进行120k验密/派生，无关平台读取会被CPU工作阻塞。具名真实Login屏障一例RED后，锁内只捕获不可变值快照，进程共享有界预算在锁外计算，归还CPU许可后才回原持久gate；无第二认证状态或schema，仍120k。

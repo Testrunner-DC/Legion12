@@ -34,15 +34,28 @@ public sealed partial class L12PlatformStore
     public (bool Success, string Message, L12AccountView? Account) SelfServiceChangeUsername(string accountId,
         string currentPassword, string newUsername, string? currentSessionId = null)
     {
+        RequirePasswordWorkOutsideTransaction();
         newUsername = newUsername.Trim();
         var validation = L12UsernamePolicy.Validate(newUsername);
         if (validation is not null) return (false, validation, null);
+        PasswordSnapshot snapshot;
+        lock (_gate)
+        {
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Disabled && !item.Deleted);
+            if (row is null) return (false, "当前密码不正确", null);
+            snapshot = PasswordSnapshot.Capture(row);
+        }
+        using (PasswordWorkBudget.Acquire())
+        {
+            BeforeUsernameChangePasswordVerificationForTesting?.Invoke();
+            if (!snapshot.Verify(currentPassword)) return (false, "当前密码不正确", null);
+        }
         string[] revokedSessionIds;
         L12AccountView changed;
         lock (_gate)
         {
-            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Disabled && !item.Deleted);
-            if (row is null || !Verify(currentPassword, row)) return (false, "当前密码不正确", null);
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId);
+            if (row is null || !snapshot.Matches(row)) return (false, "账号信息已更新，请重新登录后重试", null);
             if (row.Role != "player") return (false, "管理员账号不支持自助改名", null);
             if (row.MustChangeUsername) return (false, "当前账号须先完成强制用户名修改", null);
             if (row.SelfServiceUsernameChangeCount > 0) return (false, "免费改名机会已使用，请提交管理员审批申请", null);

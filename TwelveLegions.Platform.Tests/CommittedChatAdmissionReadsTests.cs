@@ -214,12 +214,15 @@ public sealed class CommittedChatAdmissionReadsTests
         };
         try
         {
+            void Mutate() => f.Store.ExecuteAdminTransaction(() =>
+            {
+                f.Store.SetContent("rules.notice", "synthetic conflict probe");
+                return true;
+            });
             if (fault is null)
-                Assert.Throws<L12PlatformStorageConflictException>(() => f.Store.ExecuteAdminTransaction(() =>
-                    f.Store.Register("chatprobe", "Password123!")));
+                Assert.Throws<L12PlatformStorageConflictException>(Mutate);
             else
-                Assert.Throws<L12PlatformStorageRefreshException>(() => f.Store.ExecuteAdminTransaction(() =>
-                    f.Store.Register("chatprobe", "Password123!")));
+                Assert.Throws<L12PlatformStorageRefreshException>(Mutate);
         }
         finally { f.Store.StorageFailureInjector = null; }
         var view = f.Read();

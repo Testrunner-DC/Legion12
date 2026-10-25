@@ -1,5 +1,12 @@
 # 十二军团任务台账
 
+## 2026-10-25 G4注册与两类改名锁隔离｜本地接受，仍120k，未部署
+
+- 上一片430170ca已完整验收/非强推/精确远端读回，不重开其发布或门禁。Main产品writer领Store/PasswordWork/UsernameChanges与9处既有事务夹具，关键writer仅新RegistrationUsernameWorkIsolationTests.cs；无重叠，禁止代理构建、写共享记录或Git。先实际注册屏障RED，后锁外同预算Create/Verify、最终gate唯一性与全凭据/状态重验。
+- 保注册预组/会话原子提交、注册查重含deleted而改名忽略deleted、自助一次/强制标记/角色/同名条件与currentSession例外、审计/Save回滚/跨Store冲突及提交后通知。既有9个Register事务测试用无KDF持久变更保原不变量，不保留锁内计算特例。专项与Main完整平台串行，未变规则/前端复用；不改成本/schema/两服/维护/业务数据。
+- 注册真实屏障一例RED后Main完成产品三叶，关键writer交8场初稿，Main补至32场新增边界/修Path类型遮蔽、通知回调外断言及单CPU并发夹具预算，170/170具名全过；独立只读终审无产品阻断。Main冻结一次完整平台2543/2543零失败跳过、11分34秒；随后仅强化注册失败提交QA，改为回调采集、外层断言（避免被期待的存储异常包装吞掉），两例精确续验过。产品/其余八源及服务DLL不变，完整与QA续验两测试程序集分别记，不冒同一最终QA程序集全量或新Release；真实TRX/监督/pins见唯一stage-goals-20261025/g4-registration-username/main-acceptance.json。Git见同根synchronization.json，不等待CI或自动部署。
+- G4下一片已只读准备：先邮件绑定/解绑/重置三个直接HTTP入口，密码＋邮箱三字段和完整一次令牌快照CAS，忙碌不扣桶/不消耗token；绑定路由裸catch须放行busy503/存储409。AdminReset/Delete当前被命令总线外层事务包裹，不能直接套锁外guard；后片需专用prepared两阶段，复核同key/ExpectedVersion/权限后原子apply/脱敏账本，准备前不落requested，临时明文仅内存与首响应。旧EmailAuthAndAccountLifecycleTests被csproj排除，不冒活跃门禁；需新增active专项。启动/受控测试播种另列，成本启用/容量/渐进升级/回滚仍未完成。
+
 ## 2026-10-25 G4登录与自助改密计算锁隔离｜本地接受，仍120k，未部署
 
 - 人类继续推进，承接已确认的兼容基础39034b51，起始工作区干净。Main领Store/新认证计算辅助/具名并发回归及忙碌HTTP映射；关键只读子任务核现有限流、事务/提交回滚与外层Monitor重入，无写租约。扩P2/P3认证计算与提交边界，不改schema/卡效/线上维护或密码成本。

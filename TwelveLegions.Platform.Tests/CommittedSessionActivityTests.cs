@@ -144,7 +144,10 @@ public sealed class CommittedSessionActivityTests
             throw new IOException("synthetic refresh fault");
         };
         Assert.Throws<L12PlatformStorageRefreshException>(() => stale.ExecuteAdminTransaction(() =>
-            stale.Register("confprobe", "password-123")));
+        {
+            stale.SetContent("rules.notice", "synthetic conflict probe");
+            return true;
+        }));
         stale.StorageFailureInjector = null;
         Assert.True(reached);
         Assert.Same(cache, Cache(stale));
@@ -161,7 +164,10 @@ public sealed class CommittedSessionActivityTests
         var writer = new L12PlatformStore(fixture.Path);
         writer.RevokeOwnSession(fixture.Owner, fixture.Owner.SessionId);
         Assert.Throws<L12PlatformStorageConflictException>(() => stale.ExecuteAdminTransaction(() =>
-            stale.Register("confprobe", "password-123")));
+        {
+            stale.SetContent("rules.notice", "synthetic conflict probe");
+            return true;
+        }));
         Assert.False(stale.IsSessionActive(fixture.Owner.SessionId));
         Assert.NotSame(oldCache, Cache(stale));
         Assert.Same(Cache(stale), ProjectionCache(stale));
@@ -372,7 +378,10 @@ public sealed class CommittedSessionActivityTests
             if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("synthetic barrier");
         };
         var writer = Task.Factory.StartNew(() => store.ExecuteAdminTransaction(() =>
-            store.Register("unrelated", "password-123")), CancellationToken.None,
+        {
+            store.SetContent("rules.notice", "synthetic independent commit");
+            return true;
+        }), CancellationToken.None,
             TaskCreationOptions.LongRunning, TaskScheduler.Default);
         try
         {
@@ -409,7 +418,10 @@ public sealed class CommittedSessionActivityTests
         }
         store.StorageFailureInjector = stage => { if (stage == "before-commit") throw new IOException("synthetic rollback"); };
         Assert.ThrowsAny<L12PlatformStorageUnavailableException>(() => store.ExecuteAdminTransaction(() =>
-            store.Register("rolledback", "password-123")));
+        {
+            store.SetContent("rules.notice", "synthetic rollback probe");
+            return true;
+        }));
         store.StorageFailureInjector = null;
         if (corruptDatabase)
         {

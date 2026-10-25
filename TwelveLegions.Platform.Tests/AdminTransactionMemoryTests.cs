@@ -69,15 +69,20 @@ public sealed class AdminTransactionMemoryTests(ITestOutputHelper output)
         {
             if (stage == "before-commit") throw new IOException("合成提交失败");
         };
-        Assert.Throws<L12PlatformStorageUnavailableException>(() => store.ExecuteAdminTransaction(() =>
-            store.Register("newmemory", "synthetic-password")));
+        void Change() => store.ExecuteAdminTransaction(() =>
+        {
+            store.SetContent("rules.notice", "合成事务提交");
+            return true;
+        });
+        Assert.Throws<L12PlatformStorageUnavailableException>(Change);
         store.StorageFailureInjector = null;
         Assert.Equal(before, FullJson(store));
         Assert.Single(store.Decks(fixture.Owner));
         Assert.Single(store.PublishedDecks(fixture.Owner));
         Assert.True(store.Login("memoryuser", "synthetic-password").Success);
-        Assert.True(store.ExecuteAdminTransaction(() => store.Register("newmemory", "synthetic-password")).Success);
-        Assert.True(new L12PlatformStore(fixture.Path).Login("newmemory", "synthetic-password").Success);
+        Change();
+        Assert.Equal("合成事务提交", new L12PlatformStore(fixture.Path).GetContent("rules.notice"));
+        Assert.True(new L12PlatformStore(fixture.Path).Login("memoryuser", "synthetic-password").Success);
     }
 
     [Fact]

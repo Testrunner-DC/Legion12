@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-25 G4注册/两改名本地接受｜下一片邮件自助，管理总线另有边界
+
+- 承接已同步430170ca，Main没有阶段性停在上一片：实际注册屏障RED后迁Register/强制和自助改名，锁外同预算KDF→末锁唯一性/凭据状态CAS，保预组/会话原子Save、自助次数/标记、currentSession例外与提交后通知。注册保deleted名占位、改名忽略deleted；9处旧事务Register夹具换真实SetContent提交，保原回滚/冲突/缓存/通知，不保锁内特例。
+- 170专项含32新增过，Main一次冻结完整平台2543/2543、11分34秒零失败跳过；独立关键只读审查无产品阻断。注册失败提交QA的回调Assert有假阴性，完整结束后Main只改为回调采集/外层断言并两例定向通过，产品/其余八源/服务DLL未变；分别绑定原全平台和强化QA两程序集，不重跑未变全量或冒新Release。唯一stage-goals-20261025/g4-registration-username/main-acceptance.json，精确Git见同根synchronization.json；规则/前端复用，两服与维护均无写。
+- 下一片只读闭合：EmailAuth三直接HTTP迁移需密码＋Email/NormalizedEmail/EmailVerifiedAt及完整一次token快照，busy不扣桶/不消耗token，绑定catch放行统一503/409；旧EmailAuthAndAccountLifecycleTests为csproj排除文件，必须新active专项。管理Reset/Delete实际被命令总线外层gate包裹，不能直接套本片guard；后片需专用prepared两阶段并保同key/ExpectedVersion/权限重验、准备前不落requested、随机临时明文仅内存/首响应和账本重放脱敏。启动/受控测试播种单列，G4成本启用/容量/渐进升级/回滚仍未完成，仍120k。
+
 ## 2026-10-25 G4登录/自助改密锁隔离本地接受｜下一片注册/改名，仍未启用更高成本
 
 - 原真实Login屏障一例RED已证无关平台读取等KDF；现不可变值快照→共享有界CPU预算锁外验密/派生→先还许可→最终gate全字段/active状态CAS。两桶第五次锁定胜过迟到正确密码，busy独立503/Retry-After1不扣错密，Save失败/跨Store冲突不自动重放，Token与撤销通知只在提交后出。外层Monitor明确拒绝，旧提交索引两例改用真实before-commit钩子而不删其原不变量。

@@ -574,6 +574,7 @@ public sealed partial class L12PlatformStore
 
     public (bool Success, string Message, L12AccountView? Account, string? Token) Register(string username, string password)
     {
+        RequirePasswordWorkOutsideTransaction();
         username = username.Trim();
         var validation = ValidateCredentials(username, password);
         if (validation is not null) return (false, validation, null, null);
@@ -581,7 +582,19 @@ public sealed partial class L12PlatformStore
         {
             if (_data.Accounts.Any(row => string.Equals(row.Username, username, StringComparison.OrdinalIgnoreCase)))
                 return (false, "用户名已存在", null, null);
-            var row = CreateAccount(username, password, "player");
+        }
+        L12PasswordCredentialFields credential;
+        using (PasswordWorkBudget.Acquire())
+        {
+            BeforeRegistrationPasswordWorkForTesting?.Invoke();
+            credential = L12PasswordCredential.Create(password);
+        }
+        lock (_gate)
+        {
+            if (_data.Accounts.Any(row => string.Equals(row.Username, username, StringComparison.OrdinalIgnoreCase)))
+                return (false, "用户名已存在", null, null);
+            var row = new AccountRow { Username = username, Role = "player" };
+            ApplyPassword(row, credential);
             _data.Accounts.Add(row);
             SeedOfficialDecks(row.Id);
             var token = IssueToken(row.Id);
@@ -775,15 +788,28 @@ public sealed partial class L12PlatformStore
     public (bool Success, string Message, L12AccountView? Account) ChangeUsername(string accountId,
         string currentPassword, string newUsername, string? currentSessionId = null)
     {
+        RequirePasswordWorkOutsideTransaction();
         newUsername = newUsername.Trim();
         var validation = L12UsernamePolicy.Validate(newUsername);
         if (validation is not null) return (false, validation, null);
+        PasswordSnapshot snapshot;
+        lock (_gate)
+        {
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Disabled && !item.Deleted);
+            if (row is null) return (false, "当前密码不正确", null);
+            snapshot = PasswordSnapshot.Capture(row);
+        }
+        using (PasswordWorkBudget.Acquire())
+        {
+            BeforeUsernameChangePasswordVerificationForTesting?.Invoke();
+            if (!snapshot.Verify(currentPassword)) return (false, "当前密码不正确", null);
+        }
         string[] revokedSessionIds;
         L12AccountView changedAccount;
         lock (_gate)
         {
-            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Disabled && !item.Deleted);
-            if (row is null || !Verify(currentPassword, row)) return (false, "当前密码不正确", null);
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId);
+            if (row is null || !snapshot.Matches(row)) return (false, "账号信息已更新，请重新登录后重试", null);
             if (!row.MustChangeUsername) return (false, "当前账号无需强制修改用户名", ToView(row));
             if (_data.Accounts.Any(item => item.Id != accountId && !item.Deleted
                     && string.Equals(item.Username, newUsername, StringComparison.OrdinalIgnoreCase)))
