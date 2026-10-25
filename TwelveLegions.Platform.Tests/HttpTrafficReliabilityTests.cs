@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
@@ -11,6 +12,242 @@ namespace GrandUMI.Tests;
 [Collection("Platform environment")]
 public sealed class HttpTrafficReliabilityTests
 {
+    private const int ExpectedPublicMediaLimit = 600;
+
+    [Theory]
+    [InlineData("desktop")]
+    [InlineData("mobile")]
+    [InlineData("thumbnail")]
+    public void PublicMediaGalleryReadsDoNotSpendPublishedCatalogAllowance(string variant)
+    {
+        var guard = new L12HttpTrafficGuard();
+        var media = Enumerable.Range(0, 198)
+            .Select(index => guard.Acquire(Request(HttpMethods.Get, PublicMediaPath(index, variant)), "gallery-client", null))
+            .ToArray();
+
+        var arts = guard.Acquire(Request(HttpMethods.Get, "/api/alternate-arts"), "gallery-client", null);
+        var presentation = guard.Acquire(Request(HttpMethods.Get, "/api/gallery/presentation"), "gallery-client", null);
+        Assert.True(arts.Allowed, "198 canonical media GETs must not exhaust the public alternate-art allowance");
+        Assert.True(presentation.Allowed, "Media browsing must not block public gallery metadata");
+        Assert.Equal("anonymous-read", arts.Policy);
+        Assert.Equal(L12HttpTrafficGuard.AnonymousReadLimit - 1, arts.Remaining);
+        Assert.Equal(L12HttpTrafficGuard.AnonymousReadLimit - 2, presentation.Remaining);
+        Assert.All(media, decision =>
+        {
+            Assert.True(decision.Allowed);
+            Assert.Equal("public-media", decision.Policy);
+            Assert.Equal(ExpectedPublicMediaLimit, decision.Limit);
+        });
+        Assert.Equal(ExpectedPublicMediaLimit - media.Length, media[^1].Remaining);
+    }
+
+    [Fact]
+    public void PublicMediaHardLimitIsSharedAcrossVariantsAndAccountsButNotClients()
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 10, 24, 0, 0, 0, TimeSpan.Zero));
+        var guard = new L12HttpTrafficGuard(clock);
+        var variants = new[] { "desktop", "mobile", "thumbnail" };
+        for (var index = 0; index < ExpectedPublicMediaLimit; index++)
+        {
+            var decision = guard.Acquire(Request(HttpMethods.Get, PublicMediaPath(index, variants[index % 3])),
+                "gallery-client", index % 2 == 0 ? null : $"rotated-account-{index}");
+            Assert.True(decision.Allowed);
+            Assert.Equal("public-media", decision.Policy);
+            Assert.Equal(ExpectedPublicMediaLimit - index - 1, decision.Remaining);
+        }
+
+        var denied = guard.Acquire(Request(HttpMethods.Get, PublicMediaPath()), "gallery-client", "new-account");
+        Assert.False(denied.Allowed);
+        Assert.Equal("public-media", denied.Policy);
+        Assert.Equal(ExpectedPublicMediaLimit, denied.Limit);
+        Assert.Equal(0, denied.Remaining);
+        Assert.Equal(60, denied.RetryAfterSeconds);
+        Assert.True(guard.Acquire(Request(HttpMethods.Get, PublicMediaPath()), "other-client", null).Allowed);
+
+        clock.Advance(TimeSpan.FromMilliseconds(59_100));
+        Assert.Equal(1, guard.Acquire(Request(HttpMethods.Get, PublicMediaPath()), "gallery-client", null).RetryAfterSeconds);
+        clock.Advance(TimeSpan.FromMilliseconds(900));
+        var reset = guard.Acquire(Request(HttpMethods.Get, PublicMediaPath()), "gallery-client", null);
+        Assert.True(reset.Allowed);
+        Assert.Equal(ExpectedPublicMediaLimit - 1, reset.Remaining);
+    }
+
+    [Fact]
+    public void PublicMediaAndBusinessExhaustionAndExpiryCannotResetEachOther()
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 10, 24, 0, 0, 0, TimeSpan.Zero));
+        var guard = new L12HttpTrafficGuard(clock);
+        var business = Request(HttpMethods.Get, "/api/gallery/presentation");
+        var media = Request(HttpMethods.Get, PublicMediaPath());
+        for (var index = 0; index < L12HttpTrafficGuard.AnonymousReadLimit; index++)
+            Assert.True(guard.Acquire(business, "client", null).Allowed);
+        Assert.False(guard.Acquire(business, "client", null).Allowed);
+
+        clock.Advance(TimeSpan.FromSeconds(10));
+        for (var index = 0; index < ExpectedPublicMediaLimit; index++)
+            Assert.True(guard.Acquire(media, "client", null).Allowed);
+        Assert.False(guard.Acquire(media, "client", null).Allowed);
+        var stillExhausted = guard.Acquire(business, "client", null);
+        Assert.False(stillExhausted.Allowed);
+        Assert.Equal("anonymous-read", stillExhausted.Policy);
+        Assert.Equal(50, stillExhausted.RetryAfterSeconds);
+
+        clock.Advance(TimeSpan.FromSeconds(50));
+        var businessReset = guard.Acquire(business, "client", null);
+        Assert.True(businessReset.Allowed);
+        Assert.Equal(L12HttpTrafficGuard.AnonymousReadLimit - 1, businessReset.Remaining);
+        var mediaStillExhausted = guard.Acquire(media, "client", null);
+        Assert.False(mediaStillExhausted.Allowed);
+        Assert.Equal(10, mediaStillExhausted.RetryAfterSeconds);
+
+        clock.Advance(TimeSpan.FromSeconds(10));
+        Assert.Equal(ExpectedPublicMediaLimit - 1, guard.Acquire(media, "client", null).Remaining);
+        Assert.Equal(L12HttpTrafficGuard.AnonymousReadLimit - 2, guard.Acquire(business, "client", null).Remaining);
+    }
+
+    [Fact]
+    public void PublicMediaCannotSpendOrReplenishAccountAndAuthenticatedClientLimits()
+    {
+        var guard = new L12HttpTrafficGuard();
+        var business = Request(HttpMethods.Get, "/api/me");
+        var media = Request(HttpMethods.Get, PublicMediaPath());
+        for (var index = 0; index < L12HttpTrafficGuard.AccountReadLimit; index++)
+            Assert.True(guard.Acquire(business, "client", "account").Allowed);
+        Assert.False(guard.Acquire(business, "client", "account").Allowed);
+        for (var index = 0; index < ExpectedPublicMediaLimit; index++)
+            Assert.True(guard.Acquire(media, "client", "account").Allowed);
+        Assert.False(guard.Acquire(business, "client", "account").Allowed);
+        Assert.False(guard.Acquire(media, "client", "another-account").Allowed);
+
+        for (var index = L12HttpTrafficGuard.AccountReadLimit; index < L12HttpTrafficGuard.AuthenticatedClientReadLimit; index++)
+            Assert.True(guard.Acquire(business, "client", $"account-{index}").Allowed);
+        var aggregateDenied = guard.Acquire(business, "client", "last-account");
+        Assert.False(aggregateDenied.Allowed);
+        Assert.Equal("authenticated-client-read", aggregateDenied.Policy);
+        Assert.Equal(L12HttpTrafficGuard.AuthenticatedClientReadLimit, aggregateDenied.Limit);
+        Assert.True(guard.Acquire(business, "another-client", "last-account").Allowed);
+    }
+
+    [Fact]
+    public void PublicMediaPartitionsStayBoundedAndRejectedBusinessAdmissionIsAtomic()
+    {
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 10, 24, 0, 0, 0, TimeSpan.Zero));
+        var guard = new L12HttpTrafficGuard(clock, maximumPartitions: 2);
+        var media = Request(HttpMethods.Get, PublicMediaPath());
+        var business = Request(HttpMethods.Get, "/api/me");
+        var first = guard.Acquire(media, "client", "account");
+        Assert.True(first.Allowed);
+        Assert.Equal("public-media", first.Policy);
+        Assert.False(guard.Acquire(business, "client", "account").Allowed);
+        var anonymous = guard.Acquire(business, "client", null);
+        Assert.True(anonymous.Allowed);
+        Assert.Equal(L12HttpTrafficGuard.AnonymousReadLimit - 1, anonymous.Remaining);
+        Assert.False(guard.Acquire(media, "other-client", null).Allowed);
+        Assert.Equal(ExpectedPublicMediaLimit - 2, guard.Acquire(media, "client", null).Remaining);
+
+        clock.Advance(TimeSpan.FromSeconds(60));
+        Assert.Equal(ExpectedPublicMediaLimit - 1, guard.Acquire(media, "other-client", null).Remaining);
+        Assert.Equal(L12HttpTrafficGuard.AnonymousReadLimit - 1, guard.Acquire(business, "other-client", null).Remaining);
+    }
+
+    public static IEnumerable<object[]> PublicMediaNonContentRequests()
+    {
+        var valid = PublicMediaPath();
+        foreach (var path in new[]
+        {
+            "/api/site/media", "/api/site/media/", "/api/site/mediax/a/thumbnail/b.webp",
+            valid + "/extra", valid + "/", valid.Replace("/thumbnail/", "/original/"),
+            valid.Replace("/thumbnail/", "/unknown/"), valid.Replace("/thumbnail/", "/%74humbnail/"),
+            valid.Replace("/thumbnail/", "/%2fthumbnail/"), valid.Replace("/thumbnail/", "/../thumbnail/"),
+            valid.Replace("/thumbnail/", "/thumbnail%252f/"), valid.Replace(".webp", ".png"),
+            valid.Replace(".webp", ".webp.exe"), valid.Replace(new string('a', 64), new string('a', 63)),
+            valid.Replace(new string('a', 64), new string('g', 64)),
+            valid.Replace(new string('0', 32), "not-a-media-id"), valid.Replace("/media/", "/media//"),
+            "/api/admin/site/media", "/api/gallery/presentation", "/api/alternate-arts",
+        }) yield return [HttpMethods.Get, path, "anonymous-read", L12HttpTrafficGuard.AnonymousReadLimit];
+        yield return [HttpMethods.Head, valid, "anonymous-read", L12HttpTrafficGuard.AnonymousReadLimit];
+        foreach (var method in new[] { HttpMethods.Post, HttpMethods.Put, HttpMethods.Patch, HttpMethods.Delete })
+            yield return [method, valid, "mutation", L12HttpTrafficGuard.MutationLimit];
+        yield return [HttpMethods.Post, "/api/admin/site/media", "expensive", L12HttpTrafficGuard.ExpensiveLimit];
+        yield return [HttpMethods.Post, "/api/auth/login", "authentication", L12HttpTrafficGuard.AuthenticationLimit];
+        yield return [HttpMethods.Post, "/api/telemetry/page-view", "telemetry", L12HttpTrafficGuard.TelemetryLimit];
+        yield return [HttpMethods.Options, valid, "unlimited", int.MaxValue];
+    }
+
+    [Theory]
+    [MemberData(nameof(PublicMediaNonContentRequests))]
+    public void PublicMediaDoesNotRelaxOtherPathsOrMethods(string method, string path, string expectedPolicy, int expectedLimit)
+    {
+        var guard = new L12HttpTrafficGuard();
+        var request = Request(method, path);
+        var allowed = guard.Acquire(request, "client", null);
+        Assert.True(allowed.Allowed);
+        Assert.Equal(expectedPolicy, allowed.Policy);
+        Assert.Equal(expectedLimit, allowed.Limit);
+        if (expectedLimit == int.MaxValue) return;
+        for (var index = 1; index < expectedLimit; index++)
+            Assert.True(guard.Acquire(request, "client", null).Allowed);
+        var denied = guard.Acquire(request, "client", null);
+        Assert.False(denied.Allowed);
+        Assert.Equal(expectedPolicy, denied.Policy);
+        Assert.Equal(0, denied.Remaining);
+        Assert.InRange(denied.RetryAfterSeconds, 1, 60);
+    }
+
+    private static string PublicMediaPath(int index = 0, string variant = "thumbnail")
+        => $"/api/site/media/{index:x32}/{variant}/{new string('a', 64)}.webp";
+
+    [Fact]
+    public async Task PublicMediaLivePipelineChecksRawPathWithoutChargingCatalogReads()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "l12-public-media-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
+            await using var server = new L12WebSocketServer(
+                new L12RoomManager(catalog, recorder, store), recorder, store, catalog);
+            await server.StartAsync(0);
+            var address = Assert.Single(server.Addresses).TrimEnd('/');
+            using var client = new HttpClient { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(5) };
+
+            // These synthetic files do not exist: 404 tests admission, not image delivery.
+            using var canonical = await client.GetAsync(PublicMediaPath());
+            Assert.Equal(HttpStatusCode.NotFound, canonical.StatusCode);
+            Assert.Equal("600", Assert.Single(canonical.Headers.GetValues("RateLimit-Limit")));
+            Assert.Equal("599", Assert.Single(canonical.Headers.GetValues("RateLimit-Remaining")));
+
+            var encoded = new Uri(address + PublicMediaPath().Replace("/thumbnail/", "/%74humbnail/"),
+                new UriCreationOptions { DangerousDisablePathAndQueryCanonicalization = true });
+            using var normalized = await client.GetAsync(encoded);
+            Assert.Equal(HttpStatusCode.NotFound, normalized.StatusCode);
+            Assert.Equal("120", Assert.Single(normalized.Headers.GetValues("RateLimit-Limit")));
+            Assert.Equal("119", Assert.Single(normalized.Headers.GetValues("RateLimit-Remaining")));
+
+            using var queryOnly = await client.GetAsync(PublicMediaPath() + "?probe=%2f");
+            Assert.Equal(HttpStatusCode.NotFound, queryOnly.StatusCode);
+            Assert.Equal("598", Assert.Single(queryOnly.Headers.GetValues("RateLimit-Remaining")));
+            using var arts = await client.GetAsync("/api/alternate-arts");
+            using var presentation = await client.GetAsync("/api/gallery/presentation");
+            Assert.Equal(HttpStatusCode.OK, arts.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, presentation.StatusCode);
+            Assert.Equal("118", Assert.Single(arts.Headers.GetValues("RateLimit-Remaining")));
+            Assert.Equal("117", Assert.Single(presentation.Headers.GetValues("RateLimit-Remaining")));
+            await server.StopAsync();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void ReadBucketsAreBoundedSeparatedAndResetAfterTheWindow()
     {
@@ -315,6 +552,7 @@ public sealed class HttpTrafficReliabilityTests
         var context = new DefaultHttpContext();
         context.Request.Method = method;
         context.Request.Path = path;
+        context.Features.Get<IHttpRequestFeature>()!.RawTarget = path;
         return context.Request;
     }
 

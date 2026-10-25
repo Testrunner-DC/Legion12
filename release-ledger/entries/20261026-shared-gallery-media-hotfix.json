@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-shared-gallery-media-hotfix",
+  "date": "2026-10-26",
+  "audience": "players",
+  "title": "图鉴浏览",
+  "changes": [
+    {
+      "category": "content",
+      "text": "修正连续浏览大量异画后，图鉴资料读取可能被误判为请求过于频繁的问题。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12HttpReliability.cs"]
+    }
+  ]
+}
