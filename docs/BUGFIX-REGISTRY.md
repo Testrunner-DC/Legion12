@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## MAINT-20261026-PINNED-GALLERY-BINDING｜固定窄包消费，本地接受未执行正式切换
+
+- 原`Test-L12AcceptedApplicationBinding`3890字逐字SHA8F3F29C1不变，通用规则不放宽；仅私有固定3a→8300、非rollback且显式manifest的fallback，raw B3327D79、单父3a、tree15f4fd01、六叶全部status/mode/blob、原351产品/QA对象及祖先绑定严格相等。工具HEAD仍要求fresh origin/main；无外部白名单/任意候选参数，包哈希/更新日志基线/runtime/标准停服与最新备份规则保持。
+- 原绑定63/固定包16/服务端事务模拟76实过，末轮新helper九Git读取均`--no-lazy-fetch`；只改日志后仅补两分支聚焦而不重复未变事务。Main在已同步6a9f5c5a真实对象上独立执行新候选正控、原普通正控与rollback拒绝，已核精确两个源SHA及新分支无夹带。原body与调用路径分开审，fixed路径日志明确工具主线其他产品不部署，不再误称后续全部仅文档。
+- 证据唯一`shared-gallery-formal-20261026/tool-binding`：final48F9845B、mode7D37C26D；deploy068D855D/test6A916137。原candidate的8378/2359完整及canonical续尾manifest另有真实证明，工具修正不触发新应用Release。未正式部署、未伪造v1停服许可或启用永久历史豁免；后续真实状态/原生观察/最新备份仍必需。
+
 ## FIX-20261026-BATTLE-MOTION-OWNER-WEIGHT｜单卡可见交接、主宰受击与厚重分段，本地接受
 
 - 承接人类已批三项及来源`L12-卡牌区域移动动画专项`限定反馈，保P0/P4：不改权威结算/事件/隐私/时序队列。全共享play/区域移动/主宰受击/CardState入口核查，不按加拉哈德卡号特判；公开play仅在稳定实例且非隐藏时中央聚焦。holder可见期覆盖新插入的目标，新增仅`data-card-instance-id`的属性监听，处理PlayerMat按格复用原CardTile的路径，不监听style形成自回授，四类退场均解除观察/visibility lease。

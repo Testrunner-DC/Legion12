@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-pinned-gallery-release-binding-internal",
+  "date": "2026-10-26",
+  "audience": "internal",
+  "reason": "正式3a上的共享图库修复只消费已完整验收的固定8300窄包，私有绑定精确manifest SHA、单父提交、整tree及六叶Git状态/模式/blob；保留原通用绑定逐字不变、当前工具必须匹配远端main及原哈希/排空/备份规则，不开放任意候选白名单。63原绑定、16固定包及76服务端模拟通过；不是正式部署完成。",
+  "paths": ["ops/windows/deploy-l12.ps1", "scripts/test-l12-deploy-behavior.ps1"]
+}

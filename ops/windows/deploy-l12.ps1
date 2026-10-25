@@ -233,6 +233,103 @@ function Test-L12AcceptedApplicationBinding {
     return $true
 }
 
+# One release-only compatibility binding for the already fully verified shared-
+# gallery media throttle package. This record is private to this wrapper: there
+# is no caller flag or external allow-list, and an unset manifest digest fails
+# closed until the canonical Release manifest has completed successfully.
+$script:L12PinnedSharedGalleryBinding = [ordered]@{
+    ProductionBaseCommit = '3a376f17e5a6f9431303b35775977fabd2083b6a'
+    ApplicationCommit = '8300c8d7e157bcb15b80d90eb0f34d312078df15'
+    ApplicationTree = '15f4fd01c76ab8bbf02e05555b0c636d7a40a94e'
+    ReferenceCommit = '351ca5fe780f5f5e83a3eb4c3f153417d76d04bc'
+    ReferenceProductBlob = '8223ccec71cd10d05d18a28778593cd24ac79a6d'
+    ReferenceQaBlob = '987ede5752b50590303472d4959dafd81342d959'
+    ProductPath = '服务端WebSocket/TwelveLegions/L12HttpReliability.cs'
+    QaPath = 'TwelveLegions.Platform.Tests/HttpTrafficReliabilityTests.cs'
+    ManifestSha256 = 'b3327d79bf6c3372d867284604b25cd86f1474e0da02daffedc4588b86cbe522'
+    ExpectedRawChanges = @(
+        ':100644 100644 e3c85ca09a334438dc010f9e9d8ff6e6baa1aa6c 987ede5752b50590303472d4959dafd81342d959 M' + "`t" + 'TwelveLegions.Platform.Tests/HttpTrafficReliabilityTests.cs'
+        ':100644 100644 814012c1bc28cedb9d98824a92362d84ced5d4f0 c3b5f8aae0f5c3392afb7404c8e43c8a9b4b5924 M' + "`t" + 'docs/BUGFIX-REGISTRY.md'
+        ':100644 100644 e97e716124bcb97516e0d8a65173be8a217e71b9 0159fc27b771386b25ef1eb436625c7e53a0da21 M' + "`t" + 'docs/HANDOFF.md'
+        ':100644 100644 6c8aed417b7e62aa2ffc38f79f5c4564c0be97b6 2e2e16c739ff17cf6bb1f1e5f4390a95547204a5 M' + "`t" + 'docs/TASK-LEDGER.md'
+        ':000000 100644 0000000000000000000000000000000000000000 924e5a3716ac47ff09e1bbbee5cfb2a63bba2b15 A' + "`t" + 'release-ledger/entries/20261026-shared-gallery-media-hotfix.json'
+        ':100644 100644 8afe76f08143a1ed99a1469fd43707cb4f1b4444 8223ccec71cd10d05d18a28778593cd24ac79a6d M' + "`t" + '服务端WebSocket/TwelveLegions/L12HttpReliability.cs'
+    )
+}
+
+function Test-L12PinnedSharedGalleryBinding {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ApplicationCommit,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ToolCommit,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ProductionBaseCommit,
+        [Parameter(Mandatory)][bool]$Rollback,
+        [Parameter(Mandatory)][bool]$ExplicitArtifactManifest,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ArtifactManifestPath,
+        [Parameter(Mandatory)][object]$Manifest
+    )
+    try {
+        $binding = $script:L12PinnedSharedGalleryBinding
+        $pinnedManifestSha256 = [string]$binding.ManifestSha256
+        if ($Rollback -or -not $ExplicitArtifactManifest -or
+            $pinnedManifestSha256 -cnotmatch '^[0-9a-f]{64}$' -or
+            $pinnedManifestSha256 -ceq ('0' * 64) -or
+            $ApplicationCommit -cne [string]$binding.ApplicationCommit -or
+            $ProductionBaseCommit -cne [string]$binding.ProductionBaseCommit -or
+            $ToolCommit -cnotmatch '^[0-9a-f]{40}$' -or
+            -not (($Manifest.schema -is [int32] -or $Manifest.schema -is [int64]) -and
+                [long]$Manifest.schema -eq 3) -or
+            [string]$Manifest.commit -cne [string]$binding.ApplicationCommit -or
+            [string]$Manifest.releaseBaseCommit -cne [string]$binding.ProductionBaseCommit -or
+            -not (Test-Path -LiteralPath $ArtifactManifestPath -PathType Leaf)) { return $false }
+
+        $manifestItem = Get-Item -LiteralPath $ArtifactManifestPath -Force
+        if (($manifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            (Get-FileHash -LiteralPath $ArtifactManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+            $pinnedManifestSha256) { return $false }
+
+        foreach ($commitToResolve in @($binding.ProductionBaseCommit, $binding.ApplicationCommit,
+                $binding.ReferenceCommit, $ToolCommit)) {
+            & git --no-lazy-fetch -C $RepositoryRoot cat-file -e "${commitToResolve}^{commit}" 2>$null
+            if ($LASTEXITCODE -ne 0) { return $false }
+        }
+
+        $parents = ((& git --no-lazy-fetch -C $RepositoryRoot rev-list --parents -n 1 $ApplicationCommit 2>$null) -join '').Trim() -split '\s+'
+        if ($LASTEXITCODE -ne 0 -or $parents.Count -ne 2 -or
+            $parents[0] -cne $ApplicationCommit -or
+            $parents[1] -cne [string]$binding.ProductionBaseCommit) { return $false }
+        $applicationTree = ((& git --no-lazy-fetch -C $RepositoryRoot rev-parse "${ApplicationCommit}^{tree}" 2>$null) -join '').Trim()
+        if ($LASTEXITCODE -ne 0 -or $applicationTree -cne [string]$binding.ApplicationTree) { return $false }
+
+        $actualChanges = @(& git --no-lazy-fetch -C $RepositoryRoot -c core.quotepath=false diff-tree `
+            --no-commit-id --raw -r --no-renames $ApplicationCommit -- 2>$null)
+        if ($LASTEXITCODE -ne 0 -or $actualChanges.Count -ne $binding.ExpectedRawChanges.Count) { return $false }
+        for ($index = 0; $index -lt $actualChanges.Count; $index++) {
+            if ([string]$actualChanges[$index] -cne [string]$binding.ExpectedRawChanges[$index]) { return $false }
+        }
+
+        & git --no-lazy-fetch -C $RepositoryRoot merge-base --is-ancestor $binding.ReferenceCommit $ToolCommit 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $referenceProductBlob = ((& git --no-lazy-fetch -C $RepositoryRoot rev-parse `
+            "$($binding.ReferenceCommit):$($binding.ProductPath)" 2>$null) -join '').Trim()
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $referenceQaBlob = ((& git --no-lazy-fetch -C $RepositoryRoot rev-parse `
+            "$($binding.ReferenceCommit):$($binding.QaPath)" 2>$null) -join '').Trim()
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $applicationProductBlob = ((& git --no-lazy-fetch -C $RepositoryRoot rev-parse `
+            "${ApplicationCommit}:$($binding.ProductPath)" 2>$null) -join '').Trim()
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $applicationQaBlob = ((& git --no-lazy-fetch -C $RepositoryRoot rev-parse `
+            "${ApplicationCommit}:$($binding.QaPath)" 2>$null) -join '').Trim()
+        if ($LASTEXITCODE -ne 0) { return $false }
+        return ($referenceProductBlob -ceq [string]$binding.ReferenceProductBlob -and
+            $applicationProductBlob -ceq [string]$binding.ReferenceProductBlob -and
+            $referenceQaBlob -ceq [string]$binding.ReferenceQaBlob -and
+            $applicationQaBlob -ceq [string]$binding.ReferenceQaBlob)
+    }
+    catch { return $false }
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $targetHelper = Join-Path $PSScriptRoot "L12DeployTarget.ps1"
 . $targetHelper
@@ -299,7 +396,8 @@ try {
     }
     Write-Host "[L12 部署] 当前正式服与工具提交：$productionBaseCommit -> $toolCommit"
 
-    if ([string]::IsNullOrWhiteSpace($ArtifactManifest)) {
+    $explicitArtifactManifest = -not [string]::IsNullOrWhiteSpace($ArtifactManifest)
+    if (-not $explicitArtifactManifest) {
         if ($Rollback) { throw "rollback 必须显式提供已验证的兼容目标 ArtifactManifest。" }
         $arguments = @("-ExecutionPolicy", "Bypass", "-File", $verifyScript, "-CacheRoot", $resolvedCacheRoot,
             "-ProductionBaseCommit", $productionBaseCommit)
@@ -319,12 +417,28 @@ try {
     }
     $commit = [string]$manifest.commit
     if ($commit -notmatch '^[0-9a-f]{40}$') { throw "发布包提交格式无效。" }
-    if (-not $Rollback -and -not (Test-L12AcceptedApplicationBinding -RepositoryRoot $repoRoot `
-        -ApplicationCommit $commit -ToolCommit $toolCommit)) {
-        throw "deploy 发布包与当前 main 的应用源码不一致，或不是已知祖先；拒绝复用。"
+    if (-not $Rollback) {
+        $applicationBindingMode = 'accepted-ancestor'
+        $acceptedApplicationBinding = Test-L12AcceptedApplicationBinding -RepositoryRoot $repoRoot `
+            -ApplicationCommit $commit -ToolCommit $toolCommit
+        if (-not $acceptedApplicationBinding) {
+            $acceptedApplicationBinding = Test-L12PinnedSharedGalleryBinding -RepositoryRoot $repoRoot `
+                -ApplicationCommit $commit -ToolCommit $toolCommit -ProductionBaseCommit $productionBaseCommit `
+                -Rollback $Rollback.IsPresent -ExplicitArtifactManifest $explicitArtifactManifest `
+                -ArtifactManifestPath $ArtifactManifest -Manifest $manifest
+            $applicationBindingMode = 'pinned-shared-gallery'
+        }
+        if (-not $acceptedApplicationBinding) {
+            throw "deploy 发布包与当前 main 的应用源码不一致，或不是已知祖先；拒绝复用。"
+        }
     }
     if (-not $Rollback -and $commit -cne $toolCommit) {
-        Write-Host "[L12 部署] 复用完整验收的同一应用包：$commit；后续仅具名记录/Windows发布工具，工具HEAD：$toolCommit"
+        if ($applicationBindingMode -ceq 'pinned-shared-gallery') {
+            Write-Host "[L12 部署] 仅消费固定 8300 窄包：$commit；工具主线其余产品不部署，工具HEAD：$toolCommit"
+        }
+        else {
+            Write-Host "[L12 部署] 复用完整验收的同一应用包：$commit；后续仅具名记录/Windows发布工具，工具HEAD：$toolCommit"
+        }
     }
     if ($Rollback) {
         & git merge-base --is-ancestor $commit $productionBaseCommit

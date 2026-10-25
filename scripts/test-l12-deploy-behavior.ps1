@@ -204,6 +204,216 @@ try {
     $bindingCases++
     Write-Host "Accepted application package binding: $bindingCases cases passed; no remote operations."
 
+    $pinnedFunction = @($bindingAst.FindAll({ param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq 'Test-L12PinnedSharedGalleryBinding'
+    }, $false))
+    Assert-True ($pinnedFunction.Count -eq 1) 'Pinned shared-gallery binding function missing or ambiguous.'
+    Invoke-Expression $pinnedFunction[0].Extent.Text
+
+    # Exercise the one-off topology and manifest binding in an isolated local
+    # repository. The production record stays fixed inside deploy-l12.ps1.
+    $pinnedRoot = Join-Path $fixtureRoot 'pinned-shared-gallery-binding'
+    New-Item -ItemType Directory -Path $pinnedRoot | Out-Null
+    & git -C $pinnedRoot init -q
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned binding fixture Git initialization failed.' }
+    & git -C $pinnedRoot config user.name 'L12 synthetic verification'
+    & git -C $pinnedRoot config user.email 'synthetic@example.invalid'
+    $pinnedProductPath = '服务端WebSocket/TwelveLegions/L12HttpReliability.cs'
+    $pinnedQaPath = 'TwelveLegions.Platform.Tests/HttpTrafficReliabilityTests.cs'
+    $pinnedChangedPaths = @($pinnedQaPath, 'docs/BUGFIX-REGISTRY.md', 'docs/HANDOFF.md',
+        'docs/TASK-LEDGER.md', $pinnedProductPath)
+    foreach ($path in $pinnedChangedPaths) {
+        $file = Join-Path $pinnedRoot $path
+        New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force | Out-Null
+        Write-Utf8NoBom $file "base:$path"
+    }
+    & git -C $pinnedRoot add -- .
+    & git -C $pinnedRoot commit -qm 'pinned base'
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned binding base commit failed.' }
+    $pinnedBase = (& git -C $pinnedRoot rev-parse HEAD).Trim()
+
+    foreach ($path in $pinnedChangedPaths) {
+        Write-Utf8NoBom (Join-Path $pinnedRoot $path) "candidate:$path"
+    }
+    $pinnedLedgerPath = 'release-ledger/entries/20261026-shared-gallery-media-hotfix.json'
+    $pinnedLedgerFile = Join-Path $pinnedRoot $pinnedLedgerPath
+    New-Item -ItemType Directory -Path (Split-Path -Parent $pinnedLedgerFile) -Force | Out-Null
+    Write-Utf8NoBom $pinnedLedgerFile '{"schema":1}'
+    & git -C $pinnedRoot add -- .
+    & git -C $pinnedRoot commit -qm 'pinned six-leaf candidate'
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned binding candidate commit failed.' }
+    $pinnedCandidate = (& git -C $pinnedRoot rev-parse HEAD).Trim()
+    $pinnedTree = (& git -C $pinnedRoot rev-parse "${pinnedCandidate}^{tree}").Trim()
+    $pinnedRawChanges = @(& git -C $pinnedRoot -c core.quotepath=false diff-tree `
+        --no-commit-id --raw -r --no-renames $pinnedCandidate --)
+    Assert-True ($LASTEXITCODE -eq 0 -and $pinnedRawChanges.Count -eq 6) 'Pinned six-leaf fixture is not exact.'
+    $pinnedProductBlob = (& git -C $pinnedRoot rev-parse "${pinnedCandidate}:$pinnedProductPath").Trim()
+    $pinnedQaBlob = (& git -C $pinnedRoot rev-parse "${pinnedCandidate}:$pinnedQaPath").Trim()
+
+    & git -C $pinnedRoot switch -q --detach $pinnedBase
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned reference checkout failed.' }
+    Write-Utf8NoBom (Join-Path $pinnedRoot $pinnedProductPath) "candidate:$pinnedProductPath"
+    Write-Utf8NoBom (Join-Path $pinnedRoot $pinnedQaPath) "candidate:$pinnedQaPath"
+    & git -C $pinnedRoot add -- $pinnedProductPath $pinnedQaPath
+    & git -C $pinnedRoot commit -qm 'pinned reference implementation'
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned reference commit failed.' }
+    $pinnedReference = (& git -C $pinnedRoot rev-parse HEAD).Trim()
+    Write-Utf8NoBom (Join-Path $pinnedRoot 'tool.txt') 'current main tool'
+    & git -C $pinnedRoot add -- tool.txt
+    & git -C $pinnedRoot commit -qm 'pinned current tool'
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned tool commit failed.' }
+    $pinnedTool = (& git -C $pinnedRoot rev-parse HEAD).Trim()
+
+    & git -C $pinnedRoot switch -q --detach $pinnedBase
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned seventh-leaf checkout failed.' }
+    foreach ($path in $pinnedChangedPaths) {
+        Write-Utf8NoBom (Join-Path $pinnedRoot $path) "candidate:$path"
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $pinnedLedgerFile) -Force | Out-Null
+    Write-Utf8NoBom $pinnedLedgerFile '{"schema":1}'
+    Write-Utf8NoBom (Join-Path $pinnedRoot 'seventh.txt') 'not admitted'
+    & git -C $pinnedRoot add -- .
+    & git -C $pinnedRoot commit -qm 'pinned seventh-leaf candidate'
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned seventh-leaf commit failed.' }
+    $pinnedSeventh = (& git -C $pinnedRoot rev-parse HEAD).Trim()
+    $pinnedSeventhTree = (& git -C $pinnedRoot rev-parse "${pinnedSeventh}^{tree}").Trim()
+
+    function New-PinnedManifestFixture {
+        param(
+            [Parameter(Mandatory)][string]$Name,
+            [Parameter(Mandatory)][string]$Commit,
+            [Parameter(Mandatory)][string]$ReleaseBaseCommit,
+            [int]$Schema = 3
+        )
+        $path = Join-Path $pinnedRoot $Name
+        $content = [ordered]@{
+            schema = $Schema
+            deploymentDrainProtocol = 1
+            requiresExternalStopPermit = $true
+            runtimeDataCompatibility = 'l12-runtime-v1'
+            runtimeSourceCompatibility = ('a' * 64)
+            commit = $Commit
+            releaseBaseCommit = $ReleaseBaseCommit
+        } | ConvertTo-Json -Compress
+        Write-Utf8NoBom $path $content
+        [pscustomobject]@{
+            Path = $path
+            Manifest = $content | ConvertFrom-Json
+            Sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    }
+
+    $pinnedManifest = New-PinnedManifestFixture 'valid-manifest.json' $pinnedCandidate $pinnedBase
+    $pinnedWrongCommitManifest = New-PinnedManifestFixture 'wrong-commit-manifest.json' $pinnedTool $pinnedBase
+    $pinnedWrongBaseManifest = New-PinnedManifestFixture 'wrong-base-manifest.json' $pinnedCandidate $pinnedReference
+    $pinnedWrongSchemaManifest = New-PinnedManifestFixture 'wrong-schema-manifest.json' $pinnedCandidate $pinnedBase 2
+    $pinnedSeventhManifest = New-PinnedManifestFixture 'seventh-manifest.json' $pinnedSeventh $pinnedBase
+
+    function Set-ValidPinnedBindingFixture {
+        $script:L12PinnedSharedGalleryBinding = [ordered]@{
+            ProductionBaseCommit = $pinnedBase
+            ApplicationCommit = $pinnedCandidate
+            ApplicationTree = $pinnedTree
+            ReferenceCommit = $pinnedReference
+            ReferenceProductBlob = $pinnedProductBlob
+            ReferenceQaBlob = $pinnedQaBlob
+            ProductPath = $pinnedProductPath
+            QaPath = $pinnedQaPath
+            ManifestSha256 = $pinnedManifest.Sha256
+            ExpectedRawChanges = @($pinnedRawChanges)
+        }
+    }
+    Set-ValidPinnedBindingFixture
+    $pinnedCall = @{
+        RepositoryRoot = $pinnedRoot
+        ApplicationCommit = $pinnedCandidate
+        ToolCommit = $pinnedTool
+        ProductionBaseCommit = $pinnedBase
+        Rollback = $false
+        ExplicitArtifactManifest = $true
+        ArtifactManifestPath = $pinnedManifest.Path
+        Manifest = $pinnedManifest.Manifest
+    }
+    Assert-True (-not (Test-L12AcceptedApplicationBinding $pinnedRoot $pinnedCandidate $pinnedTool)) `
+        'Pinned fixture unexpectedly selected the ordinary ancestor binding.'
+    Assert-True (Test-L12PinnedSharedGalleryBinding @pinnedCall) 'Exact pinned shared-gallery binding rejected.'
+    $pinnedCases = 1
+
+    $case = @{} + $pinnedCall; $case.Rollback = $true
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted rollback.'; $pinnedCases++
+    $case = @{} + $pinnedCall; $case.ExplicitArtifactManifest = $false
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted an implicit manifest.'; $pinnedCases++
+    $case = @{} + $pinnedCall; $case.ProductionBaseCommit = $pinnedReference
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted the wrong live base.'; $pinnedCases++
+    $case = @{} + $pinnedCall; $case.ApplicationCommit = $pinnedTool
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted the wrong application.'; $pinnedCases++
+    $case = @{} + $pinnedCall; $case.ToolCommit = $pinnedBase
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted a tool without the reference ancestor.'; $pinnedCases++
+
+    Set-ValidPinnedBindingFixture
+    $script:L12PinnedSharedGalleryBinding.ManifestSha256 = '0' * 64
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @pinnedCall)) 'Pinned binding accepted the fail-closed digest placeholder.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    $script:L12PinnedSharedGalleryBinding.ManifestSha256 = $pinnedWrongCommitManifest.Sha256
+    $case = @{} + $pinnedCall; $case.ArtifactManifestPath = $pinnedWrongCommitManifest.Path; $case.Manifest = $pinnedWrongCommitManifest.Manifest
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted the wrong manifest commit.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    $script:L12PinnedSharedGalleryBinding.ManifestSha256 = $pinnedWrongBaseManifest.Sha256
+    $case = @{} + $pinnedCall; $case.ArtifactManifestPath = $pinnedWrongBaseManifest.Path; $case.Manifest = $pinnedWrongBaseManifest.Manifest
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted the wrong manifest release base.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    $script:L12PinnedSharedGalleryBinding.ManifestSha256 = $pinnedWrongSchemaManifest.Sha256
+    $case = @{} + $pinnedCall; $case.ArtifactManifestPath = $pinnedWrongSchemaManifest.Path; $case.Manifest = $pinnedWrongSchemaManifest.Manifest
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted the wrong manifest schema.'; $pinnedCases++
+
+    Set-ValidPinnedBindingFixture
+    $script:L12PinnedSharedGalleryBinding.ProductionBaseCommit = $pinnedReference
+    $script:L12PinnedSharedGalleryBinding.ManifestSha256 = $pinnedWrongBaseManifest.Sha256
+    $case = @{} + $pinnedCall; $case.ProductionBaseCommit = $pinnedReference
+    $case.ArtifactManifestPath = $pinnedWrongBaseManifest.Path; $case.Manifest = $pinnedWrongBaseManifest.Manifest
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted a candidate with the wrong parent.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    $script:L12PinnedSharedGalleryBinding.ApplicationCommit = $pinnedSeventh
+    $script:L12PinnedSharedGalleryBinding.ApplicationTree = $pinnedSeventhTree
+    $script:L12PinnedSharedGalleryBinding.ManifestSha256 = $pinnedSeventhManifest.Sha256
+    $case = @{} + $pinnedCall; $case.ApplicationCommit = $pinnedSeventh
+    $case.ArtifactManifestPath = $pinnedSeventhManifest.Path; $case.Manifest = $pinnedSeventhManifest.Manifest
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @case)) 'Pinned binding accepted a seventh leaf.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    $changedRaw = @($pinnedRawChanges); $changedRaw[0] = $changedRaw[0].Replace(" M`t", " A`t")
+    $script:L12PinnedSharedGalleryBinding.ExpectedRawChanges = $changedRaw
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @pinnedCall)) 'Pinned binding accepted the wrong leaf status.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    $changedRaw = @($pinnedRawChanges); $changedRaw[0] = $changedRaw[0].Replace($pinnedQaBlob, ('f' * 40))
+    $script:L12PinnedSharedGalleryBinding.ExpectedRawChanges = $changedRaw
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @pinnedCall)) 'Pinned binding accepted the wrong leaf blob.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    $script:L12PinnedSharedGalleryBinding.ReferenceProductBlob = (& git -C $pinnedRoot rev-parse "${pinnedBase}:$pinnedProductPath").Trim()
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @pinnedCall)) 'Pinned binding accepted the wrong reference product blob.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    $script:L12PinnedSharedGalleryBinding.ApplicationTree = 'f' * 40
+    Assert-True (-not (Test-L12PinnedSharedGalleryBinding @pinnedCall)) 'Pinned binding accepted the wrong candidate tree.'; $pinnedCases++
+    Set-ValidPinnedBindingFixture
+    Write-Host "Pinned shared-gallery binding: $pinnedCases cases passed; no remote operations."
+
+    $deployBindingSource = Get-Content -LiteralPath $windowsDeploy -Raw
+    $normalModeText = '$applicationBindingMode = ''accepted-ancestor'''
+    $pinnedCallText = '$acceptedApplicationBinding = Test-L12PinnedSharedGalleryBinding'
+    $pinnedModeText = '$applicationBindingMode = ''pinned-shared-gallery'''
+    $pinnedLogText = '[L12 部署] 仅消费固定 8300 窄包：$commit；工具主线其余产品不部署，工具HEAD：$toolCommit'
+    $normalLogText = '[L12 部署] 复用完整验收的同一应用包：$commit；后续仅具名记录/Windows发布工具，工具HEAD：$toolCommit'
+    $normalModeIndex = $deployBindingSource.IndexOf($normalModeText, [StringComparison]::Ordinal)
+    $pinnedCallIndex = $deployBindingSource.IndexOf($pinnedCallText, [StringComparison]::Ordinal)
+    $pinnedModeIndex = $deployBindingSource.IndexOf($pinnedModeText, [StringComparison]::Ordinal)
+    Assert-True ($normalModeIndex -ge 0 -and $normalModeIndex -lt $pinnedCallIndex -and
+        $pinnedCallIndex -lt $pinnedModeIndex) 'Pinned fallback does not select its explicit binding mode.'
+    Assert-True (([regex]::Matches($deployBindingSource, [regex]::Escape($pinnedLogText))).Count -eq 1 -and
+        ([regex]::Matches($deployBindingSource, [regex]::Escape($normalLogText))).Count -eq 1 -and
+        $deployBindingSource.Contains("if (`$applicationBindingMode -ceq 'pinned-shared-gallery')")) `
+        'Pinned and ordinary accepted-package logs are not separated by binding mode.'
+    Write-Host 'Pinned application selection and dual-mode deployment logs passed.'
+
     $serverDeploySource = Get-Content -LiteralPath $serverDeploy -Raw
     $stopFunction = [regex]::Match($serverDeploySource, '(?ms)^stop_service_and_confirm\(\) \{\r?\n.*?^\}')
     Assert-True ($stopFunction.Success) 'Actual normal-stop confirmation helper is missing.'
