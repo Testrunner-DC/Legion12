@@ -171,7 +171,8 @@ expect(deckEditor.includes('class="deck-mobile-nav"') && deckEditor.includes("se
 for (const [name, source] of [['shell', shell], ['news', news], ['home', home], ['rules', rules], ['rankings', rankings]]) {
   expect(!/@media\s*\(max-width:\s*(720|760|850)px\)/.test(source), `${name} must use the shared 700px compact boundary rather than a legacy primary breakpoint`)
 }
-expect(recovery.includes('.recovery-card{padding:18px}') && recovery.includes('.recovery-card button{min-height:44px'), 'recovery form must scale the card and primary control together')
+expect(recovery.includes('.recovery-card{padding:18px}') && /\.recovery-card a\{[^}]*min-height:38px/.test(recovery)
+  && !/<form|<input|<button/.test(recovery), 'retired email notice must retain compact containment and a reachable return control, without a recovery form')
 expect(globalCss.includes('body .friends-page{padding:14px 10px 34px}') && globalCss.includes('body .friends-page .hero-avatar{width:56px;height:56px'), 'friends page must compact its container and visual anchors together')
 
 console.log('Mobile responsive layout contracts passed.')

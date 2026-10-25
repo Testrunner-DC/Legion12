@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FEAT-20261025-EMAIL-RETIRE｜按人类决定完全停用邮箱，保留历史资料
+
+- 最新裁定取代FEAT-20260830-05的可选启用方向及本轮未提交邮箱KDF优化；不是把配置默认false冒永久停用。全仓检索EmailFeature/SMTP/EmailAuth及前端emailApi/Recovery消费者，移除唯一实际SMTP与异步发信队列；环境开关/构造注入不可再启用。绑定、解绑、验证、忘记/邮件重置密码无锁无写同码拒绝，旧HTTP仍按认证/限流先行并稳定503停用，不保偷偷可用的解绑例外。
+- 历史schema/EmailAuthTokenRow/AuthActionThrottleRow/邮箱字段与正常管理消费令牌语义保留，不删业务数据或反算历史。个人页删除邮箱读取、控件与找回链接；旧恢复页只清fragment并显示停用提示、返回我的，不消费旧有效token、不发请求、不改变现有会话。
+- 新active EmailFeatureDisabledTests：构造/旧env不可开、注入sender绝不触及、五旧操作保有效历史邮箱/两类token/镜像字节/凭据/会话/版本、畸形参数快拒、实际五HTTP端点和正常改密/管理重置删除。真实构造true一例RED→54专项全过含15新增；SMTP全字段env及非空限流历史未单独播种，不能冒这两种动态场景已验。只读关键审查无新阻断。
+- 前端真实SFC16、UI361、原账号消费者26、管理/移动/主题/字号/完整类型与双构建通过；三个尺寸正式静态产物9场证明旧请求/验证/重置链接均安全停用、保登录、返回可达与无横溢出，非物理真机。旧表单专属合同及原浏览器恢复用例同步到新决定，其余断言不删。同一冻结程序集一次完整平台2558/2558、11分42秒零失败跳过；精确SHA与原证据见stage-goals-20261025/email-disabled/main-acceptance.json，不冒完整Release。
+- 回滚面仅当前源版本；若回到支持邮箱的旧二进制，必须保持邮件配置关闭，不能声称本次源级保证覆盖旧代码。用户本轮未授权部署，两服、维护、现库、统计与线上Bug状态均无写。
+
 ## FIX-20261025-G4-REGISTRATION-USERNAME-WORK｜注册与两类改名锁隔离本地接受，未部署
 
 - 根因/同类：注册CreateAccount、强制ChangeUsername和SelfServiceChangeUsername也在平台gate内KDF；真实注册屏障RED已保。查询Verify/SetPassword/CreateAccount及所有外层ExecuteAdminTransaction→Register，迁三在线入口，启动EnsureRootAdmin/受控测试播种与EmailAuth/管理入口明确后片，不冒全KDF完成。

@@ -509,8 +509,6 @@ public sealed partial class L12PlatformStore
     private readonly IReadOnlyDictionary<string, L12OfficialAlternateArtDefinition> _officialAlternateArts;
     private readonly L12SharedGalleryCatalog? _sharedGallery;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _officialCardProducts;
-    private readonly IL12EmailSender _emailSender;
-    private readonly bool _emailFeatureEnabled;
     private DataFile _state = null!;
     private bool _rollbackViewUnavailable;
     // A failed rollback must never publish the partially mutated object. This
@@ -555,8 +553,7 @@ public sealed partial class L12PlatformStore
         _officialCardProducts = officialCardProducts ??
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         _mfaCredentialProtector = mfaCredentialProtector ?? new L12UnavailableMfaCredentialProtector();
-        _emailSender = emailSender ?? L12SmtpEmailSender.FromEnvironment();
-        _emailFeatureEnabled = emailFeatureEnabled ?? L12EmailFeature.EnabledFromEnvironment();
+        // Legacy constructor parameters remain source-compatible but cannot enable retired email.
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _databasePath = PlatformDatabasePath(path);
         _data = LoadTransactionalState();

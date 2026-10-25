@@ -1,7 +1,5 @@
-using System.Net;
 using System.Net.Mail;
 using System.Security.Cryptography;
-using System.Text;
 
 namespace TwelveLegions.Server;
 
@@ -13,7 +11,7 @@ public static class L12EmailFeature
     public const string EnvironmentVariable = "L12_EMAIL_FEATURE_ENABLED";
 
     public static bool EnabledFromEnvironment()
-        => bool.TryParse(Environment.GetEnvironmentVariable(EnvironmentVariable), out var enabled) && enabled;
+        => false; // Retained for configuration compatibility; email is permanently retired.
 }
 
 public interface IL12EmailSender
@@ -28,86 +26,13 @@ public sealed class L12UnavailableEmailSender : IL12EmailSender
     public bool IsConfigured => false;
     public string PublicBaseUrl => string.Empty;
     public L12EmailSendResult Send(L12EmailMessage message)
-        => new(false, "mail_unavailable", "邮件服务未配置");
+        => new(false, "email_feature_disabled", "邮箱功能已停用");
 }
 
-public sealed class L12SmtpEmailSender : IL12EmailSender
+// Compatibility factory only. Never load SMTP credentials or open a mail connection.
+public static class L12SmtpEmailSender
 {
-    private readonly string _host;
-    private readonly int _port;
-    private readonly string _username;
-    private readonly string _password;
-    private readonly string _fromAddress;
-    private readonly string _fromName;
-    private readonly bool _enableSsl;
-
-    private L12SmtpEmailSender(string host, int port, string username, string password, string fromAddress,
-        string fromName, bool enableSsl, string publicBaseUrl)
-    {
-        _host = host;
-        _port = port;
-        _username = username;
-        _password = password;
-        _fromAddress = fromAddress;
-        _fromName = fromName;
-        _enableSsl = enableSsl;
-        PublicBaseUrl = publicBaseUrl.TrimEnd('/');
-    }
-
-    public bool IsConfigured => true;
-    public string PublicBaseUrl { get; }
-
-    public static IL12EmailSender FromEnvironment()
-    {
-        var host = Environment.GetEnvironmentVariable("L12_SMTP_HOST")?.Trim() ?? string.Empty;
-        var from = Environment.GetEnvironmentVariable("L12_SMTP_FROM_ADDRESS")?.Trim() ?? string.Empty;
-        var baseUrl = Environment.GetEnvironmentVariable("L12_PUBLIC_BASE_URL")?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(host) || !IsEmail(from)
-            || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
-            || uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback))
-            return new L12UnavailableEmailSender();
-        var port = int.TryParse(Environment.GetEnvironmentVariable("L12_SMTP_PORT"), out var parsedPort)
-            && parsedPort is > 0 and <= 65535 ? parsedPort : 587;
-        var enableSsl = !bool.TryParse(Environment.GetEnvironmentVariable("L12_SMTP_ENABLE_SSL"), out var parsedSsl)
-            || parsedSsl;
-        return new L12SmtpEmailSender(host, port,
-            Environment.GetEnvironmentVariable("L12_SMTP_USERNAME") ?? string.Empty,
-            Environment.GetEnvironmentVariable("L12_SMTP_PASSWORD") ?? string.Empty,
-            from, Environment.GetEnvironmentVariable("L12_SMTP_FROM_NAME")?.Trim() ?? "十二军团",
-            enableSsl, baseUrl);
-    }
-
-    public L12EmailSendResult Send(L12EmailMessage message)
-    {
-        try
-        {
-            using var mail = new MailMessage
-            {
-                From = new MailAddress(_fromAddress, _fromName, Encoding.UTF8),
-                Subject = message.Subject,
-                Body = message.TextBody,
-                IsBodyHtml = false,
-                SubjectEncoding = Encoding.UTF8,
-                BodyEncoding = Encoding.UTF8,
-            };
-            mail.To.Add(new MailAddress(message.To));
-            using var client = new SmtpClient(_host, _port) { EnableSsl = _enableSsl, Timeout = 15_000 };
-            if (!string.IsNullOrWhiteSpace(_username))
-                client.Credentials = new NetworkCredential(_username, _password);
-            client.Send(mail);
-            return new(true, "sent", "邮件已发送");
-        }
-        catch
-        {
-            return new(false, "mail_delivery_failed", "邮件发送失败");
-        }
-    }
-
-    private static bool IsEmail(string value)
-    {
-        try { return new MailAddress(value).Address.Equals(value, StringComparison.OrdinalIgnoreCase); }
-        catch { return false; }
-    }
+    public static IL12EmailSender FromEnvironment() => new L12UnavailableEmailSender();
 }
 
 public sealed record L12EmailCapabilityView(bool Enabled, bool MailConfigured);
@@ -122,13 +47,8 @@ public sealed record L12AccountDeletionView(bool Applied, L12AccountView Account
 
 public sealed partial class L12PlatformStore
 {
-    private const string EmailVerifyPurpose = "email-verify";
     private const string PasswordResetPurpose = "password-reset";
-    private static readonly TimeSpan EmailVerifyLifetime = TimeSpan.FromHours(24);
-    private static readonly TimeSpan PasswordResetLifetime = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan AuthActionWindow = TimeSpan.FromMinutes(15);
-    private const string PasswordResetGenericMessage = "如果该邮箱已绑定并完成验证，我们会发送密码重置邮件";
-    private const string EmailFeatureDisabledMessage = "邮箱绑定、验证与找回功能当前未开放";
+    private const string EmailFeatureDisabledMessage = "邮箱功能已停用";
 
     private sealed class EmailAuthTokenRow
     {
@@ -150,187 +70,27 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset WindowStartedAt { get; set; }
     }
 
-    public L12EmailCapabilityView EmailCapability()
-        => new(_emailFeatureEnabled, _emailFeatureEnabled && _emailSender.IsConfigured);
+    // Keep old API shapes fail-closed, without looking up accounts, consuming tokens,
+    // taking the platform gate, doing password work, or persisting any changes.
+    public L12EmailCapabilityView EmailCapability() => new(false, false);
 
     public L12EmailStatusView EmailStatus(string accountId)
-    {
-        lock (_gate)
-        {
-            var now = DateTimeOffset.UtcNow;
-            var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Deleted)
-                ?? throw new KeyNotFoundException("账号不存在");
-            var pending = _data.EmailAuthTokens.Where(row => row.AccountId == accountId
-                    && row.Purpose == EmailVerifyPurpose && row.ConsumedAt is null && row.ExpiresAt > now
-                    && row.DeliveredAt is not null)
-                .OrderByDescending(row => row.CreatedAt).FirstOrDefault();
-            return new(account.EmailVerifiedAt is not null, account.EmailVerifiedAt is not null,
-                MaskEmail(account.Email), MaskEmail(pending?.TargetEmail), pending?.ExpiresAt,
-                _emailFeatureEnabled, _emailFeatureEnabled && _emailSender.IsConfigured);
-        }
-    }
+        => new(false, false, null, null, null, false, false);
 
     public L12AuthOperationResult RequestEmailBinding(string accountId, string currentPassword, string email,
-        string clientKey)
-    {
-        if (!_emailFeatureEnabled)
-            return new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
-        var normalized = NormalizeEmail(email);
-        if (normalized is null)
-            return new(false, "invalid_email", "请输入有效邮箱地址");
-        if (!_emailSender.IsConfigured)
-            return new(false, "mail_unavailable", "邮件服务未配置，暂时不能绑定邮箱");
+        string clientKey) => EmailDisabled();
 
-        string rawToken;
-        EmailAuthTokenRow issued;
-        lock (_gate)
-        {
-            var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Deleted);
-            if (account is null) return new(false, "account_not_found", "账号不存在");
-            if (!Verify(currentPassword, account))
-                return new(false, "invalid_current_password", "当前密码不正确");
-            if (_data.Accounts.Any(row => row.Id != accountId && !row.Deleted
-                    && row.EmailVerifiedAt is not null && row.NormalizedEmail == normalized)
-                || _data.EmailAuthTokens.Any(row => row.AccountId != accountId
-                    && row.Purpose == EmailVerifyPurpose && row.TargetEmail == normalized
-                    && row.ConsumedAt is null && row.ExpiresAt > DateTimeOffset.UtcNow))
-                return new(false, "email_in_use", "该邮箱已被其他账号使用");
-            if (!TryConsumeAuthAction("email-bind", accountId, 3, out var retryAfter))
-                return new(false, "email_rate_limited", "请求过于频繁，请稍后重试", retryAfter);
-            (issued, rawToken) = IssueEmailToken(account.Id, EmailVerifyPurpose, normalized, EmailVerifyLifetime);
-            Save(false);
-        }
+    public L12AuthOperationResult VerifyEmail(string token, string clientKey) => EmailDisabled();
 
-        var sent = SendTokenMessage(issued, rawToken);
-        FinalizeDelivery(issued.Id, sent.Success);
-        return sent.Success
-            ? new(true, "verification_sent", "验证邮件已发送；验证完成前保留原邮箱")
-            : new(false, sent.Code, "验证邮件发送失败，请稍后重试");
-    }
+    public L12AuthOperationResult UnbindEmail(string accountId, string currentPassword) => EmailDisabled();
 
-    public L12AuthOperationResult VerifyEmail(string token, string clientKey)
-    {
-        if (!_emailFeatureEnabled)
-            return new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
-        lock (_gate)
-        {
-            if (!TryConsumeAuthAction("email-verify", clientKey, 10, out var retryAfter))
-                return new(false, "email_rate_limited", "请求过于频繁，请稍后重试", retryAfter);
-            var now = DateTimeOffset.UtcNow;
-            var row = FindUsableToken(token, EmailVerifyPurpose, now);
-            if (row is null)
-            {
-                Save(false);
-                return new(false, "invalid_or_expired_token", "验证链接无效、已使用或已过期");
-            }
-            var account = _data.Accounts.FirstOrDefault(item => item.Id == row.AccountId
-                && !item.Deleted && !item.Disabled);
-            if (account is null || _data.Accounts.Any(item => item.Id != account.Id && !item.Deleted
-                    && item.EmailVerifiedAt is not null && item.NormalizedEmail == row.TargetEmail))
-            {
-                row.ConsumedAt = now;
-                Save(false);
-                return new(false, "email_in_use", "该邮箱已被其他账号使用");
-            }
-            account.Email = row.TargetEmail;
-            account.NormalizedEmail = row.TargetEmail;
-            account.EmailVerifiedAt = now;
-            ConsumeTokens(account.Id, EmailVerifyPurpose, now);
-            ConsumeTokens(account.Id, PasswordResetPurpose, now);
-            AddAdminAudit(ToView(account), "account", "email-verified", account.Username, null,
-                FingerprintValue(row.TargetEmail), "self-service", new L12AdminAuditContext("email-verify"));
-            Save();
-            return new(true, "email_verified", "邮箱验证成功");
-        }
-    }
-
-    public L12AuthOperationResult UnbindEmail(string accountId, string currentPassword)
-    {
-        lock (_gate)
-        {
-            var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Deleted);
-            if (account is null) return new(false, "account_not_found", "账号不存在");
-            if (!Verify(currentPassword, account))
-                return new(false, "invalid_current_password", "当前密码不正确");
-            var previous = account.NormalizedEmail;
-            account.Email = null;
-            account.NormalizedEmail = null;
-            account.EmailVerifiedAt = null;
-            ConsumeTokens(account.Id, null, DateTimeOffset.UtcNow);
-            AddAdminAudit(ToView(account), "account", "email-unbound", account.Username,
-                FingerprintValue(previous), null, "self-service", new L12AdminAuditContext("email-unbind"));
-            Save();
-            return new(true, "email_unbound", "邮箱已解绑；忘记密码功能将不可用");
-        }
-    }
-
-    public L12AuthOperationResult RequestPasswordReset(string email, string clientKey)
-    {
-        if (!_emailFeatureEnabled)
-            return new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
-        var normalized = NormalizeEmail(email);
-        EmailAuthTokenRow? issued = null;
-        string? rawToken = null;
-        lock (_gate)
-        {
-            var emailSubject = normalized ?? email.Trim().ToLowerInvariant();
-            var emailAllowed = TryConsumeAuthAction("password-reset-email", emailSubject, 3,
-                out var emailRetryAfter);
-            var clientAllowed = TryConsumeAuthAction("password-reset-client", clientKey, 10,
-                out var clientRetryAfter);
-            if (!emailAllowed || !clientAllowed)
-            {
-                Save(false);
-                return new(false, "password_reset_rate_limited", PasswordResetGenericMessage,
-                    Math.Max(emailRetryAfter, clientRetryAfter));
-            }
-            if (normalized is not null && _emailSender.IsConfigured)
-            {
-                var account = _data.Accounts.FirstOrDefault(row => !row.Deleted && !row.Disabled
-                    && row.EmailVerifiedAt is not null && row.NormalizedEmail == normalized);
-                if (account is not null)
-                    (issued, rawToken) = IssueEmailToken(account.Id, PasswordResetPurpose, normalized,
-                        PasswordResetLifetime);
-            }
-            Save(false);
-        }
-        if (issued is not null && rawToken is not null)
-            QueueTokenMessage(issued, rawToken);
-        return new(true, "password_reset_accepted", PasswordResetGenericMessage);
-    }
+    public L12AuthOperationResult RequestPasswordReset(string email, string clientKey) => EmailDisabled();
 
     public L12AuthOperationResult ResetPassword(string token, string newPassword, string clientKey)
-    {
-        if (!_emailFeatureEnabled)
-            return new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
-        if (newPassword.Length is < 8 or > 128)
-            return new(false, "invalid_password", "新密码长度需为 8–128 个字符");
-        string[] revokedIds;
-        lock (_gate)
-        {
-            if (!TryConsumeAuthAction("password-reset-consume", clientKey, 10, out var retryAfter))
-                return new(false, "password_reset_rate_limited", "请求过于频繁，请稍后重试", retryAfter);
-            var now = DateTimeOffset.UtcNow;
-            var row = FindUsableToken(token, PasswordResetPurpose, now);
-            var account = row is null ? null : _data.Accounts.FirstOrDefault(item => item.Id == row.AccountId
-                && !item.Deleted && !item.Disabled && item.EmailVerifiedAt is not null
-                && item.NormalizedEmail == row.TargetEmail);
-            if (row is null || account is null)
-            {
-                Save(false);
-                return new(false, "invalid_or_expired_token", "重置链接无效、已使用或已过期");
-            }
-            SetPassword(account, newPassword);
-            account.MustChangePassword = false;
-            ConsumeTokens(account.Id, PasswordResetPurpose, now);
-            revokedIds = RevokeActiveSessions(account.Id, now);
-            AddAdminAudit(ToView(account), "account", "password-reset", account.Username, null, null,
-                "verified-email", new L12AdminAuditContext("password-reset"));
-            Save();
-        }
-        NotifySessionsRevoked(revokedIds);
-        return new(true, "password_reset", "密码已重置，所有设备需要重新登录");
-    }
+        => EmailDisabled();
+
+    private static L12AuthOperationResult EmailDisabled()
+        => new(false, "email_feature_disabled", EmailFeatureDisabledMessage);
 
     public L12AdminPasswordResetView AdminResetPassword(L12AccountView actor, string accountId, string reason,
         L12AdminAuditContext context, bool apply)
@@ -494,35 +254,6 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private (EmailAuthTokenRow Row, string RawToken) IssueEmailToken(string accountId, string purpose,
-        string targetEmail, TimeSpan lifetime)
-    {
-        var now = DateTimeOffset.UtcNow;
-        ConsumeTokens(accountId, purpose, now);
-        var raw = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        var row = new EmailAuthTokenRow
-        {
-            AccountId = accountId,
-            Purpose = purpose,
-            TargetEmail = targetEmail,
-            TokenHash = HashToken(raw),
-            CreatedAt = now,
-            ExpiresAt = now.Add(lifetime),
-        };
-        _data.EmailAuthTokens.Add(row);
-        PruneEmailAuthState(now);
-        return (row, raw);
-    }
-
-    private EmailAuthTokenRow? FindUsableToken(string token, string purpose, DateTimeOffset now)
-    {
-        if (string.IsNullOrWhiteSpace(token) || token.Length > 256) return null;
-        var hash = HashToken(token.Trim());
-        return _data.EmailAuthTokens.FirstOrDefault(row => row.Purpose == purpose
-            && TokenHashesEqual(row.TokenHash, hash)
-            && row.DeliveredAt is not null && row.ConsumedAt is null && row.ExpiresAt > now);
-    }
-
     private void ConsumeTokens(string accountId, string? purpose, DateTimeOffset now)
     {
         foreach (var token in _data.EmailAuthTokens.Where(row => row.AccountId == accountId
@@ -536,77 +267,6 @@ public sealed partial class L12PlatformStore
             && row.ExpiresAt > now).ToArray();
         foreach (var session in sessions) session.RevokedAt = now;
         return sessions.Select(row => row.Id).ToArray();
-    }
-
-    private L12EmailSendResult SendTokenMessage(EmailAuthTokenRow row, string rawToken)
-    {
-        var mode = row.Purpose == EmailVerifyPurpose ? "verify-email" : "reset-password";
-        var link = $"{_emailSender.PublicBaseUrl}/auth/recovery?mode={mode}#token={Uri.EscapeDataString(rawToken)}";
-        var subject = row.Purpose == EmailVerifyPurpose ? "验证十二军团账号邮箱" : "重置十二军团账号密码";
-        var lifetime = row.Purpose == EmailVerifyPurpose ? "24 小时" : "30 分钟";
-        var body = $"请在 {lifetime}内打开以下链接完成操作：\n{link}\n\n如果不是你发起的请求，请忽略此邮件。";
-        return _emailSender.Send(new L12EmailMessage(row.TargetEmail, subject, body, row.Purpose));
-    }
-
-    private void QueueTokenMessage(EmailAuthTokenRow row, string rawToken)
-    {
-        _ = Task.Run(() =>
-        {
-            var delivered = false;
-            try { delivered = SendTokenMessage(row, rawToken).Success; }
-            catch { /* 统一按未送达处理，避免泄露邮箱存在性。 */ }
-            try { FinalizeDelivery(row.Id, delivered); }
-            catch { /* 后台投递不得产生未观察任务异常。 */ }
-        });
-    }
-
-    private void FinalizeDelivery(string tokenId, bool delivered)
-    {
-        lock (_gate)
-        {
-            var row = _data.EmailAuthTokens.FirstOrDefault(item => item.Id == tokenId);
-            if (row is null) return;
-            if (delivered) row.DeliveredAt = DateTimeOffset.UtcNow;
-            else row.ConsumedAt = DateTimeOffset.UtcNow;
-            Save(false);
-        }
-    }
-
-    private bool TryConsumeAuthAction(string action, string subject, int limit, out int retryAfterSeconds)
-    {
-        var now = DateTimeOffset.UtcNow;
-        PruneEmailAuthState(now);
-        var key = HashToken($"{action}|{subject.Trim().ToLowerInvariant()}");
-        var row = _data.AuthActionThrottles.FirstOrDefault(item => item.Key == key);
-        if (row is null)
-        {
-            _data.AuthActionThrottles.Add(new AuthActionThrottleRow
-                { Key = key, Count = 1, WindowStartedAt = now });
-            retryAfterSeconds = 0;
-            return true;
-        }
-        if (now - row.WindowStartedAt >= AuthActionWindow)
-        {
-            row.WindowStartedAt = now;
-            row.Count = 1;
-            retryAfterSeconds = 0;
-            return true;
-        }
-        if (row.Count >= limit)
-        {
-            retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(
-                (row.WindowStartedAt + AuthActionWindow - now).TotalSeconds));
-            return false;
-        }
-        row.Count++;
-        retryAfterSeconds = 0;
-        return true;
-    }
-
-    private void PruneEmailAuthState(DateTimeOffset now)
-    {
-        _data.EmailAuthTokens.RemoveAll(row => row.ExpiresAt < now.AddDays(-7));
-        _data.AuthActionThrottles.RemoveAll(row => row.WindowStartedAt < now.AddHours(-1));
     }
 
     private static string? NormalizeEmail(string? value)
@@ -637,6 +297,4 @@ public sealed partial class L12PlatformStore
 
     internal static string DeletedAccountName(string accountId) => $"deleted-{accountId}";
 
-    private static bool TokenHashesEqual(string first, string second)
-        => CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(first), Encoding.ASCII.GetBytes(second));
 }

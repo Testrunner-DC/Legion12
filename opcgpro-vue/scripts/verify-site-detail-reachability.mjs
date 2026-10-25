@@ -245,30 +245,20 @@ async function testDeckActions(page, port) {
 }
 
 async function testRecovery(page, port) {
-  await openFixture(page, port, '/auth/recovery')
-  const input = page.getByLabel('绑定邮箱')
-  const submit = page.getByRole('button', { name: '发送重置邮件', exact: true })
-  await input.waitFor({ state: 'visible', timeout: 10000 })
-  const inputGeometry = await controlGeometry(input)
-  const submitGeometry = await controlGeometry(submit)
-  await input.fill('qa@example.com')
-  await submit.tap()
-  const notice = page.locator('.notice')
-  await notice.waitFor({ state: 'visible', timeout: 5000 })
-  assert.match(await notice.innerText(), /重置邮件已发送/)
+  await openFixture(page, port, '/auth/recovery?mode=reset-password#token=synthetic-retired-token')
+  await page.getByRole('heading', { name: '邮箱功能已停用', exact: true }).waitFor()
+  assert.equal(await page.locator('.recovery-card input, .recovery-card button, .recovery-card form').count(), 0)
+  assert.equal(await page.evaluate(() => location.hash), '')
   const requests = await page.evaluate(() => window.__qaRequests)
-  assert.equal(requests.filter(item => item.kind === 'forgot').length, 1, 'recovery submit must call forgot API once')
-  const noticeText = await notice.innerText()
+  assert.equal(requests.filter(item => item.kind === 'forgot' || item.kind === 'reset').length, 0)
   const back = page.getByRole('link', { name: /返回登录 \/ 我的/ })
   const backGeometry = await controlGeometry(back)
   await back.tap()
   await page.getByRole('heading', { name: '我的', exact: true }).waitFor({ timeout: 5000 })
   const backRoute = await page.evaluate(() => window.__qaRouter.currentRoute.value.fullPath)
-  const issues = [touchIssue(inputGeometry, '绑定邮箱输入框'), touchIssue(submitGeometry, '发送重置邮件'), touchIssue(backGeometry, '返回登录 / 我的')].filter(Boolean)
-  assert.equal(issues.length, 0, `${issues.join('; ')}; submit feedback=${noticeText}`)
-  return { notice: noticeText, requestCount: requests.length, inputGeometry, submitGeometry, backGeometry, backRoute }
+  assert.equal(touchIssue(backGeometry, '返回登录 / 我的'), null)
+  return { disabled: true, recoveryRequests: 0, fragmentRemoved: true, backGeometry, backRoute }
 }
-
 async function testResponsiveBoundary(page, port, profile, target) {
   if (target === 'product-link') {
     await openFixture(page, port, '/products')

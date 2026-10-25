@@ -2060,7 +2060,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
             var result = _platform.UnbindEmail(authenticated.Account.Id, body.CurrentPassword ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Code, result.Message })
-                : ApiError(request, result.Code, result.Message, StatusCodes.Status400BadRequest);
+                : ApiError(request, result.Code, result.Message,
+                    result.Code == "email_feature_disabled" ? StatusCodes.Status503ServiceUnavailable
+                        : StatusCodes.Status400BadRequest);
         });
         _app.MapPost("/api/auth/email/verify", (HttpRequest request, TokenRequest body) =>
         {
