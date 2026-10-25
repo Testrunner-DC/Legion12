@@ -68,7 +68,7 @@ export const router = createRouter({
     { path: '/friends', redirect: '/battle/friends' },
     { path: '/rankings', redirect: '/battle/rankings' },
     { path: '/records', redirect: '/battle/records' },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/l12/site/NotFoundPage.vue') },
   ],
 })
 

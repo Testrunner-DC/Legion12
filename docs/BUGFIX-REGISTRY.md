@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-G5-NOT-FOUND｜未知网址明确提示，本地接受未部署
+
+- 人类已选择未知地址显示“页面不存在”并可返回主页。只替换router最终catch-all，不重排已有路由、旧入口redirect、分享参数或登录/管理员guard；新普通页沿SiteShell深色黑体，不读/回显任意URL，不新增认证请求，也不假称服务器HTTP404已配置。
+- 真实router源码编译/执行的首RED证明未知地址原name为undefined而非not-found，最终29断言通过：未知/疑似admin未知、query/hash保留但不回显、六旧redirect、资讯/牌库分享和认证/管理员正反控。具名专项加入原build入口；Main读完整diff。独立旧管理员合同另有4项失败，实际同脚本HEAD对照完全同，证据另存/G6待核，不删断言或冒本批已修。最终61受影响前端命令、完整类型/双Vite通过。
+- 最终真实正式静态产物在1440/390/320三尺寸、公开与疑似admin未知共6场通过，零脚本错误；参数不回显、无横溢、44px返回入口与键盘回主页均验，Main看390图。不拿本地合成浏览器冒线上/真机/真实HTTP404证明。唯一stage-goals-20261025/g5-main-acceptance.json绑定4叶和RED/实际路由/浏览器原件；两服/维护/业务数据/线上关单不动。
+
 ## FIX-20261025-G3-DIALOG-READABILITY｜共享焦点与初始缩放，本地接受未部署
 
 - F04沿既有bugFeedbackEntry和Settings生命周期共享初始聚焦、首尾Tab/Shift+Tab、Escape、关闭后归还；SiteShell更新日志用同一机制，header/sidebar/main在弹框期间inert，保原设置→反馈交接，不加第二套模态状态。F05仅把index初始meta对齐App已有普通页可缩放设置，不改牌桌/编辑器局部逻辑横画布手势。
