@@ -587,6 +587,22 @@ const api = {
   async playNextMatchEntrant() {
     await stageAndPlayOpponent(nextMatchEntrant, 1, 1, 'play:next-match-entrant')
   },
+  applyAuthoritySnapshot(snapshot: GameState) {
+    const next = structuredClone(snapshot)
+    Object.assign(game, next)
+    if (interactive) {
+      Object.assign(l12State, {
+        game,
+        status:'online',
+        recoveryPhase:'snapshot-acknowledged',
+        pendingAction:false,
+        spectating:false,
+        observerView:'player',
+        gmEnabled:false,
+        refereeControlsEnabled:false,
+      })
+    }
+  },
   presentationSnapshot() {
     return {
       busy:presentationBusy.value,

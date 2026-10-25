@@ -75,13 +75,19 @@ const owner=value=>{
 }
 
 // Preparation is tied to reservation order, independent of watcher order.
-const ownerCoordinator=createPresentationSequenceCoordinator()
+const ownership=[]
+const ownerCoordinator=createPresentationSequenceCoordinator(undefined,
+  (visualKey,owned)=>ownership.push(`${visualKey}:${owned}`))
 const movementReservation=ownerCoordinator.reserve(50,20,{visualKey:'same-card'})
 const stateReservation=ownerCoordinator.reserve(50,30,{visualKey:'same-card'})
 const movementOwner=owner('movement')
 const stateOwner=owner('state')
 stateReservation.prepareVisualOwner(stateOwner)
 movementReservation.prepareVisualOwner(movementOwner)
+assert.equal(ownerCoordinator.ownsVisualKey('same-card'),true,
+  'the first prepared holder publishes exact-instance visual ownership')
+assert.deepEqual(ownership,['same-card:true'],
+  'one visual key publishes one continuous ownership interval')
 assert.deepEqual(ownerLog.slice(-2),['state:hide:0','movement:show:1'],
   'a later prepared holder cannot preempt the earlier reservation')
 const movementReleasePromise=movementReservation.waitUntilGranted()
@@ -93,9 +99,15 @@ movementRelease(true)
 assert.deepEqual(ownerLog.slice(-2),['state:show:2','movement:dispose:1'],
   'handoff acquires the successor lease before disposing the current owner')
 assert.equal(authorityLeaseCount,1,'handoff never exposes the authority between ordered visual owners')
+assert.deepEqual(ownership,['same-card:true'],
+  'same-key handoff does not publish a false ownership gap')
 const stateRelease=await stateReleasePromise
 stateRelease(true)
 assert.equal(authorityLeaseCount,0,'the final owner releases every authority lease')
+assert.equal(ownerCoordinator.ownsVisualKey('same-card'),false,
+  'terminal release clears exact-instance visual ownership')
+assert.deepEqual(ownership,['same-card:true','same-card:false'],
+  'terminal release closes the continuous ownership interval once')
 
 // Paused inline choices keep the previous pixels in a static, pointer-
 // transparent holder. The actual GameBoard click test separately proves that
@@ -227,4 +239,4 @@ assert.equal(authoritativeCardVisibilityLeaseCount(discardedTarget),0,
 assert.equal(discardedTarget.style.visibility,'',
   'a discarded successor restores final authority visibility')
 
-console.log('Presentation sequence coordinator passed: 36/36 assertions')
+console.log('Presentation sequence coordinator passed: 41/41 assertions')

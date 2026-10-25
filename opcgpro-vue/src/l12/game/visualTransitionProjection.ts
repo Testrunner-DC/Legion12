@@ -2,6 +2,18 @@ import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
 
 export type VisualZone = 'hand' | 'library' | 'field' | 'graveyard' | 'relic' | 'master' | 'center' | 'disaster' | 'resolving' | 'attached'
 
+// Presentation only: use the public action-time value, never printed power or
+// a later field snapshot. Cap physical displacement without extending latency.
+export function publicBattleMotionTroops(card: Pick<Card, 'hidden' | 'troops'> | undefined) {
+  return card && !card.hidden && typeof card.troops === 'number' && Number.isFinite(card.troops)
+    ? Math.max(0, card.troops) : undefined
+}
+
+export function battleMotionStrength(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.sqrt(Math.min(value, 10000) / 10000) : 0
+}
+
 export function movementTerminalTapped(to: VisualZone, eventCard: Pick<Card, 'instanceId' | 'tapped'> | undefined,
   publicPlacement: ActionEvent['playerPublicPlacement'], destinationTapped: boolean) {
   // AddEvent stores an action-time Card clone. A later authority revision can
@@ -343,6 +355,7 @@ export type CardStateTransitionClaim = {
   orderingSequence: number
   presentationFactSequence?: number
   attackSequence?: number
+  attackTroops?: number
   attackTargetInstanceId?: string
   attackTargetPlayerIndex?: number
 }
@@ -383,6 +396,7 @@ export function claimCardStateTransitions(state: CardStateClaimState, revision: 
     attack = pendingAttacks.get(change.instanceId)) => (
     !change.fromTapped && change.toTapped && attack ? {
       attackSequence: attack.sequence,
+      attackTroops: publicBattleMotionTroops(attack.cards?.[0]),
       attackTargetInstanceId: attack.cards?.[1]?.instanceId,
       attackTargetPlayerIndex: attack.playerIndex === undefined
         ? undefined : 1 - attack.playerIndex,

@@ -26,7 +26,10 @@ type PendingPresentation = {
 
 export type PresentationSequenceCoordinator = ReturnType<typeof createPresentationSequenceCoordinator>
 
-export function createPresentationSequenceCoordinator(onBusyChange?: (busy: boolean) => void) {
+export function createPresentationSequenceCoordinator(
+  onBusyChange?: (busy: boolean) => void,
+  onVisualOwnershipChange?: (visualKey: string, owned: boolean) => void,
+) {
   const pending = new Set<PendingPresentation>()
   const entryMovementTransactions = new Set<string>()
   const presentationFacts = new Set<number>()
@@ -58,6 +61,7 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
       else previous.owner.hide()
     }
     activeVisualOwners.set(visualKey, { item, owner })
+    if (!previous) onVisualOwnershipChange?.(visualKey, true)
   }
 
   const settleReleasedVisualOwner = (visualKey: string) => {
@@ -71,6 +75,7 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
     if (successor?.visualOwner) handoffVisualOwner(successor, true)
     else if (!successor) {
       activeVisualOwners.delete(visualKey)
+      onVisualOwnershipChange?.(visualKey, false)
       current.owner.dispose()
     }
   }
@@ -219,6 +224,8 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
 
   const ownsPresentationFact = (sequence: number) => presentationFacts.has(sequence)
 
+  const ownsVisualKey = (visualKey: string) => activeVisualOwners.has(visualKey)
+
   const clearPresentationFacts = () => presentationFacts.clear()
 
   const reset = () => {
@@ -226,12 +233,14 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
     for (const item of pending) if (item.visualOwner) owners.add(item.visualOwner)
     if (active?.visualOwner) owners.add(active.visualOwner)
     for (const { owner } of activeVisualOwners.values()) owners.add(owner)
+    const visualKeys = [...activeVisualOwners.keys()]
     for (const item of pending) item.cancelled = true
     pending.clear()
     entryMovementTransactions.clear()
     presentationFacts.clear()
     for (const owner of owners) owner.dispose()
     activeVisualOwners.clear()
+    for (const visualKey of visualKeys) onVisualOwnershipChange?.(visualKey, false)
     active = null
     notifyBusy()
   }
@@ -243,6 +252,7 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
     clearEntryMovementTransactions,
     registerPresentationFact,
     ownsPresentationFact,
+    ownsVisualKey,
     clearPresentationFacts,
     reset,
   }

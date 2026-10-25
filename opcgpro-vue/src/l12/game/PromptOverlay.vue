@@ -32,6 +32,7 @@ const emit = defineEmits<{
   mulliganConfirm: []
   mulliganKeepAll: []
   focusCard: [card: Card]
+  autoFocusCard: [card: Card | null]
   minimizedChange: [minimized: boolean]
   responseTargetsChange: [ids: string[]]
 }>()
@@ -116,6 +117,7 @@ const diceAnimationReadyToSettle = ref(false)
 const openingIntroSkipped = ref(false)
 const initiativeResolutionMessage = ref('')
 const openingStage = ref<HTMLElement | null>(null)
+const openingIntroDurationMs = 1600
 const masterTargetOffsets = ref<Record<number, { x: number; y: number; scale: number }>>({})
 let diceTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
@@ -188,7 +190,7 @@ function startInitiativeDice() {
   diceAnimationReadyToSettle.value = false
   openingIntroSkipped.value = false
   syncMasterTargets()
-  const duration = l12AnimationDuration(1250)
+  const duration = l12AnimationDuration(openingIntroDurationMs)
   if (duration <= 0) {
     openingIntroSkipped.value = true
     diceAnimationReadyToSettle.value = true
@@ -307,6 +309,7 @@ watch(() => props.game.initiativeRolls.join(','), () => {
   else if (diceSettled.value && hasAuthoritativeInitiativeRolls()) animatedRolls.value = [...props.game.initiativeRolls]
 })
 onBeforeUnmount(() => {
+  emit('autoFocusCard', null)
   stopInitiativeDice()
   initiativeLifecycle.dispose()
   if (autoCloseTimer) clearTimeout(autoCloseTimer)
@@ -555,11 +558,9 @@ function cardObjectFor(id: string): Card | null {
     summonRound: 0,
   }
 }
-watch(() => `${prompt.value?.promptId ?? ''}:${prompt.value?.data?.sourceInstanceId ?? ''}`, () => {
+watch(() => `${prompt.value?.promptId ?? ''}:${prompt.value?.data?.sourceInstanceId ?? ''}:${props.game.revision}`, () => {
   const sourceInstanceId = prompt.value?.data?.sourceInstanceId
-  if (!sourceInstanceId) return
-  const source = cardObjectFor(sourceInstanceId)
-  if (source) emit('focusCard', source)
+  emit('autoFocusCard', sourceInstanceId ? cardObjectFor(sourceInstanceId) ?? null : null)
 }, { immediate: true })
 function focusChoice(id: string) {
   hoveredChoice.value = id
@@ -994,6 +995,10 @@ function waitingText() {
   const waiting = waitingPrompt.value
   if (!waiting) return ''
   const authoritativeSummary = waitingPrompt.value?.waitingSummary?.trim()
+  // Older in-flight setup prompts called every preparation step an optional opening effect.
+  if (authoritativeSummary === '对手正在决定是否执行开局效果'
+    && ['disaster-ban', 'disaster-pick', 'disaster-reveal', 'trial-order'].includes(waiting.kind))
+    return legacyWaitingSummary(waiting)
   if (authoritativeSummary) {
     const action = authoritativeSummary.slice(authoritativeSummary.lastIndexOf('正在'))
     return authoritativeSummary.includes('正在') ? `对手${action}` : legacyWaitingSummary(waiting)
@@ -1007,6 +1012,7 @@ function legacyWaitingSummary(waiting: NonNullable<GameState['waitingPrompt']>) 
     'disaster-pick': '正在选择天灾',
     'disaster-reveal': '正在确认随机公开天灾',
     'disaster-trigger': '正在确认触发的天灾',
+    'trial-order': '正在安排试炼顺序',
     response: '正在选择是否响应',
     'discard-cost': '正在支付响应费用',
     target: '正在选择效果目标', targets: '正在选择效果目标',
@@ -1048,6 +1054,7 @@ function kindLabel() {
       </section>
 
       <section v-else-if="isInitiative" ref="openingStage" class="opening-presentation" data-ui-contract="match-opening-stage"
+        :style="{ '--opening-duration': `${openingIntroDurationMs}ms` }"
         :class="{ settled: diceSettled, skipped: openingIntroSkipped }" role="region" aria-label="对局开场">
         <article v-for="player in initiativePlayers" :key="player.playerIndex" class="opening-master-card"
           :class="{ mine: player.playerIndex === game.you, opponent: player.playerIndex !== game.you }"
@@ -1361,10 +1368,10 @@ function kindLabel() {
 .disaster-preparation-history{grid-template-columns:minmax(260px,.8fr) minmax(420px,1.2fr)}.disaster-preparation-history button small{display:block;width:100%;overflow:hidden;color:#9ca6a1;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center;text-overflow:ellipsis;white-space:nowrap}.disaster-preparation-history .chosen button small{color:#78d1a6}
 @media(max-width:700px){.disaster-preparation-history{grid-template-columns:1fr;max-height:260px;overflow:auto}.disaster-preparation-history>section>div{min-height:68px}.disaster-preparation-history button{width:96px;min-width:96px}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:86px}}
 .opening-presentation{position:relative;width:100%;height:100%;isolation:isolate;overflow:hidden;color:#fff;pointer-events:none}
-.opening-master-card{position:absolute;z-index:4;left:50%;top:47%;display:grid;width:clamp(220px,24vw,340px);justify-items:center;filter:drop-shadow(0 24px 25px rgba(0,0,0,.82)) drop-shadow(0 0 24px var(--opening-faction-color,#76dce3));transform-origin:center;animation:opening-master-sequence calc(1250ms * var(--l12-animation-scale,1)) cubic-bezier(.2,.75,.2,1) both;pointer-events:none}
-.opening-master-card::before{position:absolute;z-index:0;inset:8% -13%;background:radial-gradient(ellipse at center,var(--opening-faction-color,#76dce3) 0%,transparent 68%);content:"";filter:blur(22px);opacity:.42}.opening-master-card :deep(.l12-card-image){position:relative;z-index:1;width:100%;height:auto;aspect-ratio:5/7}.opening-master-card :deep(.l12-card-image__img){object-fit:contain}.opening-versus-player{position:absolute;z-index:8;left:50%;display:grid;max-width:min(360px,38vw);justify-items:center;padding:3px 16px;background:linear-gradient(90deg,transparent,rgba(3,7,8,.88) 18%,rgba(3,7,8,.88) 82%,transparent);text-align:center;text-shadow:0 3px 9px #000;transform:translate(-50%,-50%);animation:opening-versus-sequence calc(1250ms * var(--l12-animation-scale,1)) ease both;pointer-events:none}.opening-versus-player.opponent{top:calc(43% - clamp(88px,9vw,126px))}.opening-versus-player.mine{top:calc(43% + clamp(92px,10vw,138px))}.opening-versus-player small{color:#76dce3;font-size:max(15px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.16em}.opening-versus-player strong{max-width:100%;overflow:hidden;color:#fff;font-size:max(18px,var(--l12-board-copy,13px));text-overflow:ellipsis;white-space:nowrap}
-.opening-versus{position:absolute;z-index:7;left:50%;top:43%;color:#fff2c7;font-size:clamp(48px,6.4vw,92px);font-weight:900;letter-spacing:.2em;text-shadow:0 3px 0 #201707,0 0 22px rgba(228,189,88,.78),0 12px 28px #000;transform:translate(-50%,-50%);animation:opening-versus-sequence calc(1250ms * var(--l12-animation-scale,1)) ease both;pointer-events:none}
-.opening-dice-row{position:absolute;z-index:8;left:50%;top:41%;display:grid;width:min(820px,86vw);grid-template-columns:1fr 1fr;gap:clamp(180px,31vw,470px);transform:translate(-50%,-50%);animation:opening-dice-enter calc(1250ms * var(--l12-animation-scale,1)) ease both}.opening-die{display:grid;justify-items:center;padding:14px 18px;color:#fff;text-shadow:0 5px 18px #000}.opening-die small{color:#e4ebe7;font-size:max(16px,var(--l12-board-copy,13px));font-weight:900}.opening-die b{font-size:clamp(88px,12vw,156px);line-height:.88;filter:drop-shadow(0 10px 18px rgba(0,0,0,.72));animation:dice-shake calc(180ms * var(--l12-animation-scale,1)) infinite alternate}.opening-die em{margin-top:7px;padding:4px 11px;border:1px solid #8c7650;background:rgba(7,10,11,.9);color:#f4d778;font-size:max(15px,var(--l12-board-copy,13px));font-style:normal;font-weight:900}.opening-die.winner b{color:#fff2c7;filter:drop-shadow(0 0 18px rgba(228,189,88,.78)) drop-shadow(0 10px 18px rgba(0,0,0,.72))}.opening-presentation.settled .opening-die b{animation:dice-land calc(320ms * var(--l12-animation-scale,1)) ease-out}
+.opening-master-card{position:absolute;z-index:4;left:50%;top:47%;display:grid;width:clamp(220px,24vw,340px);justify-items:center;filter:drop-shadow(0 24px 25px rgba(0,0,0,.82)) drop-shadow(0 0 24px var(--opening-faction-color,#76dce3));transform-origin:center;animation:opening-master-sequence calc(var(--opening-duration) * var(--l12-animation-scale,1)) cubic-bezier(.2,.75,.2,1) both;pointer-events:none}
+.opening-master-card::before{position:absolute;z-index:0;inset:8% -13%;background:radial-gradient(ellipse at center,var(--opening-faction-color,#76dce3) 0%,transparent 68%);content:"";filter:blur(22px);opacity:.42}.opening-master-card :deep(.l12-card-image){position:relative;z-index:1;width:100%;height:auto;aspect-ratio:5/7}.opening-master-card :deep(.l12-card-image__img){object-fit:contain}.opening-versus-player{position:absolute;z-index:8;left:50%;display:grid;max-width:min(360px,38vw);justify-items:center;padding:3px 16px;background:linear-gradient(90deg,transparent,rgba(3,7,8,.88) 18%,rgba(3,7,8,.88) 82%,transparent);text-align:center;text-shadow:0 3px 9px #000;transform:translate(-50%,-50%);animation:opening-versus-sequence calc(var(--opening-duration) * var(--l12-animation-scale,1)) ease both;pointer-events:none}.opening-versus-player.opponent{top:calc(43% - clamp(88px,9vw,126px))}.opening-versus-player.mine{top:calc(43% + clamp(92px,10vw,138px))}.opening-versus-player small{color:#76dce3;font-size:max(15px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.16em}.opening-versus-player strong{max-width:100%;overflow:hidden;color:#fff;font-size:max(18px,var(--l12-board-copy,13px));text-overflow:ellipsis;white-space:nowrap}
+.opening-versus{position:absolute;z-index:7;left:50%;top:43%;color:#fff2c7;font-size:clamp(48px,6.4vw,92px);font-weight:900;letter-spacing:.2em;text-shadow:0 3px 0 #201707,0 0 22px rgba(228,189,88,.78),0 12px 28px #000;transform:translate(-50%,-50%);animation:opening-versus-sequence calc(var(--opening-duration) * var(--l12-animation-scale,1)) ease both;pointer-events:none}
+.opening-dice-row{position:absolute;z-index:8;left:50%;top:41%;display:grid;width:min(820px,86vw);grid-template-columns:1fr 1fr;gap:clamp(180px,31vw,470px);transform:translate(-50%,-50%);animation:opening-dice-enter calc(var(--opening-duration) * var(--l12-animation-scale,1)) ease both}.opening-die{display:grid;justify-items:center;padding:14px 18px;color:#fff;text-shadow:0 5px 18px #000}.opening-die small{color:#e4ebe7;font-size:max(16px,var(--l12-board-copy,13px));font-weight:900}.opening-die b{font-size:clamp(88px,12vw,156px);line-height:.88;filter:drop-shadow(0 10px 18px rgba(0,0,0,.72));animation:dice-shake calc(180ms * var(--l12-animation-scale,1)) infinite alternate}.opening-die em{margin-top:7px;padding:4px 11px;border:1px solid #8c7650;background:rgba(7,10,11,.9);color:#f4d778;font-size:max(15px,var(--l12-board-copy,13px));font-style:normal;font-weight:900}.opening-die.winner b{color:#fff2c7;filter:drop-shadow(0 0 18px rgba(228,189,88,.78)) drop-shadow(0 10px 18px rgba(0,0,0,.72))}.opening-presentation.settled .opening-die b{animation:dice-land calc(320ms * var(--l12-animation-scale,1)) ease-out}
 .opening-action{position:absolute;z-index:10;left:50%;bottom:clamp(18px,8vh,72px);display:grid;min-width:min(420px,calc(100vw - 32px));justify-items:center;gap:5px;text-align:center;text-shadow:0 3px 9px #000;transform:translateX(-50%);pointer-events:auto}.opening-action>strong{color:#fff2c7;font-size:max(20px,var(--l12-board-copy,13px));font-weight:900}.opening-action>span{color:#d5ddd8;font-size:var(--l12-board-copy,13px);font-weight:800}.opening-action>div{display:grid;width:min(420px,calc(100vw - 32px));grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}.opening-action button,.mulligan-stage footer button{box-sizing:border-box;min-height:48px;padding:9px 18px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:max(16px,var(--l12-board-copy,13px));font-weight:900}.opening-action button:hover,.opening-action button:focus-visible,.mulligan-stage footer button:hover,.mulligan-stage footer button:focus-visible{border-color:#70d7df;background:#174e54}.opening-action button:disabled,.mulligan-stage footer button:disabled{opacity:.48}
 .initiative-skip{position:absolute;z-index:12;right:14px;bottom:14px;box-sizing:border-box;min-width:96px;min-height:44px;padding:7px 12px;border:1px solid #7e8985;background:#111718;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}.initiative-skip:hover,.initiative-skip:focus-visible{border-color:#70d7df;background:#174e54}
 .opening-presentation.settled .opening-master-card,.opening-presentation.skipped .opening-master-card{opacity:1;transform:translate3d(calc(-50% + var(--opening-side-x)),calc(-50% + var(--opening-side-y)),0) rotateZ(0) scale(1);animation:none}.opening-presentation.settled .opening-versus,.opening-presentation.settled .opening-versus-player,.opening-presentation.skipped .opening-versus,.opening-presentation.skipped .opening-versus-player{display:none}.opening-presentation.settled .opening-dice-row,.opening-presentation.skipped .opening-dice-row{opacity:1;animation:none}

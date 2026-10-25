@@ -32,9 +32,11 @@ assert.match(script, /function settleInitiativeDice\(\) \{\s*if \(!hasAuthoritat
   'skip must never settle a temporary random face as the match result')
 assert.match(script, /function skipOpeningIntro\(\)[\s\S]*openingIntroSkipped\.value = true[\s\S]*diceAnimationReadyToSettle\.value = true[\s\S]*settleInitiativeDice\(\)/,
   'skip must accelerate only local presentation and still consume the authoritative result')
-assert.match(script, /l12AnimationDuration\(1250\)/,
-  'the accepted 1.25 second standard dice cadence must consume the existing fast/off preference')
-assert.match(script, /const duration = l12AnimationDuration\(1250\)[\s\S]*duration <= 0[\s\S]*diceAnimationReadyToSettle\.value = true[\s\S]*settleInitiativeDice\(\)/,
+assert.match(script, /const openingIntroDurationMs = 1600/,
+  'the slightly longer standard opening must have one explicit duration source')
+assert.match(template, /'--opening-duration': `\$\{openingIntroDurationMs\}ms`/)
+assert.match(style, /calc\(var\(--opening-duration\) \* var\(--l12-animation-scale,1\)\)/)
+assert.match(script, /const duration = l12AnimationDuration\(openingIntroDurationMs\)[\s\S]*duration <= 0[\s\S]*diceAnimationReadyToSettle\.value = true[\s\S]*settleInitiativeDice\(\)/,
   'only the in-game off setting skips local rolling without fabricating a result')
 assert.doesNotMatch(script, /prefers-reduced-motion/, 'the OS preference must not override standard/fast')
 
@@ -85,6 +87,7 @@ function executeDiceStart(animation, reduced = false) {
     diceAnimationReadyToSettle: { value: false },
     openingIntroSkipped: { value: false },
     animatedRolls: { value: [1, 1] },
+    openingIntroDurationMs: 1600,
     clearInterval() {},
     clearTimeout() {},
     setInterval() { intervalStarts += 1; return 11 },
@@ -98,11 +101,11 @@ function executeDiceStart(animation, reduced = false) {
   return { delay: timeoutDelay ?? 0, intervalStarts, settles }
 }
 
-assert.deepEqual(executeDiceStart('standard'), { delay: 1250, intervalStarts: 1, settles: 0 })
-assert.deepEqual(executeDiceStart('fast'), { delay: 688, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('standard'), { delay: 1600, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('fast'), { delay: 880, intervalStarts: 1, settles: 0 })
 assert.deepEqual(executeDiceStart('off'), { delay: 0, intervalStarts: 0, settles: 1 })
-assert.deepEqual(executeDiceStart('standard', true), { delay: 1250, intervalStarts: 1, settles: 0 })
-assert.deepEqual(executeDiceStart('fast', true), { delay: 688, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('standard', true), { delay: 1600, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('fast', true), { delay: 880, intervalStarts: 1, settles: 0 })
 assert.deepEqual(executeDiceStart('off', true), { delay: 0, intervalStarts: 0, settles: 1 })
 
 function controlledTimers() {

@@ -1,6 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import './test-battle-animation-precedence.mjs'
+import './test-entry-drop-impact.mjs'
+import './test-card-state-3d-handoff-20261025.mjs'
+import './test-combat-3d-ownership-20261025.mjs'
+import './test-prompt-auto-focus-single-owner.mjs'
+import './test-public-reveal-owner-lifecycle.mjs'
+import './test-preparation-waiting-summary.mjs'
 
 const root = process.cwd()
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n?/g, '\n')

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-battle-presentation-handoff",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "对局演出与状态交接",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修正登场选择与效果展示中的重复卡面，同一卡牌在移动、状态变化和效果展示之间保持单一呈现；活跃与休整按已确认的变化衔接，不因暂停或卡图延迟反复切换。",
+      "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/game/presentationSequenceCoordinator.ts", "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue"]
+    },
+    {
+      "category": "battle",
+      "text": "军团登场增加抬升、下坠和落地回弹，高兵力落位带动整个战场震动；进攻动作随兵力增强，受击后坐随实际伤害增强，效果展示补充立体动感。演出卡面不再带额外外框，关闭动画仍保留必要状态交接。",
+      "paths": ["opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue", "opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue", "opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue", "opcgpro-vue/src/l12/game/visualTransitionProjection.ts"]
+    },
+    {
+      "category": "battle",
+      "text": "略微延长标准开场演出，天灾禁选、公开确认和试炼排序的等待说明按实际阶段显示。",
+      "paths": ["opcgpro-vue/src/l12/game/PromptOverlay.vue", "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs"]
+    }
+  ]
+}

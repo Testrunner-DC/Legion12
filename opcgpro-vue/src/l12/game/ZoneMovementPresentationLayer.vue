@@ -51,6 +51,8 @@ type Movement = {
   entryImpactStrength: number
   entryImpactNode?: HTMLElement
   entryImpactAnimation?: Animation
+  entryBoardAnimation?: Animation
+  entryGhostImpactAnimation?: Animation
 }
 
 const props = withDefaults(defineProps<{
@@ -68,6 +70,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ busyChange: [busy: boolean] }>()
 
 const active = ref<Movement | null>(null)
+const presentationRoot = ref<HTMLElement | null>(null)
 const reservationCount = ref(0)
 const queue: Movement[] = []
 const movementClaims = createMovementClaimState()
@@ -527,6 +530,11 @@ function entryTransform(dx: number, dy: number, scaleX: number, scaleY: number, 
   return `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(${rotation}deg)`
 }
 
+function entryDropTransform(dx: number, dy: number, elevation: number, pitch: number,
+  scaleX: number, scaleY: number, rotation: number) {
+  return `perspective(900px) translate3d(${dx}px,${dy}px,${elevation}px) rotateX(${pitch}deg) scale(${scaleX},${scaleY}) rotate(${rotation}deg)`
+}
+
 function legionEntryFrames(movement: Movement): Keyframe[] {
   const source = movement.fromRect
   const target = movement.toRect
@@ -540,21 +548,29 @@ function legionEntryFrames(movement: Movement): Keyframe[] {
   const targetScaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
   const targetScaleY = Math.max(.45, Math.min(1.8, target.height / Math.max(1, source.height)))
   const impact = movement.entryImpactStrength
-  const impactScale = 1 + impact * .06
-  const settleScale = 1 - impact * .015
+  const impactScale = 1 + impact * .08
+  const impactSquash = 1 - impact * .10
+  const lift = 72 + impact * 48
+  const elevation = 80 + impact * 60
   return [
     { transform:entryTransform(0, 0, 1, 1, movement.fromRotation ?? 0), opacity:1, offset:0 },
     { transform:entryTransform(centerDx, centerDy, focusScaleX * .96, focusScaleY * .96, 0), opacity:1,
       easing:'cubic-bezier(.22,1,.36,1)', offset:.30 },
     { transform:entryTransform(centerDx, centerDy, focusScaleX, focusScaleY, 0), opacity:1, offset:.40 },
     { transform:entryTransform(centerDx, centerDy, focusScaleX, focusScaleY, 0), opacity:1,
-      easing:'cubic-bezier(.4,0,1,1)', offset:.55 },
-    { transform:entryTransform(targetDx, targetDy, targetScaleX * impactScale, targetScaleY * impactScale,
-      movement.toRotation ?? 0), opacity:1, offset:.90 },
-    { transform:entryTransform(targetDx, targetDy, targetScaleX * settleScale, targetScaleY * settleScale,
-      movement.toRotation ?? 0), opacity:1, offset:.96 },
+      easing:'cubic-bezier(.2,.8,.3,1)', offset:.55 },
+    { transform:entryDropTransform(targetDx, targetDy - lift, elevation, -22, targetScaleX * 1.08,
+      targetScaleY * 1.08, movement.toRotation ?? 0), opacity:1,
+      filter:'drop-shadow(0 34px 22px rgba(0,0,0,.5))',
+      easing:'cubic-bezier(.55,0,.9,.45)', offset:.65 },
+    { transform:entryDropTransform(targetDx, targetDy, 0, 0, targetScaleX * impactScale,
+      targetScaleY * impactSquash, movement.toRotation ?? 0), opacity:1,
+      filter:'drop-shadow(0 2px 3px rgba(0,0,0,.85))', offset:.78 },
+    { transform:entryDropTransform(targetDx, targetDy - 4 * impact, 6 * impact, -3,
+      targetScaleX * .99, targetScaleY * 1.02, movement.toRotation ?? 0), opacity:1,
+      filter:'drop-shadow(0 6px 6px rgba(0,0,0,.7))', offset:.88 },
     { transform:entryTransform(targetDx, targetDy, targetScaleX, targetScaleY, movement.toRotation ?? 0),
-      opacity:1, offset:1 },
+      filter:'drop-shadow(0 8px 10px rgba(0,0,0,.72))', opacity:1, offset:1 },
   ]
 }
 
@@ -622,8 +638,11 @@ const motionStyle = computed(() => {
     style['--move-center-x'] = `${focus.x}px`
     style['--move-center-y'] = `${focus.y}px`
     style['--move-center-scale'] = `${Math.max(.55, Math.min(1.85, focus.width / 72))}`
-    style['--move-impact-scale'] = `${toScale * (1 + impact * .06)}`
+    style['--move-impact-scale'] = `${toScale * (1 + impact * .08)}`
     style['--move-impact-settle-scale'] = `${toScale * (1 - impact * .015)}`
+    style['--move-drop-lift'] = `${72 + impact * 48}px`
+    style['--move-drop-elevation'] = `${80 + impact * 60}px`
+    style['--move-impact-squash'] = `${toScale * (1 - impact * .10)}`
     style['--entry-impact-strength'] = `${impact}`
     style['--entry-impact-opacity'] = `${.28 + impact * .42}`
     style['--entry-impact-mid-scale'] = `${.68 + impact * .12}`
@@ -654,6 +673,10 @@ function coverTarget(movement: Movement, target: HTMLElement) {
 }
 
 function cleanupEntryImpact(movement: Movement) {
+  movement.entryGhostImpactAnimation?.cancel()
+  movement.entryGhostImpactAnimation = undefined
+  movement.entryBoardAnimation?.cancel()
+  movement.entryBoardAnimation = undefined
   if (movement.entryImpactAnimation) {
     movement.entryImpactAnimation.onfinish = null
     movement.entryImpactAnimation.oncancel = null
@@ -662,6 +685,36 @@ function cleanupEntryImpact(movement: Movement) {
   }
   movement.entryImpactNode?.remove()
   movement.entryImpactNode = undefined
+}
+
+function startEntryBoardImpact(movement: Movement, duration: number) {
+  if (!movement.legionEntry || movement.entrySimplified || movement.entryImpactTier !== 'heavy') return
+  // Animate only this board's inner surface. Individual translate leaves the
+  // stage scale and the mobile landscape rotation untouched.
+  const board = presentationRoot.value?.closest<HTMLElement>('[data-l12-game-board]')
+  if (!board) return
+  movement.entryBoardAnimation?.cancel()
+  const frames: Keyframe[] = [
+    { translate:'0px 0px', offset:0 },
+    { translate:'0px 0px', offset:.76 },
+    { translate:'0px 6px', offset:.78 },
+    { translate:'-16px -8px', offset:.81 },
+    { translate:'14px 6px', offset:.85 },
+    { translate:'-10px -4px', offset:.90 },
+    { translate:'5px 2px', offset:.95 },
+    { translate:'0px 0px', offset:1 },
+  ]
+  const timing: KeyframeAnimationOptions = { duration, easing:'linear', composite:'add' }
+  movement.entryBoardAnimation = board.animate(frames, timing)
+  if (movement.holderWrapper) {
+    // The flying face lives outside the scaled board. Once it touches down it
+    // must share the same camera displacement, not float over a shaking slot.
+    const scale = board.offsetWidth > 0 ? viewportLayoutRect(board).width / board.offsetWidth : 1
+    movement.entryGhostImpactAnimation = movement.holderWrapper.animate(frames.map(frame => ({
+      offset:frame.offset,
+      translate:String(frame.translate).split(' ').map(value => `${Number.parseFloat(value) * scale}px`).join(' '),
+    })), timing)
+  }
 }
 
 function createEntryImpactNode(movement: Movement) {
@@ -679,13 +732,14 @@ function createEntryImpactNode(movement: Movement) {
 }
 
 function startEntryImpact(movement: Movement, duration: number) {
+  startEntryBoardImpact(movement, duration)
   const node = movement.entryImpactNode
   if (!node || movement.entrySimplified || movement.entryImpactStrength <= 0) return
   const strength = movement.entryImpactStrength
   movement.entryImpactAnimation = node.animate([
     { opacity:0, transform:'scale(.45)', offset:0 },
-    { opacity:0, transform:'scale(.45)', offset:.78 },
-    { opacity:.28 + strength * .42, transform:`scale(${.68 + strength * .12})`, offset:.89 },
+    { opacity:0, transform:'scale(.45)', offset:.66 },
+    { opacity:.28 + strength * .42, transform:`scale(${.68 + strength * .12})`, offset:.78 },
     { opacity:0, transform:`scale(${1.08 + strength * .42})`, offset:1 },
   ], { duration, easing:'linear', fill:'forwards' })
 }
@@ -700,9 +754,11 @@ function createMovementHolder(movement: Movement, sourceGhost: HTMLElement) {
   const host = landscapeTeleportElement()
   if (!host || !movementFaceIsDecoded(sourceGhost)) return false
   sourceGhost.classList.remove('tapped', 'selected')
+  sourceGhost.dataset.l12ZoneAnimationFace = 'true'
   Object.assign(sourceGhost.style, {
     width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none',
     visibility: 'visible', pointerEvents: 'none',
+    border: '0', outline: 'none', boxShadow: 'none', background: 'transparent',
   })
   sourceGhost.removeAttribute('id')
   sourceGhost.removeAttribute('data-card-instance-id')
@@ -919,6 +975,7 @@ function showNext() {
       activeEventFaceReady.value = true
       active.value.presentationStarted = true
       registerStartedPresentation(active.value)
+      startEntryBoardImpact(active.value, duration)
       timer = setTimeout(finish, duration + replayDuration(20, 10))
     }).catch(() => finish())
   } catch {
@@ -1158,9 +1215,11 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
         } else if (movement.sourceWasGenericBack && movement.sourceGhost) {
           const preparedFace = movement.sourceGhost.cloneNode(false) as HTMLElement
           preparedFace.classList.remove('card-back', 'tapped', 'selected')
+          preparedFace.dataset.l12ZoneAnimationFace = 'true'
           Object.assign(preparedFace.style, {
             width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none',
             visibility: 'visible', pointerEvents: 'none',
+            border: '0', outline: 'none', boxShadow: 'none', background: 'transparent',
           })
           const image = document.createElement('img')
           image.className = 'l12-card-image'
@@ -1232,7 +1291,7 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 </script>
 
 <template>
-  <span class="zone-movement-presentation-layer" data-ui-contract="zone-movement-reservation-ledger"
+  <span ref="presentationRoot" class="zone-movement-presentation-layer" data-ui-contract="zone-movement-reservation-ledger"
     :data-movement-reservation-count="reservationCount" aria-hidden="true" />
   <Teleport :to="landscapeTeleportTarget()">
     <div v-if="active && !active.sourceGhost" :key="active.key" class="zone-card-movement"
@@ -1264,6 +1323,7 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 
 <style scoped>
 .zone-movement-presentation-layer{display:none!important}
+:global([data-l12-zone-animation-face="true"]::after){display:none!important}
 .zone-card-movement{position:fixed;z-index:2147482988;left:0;top:0;width:0;height:0;pointer-events:none}.moving-card{position:absolute;width:72px;height:101px;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0);animation:l12-zone-card-flight var(--move-duration,.44s) var(--l12-ease-standard) both;filter:drop-shadow(0 8px 10px rgba(0,0,0,.72));will-change:transform,opacity}.moving-card>img,.moving-card :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}.moving-card.concealed>img{object-fit:cover;border:1px solid #d6c488}
 .zone-card-movement:not(.movement-ready) .moving-card{visibility:hidden;animation-play-state:paused}.zone-card-movement.movement-ready .moving-card{visibility:visible;animation-play-state:running}
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
@@ -1280,9 +1340,9 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 :global(.l12-disaster-reveal-holder.movement-ready .disaster-reveal-back){animation:l12-disaster-card-back var(--move-duration,1.04s) linear both!important}
 :global(.l12-disaster-reveal-holder.movement-ready .disaster-reveal-front){animation:l12-disaster-card-front var(--move-duration,1.04s) linear both!important}
 @keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}85%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(calc(var(--move-to-scale) * 1.04)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
-@keyframes l12-legion-entry-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}30%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(calc(var(--move-center-scale) * .96)) rotate(0)}40%,55%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(var(--move-center-scale)) rotate(0)}90%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-scale)) rotate(var(--move-to-rotation,0deg))}96%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-settle-scale)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
+@keyframes l12-legion-entry-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}30%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(calc(var(--move-center-scale) * .96)) rotate(0)}40%,55%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(var(--move-center-scale)) rotate(0)}65%{opacity:1;transform:perspective(900px) translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px - var(--move-drop-lift)),var(--move-drop-elevation)) rotateX(-22deg) scale(calc(var(--move-to-scale) * 1.08)) rotate(var(--move-to-rotation,0deg));filter:drop-shadow(0 34px 22px rgba(0,0,0,.5));animation-timing-function:cubic-bezier(.55,0,.9,.45)}78%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-scale),var(--move-impact-squash)) rotate(var(--move-to-rotation,0deg))}88%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-settle-scale)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
 @keyframes l12-legion-entry-handoff{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
-@keyframes l12-legion-entry-impact{0%,78%{opacity:0;transform:scale(.45)}89%{opacity:var(--entry-impact-opacity,0);transform:scale(var(--entry-impact-mid-scale,.68))}100%{opacity:0;transform:scale(var(--entry-impact-end-scale,1.08))}}
+@keyframes l12-legion-entry-impact{0%,66%{opacity:0;transform:scale(.45)}78%{opacity:var(--entry-impact-opacity,0);transform:scale(var(--entry-impact-mid-scale,.68))}100%{opacity:0;transform:scale(var(--entry-impact-end-scale,1.08))}}
 @keyframes l12-disaster-card-back{0%,42%{opacity:1;transform:rotateY(0)}58%,100%{opacity:0;transform:rotateY(90deg)}}
 @keyframes l12-disaster-card-front{0%,42%{opacity:0;transform:rotateY(-90deg)}58%,100%{opacity:1;transform:rotateY(0)}}
 @media(max-width:700px){.moving-card{width:56px;height:79px}.moving-card small{bottom:-18px;font-size:var(--l12-board-copy,13px)}}

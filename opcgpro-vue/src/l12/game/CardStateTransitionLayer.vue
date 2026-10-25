@@ -5,7 +5,7 @@ import { landscapeTeleportElement, settleElementGeometry, viewportLayoutRect } f
 import type { ActionEvent, PlayerView } from '../types'
 import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
 import { snapshotDecodedAuthoritativeCardVisual } from './authoritativeCardVisualSnapshot'
-import { claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
+import { battleMotionStrength, claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
 import type { PreparedVisualOwner, PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Transition = {
@@ -16,6 +16,7 @@ type Transition = {
   sourceRect: { left: number; top: number; width: number; height: number }
   sourceGhost: HTMLElement
   attackSequence?: number
+  attackTroops?: number
   attackTargetInstanceId?: string
   attackTargetPlayerIndex?: number
   presentationFactSequence?: number
@@ -194,9 +195,11 @@ function createPreparedTransition(transition: Omit<Transition,
   sourceGhost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
   sourceGhost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
   sourceGhost.classList.remove('tapped', 'selected')
+  sourceGhost.dataset.l12CardStateAnimationFace = 'true'
   Object.assign(sourceGhost.style, {
     width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none',
     visibility: 'visible', pointerEvents: 'none',
+    border: '0', outline: 'none', background: 'transparent', boxShadow: 'none', appearance: 'none',
   })
   const holderWrapper = document.createElement('div')
   holderWrapper.className = 'l12-card-state-transition-ghost'
@@ -209,6 +212,7 @@ function createPreparedTransition(transition: Omit<Transition,
     position: 'fixed', left: `${transition.sourceRect.left}px`, top: `${transition.sourceRect.top}px`,
     width: `${transition.sourceRect.width}px`, height: `${transition.sourceRect.height}px`,
     zIndex: '902', pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform',
+    border: '0', outline: 'none', background: 'transparent', boxShadow: 'none',
     filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))', visibility: 'hidden',
     transform: `rotate(${transition.fromTapped ? 90 : 0}deg)`,
   })
@@ -260,7 +264,10 @@ function createPreparedTransition(transition: Omit<Transition,
       && target.getBoundingClientRect().width > 0 && target.getBoundingClientRect().height > 0
     const targetAlreadyFinal = target instanceof HTMLElement
       && target.classList.contains('tapped') === prepared.toTapped
-    if (paintBoundaryPassed && targetVisible && targetAlreadyFinal && !props.paused) {
+    // A paused prompt is not permission to replace an already-painted final
+    // authority with late-decoded old pixels. Prepared pre-paint owners still
+    // retain their original state while waiting for their normal grant.
+    if (paintBoundaryPassed && targetVisible && targetAlreadyFinal) {
       holderWrapper.remove()
       return false
     }
@@ -326,23 +333,41 @@ function beginTransition(transition: Transition) {
       const attackDx = attackRect ? attackRect.left + attackRect.width / 2 - (sourceRect.left + sourceRect.width / 2) : 0
       const attackDy = attackRect ? attackRect.top + attackRect.height / 2 - (sourceRect.top + sourceRect.height / 2) : 0
       const attackDistance = Math.hypot(attackDx, attackDy)
+      const attackStrength = battleMotionStrength(transition.attackTroops)
       // Keep the lunge readable even when opposing slots overlap closely in the
       // compact board projection. This is an impact gesture, so a short pass
       // through the target center is preferable to an imperceptible twitch.
       const attackStep = attackDistance > 0
-        ? Math.min(30, Math.max(12, attackDistance * .1))
+        ? Math.min(32, Math.max(12, attackDistance * .1)) * (.65 + .55 * attackStrength)
         : 0
       const lungeX = attackDistance > 0 ? attackDx / attackDistance * attackStep : 0
       const lungeY = attackDistance > 0 ? attackDy / attackDistance * attackStep : 0
-      const frames = transition.attackSequence === undefined ? [
+      const startPose = `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)`
+      const endPose = `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)`
+      const pose = (x: number, y: number, elevation: number, pitch: number, angle: number, scale: number) =>
+        `perspective(900px) translate3d(${x}px,${y}px,${elevation}px) rotateX(${pitch}deg) rotate(${angle}deg) scale(${scale})`
+      const frames = l12BattleMotionDisabled() ? [
+        { transform: startPose },
+        { transform: endPose },
+      ] : transition.attackSequence === undefined ? [
         { transform: `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)` },
-        { transform: `translate3d(${dx * .72}px,${dy * .72}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .72}deg) scale(.96)`, offset: .72 },
-        { transform: `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)` },
+        { transform: pose(dx * .12, dy * .12 - 8, 18, -8, fromAngle + (toAngle - fromAngle) * .18, 1.018),
+          filter: 'drop-shadow(0 16px 13px rgba(0,0,0,.6))', offset: .24 },
+        { transform: pose(dx * .72, dy * .72 - 5, 24, 6, fromAngle + (toAngle - fromAngle) * .72, 1.015),
+          filter: 'drop-shadow(0 14px 12px rgba(0,0,0,.64))', offset: .65 },
+        { transform: pose(dx, dy, 3, -2, toAngle, .995), offset: .86 },
+        { transform: endPose, filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))' },
       ] : [
-        { transform: `translate3d(0,0,0) rotate(${fromAngle}deg) scale(1)`, easing: 'cubic-bezier(.22,1,.36,1)' },
-        { transform: `translate3d(${lungeX}px,${lungeY}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .5}deg) scale(1.03)`, offset: .38 },
-        { transform: `translate3d(${lungeX}px,${lungeY}px,0) rotate(${fromAngle + (toAngle - fromAngle) * .78}deg) scale(1)`, offset: .56, easing: 'cubic-bezier(.22,1,.36,1)' },
-        { transform: `translate3d(${dx}px,${dy}px,0) rotate(${toAngle}deg) scale(1)` },
+        { transform: startPose, easing: 'cubic-bezier(.22,1,.36,1)' },
+        { transform: pose(-lungeX * .15, -lungeY * .15 - 3 - 5 * attackStrength, 10 + 20 * attackStrength,
+          -5 - 7 * attackStrength, fromAngle + (toAngle - fromAngle) * .12, 1.01 + .02 * attackStrength), offset: .16 },
+        { transform: pose(lungeX, lungeY, 16 + 38 * attackStrength, -6 - 10 * attackStrength,
+          fromAngle + (toAngle - fromAngle) * .5, 1.015 + .035 * attackStrength),
+          filter: 'drop-shadow(0 18px 14px rgba(0,0,0,.62))', offset: .38 },
+        { transform: pose(lungeX * .92, lungeY * .92, 3 + 5 * attackStrength, 3 + 5 * attackStrength,
+          fromAngle + (toAngle - fromAngle) * .78, 1 - .015 * attackStrength), offset: .56, easing: 'cubic-bezier(.22,1,.36,1)' },
+        { transform: pose(dx, dy, 2, -2, toAngle, 1.005), offset: .82 },
+        { transform: endPose, filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))' },
       ]
       // Attack keyframe offsets are transaction phases (lunge, contact, settle),
       // so keep the overall timeline linear and ease within those phases.
@@ -445,6 +470,7 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
       sourceRect: { left: sourceRect.left, top: sourceRect.top, width: sourceRect.width, height: sourceRect.height },
       sourceGhost,
       attackSequence: change.attackSequence,
+      attackTroops: change.attackTroops,
       attackTargetInstanceId: change.attackTargetInstanceId,
       attackTargetPlayerIndex: change.attackTargetPlayerIndex,
       presentationFactSequence: change.presentationFactSequence,
@@ -473,4 +499,5 @@ onBeforeUnmount(() => { cancelActive(); cancelQueuedTransitions() })
 /* This component observes authoritative card state and draws its ghost in the
    shared logical-canvas host. Its local anchor must never become a grid item. */
 .card-state-transition-layer{display:none!important}
+:global([data-l12-card-state-animation-face="true"]::after){display:none!important}
 </style>

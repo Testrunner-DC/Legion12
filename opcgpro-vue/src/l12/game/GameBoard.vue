@@ -4,7 +4,7 @@ import BattleDockPortal from './BattleDockPortal.vue'
 import BattleOverlayPortal from './BattleOverlayPortal.vue'
 import { provideMobileBattleDock } from './mobileBattleDock'
 provideMobileBattleDock()
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type VNode } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase, Prompt } from '../types'
 import { promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
 import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
@@ -43,6 +43,7 @@ import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
 import { useBattleViewportLayout } from './battleViewportLayout'
 import { createPresentationSequenceCoordinator, type PresentationReservation } from './presentationSequenceCoordinator'
 import { createPublicRevealPresentationTracker, findLinkedPublicContinuationParent } from './publicRevealPresentation'
+import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -105,6 +106,8 @@ const mobileTrialAbilitySource = ref<MobileTrialAbilitySource | null>(null)
 const mobileTrialAbilityMinimized = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
+const promptAutoFocusCard = ref<Card | null>(null)
+const inspectorFocusCard = computed(() => focusCard.value ?? promptAutoFocusCard.value)
 const publicAlternateArts = ref<AlternateArt[]>([])
 type BattleDetailCard = DeckCard & { artist?: string }
 function presentationImageIdentity(value?: string | null) {
@@ -123,7 +126,7 @@ function visibleAlternateArt(card: Card) {
       .some(image => presentationImageIdentity(image) === visibleImage))
 }
 const focusDetailCard = computed<BattleDetailCard | null>(() => {
-  const card = focusCard.value
+  const card = inspectorFocusCard.value
   if (!card) return null
   const alternateArt = visibleAlternateArt(card)
   const master = card.cardType === 'master'
@@ -201,6 +204,7 @@ const inspectionLayerMinimized = computed(() => promptMinimized.value || boardCo
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
 type PublicRevealPresentation = {
+  ownerKey: string
   sequence: number
   cards: Card[]
   text: string
@@ -217,6 +221,10 @@ type PublicRevealQueueItem = {
   reservation: PresentationReservation
 }
 const publicReveal = ref<PublicRevealPresentation | null>(null)
+const publicRevealFaces = computed(() => {
+  const reveal = publicReveal.value
+  return reveal ? reveal.cards.map(card => ({ card, ownerKey: reveal.ownerKey })) : []
+})
 const diceReveal = ref<{ sequence: number; values: number[]; animatedValues: number[]; text: string; settled: boolean } | null>(null)
 const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
@@ -232,17 +240,92 @@ const replayZonePresentationBusy = ref(false)
 const replaySequencePresentationBusy = ref(false)
 const replayCombatPresentationBusy = ref(false)
 const combatPresentationBusy = ref(false)
-const cardPresentationCoordinator = createPresentationSequenceCoordinator(busy => { replaySequencePresentationBusy.value = busy })
+const presentationVisualOwnerKeys = ref<ReadonlySet<string>>(new Set())
+function updatePresentationVisualOwnership(instanceId: string, owned: boolean) {
+  const next = new Set(presentationVisualOwnerKeys.value)
+  if (owned) next.add(instanceId)
+  else next.delete(instanceId)
+  presentationVisualOwnerKeys.value = next
+}
+const cardPresentationCoordinator = createPresentationSequenceCoordinator(
+  busy => { replaySequencePresentationBusy.value = busy },
+  updatePresentationVisualOwnership,
+)
 const publicRevealPresentationTracker = createPublicRevealPresentationTracker()
 let publicRevealWaiting = false
 let publicRevealWaitingReservation: PresentationReservation | null = null
-let publicRevealRelease: (() => void) | null = null
+type PublicRevealOwnerLifecycle = {
+  key: string
+  release: () => void
+  mounted: boolean
+  retiring: boolean
+}
+let publicRevealOwner: PublicRevealOwnerLifecycle | null = null
+const publicRevealReadyInstanceIds = ref<ReadonlySet<string>>(new Set())
+const publicRevealAuthorityReleases = new Map<string, Array<() => void>>()
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 let publicRevealTimer: ReturnType<typeof setTimeout> | null = null
 let diceRollTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 let diceHideTimer: ReturnType<typeof setTimeout> | null = null
 let presentationEpoch = 0
+let publicRevealOwnerSerial = 0
+function releasePublicRevealAuthority() {
+  for (const releases of publicRevealAuthorityReleases.values())
+    for (const release of releases) release()
+  publicRevealAuthorityReleases.clear()
+  publicRevealReadyInstanceIds.value = new Set()
+}
+function acquirePublicRevealAuthority(card: Card) {
+  if (publicRevealAuthorityReleases.has(card.instanceId)) return
+  const targets = new Set<HTMLElement>()
+  const selector = `[data-card-instance-id="${CSS.escape(card.instanceId)}"]`
+  document.querySelectorAll(`[data-l12-game-stage] ${selector}, .graveyard-overlay ${selector}`)
+    .forEach(node => { if (node instanceof HTMLElement) targets.add(node) })
+  publicRevealAuthorityReleases.set(card.instanceId,
+    [...targets].map(acquireAuthoritativeCardVisibility))
+}
+function markPublicRevealCardReady(ownerKey: string, card: Card, source: { kind: string }) {
+  if (source.kind === 'placeholder'
+    || publicRevealOwner?.key !== ownerKey || publicRevealOwner.retiring
+    || publicReveal.value?.ownerKey !== ownerKey
+    || !publicReveal.value.cards.some(item => item.instanceId === card.instanceId)) return
+  const ready = new Set(publicRevealReadyInstanceIds.value)
+  ready.add(card.instanceId)
+  publicRevealReadyInstanceIds.value = ready
+  acquirePublicRevealAuthority(card)
+}
+function markPublicRevealMounted(ownerKey: string) {
+  if (publicRevealOwner?.key === ownerKey && !publicRevealOwner.retiring)
+    publicRevealOwner.mounted = true
+}
+function onPublicRevealMounted(vnode: VNode) {
+  const element = vnode.el
+  if (element instanceof HTMLElement)
+    markPublicRevealMounted(element.dataset.presentationOwnerKey ?? '')
+}
+function finalizePublicReveal(ownerKey: string) {
+  const owner = publicRevealOwner
+  if (!owner || owner.key !== ownerKey || !owner.retiring) return
+  releasePublicRevealAuthority()
+  publicRevealOwner = null
+  owner.release()
+  void showNextPublicReveal()
+}
+function finishPublicReveal(element: Element) {
+  const ownerKey = element instanceof HTMLElement ? element.dataset.presentationOwnerKey : undefined
+  if (ownerKey) finalizePublicReveal(ownerKey)
+}
+function retirePublicReveal(ownerKey: string) {
+  const owner = publicRevealOwner
+  if (!owner || owner.key !== ownerKey || owner.retiring) return
+  owner.retiring = true
+  if (publicRevealTimer) clearTimeout(publicRevealTimer)
+  publicRevealTimer = null
+  if (publicReveal.value?.ownerKey === ownerKey) publicReveal.value = null
+  if (owner.mounted) return
+  void nextTick(() => finalizePublicReveal(ownerKey))
+}
 function resetCardPresentations() {
   presentationEpoch++
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
@@ -257,9 +340,11 @@ function resetCardPresentations() {
   diceHideTimer = null
   hiddenRevealCard.value = null
   publicReveal.value = null
+  releasePublicRevealAuthority()
   diceReveal.value = null
-  publicRevealRelease?.()
-  publicRevealRelease = null
+  const revealOwner = publicRevealOwner
+  publicRevealOwner = null
+  revealOwner?.release()
   publicRevealWaitingReservation?.cancel()
   publicRevealWaitingReservation = null
   publicRevealWaiting = false
@@ -679,13 +764,39 @@ const routedPromptModal = computed(() => {
 })
 const visiblePromptModal = computed(() => Boolean(promptOverlayMounted.value
   && routedPromptModal.value && !promptMinimized.value))
+function cardIsVisibleInAuthoritySurface(instanceId: string) {
+  const visibleCard = (card: Card | null | undefined) => card?.instanceId === instanceId && !card.hidden
+  if (visibleCard(props.game.activeDisaster)) return true
+  return props.game.players.some(player => {
+    if (instanceId === `master-${player.playerIndex}` && !player.master.deployedAsLegion) return true
+    if (player.field.flat().some(visibleCard)) return true
+    if ((player.hand ?? []).some(visibleCard)) {
+      const isObservedHand = player.playerIndex === props.game.you
+      const isExplicitlyRevealed = showBothHands.value || l12State.gmEnabled
+      if (isObservedHand || isExplicitlyRevealed) return true
+    }
+    if (visibleCard(player.relic) || (player.extraRelics ?? []).some(visibleCard)) return true
+    if ((player.specialZones?.trials ?? []).some(visibleCard)) return true
+    if (visibleCard(player.libraryTop) || visibleCard(player.graveyard?.at(-1))) return true
+    if (graveyardPlayer.value === player.playerIndex && (player.graveyard ?? []).some(visibleCard)) return true
+    return false
+  })
+}
+const autoInspectorFaceSuppressed = computed(() => {
+  const card = promptAutoFocusCard.value
+  if (!card || focusCard.value) return false
+  return presentationVisualOwnerKeys.value.has(card.instanceId)
+    || publicRevealReadyInstanceIds.value.has(card.instanceId)
+    || cardIsVisibleInAuthoritySurface(card.instanceId)
+})
+const inspectorProvenance = computed(() => focusCard.value ? 'explicit' : promptAutoFocusCard.value ? 'prompt-auto' : 'none')
 watch(activeBoardPromptId, () => { boardControlMinimized.value = false; inlinePromptInfoOpen.value = false })
 watch(() => [props.game.phase, props.game.pendingDefense?.stage, props.game.turnSerial], () => {
   combatDecisionMinimized.value = false
   combatDecisionInfoOpen.value = false
   if (props.game.pendingDefense) playArmed.value = false
 })
-const modalInspectorVisible = computed(() => Boolean(!mobileLandscapeViewport.value && focusCard.value && (
+const modalInspectorVisible = computed(() => Boolean(!mobileLandscapeViewport.value && inspectorFocusCard.value && (
   graveyardPlayer.value !== null || !promptMinimized.value && (
     masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
     || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
@@ -853,7 +964,8 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   promptMinimized.value = false
 })
 async function showNextPublicReveal() {
-  if (publicReveal.value || publicRevealWaiting || !publicRevealQueue.length || modalPresentationPaused.value) return
+  if (publicReveal.value || publicRevealOwner || publicRevealWaiting
+    || !publicRevealQueue.length || modalPresentationPaused.value) return
   const next = publicRevealQueue.shift()
   if (!next) return
   const epoch = presentationEpoch
@@ -867,30 +979,29 @@ async function showNextPublicReveal() {
   }
   publicRevealWaiting = false
   publicRevealWaitingReservation = null
-  publicRevealRelease = release
+  const ownerKey = `${epoch}:${next.sequence}:${++publicRevealOwnerSerial}`
+  publicRevealOwner = { key: ownerKey, release, mounted: false, retiring: false }
   const entryTransactionKey = entryEffectContinuationTransaction(next.event,
     cardPresentationCoordinator.ownsEntryMovementTransaction)
   const presentationFacts = effectResultPresentationFactContinuation(next.event,
     cardPresentationCoordinator.ownsPresentationFact)
   const continuation = Boolean(entryTransactionKey || presentationFacts)
   const linkedPublicContinuation = next.linkedPublicContinuation
+  const kind = linkedPublicContinuation ? 'linked-public-continuation'
+    : presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card'
+  releasePublicRevealAuthority()
   publicReveal.value = {
+    ownerKey,
     sequence: next.sequence,
     cards: continuation || linkedPublicContinuation ? [] : next.cards,
     text: [next.text, ...next.linkedContinuationTexts].join('\n'),
-    kind: linkedPublicContinuation ? 'linked-public-continuation'
-      : presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card',
+    kind,
     transactionKey: presentationFacts ? `facts:${presentationFacts.join(',')}` : entryTransactionKey ?? undefined,
   }
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   const duration = publicRevealDuration(publicReveal.value.kind)
   publicRevealTimer = setTimeout(() => {
-    if (epoch !== presentationEpoch) return
-    publicReveal.value = null
-    publicRevealTimer = null
-    publicRevealRelease?.()
-    publicRevealRelease = null
-    void showNextPublicReveal()
+    if (epoch === presentationEpoch) retirePublicReveal(ownerKey)
   }, duration)
 }
 function publicRevealText(event: ActionEvent) {
@@ -1021,11 +1132,7 @@ watch([modalPresentationPaused, replayZonePresentationBusy], ([modalPaused, zone
   if (modalPaused && !wasModalPaused) {
     // A presentation that was already visible yields permanently to a newly
     // opened modal.  It is never pushed back into the queue for replay.
-    if (publicRevealTimer) clearTimeout(publicRevealTimer)
-    publicRevealTimer = null
-    publicReveal.value = null
-    publicRevealRelease?.()
-    publicRevealRelease = null
+    if (publicRevealOwner) retirePublicReveal(publicRevealOwner.key)
     if (diceRollTimer) clearInterval(diceRollTimer)
     if (diceSettleTimer) clearTimeout(diceSettleTimer)
     if (diceHideTimer) clearTimeout(diceHideTimer)
@@ -1543,11 +1650,11 @@ function statusTexts(card: Card) {
               <div ref="inspectorAnchor" class="card-inspector-anchor" data-ui-contract="selected-card-inspector-anchor">
               <Teleport :to="landscapeTeleportTarget()" :disabled="!modalInspectorVisible">
                 <div class="board-rail inspector-style-scope">
-                <section class="grand-panel card-inspector archive-detail" data-ui-contract="selected-card-inspector" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': focusCard && isHorizontalCardType(focusCard.cardType) }">
+                <section class="grand-panel card-inspector archive-detail" data-ui-contract="selected-card-inspector" :data-inspector-provenance="inspectorProvenance" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': inspectorFocusCard && isHorizontalCardType(inspectorFocusCard.cardType), 'card-inspector-auto-face-suppressed': autoInspectorFaceSuppressed }">
                   <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
-                  <template v-if="focusCard && focusDetailCard">
+                  <template v-if="inspectorFocusCard && focusDetailCard">
                     <CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />
-                    <section v-if="statusTexts(focusCard).length" class="archive-effect battle-card-status"><b>当前状态</b><ul class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul></section>
+                    <section v-if="statusTexts(inspectorFocusCard).length" class="archive-effect battle-card-status"><b>当前状态</b><ul class="inspector-statuses"><li v-for="text in statusTexts(inspectorFocusCard)" :key="text">{{ text }}</li></ul></section>
                   </template>
                   <div v-else class="empty-inspector">悬停或选择卡牌<br/>查看数值</div>
                 </section>
@@ -1628,17 +1735,21 @@ function statusTexts(card: Card) {
               :match-id="game.matchId" :revision="game.revision" :viewer-player-index="game.you"
               :synchronizing="synchronizingAuthoritySnapshot" :paused="modalPresentationPaused" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
-              :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event"
+              :playback-speed="replayPlaybackSpeed" :sequence-coordinator="cardPresentationCoordinator"
+              :paused="modalPresentationPaused" :synchronizing="synchronizingAuthoritySnapshot" :revision="game.revision"
+              @busy-change="replayCombatPresentationBusy = $event"
               @presentation-change="combatPresentationBusy = $event" />
             <Teleport :to="landscapeTeleportTarget()">
-              <Transition name="public-reveal">
-                <div v-if="publicReveal && !visibleBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation"
+              <Transition name="public-reveal" @after-leave="finishPublicReveal">
+                <div v-if="publicReveal && !visibleBoardPromptId" :key="publicReveal.ownerKey" class="public-reveal-animation"
                   :class="{ 'public-reveal-animation--entry-continuation': publicReveal.kind === 'entry-continuation' }"
                   data-ui-contract="public-card-reveal-animation" :data-presentation-kind="publicReveal.kind"
-                  :data-entry-transaction-key="publicReveal.transactionKey">
+                  :data-entry-transaction-key="publicReveal.transactionKey" :data-presentation-owner-key="publicReveal.ownerKey"
+                  @vue:mounted="onPublicRevealMounted">
                   <div v-if="publicReveal.cards.length" class="public-reveal-cards">
-                    <CardImage v-for="card in publicReveal.cards" :key="card.instanceId" :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="detail" eager
-                      :class="{ horizontal: isHorizontalCardType(card.cardType) }" />
+                    <CardImage v-for="entry in publicRevealFaces" :key="`${entry.ownerKey}:${entry.card.instanceId}`" :card-id="entry.card.cardId" :legacy-url="entry.card.imageUrl" :alt="entry.card.name" intent="detail" eager
+                      :class="{ horizontal: isHorizontalCardType(entry.card.cardType), 'public-reveal-card-ready': publicRevealReadyInstanceIds.has(entry.card.instanceId), 'public-reveal-card-pending': !publicRevealReadyInstanceIds.has(entry.card.instanceId) }"
+                      @load="markPublicRevealCardReady(entry.ownerKey, entry.card, $event)" />
                   </div>
                   <strong class="l12-effect-body l12-effect-body--prominent">{{ publicReveal.text }}</strong>
                 </div>
@@ -1913,7 +2024,7 @@ function statusTexts(card: Card) {
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :data-tutorial-action="resourceSelectionPrompt ? 'restore-payment' : undefined" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
       <PromptOverlay v-if="promptOverlayMounted" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport" :passive-wait-target="passiveWaitTarget"
-        @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="freeCommand('mulligan')" @mulligan-keep-all="keepAllMulligan" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
+        @focus-card="focusCard = $event" @auto-focus-card="promptAutoFocusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="freeCommand('mulligan')" @mulligan-keep-all="keepAllMulligan" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
   <SingleCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽湮灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
@@ -1990,7 +2101,10 @@ function statusTexts(card: Card) {
 .left-disaster-row{display:grid;width:100%;grid-template-columns:132px minmax(0,1fr);gap:8px;flex:none}.left-disaster-row>.grand-panel{box-sizing:border-box;width:100%;min-width:0;min-height:178px}.session-disaster-panel{display:grid;align-content:center;justify-items:center;padding:8px!important}.session-disaster-panel h3{width:100%;margin:0 0 8px}.session-disaster-strip{display:grid;width:max-content;grid-template-columns:repeat(2,51.2px);gap:8px}.session-disaster-strip button{width:51.2px;min-width:51.2px;height:51.2px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden,.session-disaster-strip button.unrevealed{border-color:#49504e;filter:grayscale(1) brightness(.58)}.session-disaster-strip button.revealed{border-color:#69716f;filter:grayscale(.85) brightness(.58)}.session-disaster-strip button.resolved{border-color:#76508f;box-shadow:0 0 8px rgba(133,75,174,.28);filter:grayscale(.35) brightness(.64) saturate(.82)}.session-disaster-strip button.active{border-color:#bc6cff;box-shadow:0 0 13px rgba(187,87,255,.72),inset 0 0 0 1px rgba(231,202,255,.42);filter:none}.session-disaster-strip img,.session-disaster-strip .l12-card-image{width:100%;height:100%;border-radius:50%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#d49aff;box-shadow:0 0 11px rgba(190,102,255,.52)}.left-disaster-row>.current-disaster-panel{display:grid;place-items:center;padding:10px!important}
 .session-disaster-panel h3{text-align:center}
 .card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}.card-inspector :deep(.archive-detail-image){width:207px;max-width:100%}.card-inspector :deep(.archive-detail-image.horizontal){width:250px}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}
+.card-inspector-auto-face-suppressed :deep(.archive-detail-image){display:none!important}
 .inspector-style-scope{display:contents!important}
+.public-reveal-animation,.public-reveal-cards{border:0!important;outline:0!important;background:transparent!important;box-shadow:none!important}.public-reveal-cards{perspective:900px}.public-reveal-cards .l12-card-image{border:0!important;outline:0!important;background:transparent!important;box-shadow:none!important;transform-style:preserve-3d;animation:l12-public-card-lift calc(720ms * var(--l12-animation-scale,1)) cubic-bezier(.18,.82,.2,1) both}.public-reveal-cards :deep(.l12-card-image__img),.public-reveal-cards :deep(.l12-card-image__resolving){background:transparent!important}@keyframes l12-public-card-lift{0%{transform:translate3d(0,18px,0) rotateX(7deg) scale(.94)}55%{transform:translate3d(0,-7px,18px) rotateX(-2deg) scale(1.035)}100%{transform:translate3d(0,0,0) rotateX(0) scale(1)}}:global(html[data-l12-animation="off"] .public-reveal-cards .l12-card-image){animation:none!important;transform:none!important}
+.public-reveal-cards .public-reveal-card-pending{visibility:hidden!important;animation:none!important}.public-reveal-cards .public-reveal-card-ready{visibility:visible}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-copy,13px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}

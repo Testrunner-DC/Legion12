@@ -389,7 +389,8 @@ const contracts = [
   [zoneMovementLayer.includes('prepareMovementImage') && zoneMovementLayer.includes('resolveCardAssetUrls') && zoneMovementLayer.includes('preparedImageUrl') && zoneMovementLayer.includes(".filter(url => url !== CARD_IMAGE_PLACEHOLDER)"), '无来源实体的区域移动必须在动画前预解码真实卡图，主牌库卡背只能作为全部候选失败后的最终兜底'],
   [board.includes("import CardStateTransitionLayer from './CardStateTransitionLayer.vue'") && board.includes('<CardStateTransitionLayer :players="game.players" :events="game.recentEvents ?? []"')
     && cardStateTransitionLayer.includes("holderWrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
-    && cardStateTransitionLayer.includes('attackTargetElement(transition)') && cardStateTransitionLayer.includes('const frames = transition.attackSequence === undefined ? [')
+    && cardStateTransitionLayer.includes('attackTargetElement(transition)') && cardStateTransitionLayer.includes('const frames = l12BattleMotionDisabled() ? [')
+    && cardStateTransitionLayer.includes(': transition.attackSequence === undefined ? [')
     && board.includes("import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'") && board.includes('<CombatMotionPresentationLayer :events="game.recentEvents ?? []"')
     && !combatMotionLayer.includes("event.type === 'attack'") && combatMotionLayer.includes("event.type === 'combat' || isDefeatLeave(event)")
     && combatMotionLayer.includes('fieldSnapshots') && combatMotionLayer.includes('defeatedInstances')

@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## UI-20261025-VISUAL-OWNER-PHYSICS｜单一卡面、状态时机与兵力强弱演出
+
+- 人类连续明确：登场选择不可出现多个视觉副本；状态只在确定时机切换；落位必须有三维下坠接触、高兵力震动整个战场；效果/进攻/受击统一立体动作、动画不要额外UI外框，进攻兵力越高动作越强。只扩P4共享呈现，不改变引擎权威状态、规则、费用、计时、可见性或网络协议。扫描`autoFocusCard|focusCard|publicReveal|prepareVisualOwner|claimCardStateTransitions|combatDamageValue|legionEntryFrames`，覆盖Prompt、GameBoard、Zone、CardState、Combat、coordinator与projection，而非逐卡补丁；打印卡图边框、静态选择框和不同实例保留。
+- 根因/修复：自动来源详情原与移动CANVAS并存（real-galahad 9阶段202自然帧max2）；分开自动/手动provenance并按精确实例owner和公开可见authority抑制自动重复。公开整卡仅真实图像加载后持有，render entry捕获ownerKey、VNode真实key与卸载/未mount淡出分别清理，旧回调不释放新同实例。CardState late decode原在paused豁免下把已paint最终态倒放；去该豁免，保真实两次状态事实，不合并权威事件。共享协调器仍唯一顺序/像素owner。
+- 动作/帧：落位65%抬升、78%加速接触压缩、88%回弹；重型仅原阈值触发全战场单独translate，外置ghost随同一尺度震动，取消/终态清理。公开attack快照兵力与确认战斗伤害决定有界幅度，不借印刷兵力、隐藏数值或余血猜伤害；状态380ms/受击280ms不增。确认阵亡920ms消费已解码canvas，不再clone空canvas；存活只动真卡并带可撤销去框marker，最终恢复原transform/静态样式。重入load遗漏进一步实证：原window收不到图片load，改document捕获，仅当前IMG/元素/epoch/非隐藏可更新快照；卸载移监听。无第二队列、第二次攻击或以卡名去重。
+- 回归：CardState原11中6个RED保留，新强度2个RED后13/13；Combat原18中13失败、静持修订及重入/强度/去框边界失败均保，最终24/24。Main自然当前源CardState两档22组/644帧、Combat两档16组/422帧，真实CardTile/decoded像素及唯一owner有效；六档完整GameBoard落位、加拉哈德原9阶段max1、开场标准/fast/off三档过。截图取样和截图完成有时差，PNG不冒峰值；合成夹具不冒服务器ACK/真机/完整原观战链。
+- Main前端标准链失败日志r1/r2保：宿主Python路径缺失、新纯QA未模拟document.removeEventListener；非产品修改后按原精确点续验，r3实际exit0，UI361/动效49/类型双Vite通过，七产品源SHA前后相同。等待阶段改文案新2/2及独立叙事70/70精确同源复用，不重跑未变8415/2462或30＋10。`battle-presentation-20261025-main/main-acceptance.json`唯一证据汇总；本批未部署、未关闭线上Bug。回退同族源/回归/账目，不触业务库或维护。
+
 ## UI-20261025-OPENING-FRONT-FACING｜新要求的正视侧列与选择期留存
 
 - 来源区域移动专项01a16f51人类明确“掷骰选择先后手时，双方的主宰应该分列两旁，正常卡面无透视”，Main实读原话，不因前批结束漏排或重复询问授权。P4仅呈现，覆盖旧正负28度方向；真实卡图绑定、双方共享开场、权威dice/chooser/命令/时钟及逻辑横画布保持，不改P0—P3。

@@ -8,6 +8,8 @@ const component = relative => parse(read(relative), { filename: relative }).desc
 const opening = component('src/l12/game/PromptOverlay.vue')
 const movement = component('src/l12/game/ZoneMovementPresentationLayer.vue')
 const state = component('src/l12/game/CardStateTransitionLayer.vue')
+const openingDuration = Number(opening.scriptSetup.content.match(/const openingIntroDurationMs = (\d+)/)?.[1])
+assert.equal(openingDuration, 1600, 'the accepted opening cadence is 1.6 seconds')
 function runtime(source, name, bindings) {
   const ast = ts.createSourceFile('motion.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const node = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)
@@ -27,6 +29,7 @@ for (const systemReduced of [true, false]) for (const mode of ['standard', 'fast
     diceTimer: null, diceSettleTimer: null, diceSettled: { value: false },
     diceAnimationReadyToSettle: { value: false }, openingIntroSkipped: { value: false },
     animatedRolls: { value: [1, 1] }, clearInterval() {}, clearTimeout() {},
+    openingIntroDurationMs: openingDuration,
     setInterval() { intervalStarts++; return 1 }, setTimeout(_fn, ms) { delay = ms; return 2 },
     window: { matchMedia: () => ({ matches: systemReduced }) },
     l12AnimationDuration: duration, l12BattleMotionDisabled: () => mode === 'off',
@@ -35,7 +38,7 @@ for (const systemReduced of [true, false]) for (const mode of ['standard', 'fast
   start()
   equal({ delay, intervalStarts, settled }, mode === 'off'
     ? { delay: 0, intervalStarts: 0, settled: 1 }
-    : { delay: Math.round(1250 * scale), intervalStarts: 1, settled: 0 },
+    : { delay: Math.round(openingDuration * scale), intervalStarts: 1, settled: 0 },
   `Opening must honor ${mode} even when systemReduced=${systemReduced}`)
   const simplified = runtime(movement.scriptSetup.content, 'simplifiedEntryMotion', {
     document: { documentElement: { dataset: { l12Animation: mode } } },

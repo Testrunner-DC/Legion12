@@ -15,6 +15,10 @@ public sealed partial class L12GameEngine
     private enum L12PromptWaitingAction
     {
         SetupDecision,
+        DisasterBan,
+        DisasterPick,
+        DisasterReveal,
+        TrialOrder,
         InitiativeDecision,
         EffectDecision,
         ResponseDecision,
@@ -203,7 +207,7 @@ public sealed partial class L12GameEngine
                 data: WithPromptNarrative(data,
                     new("安排我方试炼", $"你需要为我方的{player.SpecialZones.Trials.Count}张试炼确定本局完成顺序。",
                         "请按计划完成的先后顺序依次选择全部试炼；确认后将以该顺序进行。",
-                        L12PromptWaitingAction.SetupDecision)));
+                        L12PromptWaitingAction.TrialOrder)));
         }
         if (!State.PendingPrompts.Any(item => item.Continuation == "setup-trial-order")) StartMulliganAfterPreparation();
     }
@@ -393,11 +397,12 @@ public sealed partial class L12GameEngine
             "initiative" => "正在选择先攻或后攻",
             "disaster-ban" => "正在禁用天灾",
             "disaster-pick" => "正在选择天灾",
-            "disaster-reveal" or "disaster-trigger" => "正在确认天灾信息",
+            "disaster-reveal" => "正在确认随机公开天灾",
+            "disaster-trigger" => "正在确认天灾信息",
             "response" => "正在决定是否响应",
             "optional" or "option" => "正在决定是否发动效果",
             "slot" => "正在选择战场位置",
-            "trial-order" => "正在完成对局准备",
+            "trial-order" => "正在安排试炼顺序",
             _ when kind.Contains("target", StringComparison.OrdinalIgnoreCase) => "正在选择效果对象",
             _ when kind.Contains("resource", StringComparison.OrdinalIgnoreCase)
                 || kind.Contains("cost", StringComparison.OrdinalIgnoreCase) => "正在选择如何支付费用",
@@ -413,6 +418,10 @@ public sealed partial class L12GameEngine
         var text = action switch
         {
             L12PromptWaitingAction.SetupDecision => "正在决定是否执行开局效果",
+            L12PromptWaitingAction.DisasterBan => "正在禁用天灾",
+            L12PromptWaitingAction.DisasterPick => "正在选择天灾",
+            L12PromptWaitingAction.DisasterReveal => "正在确认随机公开天灾",
+            L12PromptWaitingAction.TrialOrder => "正在安排试炼顺序",
             L12PromptWaitingAction.InitiativeDecision => "正在选择先攻或后攻",
             L12PromptWaitingAction.EffectDecision => "正在决定是否发动效果",
             L12PromptWaitingAction.ResponseDecision => "正在决定是否响应",
@@ -1607,7 +1616,7 @@ public sealed partial class L12GameEngine
                 WithPromptNarrative(data,
                     new("公开天灾", $"准备阶段随机公开了天灾〈{publicCard.Name}〉。",
                         "请确认本次公开结果；双方确认后将继续选择本局天灾。",
-                        L12PromptWaitingAction.SetupDecision));
+                        L12PromptWaitingAction.DisasterReveal));
                 CreatePrompt(first, "disaster-reveal", $"随机公开天灾〈{publicCard.Name}〉", [], 0, 0,
                     "setup-public-confirm", isPrivate: false, data: new Dictionary<string, string>(data));
                 CreatePrompt(second, "disaster-reveal", $"随机公开天灾〈{publicCard.Name}〉", [], 0, 0,
@@ -1643,7 +1652,7 @@ public sealed partial class L12GameEngine
             data: WithPromptNarrative(data,
                 new("禁用天灾", $"{text}，本步骤需要从当前天灾池中禁用1张。",
                     "请选择1张天灾并确认；确认后该天灾会移出本局后续选择。",
-                    L12PromptWaitingAction.SetupDecision, consequences)));
+                    L12PromptWaitingAction.DisasterBan, consequences)));
         ObserveDisasterOffer(prompt);
     }
 
@@ -1676,7 +1685,7 @@ public sealed partial class L12GameEngine
             data: WithPromptNarrative(data,
                 new("选择本局天灾", $"{text}；这些候选只向你展示。",
                     "请选择1张天灾并确认；未选择的本步骤候选也会离开后续候选池。",
-                    L12PromptWaitingAction.SetupDecision, consequences)));
+                    L12PromptWaitingAction.DisasterPick, consequences)));
         ObserveDisasterOffer(prompt);
     }
 

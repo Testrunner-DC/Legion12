@@ -635,11 +635,11 @@ try {
   })
 
   for (const motion of [
-    { key: 'standard', reduced: 'no-preference', expected: [1050, 1550], css: [1150, 1300] },
-    { key: 'fast', reduced: 'no-preference', expected: [520, 920], css: [620, 730] },
+    { key: 'standard', reduced: 'no-preference', expected: [1450, 1950], css: [1550, 1650] },
+    { key: 'fast', reduced: 'no-preference', expected: [700, 1100], css: [850, 930] },
     { key: 'off', reduced: 'no-preference', expected: [0, 180], css: [0, 1] },
-    { key: 'standard', reduced: 'reduce', expected: [1050, 1550], css: [1150, 1300] },
-    { key: 'fast', reduced: 'reduce', expected: [520, 920], css: [620, 730] },
+    { key: 'standard', reduced: 'reduce', expected: [1450, 1950], css: [1550, 1650] },
+    { key: 'fast', reduced: 'reduce', expected: [700, 1100], css: [850, 930] },
     { key: 'off', reduced: 'reduce', expected: [0, 180], css: [0, 1] },
   ]) {
     const name = `motion-${motion.key}-${motion.reduced}`
