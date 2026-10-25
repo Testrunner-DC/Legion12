@@ -36,12 +36,14 @@ function fixture({ mode = 'standard', paused = false, tapped = false } = {}) {
     removeAttribute(name) { this.attributes.delete(name)
       if(name.startsWith('data-'))delete this.dataset[name.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase())] }
     getBoundingClientRect() { return this.rect }
-    closest() { for(let node=this;node;node=node.parentElement)if(node.dataset.cardInstanceId)return node;return null }
+    closest(selector) { if(selector==='.side-opponent')return this.sideOpponent?this:null
+      for(let node=this;node;node=node.parentElement)if(node.dataset.cardInstanceId)return node;return null }
     contains(node) { return node===this || this.children.some(child=>child.contains(node)) }
     querySelectorAll(selector) {
       const descendants=this.children.flatMap(child=>[child,...child.querySelectorAll('*')])
       return selector==='*' ? descendants : descendants.filter(child=>selector==='img' ? child.tagName==='IMG'
-        : selector==='.card-power' ? child.className==='card-power' : false)
+        : selector==='.card-power' ? child.className==='card-power'
+        : selector==='.card-power, .master-health' ? ['card-power','master-health'].includes(child.className) : false)
     }
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null }
     cloneNode() {
@@ -65,9 +67,12 @@ function fixture({ mode = 'standard', paused = false, tapped = false } = {}) {
   function add(id, rested=false) {
     const node=new Element('button');node.dataset.cardInstanceId=id;node.className='card-tile selected'+(rested?' tapped':'')
     node.connected=true;node.style.transform=rested?'rotate(90deg)':'none'
-    const badge=new Element('b');badge.className='card-power';node.append(new Element('img'),badge);live.set(id,node);return node
+    const badge=new Element('b');badge.className='card-power';badge.style.transform='translateX(-50%)'
+    node.append(new Element('img'),badge);live.set(id,node);return node
   }
-  const unit=add('unit',tapped),target=add('target'),grave=new Element();grave.rect={left:500,top:400,width:80,height:100}
+  const unit=add('unit',tapped),target=add('target'),master=add('master-1'),grave=new Element();grave.rect={left:500,top:400,width:80,height:100}
+  master.querySelector('.card-power').remove();master.className='mini-master';master.sideOpponent=true
+  const health=new Element('b');health.className='master-health';health.style.transform='none';master.append(health)
   const props={events:[],matchId:'combat-qa',revision:1,synchronizing:false,paused,playbackSpeed:null}
   const env={console,Map,Set,WeakMap,Promise,HTMLElement:Element,HTMLImageElement:Element,CSS:{escape:value=>value},
     setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout:()=>{},
@@ -104,7 +109,7 @@ function fixture({ mode = 'standard', paused = false, tapped = false } = {}) {
     for(const id of remove){const node=live.get(id);if(node)node.connected=false;live.delete(id)}
   }
   async function settle() {for(let i=0;i<8;i++){animations.filter(item=>item.playState==='running').forEach(item=>item.finish());await advance()}}
-  return {props,state:env.__combat,host,live,unit,target,animations,emitted,advance,apply,settle,add,
+  return {props,state:env.__combat,host,live,unit,target,master,health,animations,emitted,advance,apply,settle,add,
     active:()=>animations.filter(item=>item.playState==='running'),
     pause:async value=>{props.paused=value;changed();await advance()},
     sync:async()=>{props.synchronizing=true;props.revision++;changed();await advance()},
@@ -115,6 +120,8 @@ function fixture({ mode = 'standard', paused = false, tapped = false } = {}) {
 const publicCard=(id,extra={})=>({instanceId:id,cardId:'public',name:'公开军团',tapped:false,hidden:false,...extra})
 const combat=(sequence=1,text='造成 3000 点战斗伤害；防守军团以当前兵力 2000 反击',cards=[publicCard('unit'),publicCard('target')])=>({sequence,type:'combat',playerIndex:0,text,cards})
 const leave=(sequence=2,card=publicCard('target'))=>({sequence,type:'leave',playerIndex:1,text:'公开军团阵亡',cards:[card]})
+const masterHit=(sequence=1,masterDamage=1,outcomeCode='unblocked')=>({sequence,type:'defense',playerIndex:1,
+  text:`对方主宰受到 ${masterDamage} 点伤害`,playerCombat:{eventKind:'defense',outcomeCode,masterDamage},cards:[]})
 const cases=[]
 async function test(name,run){try{await run();cases.push({name,passed:true})}catch(error){cases.push({name,passed:false,error:error.stack})}}
 await test('authority damage parser and non-death leave exclusions remain unchanged',async()=>{
@@ -144,12 +151,51 @@ await test('confirmed damage scales one real recoil without changing its duratio
   for(const damage of [1000,6000,10000]){const f=fixture({tapped:true});try{
     await f.advance();f.apply([combat(1,`进攻无损；造成 ${damage} 点战斗伤害`)]);await f.advance()
     const hit=f.animations.find(item=>item.target===f.target);assert(hit)
-    const mid=hit.frames.find(frame=>frame.offset===.28).transform.match(/translate3d\(0,([-.\d]+)px,([-.\d]+)px\)/)
+    const mid=hit.frames.find(frame=>frame.offset===.30).transform.match(/translate3d\(0,([-.\d]+)px,([-.\d]+)px\)/)
     assert(mid);poses.push([+mid[1],+mid[2]])
     assert.equal(hit.options.duration,280);assert.equal(hit.frames.at(-1).transform,'none');assert.equal(f.host.children.length,0)
     await f.settle()
   }finally{f.dispose()}}
   assert(poses.every((pose,index)=>!index||pose[0]>poses[index-1][0]&&pose[1]>poses[index-1][1]))
+})
+await test('badge brightness preserves each actual DOM anchor at start middle and end',async()=>{
+  const f=fixture();try{
+    await f.advance();f.apply([combat()]);await f.advance()
+    const power=f.unit.querySelector('.card-power')
+    const powerGlow=f.animations.find(item=>item.target===power);assert(powerGlow)
+    assert.deepEqual([...powerGlow.frames].map(frame=>frame.transform),
+      ['translateX(-50%)','translateX(-50%)','translateX(-50%)'])
+    await f.settle();assert.equal(power.style.transform,'translateX(-50%)')
+    f.apply([masterHit(2)]);await f.advance()
+    const healthGlow=f.animations.find(item=>item.target===f.health);assert(healthGlow)
+    assert.deepEqual([...healthGlow.frames].map(frame=>frame.transform),['none','none','none'])
+    await f.settle();assert.equal(f.health.style.transform,'none')
+  }finally{f.dispose()}
+})
+await test('positive unblocked defense damage recoils the real master once for the full 280ms gate',async()=>{
+  const f=fixture();try{await f.advance();f.apply([masterHit()]);await f.advance()
+    const hits=f.animations.filter(item=>item.target===f.master)
+    assert.equal(hits.length,1);assert.equal(hits[0].options.duration,280)
+    assert(hits[0].frames.some(frame=>/perspective\(900px\)/.test(frame.transform)))
+    assert.equal(f.host.children.length,0,'master hit must never create a second card face')
+    assert(f.props.sequenceCoordinator.ownsVisualKey('master-1'))
+    await f.settle();assert.equal(f.props.sequenceCoordinator.ownsVisualKey('master-1'),false)
+  }finally{f.dispose()}
+})
+await test('blocked, zero, malformed and non-defense master facts never invent a hit',async()=>{
+  for(const event of [masterHit(1,1,'blocked'),masterHit(1,0),
+    {...masterHit(),playerCombat:{eventKind:'attack',outcomeCode:'unblocked',masterDamage:1}},
+    {...masterHit(),playerIndex:undefined}]){const f=fixture();try{await f.advance();f.apply([event]);await f.advance()
+      assert.equal(f.animations.filter(item=>item.target===f.master).length,0)
+    }finally{f.dispose()}}
+})
+for(const mode of ['fast','off']) await test(`master hit honors the shared preference and full local gate/${mode}`,async()=>{
+  const f=fixture({mode});try{await f.advance();f.apply([masterHit()]);await f.advance()
+    const hit=f.animations.find(item=>item.target===f.master);assert(hit);assert(hit.options.duration<280)
+    if(mode==='off')assert(hit.frames.every(frame=>!/perspective|rotateZ/.test(frame.transform)))
+    assert(f.props.sequenceCoordinator.ownsVisualKey('master-1'));await f.settle()
+    assert.equal(f.props.sequenceCoordinator.ownsVisualKey('master-1'),false)
+  }finally{f.dispose()}
 })
 await test('real survivor marks only its animation interval frame-free and restores the prior marker',async()=>{
   const f=fixture();try{

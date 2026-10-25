@@ -165,7 +165,9 @@ await test('attack remains one lunge/rest transaction with contact and lifted 3D
     assert.equal(f.animations.length, 1)
     const animation = f.animations[0]
     assert(animation.frames.some(frame => /perspective\(/.test(frame.transform) && /rotateX\(/.test(frame.transform)))
-    assert(animation.frames.some(frame => frame.offset === .38)); assert(animation.frames.some(frame => frame.offset === .56))
+    assert(animation.frames.some(frame => frame.offset === .42)); assert(animation.frames.some(frame => frame.offset === .56))
+    assert(animation.frames.slice(1,-1).every(frame => !/scale\(1\.0[1-9]/.test(frame.transform)),
+      'attack must not use a spring-like scale overshoot')
     assert.equal(animation.frames.at(-1).transform, 'translate3d(0px,0px,0) rotate(90deg) scale(1)')
     animation.finish(); await f.advance(); assert.equal(f.animations.length, 1)
   } finally { f.dispose() }
@@ -196,7 +198,7 @@ await test('higher public troops strengthen the same attack without extending ti
     const f = fixture(); try {
       f.state.queue.push(f.prepare(false,true,{attack:true,attackTroops})); f.state.showNext(); await f.advance()
       assert.equal(f.animations.length,1); assert.equal(f.visibleHolders().length,1)
-      const animation = f.animations[0], contact = animation.frames.find(frame => frame.offset === .38)
+      const animation = f.animations[0], contact = animation.frames.find(frame => frame.offset === .42)
       const match = contact.transform.match(/translate3d\(([-.\d]+)px,([-.\d]+)px,([-.\d]+)px\)/)
       assert(match); poses.push({distance:Math.hypot(+match[1],+match[2]),height:+match[3]})
       assert.equal(animation.options.duration,380)

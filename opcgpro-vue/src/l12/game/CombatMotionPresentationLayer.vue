@@ -18,7 +18,7 @@ type CardSnapshot = { ghost: HTMLElement; rect: DOMRect; pixelsReady: boolean }
 type CapturedCard = CardSnapshot & { card: Card; eventIndex: number; snapshot: CardSnapshot }
 type DefeatJob = { event: ActionEvent; captured: CapturedCard[]; confirmedDefeatIds: Set<string> }
 type CombatPresentation = {
-  captured: CapturedCard; generation: number; reservation: PresentationReservation
+  captured?: CapturedCard; visualKey: string; generation: number; reservation: PresentationReservation
   release?: (presented?: boolean) => void; closed: boolean; started: boolean
   animations: Set<Animation>; wrapper?: HTMLElement
   restoreFrame?: () => void
@@ -52,6 +52,10 @@ function notifyBusy() {
 function cardElement(instanceId?: string) {
   if (!instanceId) return null
   return document.querySelector(`[data-l12-game-stage] .formation-slot [data-card-instance-id="${CSS.escape(instanceId)}"]`)
+}
+
+function masterElement(playerIndex: number) {
+  return document.querySelector(`[data-l12-game-stage] .mini-master[data-card-instance-id="master-${playerIndex}"]`)
 }
 
 function cardSnapshotRect(element: HTMLElement) {
@@ -93,7 +97,8 @@ function refreshFieldSnapshots() {
     defeatedInstances.delete(instanceId)
   }
   for (const presentation of [...presentations]) {
-    if (presentation.wrapper && cardElement(presentation.captured.card.instanceId)) finishPresentation(presentation, false)
+    if (presentation.wrapper && presentation.captured
+        && cardElement(presentation.captured.card.instanceId)) finishPresentation(presentation, false)
   }
 }
 
@@ -123,7 +128,7 @@ function captureCards(event: ActionEvent) {
       concealedInstances.add(card.instanceId)
       fieldSnapshots.delete(card.instanceId)
       for (const presentation of [...presentations])
-        if (presentation.captured.card.instanceId === card.instanceId) finishPresentation(presentation, false)
+        if (presentation.captured?.card.instanceId === card.instanceId) finishPresentation(presentation, false)
       return []
     }
     concealedInstances.delete(card.instanceId)
@@ -143,13 +148,17 @@ function captureCards(event: ActionEvent) {
 }
 
 function animatePowerBadge(element: HTMLElement, presentation: CombatPresentation) {
-  const badge = element.querySelector('.card-power')
+  const badge = element.querySelector('.card-power, .master-health')
   if (!(badge instanceof HTMLElement)) return
+  // These two badges use different anchors: battlefield power is centered
+  // with translateX(-50%), while master health is right/bottom anchored with
+  // no transform. Brightness must not replace either badge's actual pose.
+  const base = getComputedStyle(badge).transform || 'none'
   const animation = badge.animate([
-    { transform: 'translateX(-50%) scale(1)', filter: 'brightness(1)' },
-    { transform: 'translateX(-50%) scale(1.14)', filter: 'brightness(1.55)', offset: .45 },
-    { transform: 'translateX(-50%) scale(1)', filter: 'brightness(1)' },
-  ], { duration: presentationDuration(280, 80), easing: 'ease-out' })
+    { transform: base, filter: 'brightness(1)' },
+    { transform: base, filter: 'brightness(1.65) saturate(.7)', offset: .38 },
+    { transform: base, filter: 'brightness(1)' },
+  ], { duration: presentationDuration(280, 80), easing: 'linear' })
   remember(animation, presentation)
 }
 
@@ -170,11 +179,47 @@ function animateSurvivor(element: HTMLElement, presentation: CombatPresentation,
     `${base === 'none' ? '' : base + ' '}perspective(900px) translate3d(0,${distance}px,${elevation}px) rotateX(${pitch}deg)`
   const frames = l12BattleMotionDisabled() ? [{ transform: base }, { transform: base }] : [
     { transform: base },
-    { transform: pose(3 + 11 * strength, 6 + 28 * strength, -4 - 12 * strength), offset: .28 },
-    { transform: pose(-1 - 3 * strength, 3 + 8 * strength, 2 + 5 * strength), offset: .68 },
+    { transform: pose(3 + 11 * strength, 6 + 28 * strength, -4 - 12 * strength),
+      filter: 'brightness(1.42) saturate(.72)', offset: .30 },
+    { transform: pose(2 + 7 * strength, 3 + 14 * strength, -2 - 6 * strength),
+      filter: 'brightness(.88) saturate(.8)', offset: .62 },
     { transform: base },
   ]
-  remember(element.animate(frames, { duration: presentationDuration(280, 80), easing: 'ease-out' }), presentation)
+  remember(element.animate(frames, { duration: presentationDuration(280, 80), easing: 'linear' }), presentation)
+  animatePowerBadge(element, presentation)
+}
+
+function masterDamageValue(event: ActionEvent) {
+  if (event.type !== 'defense' || event.playerCombat?.eventKind !== 'defense'
+      || event.playerCombat.outcomeCode !== 'unblocked') return null
+  const damage = event.playerCombat.masterDamage
+  return typeof damage === 'number' && Number.isFinite(damage) && damage > 0 ? damage : null
+}
+
+function animateMasterHit(element: HTMLElement, presentation: CombatPresentation, damage: number) {
+  const base = getComputedStyle(element).transform || 'none'
+  const strength = battleMotionStrength(damage * 2500)
+  const direction = element.closest('.side-opponent') ? -1 : 1
+  const previousFrameMarker = element.dataset.l12CombatRecoil
+  const frameMarker = `${presentation.generation}:${++recoilSerial}`
+  element.dataset.l12CombatRecoil = frameMarker
+  presentation.restoreFrame = () => {
+    if (element.dataset.l12CombatRecoil !== frameMarker) return
+    if (previousFrameMarker === undefined) delete element.dataset.l12CombatRecoil
+    else element.dataset.l12CombatRecoil = previousFrameMarker
+  }
+  const pose = (x: number, y: number, elevation: number, tilt: number) =>
+    `${base === 'none' ? '' : base + ' '}perspective(900px) translate3d(${x}px,${y}px,${elevation}px) rotateZ(${tilt}deg)`
+  const frames = l12BattleMotionDisabled() ? [{ transform: base }, { transform: base }] : [
+    { transform: base, filter: 'brightness(1)' },
+    { transform: pose(direction * (5 + 10 * strength), 3 + 7 * strength, 4 + 12 * strength,
+      direction * (1 + 2 * strength)), filter: 'brightness(1.55) saturate(.62)', offset: .28 },
+    { transform: pose(direction * (3 + 6 * strength), 2 + 4 * strength, 2 + 6 * strength,
+      direction * (.5 + strength)), filter: 'brightness(.82) saturate(.72)', offset: .62 },
+    { transform: base, filter: 'brightness(1)' },
+  ]
+  remember(element.animate(frames,
+    { duration: presentationDuration(280, 80), easing: 'linear' }), presentation)
   animatePowerBadge(element, presentation)
 }
 
@@ -305,7 +350,7 @@ function finishPresentation(presentation: CombatPresentation, presented: boolean
     overlays.delete(wrapper)
     wrapper.remove()
     const captured = presentation.captured
-    if (fieldSnapshots.get(captured.card.instanceId) === captured.snapshot)
+    if (captured && fieldSnapshots.get(captured.card.instanceId) === captured.snapshot)
       fieldSnapshots.delete(captured.card.instanceId)
   }
   presentations.delete(presentation)
@@ -321,7 +366,8 @@ function presentDefeats(job: DefeatJob) {
     const reservation = props.sequenceCoordinator.reserve(job.event.sequence, 40, { visualKey: captured.card.instanceId })
     reservation.setPaused(props.paused)
     const presentation: CombatPresentation = {
-      captured, generation: playbackGeneration, reservation, closed: false, started: false, animations: new Set(),
+      captured, visualKey: captured.card.instanceId, generation: playbackGeneration,
+      reservation, closed: false, started: false, animations: new Set(),
     }
     presentations.add(presentation)
     preparationCount++
@@ -366,6 +412,45 @@ function presentDefeats(job: DefeatJob) {
   }
 }
 
+function presentMasterHit(event: ActionEvent) {
+  const playerIndex = event.playerIndex
+  const damage = masterDamageValue(event)
+  if (damage === null || playerIndex === undefined || !Number.isInteger(playerIndex)) return
+  const visualKey = `master-${playerIndex}`
+  const reservation = props.sequenceCoordinator.reserve(event.sequence, 40, { visualKey })
+  reservation.setPaused(props.paused)
+  const presentation: CombatPresentation = {
+    visualKey, generation: playbackGeneration, reservation,
+    closed: false, started: false, animations: new Set(),
+  }
+  presentations.add(presentation)
+  preparationCount++
+  notifyBusy()
+  void nextTick(async () => {
+    if (presentation.closed || presentation.generation !== playbackGeneration) return
+    const target = masterElement(playerIndex)
+    if (!(target instanceof HTMLElement)) { finishPresentation(presentation, false); return }
+    reservation.prepareVisualOwner({
+      // A surviving master is its own only visual owner; the coordinator still
+      // serializes it with the attack/rest transaction and later presentations.
+      show: () => {}, hide: () => {}, dispose: () => finishPresentation(presentation, false),
+    })
+    const release = await reservation.waitUntilGranted()
+    if (presentation.closed || presentation.generation !== playbackGeneration) { release(false); return }
+    presentation.release = release
+    const current = masterElement(playerIndex)
+    const hidden = current instanceof HTMLElement
+      && (getComputedStyle(current).display === 'none' || getComputedStyle(current).visibility === 'hidden')
+    if (props.paused || props.synchronizing || current !== target || hidden) {
+      finishPresentation(presentation, false); return
+    }
+    presentation.started = true
+    animateMasterHit(target, presentation, damage)
+    await Promise.all([...presentation.animations].map(animation => animation.finished.catch(() => {})))
+    finishPresentation(presentation, true)
+  }).catch(() => finishPresentation(presentation, false))
+}
+
 function reset() {
   playbackGeneration++
   for (const presentation of [...presentations]) finishPresentation(presentation, false)
@@ -404,6 +489,7 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     // The state layer owns a normal attack as one combined lunge/rest
     // transaction. This layer only presents damage and confirmed defeats.
     if (event.type === 'combat' || isDefeatLeave(event)) jobs.push({ event, captured: captureCards(event), confirmedDefeatIds })
+    if (masterDamageValue(event) !== null) presentMasterHit(event)
     lastSequence = Math.max(lastSequence, event.sequence)
   }
   // Deduplicate confirmed combat deaths before reserving: an earlier leave

@@ -45,6 +45,8 @@ type Movement = {
   coveredTarget?: HTMLElement
   releaseTargetVisibility?: () => void
   presentationStarted?: boolean
+  destinationObserver?: MutationObserver
+  playedCard: boolean
   legionEntry: boolean
   entrySimplified: boolean
   entryImpactTier?: LegionEntryImpactTier
@@ -410,6 +412,7 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
     disasterSimplified:event.type === 'disaster-reveal' && simplifiedEntryMotion(),
     caption: event.type === 'reveal' && card ? publicHandAddCaption(event, card) : undefined,
     attachment: event.type === 'attach',
+    playedCard: event.type === 'play' && !concealed && Boolean(card?.instanceId),
     legionEntry,
     entrySimplified:legionEntry && simplifiedEntryMotion(),
     entryImpactTier:entryImpact.tier,
@@ -548,7 +551,7 @@ function legionEntryFrames(movement: Movement): Keyframe[] {
   const targetScaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
   const targetScaleY = Math.max(.45, Math.min(1.8, target.height / Math.max(1, source.height)))
   const impact = movement.entryImpactStrength
-  const impactScale = 1 + impact * .08
+  const impactScale = 1 - impact * .035
   const impactSquash = 1 - impact * .10
   const lift = 72 + impact * 48
   const elevation = 80 + impact * 60
@@ -559,18 +562,42 @@ function legionEntryFrames(movement: Movement): Keyframe[] {
     { transform:entryTransform(centerDx, centerDy, focusScaleX, focusScaleY, 0), opacity:1, offset:.40 },
     { transform:entryTransform(centerDx, centerDy, focusScaleX, focusScaleY, 0), opacity:1,
       easing:'cubic-bezier(.2,.8,.3,1)', offset:.55 },
-    { transform:entryDropTransform(targetDx, targetDy - lift, elevation, -22, targetScaleX * 1.08,
-      targetScaleY * 1.08, movement.toRotation ?? 0), opacity:1,
+    { transform:entryDropTransform(targetDx, targetDy - lift, elevation, -18, targetScaleX,
+      targetScaleY, movement.toRotation ?? 0), opacity:1,
       filter:'drop-shadow(0 34px 22px rgba(0,0,0,.5))',
       easing:'cubic-bezier(.55,0,.9,.45)', offset:.65 },
     { transform:entryDropTransform(targetDx, targetDy, 0, 0, targetScaleX * impactScale,
       targetScaleY * impactSquash, movement.toRotation ?? 0), opacity:1,
-      filter:'drop-shadow(0 2px 3px rgba(0,0,0,.85))', offset:.78 },
-    { transform:entryDropTransform(targetDx, targetDy - 4 * impact, 6 * impact, -3,
-      targetScaleX * .99, targetScaleY * 1.02, movement.toRotation ?? 0), opacity:1,
-      filter:'drop-shadow(0 6px 6px rgba(0,0,0,.7))', offset:.88 },
+      filter:'drop-shadow(0 2px 3px rgba(0,0,0,.85))', offset:.82 },
+    { transform:entryTransform(targetDx, targetDy, targetScaleX, targetScaleY, movement.toRotation ?? 0),
+      filter:'drop-shadow(0 8px 10px rgba(0,0,0,.72))', opacity:1, offset:.92 },
     { transform:entryTransform(targetDx, targetDy, targetScaleX, targetScaleY, movement.toRotation ?? 0),
       filter:'drop-shadow(0 8px 10px rgba(0,0,0,.72))', opacity:1, offset:1 },
+  ]
+}
+
+function playedCardFrames(movement: Movement): Keyframe[] {
+  const source = movement.fromRect
+  const target = movement.toRect
+  const focus = legionEntryFocusRect()
+  const centerDx = focus.x - source.x
+  const centerDy = focus.y - source.y
+  const targetDx = target.x - source.x
+  const targetDy = target.y - source.y
+  const focusScaleX = Math.max(.45, Math.min(2.4, focus.width / Math.max(1, source.width)))
+  const focusScaleY = Math.max(.45, Math.min(2.4, focus.height / Math.max(1, source.height)))
+  const targetScaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
+  const targetScaleY = Math.max(.45, Math.min(1.8, target.height / Math.max(1, source.height)))
+  return [
+    { transform:entryTransform(0, 0, 1, 1, movement.fromRotation ?? 0), opacity:1, offset:0 },
+    { transform:entryDropTransform(centerDx, centerDy, 26, -6, focusScaleX, focusScaleY, 0), opacity:1,
+      filter:'drop-shadow(0 20px 16px rgba(0,0,0,.62))', easing:'cubic-bezier(.2,.72,.2,1)', offset:.36 },
+    { transform:entryDropTransform(centerDx, centerDy, 26, -6, focusScaleX, focusScaleY, 0), opacity:1,
+      filter:'drop-shadow(0 20px 16px rgba(0,0,0,.62))', offset:.58 },
+    { transform:entryDropTransform(targetDx, targetDy, 0, 0, targetScaleX * .985, targetScaleY * .97,
+      movement.toRotation ?? 0), opacity:1, filter:'drop-shadow(0 2px 3px rgba(0,0,0,.85))', offset:.88 },
+    { transform:entryTransform(targetDx, targetDy, targetScaleX, targetScaleY, movement.toRotation ?? 0),
+      opacity:1, filter:'drop-shadow(0 8px 10px rgba(0,0,0,.72))', offset:1 },
   ]
 }
 
@@ -610,6 +637,7 @@ function movementDuration(movement: Movement) {
     if (movement.entrySimplified) return replayDuration(130, 80, 60)
     return replayDuration(820, 320, 160)
   }
+  if (movement.playedCard) return replayDuration(680, 280, 140)
   const queueScale = queue.length >= 2 ? .8 : 1
   if (!movement.sourceGhost) return Math.round(replayDuration(440, 180, 100) * queueScale)
   const distance = Math.hypot(movement.toRect.x - movement.fromRect.x, movement.toRect.y - movement.fromRect.y)
@@ -627,6 +655,8 @@ const motionStyle = computed(() => {
     '--move-to-y': `${finish.y}px`,
     '--move-from-scale': `${Math.max(.55, Math.min(1.45, start.width / 72))}`,
     '--move-to-scale': `${Math.max(.55, Math.min(1.45, finish.width / 72))}`,
+    '--move-contact-scale': `${Math.max(.55, Math.min(1.45, finish.width / 72)) * .97}`,
+    '--move-flight-contact-scale': `${Math.max(.55, Math.min(1.45, finish.width / 72)) * .98}`,
     '--move-duration': `${movementDuration(active.value)}ms`,
     '--move-from-rotation': `${active.value.fromRotation ?? 0}deg`,
     '--move-to-rotation': `${active.value.toRotation ?? 0}deg`,
@@ -638,8 +668,7 @@ const motionStyle = computed(() => {
     style['--move-center-x'] = `${focus.x}px`
     style['--move-center-y'] = `${focus.y}px`
     style['--move-center-scale'] = `${Math.max(.55, Math.min(1.85, focus.width / 72))}`
-    style['--move-impact-scale'] = `${toScale * (1 + impact * .08)}`
-    style['--move-impact-settle-scale'] = `${toScale * (1 - impact * .015)}`
+    style['--move-impact-scale'] = `${toScale * (1 - impact * .035)}`
     style['--move-drop-lift'] = `${72 + impact * 48}px`
     style['--move-drop-elevation'] = `${80 + impact * 60}px`
     style['--move-impact-squash'] = `${toScale * (1 - impact * .10)}`
@@ -648,17 +677,44 @@ const motionStyle = computed(() => {
     style['--entry-impact-mid-scale'] = `${.68 + impact * .12}`
     style['--entry-impact-end-scale'] = `${1.08 + impact * .42}`
   }
+  if (active.value.playedCard) {
+    const focus = legionEntryFocusRect()
+    style['--move-center-x'] = `${focus.x}px`
+    style['--move-center-y'] = `${focus.y}px`
+    style['--move-center-scale'] = `${Math.max(.55, Math.min(1.85, focus.width / 72))}`
+  }
   return style
 })
 
 let activeGhostWrapper: HTMLElement | null = null
 let activeGhostAnimation: Animation | null = null
 function revealTarget(movement: Movement | null = active.value) {
+  movement?.destinationObserver?.disconnect()
+  if (movement) movement.destinationObserver = undefined
   movement?.releaseTargetVisibility?.()
   if (movement) {
     movement.releaseTargetVisibility = undefined
     movement.coveredTarget = undefined
   }
+}
+function observeDestination(movement: Movement) {
+  movement.destinationObserver?.disconnect()
+  movement.destinationObserver = undefined
+  const coverCurrent = () => {
+    const destination = destinationElement(movement)
+    if (destination instanceof HTMLElement) coverTarget(movement, destination)
+  }
+  coverCurrent()
+  const root = document.querySelector('[data-l12-game-stage]')
+  if (!(root instanceof HTMLElement) || typeof MutationObserver === 'undefined') return
+  const observer = new MutationObserver(coverCurrent)
+  // PlayerMat keys formation slots, not the CardTile inside them. A reused
+  // destination can therefore become this instance through an attribute-only
+  // patch. Observe that identity attribute explicitly; never observe style,
+  // because acquiring the visibility lease writes style and would self-loop.
+  observer.observe(root, { childList:true, subtree:true, attributes:true,
+    attributeFilter:['data-card-instance-id'] })
+  movement.destinationObserver = observer
 }
 function coverTarget(movement: Movement, target: HTMLElement) {
   if (movement.coveredTarget === target && movement.releaseTargetVisibility) return
@@ -696,12 +752,10 @@ function startEntryBoardImpact(movement: Movement, duration: number) {
   movement.entryBoardAnimation?.cancel()
   const frames: Keyframe[] = [
     { translate:'0px 0px', offset:0 },
-    { translate:'0px 0px', offset:.76 },
-    { translate:'0px 6px', offset:.78 },
-    { translate:'-16px -8px', offset:.81 },
-    { translate:'14px 6px', offset:.85 },
-    { translate:'-10px -4px', offset:.90 },
-    { translate:'5px 2px', offset:.95 },
+    { translate:'0px 0px', offset:.80 },
+    { translate:'0px 5px', offset:.82 },
+    { translate:'-7px -3px', offset:.86 },
+    { translate:'3px 1px', offset:.92 },
     { translate:'0px 0px', offset:1 },
   ]
   const timing: KeyframeAnimationOptions = { duration, easing:'linear', composite:'add' }
@@ -822,6 +876,7 @@ function createMovementHolder(movement: Movement, sourceGhost: HTMLElement) {
     show: () => {
       const destination = destinationElement(movement)
       if (destination instanceof HTMLElement) coverTarget(movement, destination)
+      observeDestination(movement)
       wrapper.style.visibility = 'visible'
     },
     hide: () => {
@@ -944,12 +999,14 @@ function showNext() {
           : [
               { transform: `translate3d(0,0,0) scale(1) rotate(${movement.fromRotation ?? 0}deg)`, opacity: 1 },
               { transform: `translate3d(${dx / 2}px,${dy / 2 + lift}px,0) scale(${(1 + scaleX) / 2},${(1 + scaleY) / 2}) rotate(${((movement.fromRotation ?? 0) + (movement.toRotation ?? 0)) / 2 + tilt}deg)`, opacity: 1, offset: .5 },
-              { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * 1.04},${scaleY * 1.04}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1, offset: .85 },
+              { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * .99},${scaleY * .98}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1, offset: .88 },
               { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1 },
             ]
+        if (movement.playedCard && !movement.legionEntry && !movement.disasterReveal)
+          frames.splice(0, frames.length, ...playedCardFrames(movement))
         if (movement.disasterReveal) wrapper.classList.add('zone-card-movement', 'movement-ready')
         activeGhostAnimation = wrapper.animate(frames,
-          { duration, easing: movement.legionEntry || movement.disasterReveal ? 'linear' : 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
+          { duration, easing: movement.legionEntry || movement.disasterReveal || movement.playedCard ? 'linear' : 'cubic-bezier(.2,.72,.2,1)', fill: 'forwards' })
         startEntryImpact(movement, duration)
         movement.presentationStarted = true
         registerStartedPresentation(movement)
@@ -1299,12 +1356,14 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
       data-ui-contract="authoritative-zone-card-movement" :data-movement-key="active.key"
       :data-movement-instance-id="active.card?.instanceId" :data-movement-from="active.from" :data-movement-to="active.to"
       :data-entry-presentation="active.legionEntry ? 'legion-center-land' : undefined"
+      :data-play-presentation="active.playedCard ? 'center-focus' : undefined"
       :data-entry-impact-tier="active.entryImpactTier"
       :data-movement-from-x="active.fromRect.x" :data-movement-from-y="active.fromRect.y"
       :data-movement-to-x="active.toRect.x" :data-movement-to-y="active.toRect.y"
       aria-hidden="true">
       <div class="moving-card" data-essential-motion :class="{ concealed: active.concealed, covered: active.covered,
-        'disaster-reveal': active.disasterReveal, 'legion-entry': active.legionEntry, 'entry-simplified': active.entrySimplified }">
+        'disaster-reveal': active.disasterReveal, 'legion-entry': active.legionEntry, 'played-card': active.playedCard,
+        'entry-simplified': active.entrySimplified }">
         <span v-if="active.legionEntry && !active.entrySimplified && active.entryImpactTier"
           class="legion-entry-impact" :data-entry-impact="active.entryImpactTier" aria-hidden="true" />
         <small v-if="active.caption" class="movement-caption">{{ active.caption }}</small>
@@ -1329,6 +1388,7 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 .moving-card.covered:not(.concealed){filter:grayscale(.45) brightness(.72) drop-shadow(0 12px 14px #000)}
 .moving-card.legion-entry:not(.entry-simplified){animation-name:l12-legion-entry-flight;animation-timing-function:linear}
 .moving-card.legion-entry.entry-simplified{animation-name:l12-legion-entry-handoff;animation-timing-function:linear}
+.moving-card.played-card:not(.legion-entry){animation-name:l12-played-card-flight;animation-timing-function:linear}
 .legion-entry-impact{position:absolute;inset:-18%;z-index:-1;border:2px solid rgba(222,191,104,.9);border-radius:50%;box-shadow:0 0 16px rgba(222,191,104,.72);opacity:0;pointer-events:none;transform:scale(.45);transform-origin:center;animation:l12-legion-entry-impact var(--move-duration,.82s) linear both}
 .zone-card-movement:not(.movement-ready) .legion-entry-impact{animation-play-state:paused}.zone-card-movement.movement-ready .legion-entry-impact{animation-play-state:running}
 .movement-caption{position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);width:max-content;max-width:240px;transform:translateX(-50%);padding:3px 7px;border:1px solid #8cc6d2;background:rgba(7,16,20,.94);color:#eef6f5;font-size:12px;line-height:1.35;text-align:center;white-space:normal;overflow-wrap:anywhere}
@@ -1339,8 +1399,9 @@ onBeforeUnmount(() => { reset(); emit('busyChange', false) })
 :global(.l12-disaster-reveal-holder:not(.movement-ready) .disaster-reveal-front){opacity:0;transform:rotateY(-90deg)}
 :global(.l12-disaster-reveal-holder.movement-ready .disaster-reveal-back){animation:l12-disaster-card-back var(--move-duration,1.04s) linear both!important}
 :global(.l12-disaster-reveal-holder.movement-ready .disaster-reveal-front){animation:l12-disaster-card-front var(--move-duration,1.04s) linear both!important}
-@keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}85%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(calc(var(--move-to-scale) * 1.04)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
-@keyframes l12-legion-entry-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}30%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(calc(var(--move-center-scale) * .96)) rotate(0)}40%,55%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(var(--move-center-scale)) rotate(0)}65%{opacity:1;transform:perspective(900px) translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px - var(--move-drop-lift)),var(--move-drop-elevation)) rotateX(-22deg) scale(calc(var(--move-to-scale) * 1.08)) rotate(var(--move-to-rotation,0deg));filter:drop-shadow(0 34px 22px rgba(0,0,0,.5));animation-timing-function:cubic-bezier(.55,0,.9,.45)}78%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-scale),var(--move-impact-squash)) rotate(var(--move-to-rotation,0deg))}88%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-settle-scale)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
+@keyframes l12-zone-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}88%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-flight-contact-scale)) rotate(var(--move-to-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
+@keyframes l12-played-card-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}36%,58%{opacity:1;transform:perspective(900px) translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),26px) rotateX(-6deg) scale(var(--move-center-scale)) rotate(0);filter:drop-shadow(0 20px 16px rgba(0,0,0,.62))}88%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-contact-scale)) rotate(var(--move-to-rotation,0deg));filter:drop-shadow(0 2px 3px rgba(0,0,0,.85))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
+@keyframes l12-legion-entry-flight{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}30%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(calc(var(--move-center-scale) * .96)) rotate(0)}40%,55%{opacity:1;transform:translate3d(calc(var(--move-center-x) - 36px),calc(var(--move-center-y) - 50px),0) scale(var(--move-center-scale)) rotate(0)}65%{opacity:1;transform:perspective(900px) translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px - var(--move-drop-lift)),var(--move-drop-elevation)) rotateX(-18deg) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg));filter:drop-shadow(0 34px 22px rgba(0,0,0,.5));animation-timing-function:cubic-bezier(.55,0,.9,.45)}82%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-impact-scale),var(--move-impact-squash)) rotate(var(--move-to-rotation,0deg))}92%,100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
 @keyframes l12-legion-entry-handoff{0%{opacity:1;transform:translate3d(calc(var(--move-from-x) - 36px),calc(var(--move-from-y) - 50px),0) scale(var(--move-from-scale)) rotate(var(--move-from-rotation,0deg))}100%{opacity:1;transform:translate3d(calc(var(--move-to-x) - 36px),calc(var(--move-to-y) - 50px),0) scale(var(--move-to-scale)) rotate(var(--move-to-rotation,0deg))}}
 @keyframes l12-legion-entry-impact{0%,66%{opacity:0;transform:scale(.45)}78%{opacity:var(--entry-impact-opacity,0);transform:scale(var(--entry-impact-mid-scale,.68))}100%{opacity:0;transform:scale(var(--entry-impact-end-scale,1.08))}}
 @keyframes l12-disaster-card-back{0%,42%{opacity:1;transform:rotateY(0)}58%,100%{opacity:0;transform:rotateY(90deg)}}

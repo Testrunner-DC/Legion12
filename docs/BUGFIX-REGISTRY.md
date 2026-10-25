@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261026-BATTLE-MOTION-OWNER-WEIGHT｜单卡可见交接、主宰受击与厚重分段，本地接受
+
+- 承接人类已批三项及来源`L12-卡牌区域移动动画专项`限定反馈，保P0/P4：不改权威结算/事件/隐私/时序队列。全共享play/区域移动/主宰受击/CardState入口核查，不按加拉哈德卡号特判；公开play仅在稳定实例且非隐藏时中央聚焦。holder可见期覆盖新插入的目标，新增仅`data-card-instance-id`的属性监听，处理PlayerMat按格复用原CardTile的路径，不监听style形成自回授，四类退场均解除观察/visibility lease。
+- Main独审先拦出主宰血量徽标误用卡牌居中translateX，再拦出原childList-only观察器漏属性重绑。修后真实两尺寸badge三个时点位置不漂移；属性复用真实RED同节点/零childList下maxVisible=2，GREEN同条件=1，17/17。最终19档264入场/出牌回归、Combat30、State14、zone合同31反例过；不把合成静态夹具冒完整线上所有伤害或最终美术认可。主宰受击新分支仅认权威defense/unblocked/masterDamage>0的防守方，抵挡/零值/错误身份不播，不新增卡面副本。
+- 厚重帧采用透视/高度/接触压缩/同向衰减/最终权威姿态，移除过冲放大与回弹，保原全局280ms对齐/动效开关。Main完整前端捕获两条旧`.85/.38`字符串采样合同误配，仅修既有QA一叶为真实分段，保单owner及最终归位并新增8实际替换反例；49动效/361UI、完整未执行UI尾部/余下12链、双类型及正式/testrun Vite通过。已过前缀与旧失败日志不覆盖，未变后端与已过真实30＋10不重跑。
+- 唯一`battle-motion-weight-20261026/main-acceptance.json`绑定最终3产品/7QA、原RED/GREEN、徽标/264矩阵及Main分段前端原件。原矩阵固定隔离环境的38次异画元数据拒连及1条URL未留存404原样列边界；卡图解码与行为均过，不冒资源全绿。未部署、不关闭线上Bug、不宣称真机/FPS/所有对局动效均根治；回滚仅本族源/合同，底层visibility与协议不变。
+
 ## MAINT-20261026-G6-GALLERY-ROUTES｜画廊HTTP领域等价拆分，本地接受未部署
 
 - P2接入层只组织路由，画廊目录和异画管理两块移入同类partial；24个method/path及原权限/审计/异常/通知主体保留，两调用原位保server-storage夹在中间。全仓L12WebSocketServer partial消费者检索，架构和公开异画QA改读完整partial集合，原断言不删；标准构建原本包含全部.cs，无打包旁路。

@@ -18,6 +18,7 @@ const temp = path.join(cache, 'temp', 'legion-entry-presentation-20261024')
 const singleOwnerOnly = process.env.L12_SINGLE_OWNER_ONLY === '1'
 const frameTimelineOnly = process.env.L12_FRAME_TIMELINE_ONLY === '1'
 const naturalFrameTimelineOnly = process.env.L12_NATURAL_FRAME_TIMELINE_ONLY === '1'
+const attributeRebindOnly = process.env.L12_ATTRIBUTE_REBIND_ONLY === '1'
 
 if (!output || !path.isAbsolute(output)) throw new Error('L12_LEGION_ENTRY_OUT must be an absolute controlled path')
 if (!path.isAbsolute(cache)) throw new Error('L12_WORK_CACHE must be an absolute controlled path')
@@ -562,6 +563,78 @@ async function singleOwnerScenario(profile, kind, options = {}) {
   } finally { await context.close() }
 }
 
+async function attributeOnlyDestinationRebindScenario() {
+  const profile = { name:'attribute-rebind-desktop', viewer:1, interactive:true, viewport:{ width:1366, height:768 } }
+  const { context, page, errors } = await openProfile(profile)
+  try {
+    await invoke(page, 'setReplay', .5)
+    // Seed the exact formation slot with a public CardTile. PlayerMat keys the
+    // slot, so the next card reuses this DOM and normally only changes its
+    // data-card-instance-id attribute.
+    await invoke(page, 'putLibraryEntrant')
+    await waitForVisibleMovement(page, 'library-entrant')
+    await resumeMovement(page, 'library-entrant')
+    await waitForIdle(page)
+    const prepared = await page.evaluate(() => {
+      const target = document.querySelector('[data-l12-game-stage] [data-card-instance-id="library-entrant"]')
+      if (!(target instanceof HTMLElement)) return { installed:false }
+      const original = Element.prototype.setAttribute
+      const state = { target, original, blocked:0 }
+      window.__l12AttributeRebindState = state
+      window.__l12RestoreAttributeRebind = () => {
+        Element.prototype.setAttribute = original
+        delete window.__l12AttributeRebindState
+      }
+      Element.prototype.setAttribute = function(name, value) {
+        if (this === target && name === 'data-card-instance-id' && value === 'triggered-entrant') {
+          state.blocked += 1
+          return
+        }
+        return original.call(this, name, value)
+      }
+      return { installed:true, tag:target.tagName, initialId:target.dataset.cardInstanceId }
+    })
+    ok(prepared.installed, 'attribute-rebind: a pre-existing destination CardTile is available', prepared, 'installed')
+    await startTransactionFrameTimeline(page, 'triggered-entrant', '加拉哈德')
+    stage('pre-existing-destination-attribute-rebind')
+    await invoke(page, 'playTriggeredEntrant')
+    await waitForVisibleMovement(page, 'triggered-entrant')
+    await sampleFrame(page, 'triggered-entrant', .45)
+    const rebound = await page.evaluate(async () => {
+      const state = window.__l12AttributeRebindState
+      if (!state) return { rebound:false }
+      const root = document.querySelector('[data-l12-game-stage]')
+      const childRecords = []
+      const observer = new MutationObserver(records => childRecords.push(...records.filter(record => record.type === 'childList')))
+      if (root) observer.observe(root, { childList:true, subtree:true })
+      state.original.call(state.target, 'data-card-instance-id', 'triggered-entrant')
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      observer.disconnect()
+      Element.prototype.setAttribute = state.original
+      return { rebound:true, blocked:state.blocked, sameNode:state.target.isConnected,
+        instanceId:state.target.dataset.cardInstanceId, childListMutations:childRecords.length }
+    })
+    ok(rebound.rebound && rebound.blocked > 0 && rebound.sameNode,
+      'attribute-rebind: Vue reused the pre-existing destination DOM', rebound, 'same node with a delayed attribute write')
+    equal(rebound.instanceId, 'triggered-entrant',
+      'attribute-rebind: the destination identity is attached by data attribute only')
+    equal(rebound.childListMutations, 0,
+      'attribute-rebind: binding the destination identity performs no child insertion/removal')
+    const surfaces = await visibleTransactionSurfaces(page, 'triggered-entrant')
+    const frames = await stopTransactionFrameTimeline(page)
+    const maxVisible = Math.max(0, ...frames.map(frame => frame.total))
+    equal(maxVisible, 1,
+      'attribute-rebind: an attribute-only destination handoff never exposes a second card face',
+      { maxVisible, surfaces, duplicateFrames:frames.filter(frame => frame.total > 1) }, { maxVisible:1 })
+    await resumeMovement(page, 'triggered-entrant')
+    await waitForIdle(page)
+    ok(errors.length === 0, 'attribute-rebind: page errors', errors, [])
+  } finally {
+    await page.evaluate(() => window.__l12RestoreAttributeRebind?.()).catch(() => {})
+    await context.close()
+  }
+}
+
 async function strengthScenario(tier) {
   const profile = { name:`strength-${tier}`, viewer:1, interactive:true, viewport:{ width:1366, height:768 } }
   const { context, page, errors } = await openProfile(profile)
@@ -729,7 +802,9 @@ try {
   await server.listen()
   port = server.httpServer.address().port
   browser = await chromium.launch({ channel:'msedge', headless:true })
-  if (naturalFrameTimelineOnly) {
+  if (attributeRebindOnly) {
+    await run('attribute-rebind-desktop', 'attribute-only-destination-owner', attributeOnlyDestinationRebindScenario)
+  } else if (naturalFrameTimelineOnly) {
     const profile = coreProfiles.find(profile => profile.name === 'self-desktop')
     await run('self-desktop', 'natural-single-owner-legion-frame-timeline',
       () => singleOwnerScenario(profile, 'legion', { frameTimeline:true, naturalTimeline:true }))

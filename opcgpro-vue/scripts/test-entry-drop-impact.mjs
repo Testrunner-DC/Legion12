@@ -24,15 +24,17 @@ const movement = {
 }
 const frames = framesFor(movement)
 const raised = frames.find(frame => frame.offset === .65)
-const contact = frames.find(frame => frame.offset === .78)
-assert.match(raised.transform, /perspective\(900px\).*translate3d\(550px,-470px,140px\).*rotateX\(-22deg\)/)
+const contact = frames.find(frame => frame.offset === .82)
+assert.match(raised.transform, /perspective\(900px\).*translate3d\(550px,-470px,140px\).*rotateX\(-18deg\)/)
 assert.equal(raised.easing, 'cubic-bezier(.55,0,.9,.45)', 'descent must accelerate instead of linearly sliding')
-assert.match(contact.transform, /translate3d\(550px,-350px,0px\).*scale\(1.08,0.9\)/)
+assert.match(contact.transform, /translate3d\(550px,-350px,0px\).*scale\(0.965,0.9\)/)
 assert.match(raised.filter, /34px 22px/, 'elevated card needs a separated soft shadow')
 assert.match(contact.filter, /2px 3px/, 'contact shadow must tighten')
 assert.match(frames.at(-1).transform, /scale\(1,1\) rotate\(0deg\)/)
 assert.equal(frames.at(-1).offset, 1)
 assert.ok(frames.every((frame, index) => index === 0 || frame.offset > frames[index - 1].offset))
+assert.ok(frames.slice(1).every(frame => !/scale\(1\.0[1-9]/.test(frame.transform)),
+  'landing must compress once and settle without a scale overshoot')
 
 const calls = []
 let cancelled = 0
@@ -50,9 +52,9 @@ shake(movement, 820)
 assert.equal(calls.length, 1)
 assert.equal(calls[0].options.composite, 'add', 'preserve any existing inner translate')
 assert.equal(calls[0].options.duration, 820)
-assert.equal(calls[0].keyframes.find(frame => frame.offset === .78).translate, '0px 6px')
+assert.equal(calls[0].keyframes.find(frame => frame.offset === .82).translate, '0px 5px')
 assert.equal(calls[0].keyframes.at(-1).translate, '0px 0px')
-assert.ok(calls[0].keyframes.some(frame => frame.translate === '-16px -8px'))
+assert.ok(calls[0].keyframes.some(frame => frame.translate === '-7px -3px'))
 assert.ok(calls[0].keyframes.every(frame => !('transform' in frame)), 'never replace board scaling/rotation')
 for (const change of [
   { entrySimplified: true }, { legionEntry: false }, { entryImpactTier: 'light' },
@@ -66,7 +68,7 @@ let ghostFrames
 let ghostCancelled = 0
 movement.holderWrapper = { animate(frames) { ghostFrames = frames; return { cancel() { ghostCancelled++ } } } }
 shake(movement, 820)
-assert.equal(ghostFrames.find(frame => frame.offset === .81).translate, '-8px -4px',
+assert.equal(ghostFrames.find(frame => frame.offset === .86).translate, '-3.5px -1.5px',
   'the landed face must share the scaled field camera displacement')
 const cleanup = actual('cleanupEntryImpact')
 cleanup(movement)
@@ -81,7 +83,13 @@ assert.equal(calls.length, 3, 'unmounted component cannot shake another board')
 assert.match(sfc.descriptor.template.content, /ref="presentationRoot"/)
 assert.match(source, /activeEventFaceReady\.value = true[\s\S]*startEntryBoardImpact\(active\.value, duration\)/,
   'decoded template fallback must share the same field impact')
-assert.match(source, /65%\{[^}]*perspective\(900px\)[^}]*rotateX\(-22deg\)/,
+assert.match(source, /65%\{[^}]*perspective\(900px\)[^}]*rotateX\(-18deg\)/,
   'template fallback must keep the depth/drop route')
-assert.match(source, /78%\{[^}]*scale\(var\(--move-impact-scale\),var\(--move-impact-squash\)\)/)
+assert.match(source, /82%\{[^}]*scale\(var\(--move-impact-scale\),var\(--move-impact-squash\)\)/)
+assert.match(source, /function observeDestination\(movement: Movement\)[\s\S]*new MutationObserver\(coverCurrent\)[\s\S]*childList:true, subtree:true/,
+  'entry owner must cover a same-instance destination mounted after the holder is shown')
+assert.match(source, /function revealTarget\(movement: Movement \| null = active\.value\)[\s\S]*destinationObserver\?\.disconnect\(\)/,
+  'hide, dispose, cancel and match reset share observer cleanup through revealTarget')
+assert.doesNotMatch(source, /move-impact-settle-scale/,
+  'landing may not retain the old rebound scale token')
 console.log('Entry drop/whole-board impact: actual frame physics, scoped ownership, preferences and lifecycle passed')

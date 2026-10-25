@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs'
 import { parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 
-// Keep the old single-entity/source-pixel contract. The only staged routes are
-// the explicitly approved public legion entry and public disaster reveal; they
-// are not a generic mid-flight enlargement exception for other moves or concealed cards.
+// Keep the single-entity/source-pixel contract. Staged routes are restricted to
+// public play, public legion entry and public disaster reveal; ordinary zone
+// moves and concealed or identity-less events never receive a center focus.
 export function hasScopedZoneMovementMotion(source) {
   try {
     source = source.replace(/\r\n?/g, '\n')
@@ -19,11 +19,17 @@ export function hasScopedZoneMovementMotion(source) {
       'publicHolder instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal'])
       assert(source.includes(required), required)
     assert(!source.includes('--move-mid-x') && !source.includes('l12-zone-card-pulse'))
+    assert(source.includes("playedCard: event.type === 'play' && !concealed && Boolean(card?.instanceId)"))
+    assert(source.includes('function playedCardFrames(movement: Movement): Keyframe[]'))
+    assert(source.includes('if (movement.playedCard && !movement.legionEntry && !movement.disasterReveal)'))
+    assert(source.includes('frames.splice(0, frames.length, ...playedCardFrames(movement))'))
     const holderStart = source.indexOf('function createMovementHolder(')
     const holderEnd = source.indexOf('\nfunction showNext(', holderStart)
     const holder = source.slice(holderStart, holderEnd)
     assert(holder.includes('if (destination instanceof HTMLElement) coverTarget(movement, destination)'))
     assert(holder.includes("wrapper.style.visibility = 'hidden'\n      revealTarget(movement)"))
+    assert(source.includes("observer.observe(root, { childList:true, subtree:true, attributes:true,\n    attributeFilter:['data-card-instance-id'] })"))
+    assert(!source.includes("attributeFilter:['data-card-instance-id','style']"))
     assert(source.includes('if (start.ghost && !draft.disasterReveal) createMovementHolder(draft, start.ghost)'))
     assert(source.includes('if (movement?.disasterReveal && movement.sourceGhost && !movement.holderWrapper)'))
     assert(source.includes('|| !createMovementHolder(movement, movement.sourceGhost)'))
@@ -93,6 +99,8 @@ export function hasScopedZoneMovementMotion(source) {
     for (const regular of [direct, ordinaryFrames.whenFalse]) {
       assert(!/center|focus|legionEntryFrames|impactScale/.test(regular.getText(tree)))
     }
+    assert(!ordinaryFrames.whenFalse.getText(tree).includes('playedCardFrames'),
+      'ordinary move/discard/return frames must remain outside the public play focus route')
     const disasterFrames = tree.statements.find(node => ts.isFunctionDeclaration(node)
       && node.name?.text === 'disasterRevealFrames')
     assert(disasterFrames?.body)
@@ -137,6 +145,8 @@ const mutations = [
   ['disaster target leaves battle layout', "document.querySelector('[data-l12-battle-layout]')", 'document'],
   ['disaster target widened to a zone', 'button.current-disaster-card[data-l12-zone="disaster"]', '[data-l12-zone="disaster"]'],
   ['disaster owner skips release', "wrapper.style.visibility = 'hidden'\n      revealTarget(movement)", "wrapper.style.visibility = 'hidden'"],
+  ['attribute-only destination owner', "observer.observe(root, { childList:true, subtree:true, attributes:true,\n    attributeFilter:['data-card-instance-id'] })", "observer.observe(root, { childList:true, subtree:true })"],
+  ['visibility observer style feedback', "attributeFilter:['data-card-instance-id']", "attributeFilter:['data-card-instance-id','style']"],
   ['reduced animation central flight', '? movement.entrySimplified ? directFrames : legionEntryFrames(movement)', '? movement.entrySimplified ? legionEntryFrames(movement) : legionEntryFrames(movement)'],
   ['regular move central flight', ': [\n              { transform:', ': legionEntryFrames(movement) || [\n              { transform:'],
   ['off preference bypass', 'return l12BattleMotionDisabled()', 'return false'],

@@ -58,6 +58,7 @@ const coordinator=createPresentationSequenceCoordinator()
 let componentDebug=null
 let sequence=0, phase='idle', phaseStart=performance.now(), sampling=true
 const authority=id=>document.querySelector('[data-l12-game-stage] .formation-slot [data-card-instance-id="'+id+'"]')
+const master=()=>document.querySelector('[data-l12-game-stage] .mini-master[data-card-instance-id="master-1"]')
 const ghosts=()=>[...document.querySelectorAll('.l12-combat-defeat-ghost')]
 const visible=node=>{
   if(!(node instanceof HTMLElement))return false
@@ -68,11 +69,12 @@ const angle=node=>{const m=new DOMMatrixReadOnly(getComputedStyle(node).transfor
 const publicCard=id=>({instanceId:id,cardId:'qa-public',name:'合成公开军团',cardType:'legion',faction:'qa',
   cost:4,baseTroops:5000,troops:5000,disasterLevel:0,summonRound:0,
   imageUrl:'/api/site/media/combat-3d-qa.svg',hidden:false,tapped:id==='unit'})
-const roots=()=>[authority('unit'),authority('target'),...ghosts()].filter(Boolean)
+const roots=()=>[authority('unit'),authority('target'),master(),...ghosts()].filter(Boolean)
 const records=[],samples=[],seen=new WeakSet()
 function readFrame(){
   const owners=id=>Number(visible(authority(id)))+ghosts().filter(node=>node.dataset.cardInstanceId===id&&visible(node)).length
   return {time:performance.now(),phase,elapsed:performance.now()-phaseStart,unitOwners:owners('unit'),targetOwners:owners('target'),
+    masterOwners:Number(visible(master())),
     ghosts:ghosts().length,canvases:document.querySelectorAll('.l12-combat-defeat-ghost canvas[data-l12-pixel-snapshot="true"]').length}
 }
 function sample(){
@@ -95,6 +97,12 @@ async function emit(text,{death=false,onlyLeave=false,hidden=false}={}){
   events.value=[...events.value,...fresh];if(death)present.value=false;revision.value++
   await nextTick()
 }
+async function emitMasterHit(masterDamage=1,outcomeCode='unblocked'){
+  mark('master-hit')
+  events.value=[...events.value,{sequence:++sequence,type:'defense',playerIndex:1,
+    text:'对方主宰受到 '+masterDamage+' 点伤害',cards:[],playerCombat:{eventKind:'defense',outcomeCode,masterDamage}}]
+  revision.value++;await nextTick()
+}
 function details(node){
   const animation=node?.getAnimations()[0]
   if(!animation||animation.currentTime<35||animation.currentTime>Math.min(360,animation.effect.getTiming().duration*.65))return null
@@ -116,8 +124,19 @@ function details(node){
     pixelsInsideCanvas:pixels?pixels.left>=0&&pixels.top>=0&&pixels.right<=innerWidth&&pixels.bottom<=innerHeight:null,
     frame:readFrame()}
 }
+function badgeState(kind){
+  const owner=kind==='master'?master():authority('unit')
+  const badge=owner?.querySelector(kind==='master'?'.master-health':'.card-power')
+  if(!(badge instanceof HTMLElement))return null
+  const style=getComputedStyle(badge),matrix=style.transform==='none'?new DOMMatrixReadOnly():new DOMMatrixReadOnly(style.transform)
+  const rect=badge.getBoundingClientRect()
+  return {transform:style.transform,translateX:matrix.m41,translateY:matrix.m42,
+    localLeft:badge.offsetLeft+matrix.m41,localTop:badge.offsetTop+matrix.m42,
+    width:rect.width,height:rect.height,running:badge.getAnimations().filter(animation=>animation.playState==='running').length}
+}
 window.__combat3d={
   hit:(damage=2000)=>emit('造成 0 点战斗伤害；防守军团以当前兵力 '+damage+' 反击'),
+  masterHit:(damage=1,outcome='unblocked')=>emitMasterHit(damage,outcome),
   noDamage:()=>emit('进攻无损；造成 0 点战斗伤害'),
   death:()=>emit('进攻无损；造成 3000 点战斗伤害',{death:true}),
   kill:()=>emit('',{death:true,onlyLeave:true}),
@@ -142,10 +161,12 @@ window.__combat3d={
     throw new Error('Restored current CardImage did not expose decoded positive-area source art')
   },
   async sync(){mark('sync');synchronizing.value=true;revision.value++;await nextTick();synchronizing.value=false;await nextTick()},
-  middle(kind){return details(kind==='defeat'?ghosts().find(visible):authority('unit'))},
+  badge:kind=>badgeState(kind),
+  middle(kind){return details(kind==='defeat'?ghosts().find(visible):kind==='master'?master():authority('unit'))},
   read(){return {records,samples,frame:readFrame(),ghosts:ghosts().length,
     running:roots().reduce((count,node)=>count+node.getAnimations().filter(animation=>animation.playState==='running').length,0),
-    angle:angle(authority('unit')),visible:visible(authority('unit')),ownedUnit:coordinator.ownsVisualKey('unit'),ownedTarget:coordinator.ownsVisualKey('target'),
+    angle:angle(authority('unit')),visible:visible(authority('unit')),masterVisible:visible(master()),ownedUnit:coordinator.ownsVisualKey('unit'),ownedTarget:coordinator.ownsVisualKey('target'),
+    ownedMaster:coordinator.ownsVisualKey('master-1'),
     rotated:document.documentElement.dataset.l12Rotated,frameMarker:authority('unit')?.dataset.l12CombatRecoil,
     snapshots:[...(componentDebug?.fieldSnapshots?.entries()||[])].map(([id,item])=>({id,pixelsReady:item.pixelsReady})),
     defeated:[...(componentDebug?.defeatedInstances||[])],concealed:[...(componentDebug?.concealedInstances||[])],
@@ -156,11 +177,16 @@ const slot=(id,left)=>h('div',{class:'formation-slot',style:{position:'absolute'
   h(CardTile,{card:publicCard(id),selected:true,
     style:{width:'100px',height:'140px',padding:0,transform:id==='unit'?'rotate(90deg)':'rotate(0deg)',transformOrigin:'center',transition:'none'}}),
 ])
+const masterCard={...publicCard('master-1'),cardType:'master',name:'合成公开主宰',tapped:false}
 createApp({setup(){
   useLandscapeViewport(ref(true))
   return()=>h('div',{class:'l12-landscape-surface'},[
     h('div',{class:'board-stage','data-l12-game-stage':'',style:{position:'relative',width:'100%',height:'100%',overflow:'visible'}},[
       slot('unit',180),present.value?slot('target',460):null,
+      h('button',{class:'mini-master side-opponent','data-card-instance-id':'master-1',style:{position:'absolute',left:'610px',top:'90px',width:'100px',height:'140px',padding:0,border:'1px solid transparent',background:'transparent'}},[
+        h(CardTile,{card:masterCard,style:{width:'100px',height:'140px',padding:0,transition:'none'}}),
+        h('b',{class:'master-health',style:{position:'absolute',right:'3px',bottom:'3px'}},'7/8'),
+      ]),
       h('div',{'data-player-index':'0'},[h('div',{'data-l12-zone':'graveyard',style:{position:'absolute',left:'20px',top:'280px',width:'70px',height:'70px'}})]),
       h('div',{'data-player-index':'1'},[h('div',{'data-l12-zone':'graveyard',style:{position:'absolute',left:'650px',top:'280px',width:'70px',height:'70px'}})]),
     ]),
@@ -184,10 +210,22 @@ const profiles=[{name:'desktop-1366',viewport:{width:1366,height:768},rotated:fa
   {name:'portrait-390-rotated',viewport:{width:390,height:844},rotated:true}]
 const results=[],errors=[],findings=[],loaded=new Set(),started=Date.now()
 let server,browser,activePage
-function checkOwners(result){assert(result.samples.every(frame=>frame.unitOwners===1&&frame.targetOwners<=1),'natural rAF: exactly one real survivor and never duplicate victim')}
+function checkOwners(result){assert(result.samples.every(frame=>frame.unitOwners===1&&frame.targetOwners<=1&&frame.masterOwners===1),'natural rAF: exactly one real survivor/master and never duplicate victim')}
+function checkBadgeStationary(label,start,middle,end){
+  assert(start&&middle&&end,`${label}: actual badge DOM must exist at start/middle/end`)
+  assert.equal(start.running,0,`${label}: baseline badge is idle`);assert(middle.running>0,`${label}: badge brightness runs at middle`)
+  assert.equal(end.running,0,`${label}: badge animation releases at end`)
+  for(const state of [middle,end]){
+    assert(Math.abs(state.localLeft-start.localLeft)<.35,`${label}: horizontal anchor drifted`)
+    assert(Math.abs(state.localTop-start.localTop)<.35,`${label}: vertical anchor drifted`)
+    assert(Math.abs(state.translateX-start.translateX)<.35,`${label}: base transform was replaced`)
+    assert(Math.abs(state.translateY-start.translateY)<.35,`${label}: base transform gained vertical drift`)
+  }
+}
 function checkTerminal(result){assert.equal(result.running,0);assert.equal(result.ghosts,0);assert.equal(result.visible,true)
+  assert.equal(result.masterVisible,true)
   assert(Math.abs(result.angle-90)<.01,'rested authority retains its terminal 90 degree pose');checkOwners(result)
-  assert.equal(result.ownedUnit,false);assert.equal(result.ownedTarget,false);assert.equal(result.frameMarker,undefined)}
+  assert.equal(result.ownedUnit,false);assert.equal(result.ownedTarget,false);assert.equal(result.ownedMaster,false);assert.equal(result.frameMarker,undefined)}
 try{
   server=await createServer({root,configFile:false,cacheDir:cache,plugins:[vue(),plugin],
     resolve:{alias:{'@':path.join(root,'src')}},server:{host:'127.0.0.1',port:0,hmr:false,watch:null},logLevel:'error'})
@@ -220,12 +258,19 @@ try{
       await page.screenshot({path:path.join(output,`${profile.name}-${name}.png`)})
       return value
     }
+    const powerBadgeStart=await page.evaluate(()=>window.__combat3d.badge('power'))
+    assert(powerBadgeStart.translateX<0,'battlefield power badge retains its centered negative X anchor')
     await page.evaluate(()=>window.__combat3d.hit())
-    const hit=await middle('survivor','survivor-rested'),hitEnd=await waitDone(1)
+    const hit=await middle('survivor','survivor-rested')
+    const powerBadgeMiddle=await page.evaluate(()=>window.__combat3d.badge('power'))
+    const hitEnd=await waitDone(1)
+    const powerBadgeEnd=await page.evaluate(()=>window.__combat3d.badge('power'))
+    checkBadgeStationary('battlefield power badge',powerBadgeStart,powerBadgeMiddle,powerBadgeEnd)
     assert.equal(hit.duration,280);assert.equal(hit.imageDecoded,true);assert(hit.imageCount>0);assert.equal(hit.canvasCount,0);assert.equal(hit.frame.ghosts,0)
     if(hit.realCardFrame.borderColors.some(color=>color!=='rgba(0, 0, 0, 0)')||hit.realCardFrame.outline!=='none'||hit.realCardFrame.shadow!=='none'||hit.realCardFrame.after!=='none')
       findings.push({profile:profile.name,kind:'survivor-ui-frame-still-visible',computed:hit.realCardFrame})
-    result.rows.push({name:'real-rested-survivor-3d-no-clone',middle:hit,record:hitEnd.records[0]})
+    result.rows.push({name:'real-rested-survivor-3d-no-clone',middle:hit,record:hitEnd.records[0],
+      badgePosition:{start:powerBadgeStart,middle:powerBadgeMiddle,end:powerBadgeEnd}})
     await page.evaluate(()=>window.__combat3d.duplicate());await page.waitForTimeout(100)
     assert.equal(await page.evaluate(()=>window.__combat3d.read().records.length),1)
     result.rows.push({name:'duplicate-same-sequence-no-replay',passed:true})
@@ -242,7 +287,7 @@ try{
       await page.evaluate(damage=>window.__combat3d.hit(damage),damage)
       await middle('survivor','hit-strength-'+damage)
       const end=await waitDone(count),record=end.records.at(-1)
-      const pose=record.frames.find(frame=>frame.offset===.28).transform.match(/translate3d\(0(?:px)?,\s*([-.\d]+)px,\s*([-.\d]+)px\)/)
+      const pose=record.frames.find(frame=>frame.offset===.3).transform.match(/translate3d\(0(?:px)?,\s*([-.\d]+)px,\s*([-.\d]+)px\)/)
       assert(pose);strengths.push({damage,distance:+pose[1],elevation:+pose[2],duration:record.duration})
     }
     assert(strengths[1].distance>strengths[0].distance&&strengths[1].elevation>strengths[0].elevation)
@@ -267,6 +312,25 @@ try{
     await page.evaluate(()=>window.__combat3d.restore());await page.evaluate(()=>window.__combat3d.hideDeath());await page.waitForTimeout(110)
     const hidden=await page.evaluate(()=>window.__combat3d.read());checkTerminal(hidden);assert.equal(hidden.records.length,6)
     result.rows.push({name:'hidden-card-never-reuses-cached-public-face',passed:true})
+    await page.evaluate(()=>window.__combat3d.masterHit(1,'blocked'));await page.waitForTimeout(110)
+    await page.evaluate(()=>window.__combat3d.masterHit(0,'unblocked'));await page.waitForTimeout(110)
+    assert.equal(await page.evaluate(()=>window.__combat3d.read().records.length),6,'blocked/zero master damage cannot animate')
+    const masterBadgeStart=await page.evaluate(()=>window.__combat3d.badge('master'))
+    assert(Math.abs(masterBadgeStart.translateX)<.01,'right-anchored master health must not inherit the centered power-badge transform')
+    await page.evaluate(()=>window.__combat3d.masterHit(1,'unblocked'))
+    const masterMiddle=await middle('master','master-hit')
+    const masterBadgeMiddle=await page.evaluate(()=>window.__combat3d.badge('master'))
+    const masterEnd=await waitDone(7)
+    const masterBadgeEnd=await page.evaluate(()=>window.__combat3d.badge('master'))
+    checkBadgeStationary('master health badge',masterBadgeStart,masterBadgeMiddle,masterBadgeEnd)
+    const masterRecord=masterEnd.records.at(-1)
+    assert.equal(masterMiddle.duration,280);assert.equal(masterMiddle.frame.masterOwners,1);assert.equal(masterMiddle.frame.ghosts,0)
+    const masterStrike=masterRecord.frames.find(frame=>frame.offset===.28).transform.match(/translate3d\(([-.\d]+)px,\s*([-.\d]+)px,\s*([-.\d]+)px\)/)
+    const masterSettle=masterRecord.frames.find(frame=>frame.offset===.62).transform.match(/translate3d\(([-.\d]+)px,\s*([-.\d]+)px,\s*([-.\d]+)px\)/)
+    assert(masterStrike&&masterSettle);assert(Math.sign(+masterStrike[1])===Math.sign(+masterSettle[1]))
+    assert(Math.abs(+masterSettle[1])<Math.abs(+masterStrike[1]),'master must decay toward rest without crossing into a rebound')
+    result.rows.push({name:'real-master-positive-defense-hit-once-no-clone',middle:masterMiddle,record:masterRecord,
+      badgePosition:{start:masterBadgeStart,middle:masterBadgeMiddle,end:masterBadgeEnd}})
     await page.evaluate(()=>window.__combat3d.stop());result.samples=hidden.samples;result.records=hidden.records;result.passed=true
     await context.close();activePage=null
   }

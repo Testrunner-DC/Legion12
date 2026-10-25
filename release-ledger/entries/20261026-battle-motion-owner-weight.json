@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-battle-motion-owner-weight",
+  "date": "2026-10-26",
+  "audience": "players",
+  "title": "对局动画交接与力度",
+  "changes": [{
+    "category": "battle",
+    "text": "修正公开打出卡牌中央展示至落位之间的可见交接，避免新落位或复用卡位时同时出现两张卡面；补上未被抵挡的进攻打中主宰时的受击反馈。军团落位、进攻及活跃休整改用蓄势、接触压缩和稳定归位，减少反复放大回弹，保留兵力对应的力度差异。",
+    "paths": [
+      "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue",
+      "opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue",
+      "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue"
+    ]
+  }]
+}

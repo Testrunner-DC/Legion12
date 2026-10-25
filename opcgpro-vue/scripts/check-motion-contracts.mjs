@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import assert from 'node:assert/strict'
 import './test-battle-animation-precedence.mjs'
 import './test-entry-drop-impact.mjs'
 import './test-card-state-3d-handoff-20261025.mjs'
@@ -42,6 +43,29 @@ const stateLayerMarkup = board.slice(board.indexOf('<CardStateTransitionLayer'),
   board.indexOf('/>', board.indexOf('<CardStateTransitionLayer')) + 2)
 const zoneLayerMarkup = board.slice(board.indexOf('<ZoneMovementPresentationLayer'),
   board.indexOf('/>', board.indexOf('<ZoneMovementPresentationLayer')) + 2)
+const hasZoneFlightArcAndSettle = source => {
+  const frames = between(source, 'const lift = -Math.min(40', '\n        if (movement.playedCard')
+  const arc = frames.indexOf('offset: .5')
+  const contact = frames.indexOf('opacity: 1, offset: .88')
+  const settled = frames.indexOf('scale(${scaleX},${scaleY})', contact)
+  return frames.includes('Math.hypot(dx, dy) * .08') && frames.includes('dy / 2 + lift')
+    && arc >= 0 && contact > arc && settled > contact
+}
+const attackRestFrames = source => between(source,
+  '] : [\n        { transform: startPose }', '\n      ]\n      // Attack keyframe offsets')
+const hasAttackLungeAndRest = source => {
+  const frames = attackRestFrames(source)
+  const phases = ['offset: .18', 'offset: .42', 'offset: .56', 'offset: .82']
+  let cursor = -1
+  for (const phase of phases) {
+    const next = frames.indexOf(phase, cursor + 1)
+    if (next <= cursor) return false
+    cursor = next
+  }
+  return frames.includes('pose(lungeX * .08') && frames.includes('pose(lungeX, lungeY')
+    && frames.includes("{ transform: endPose, filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))' }")
+    && !/,\s*1\.\d+\),/.test(frames)
+}
 
 const checks = [
   ['motion tokens imported once', main.includes("import './l12/motion.css'")],
@@ -52,12 +76,12 @@ const checks = [
   ['immersive and site route transitions', app.includes('name="page-fade"') && app.includes('name="page-slide"')],
   ['hand FLIP anchors', hand.includes('useFlip') && hand.includes('data-flip-id')],
   ['public hand-add presentation preserved', movement.includes('publicHandAddCaption') && movement.includes("event.type === 'reveal' && /加入手牌/")],
-  ['zone flight arc and settle', movement.includes('const lift =') && movement.includes('offset: .85')],
+  ['zone flight arc, .88 contact compression and terminal settle', hasZoneFlightArcAndSettle(movement)],
   ['template flights release their authority lease on finish and cancellation',
     between(movement, '  const finish = () => {', '\n  try {').includes('if (!movement.visualOwner) revealTarget(movement)')
     && between(movement, 'function cancelActiveMovement()', '\nfunction reset()').includes('if (movement && !movement.visualOwner) revealTarget(movement)')],
   ['attack lunge and rest share one visible transaction', statePreparation.includes("holderWrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
-    && stateTransition.includes('offset: .38') && stateTransition.includes('offset: .56')
+    && hasAttackLungeAndRest(stateTransition)
     && !combat.includes("event.type === 'attack' &&") && !combat.includes("event.type === 'attack') animateAttack")],
   ['one authority attack owns one directional connection without the fixed decorative slash',
     board.includes("import AttackConnectionPresentationLayer from './AttackConnectionPresentationLayer.vue'")
@@ -320,9 +344,26 @@ const checks = [
     && movement.includes('Rebase once from the coherent pre-render tuple.')],
 ]
 
+const replacementCounterexamples = [
+  ['zone lift arc removed', movement.replace('Math.hypot(dx, dy) * .08', '0'), hasZoneFlightArcAndSettle],
+  ['zone .88 contact removed', movement.replace('opacity: 1, offset: .88', 'opacity: 1, offset: .87'), hasZoneFlightArcAndSettle],
+  ...['.18', '.42', '.56', '.82'].map(offset => [
+    `attack ${offset} phase removed`, stateTransition.replace(`offset: ${offset}`, `offset: ${Number(offset) + .001}`), hasAttackLungeAndRest,
+  ]),
+  ['attack terminal rest removed', stateTransition.replace(
+    "{ transform: pose(dx, dy, 2, -2, toAngle, 1), offset: .82 },\n        { transform: endPose, filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))' }",
+    "{ transform: pose(dx, dy, 2, -2, toAngle, 1), offset: .82 },\n        { transform: startPose, filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))' }"), hasAttackLungeAndRest],
+  ['attack rebound reintroduced', stateTransition.replace(
+    'fromAngle + (toAngle - fromAngle) * .62, .985)',
+    'fromAngle + (toAngle - fromAngle) * .62, 1.08)'), hasAttackLungeAndRest],
+]
+for (const [name, changed, accepts] of replacementCounterexamples)
+  assert.equal(accepts(changed), false, `motion contract must reject: ${name}`)
+
 const failures = checks.filter(([, ok]) => !ok)
 if (failures.length) {
   for (const [name] of failures) console.error(`FAIL ${name}`)
   process.exit(1)
 }
+console.log(`L12 motion contract replacement counterexamples passed: ${replacementCounterexamples.length}/${replacementCounterexamples.length}`)
 console.log(`L12 motion contracts passed: ${checks.length}/${checks.length}`)
