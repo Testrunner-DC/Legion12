@@ -6,6 +6,7 @@ import {
   refreshBrowserNotificationState,
   toggleBrowserNotificationsFromUserGesture,
 } from '@/l12/notifications/browserNotifications'
+import { focusDialog, handleDialogKeydown } from './bugFeedbackEntry'
 
 const emit = defineEmits<{ close: []; feedback: [] }>()
 const modal = ref<HTMLElement | null>(null)
@@ -31,20 +32,12 @@ const notificationActionLabel = computed(() => {
 })
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') { event.stopPropagation(); emit('close'); return }
-  if (event.key !== 'Tab' || !modal.value) return
-  event.stopPropagation()
-  const actions = Array.from(modal.value.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled)'))
-    .filter(element => element.tabIndex >= 0 && element.getClientRects().length > 0)
-  if (!actions.length) return
-  const first = actions[0]!, last = actions[actions.length - 1]!
-  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  handleDialogKeydown(event, modal.value, () => emit('close'))
 }
 
 onMounted(() => {
   refreshBrowserNotificationState()
-  modal.value?.querySelector<HTMLElement>('button')?.focus()
+  focusDialog(modal.value)
 })
 </script>
 

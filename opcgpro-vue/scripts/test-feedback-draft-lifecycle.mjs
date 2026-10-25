@@ -83,5 +83,65 @@ for (const scenario of ['success', 'failure', 'reopen-success', 'reopen-failure'
   }
   stops.forEach(stop=>stop())
 }
-console.log(`Feedback draft lifecycle passed: ${checks} actual-script assertions, 15 deterministic scenarios`)
+
+const focusSource = fs.readFileSync(new URL('../src/l12/site/bugFeedbackEntry.ts', import.meta.url), 'utf8')
+const focusCompiled = ts.transpileModule(focusSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
+const focusExports = {}
+const focusDocument = { activeElement: null }
+new Function('exports', 'require', 'document', 'getComputedStyle', focusCompiled)(
+  focusExports,
+  id => id === 'vue' ? { nextTick: () => Promise.resolve() } : undefined,
+  focusDocument,
+  element => element.style,
+)
+const makeFocusTarget = ({ rect = true, hidden = false, display = 'block', visibility = 'visible' } = {}) => {
+  const target = {
+    tabIndex: 0,
+    style: { display, visibility },
+    getClientRects: () => rect ? [{}] : [],
+    closest: () => hidden ? {} : null,
+    focus: () => { focusDocument.activeElement = target },
+  }
+  return target
+}
+const skipped = makeFocusTarget({ visibility: 'hidden' })
+const first = makeFocusTarget()
+const last = makeFocusTarget()
+const targets = [skipped, first, last]
+const dialog = {
+  querySelectorAll: () => targets,
+  contains: target => targets.includes(target),
+  focus: () => { focusDocument.activeElement = dialog },
+}
+const keyboardEvent = (key, shiftKey = false) => ({
+  key, shiftKey, prevented: false, stopped: false,
+  preventDefault() { this.prevented = true },
+  stopPropagation() { this.stopped = true },
+})
+
+assert.equal(focusExports.focusDialog(dialog), first, 'initial dialog focus selects the first visible action'); checks++
+assert.equal(focusDocument.activeElement, first); checks++
+focusDocument.activeElement = last
+const tab = keyboardEvent('Tab')
+focusExports.handleDialogKeydown(tab, dialog, () => assert.fail('Tab must not close the dialog'))
+assert.equal(focusDocument.activeElement, first); assert.equal(tab.prevented, true); assert.equal(tab.stopped, true); checks += 3
+focusDocument.activeElement = first
+const shiftTab = keyboardEvent('Tab', true)
+focusExports.handleDialogKeydown(shiftTab, dialog, () => assert.fail('Shift+Tab must not close the dialog'))
+assert.equal(focusDocument.activeElement, last); assert.equal(shiftTab.prevented, true); assert.equal(shiftTab.stopped, true); checks += 3
+let closed = 0
+const escape = keyboardEvent('Escape')
+focusExports.handleDialogKeydown(escape, dialog, () => { closed++ })
+assert.equal(closed, 1); assert.equal(escape.prevented, true); assert.equal(escape.stopped, true); checks += 3
+const emptyDialog = { querySelectorAll: () => [], contains: () => false, focus: () => { focusDocument.activeElement = emptyDialog } }
+const emptyTab = keyboardEvent('Tab')
+focusExports.handleDialogKeydown(emptyTab, emptyDialog, () => assert.fail('Tab must not close an empty dialog'))
+assert.equal(focusDocument.activeElement, emptyDialog); assert.equal(emptyTab.prevented, true); assert.equal(emptyTab.stopped, true); checks += 3
+
+const settingsSource = fs.readFileSync(new URL('../src/l12/site/L12SettingsModal.vue', import.meta.url), 'utf8')
+assert.match(settingsSource, /handleDialogKeydown\(event, modal\.value, \(\) => emit\('close'\)\)/); checks++
+assert.match(settingsSource, /focusDialog\(modal\.value\)/); checks++
+assert.doesNotMatch(settingsSource, /querySelectorAll<HTMLElement>/); checks++
+
+console.log(`Feedback draft and dialog focus lifecycle passed: ${checks} actual-script assertions, 15 deterministic submission scenarios and 4 focus scenarios`)
 export const usesWhitelistedBugDiagnostic = true

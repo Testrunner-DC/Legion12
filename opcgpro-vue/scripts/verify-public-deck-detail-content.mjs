@@ -94,7 +94,7 @@ await router.isReady()
 createApp({render:()=>fixtureQuery.has('stickyModal')?h(SiteShell,null,{default:()=>h('div',{style:'padding:40px'},'弹框滚动验收背景')}):h(RouterView)}).use(router).mount('#app')
 `
 
-let browser
+let browser, activePage
 const server = await createServer({
   root, configLoader: 'runner', cacheDir: path.join(qaCacheRoot, 'vite-public-deck-detail-content'),
   server: { host: '127.0.0.1', port: 0, strictPort: false },
@@ -126,6 +126,7 @@ try {
   const port = server.httpServer.address().port
   browser = await chromium.launch({ headless: true, channel: 'msedge' })
   const page = await browser.newPage()
+  activePage = page
   await page.addInitScript(() => localStorage.setItem('l12-account', JSON.stringify({ id: 'author', username: '验收作者', role: 'player', createdAt: '', publicHistory: true })))
   const errors = []
   const failedRequests = []
@@ -299,8 +300,13 @@ try {
     const header=modal.locator(':scope>header')
     const close=page.getByRole('button',{name:'关闭更新日志',exact:true})
     await modal.waitFor()
-    await close.focus()
-    assert.equal(await close.evaluate(element=>document.activeElement===element),true,`关闭键必须可获得焦点 ${suffix(viewport)}`)
+    await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='关闭更新日志')
+    assert.equal(await close.evaluate(element=>document.activeElement===element),true,`关闭键必须自动获得焦点 ${suffix(viewport)}`)
+    assert.deepEqual(await page.evaluate(()=>['.site-mobile-head','.site-sidebar','.site-content'].map(selector=>document.querySelector(selector)?.inert)),[true,true,true],`弹框外三块背景必须全部 inert ${suffix(viewport)}`)
+    await page.keyboard.press('Tab')
+    assert.equal(await close.evaluate(element=>document.activeElement===element),true,`Tab 不得越出更新日志 ${suffix(viewport)}`)
+    await page.keyboard.press('Shift+Tab')
+    assert.equal(await close.evaluate(element=>document.activeElement===element),true,`Shift+Tab 不得越出更新日志 ${suffix(viewport)}`)
     const scrolled=await modal.evaluate(element=>{element.scrollTop=element.scrollHeight;return {scrollTop:element.scrollTop,scrollHeight:element.scrollHeight,clientHeight:element.clientHeight}})
     assert.ok(scrolled.scrollHeight>scrolled.clientHeight && scrolled.scrollTop>0,`更新日志必须形成自身滚动 ${suffix(viewport)}`)
     await page.waitForFunction(()=>document.querySelector('.update-modal')?.scrollTop>0)
@@ -319,11 +325,41 @@ try {
     stickyDialogReport.push({viewport,scrolled,modalBox,headerBox,closeBox,topInset,topCover})
     await close.click()
     assert.equal(await page.locator('.update-modal').count(),0,`固定关闭键可直接关闭更新日志 ${suffix(viewport)}`)
+    const returnAction=viewport.width<=700?page.getByRole('button',{name:'打开导航',exact:true}):page.getByRole('button',{name:'更新日志',exact:true})
+    await page.waitForFunction(label=>document.activeElement?.getAttribute('aria-label')===label,viewport.width<=700?'打开导航':'更新日志')
+    assert.equal(await returnAction.evaluate(element=>document.activeElement===element),true,`关闭键必须归还可见触发点 ${suffix(viewport)}`)
+    assert.deepEqual(await page.evaluate(()=>['.site-mobile-head','.site-sidebar','.site-content'].map(selector=>document.querySelector(selector)?.inert)),[false,false,false],`关闭后必须解除背景 inert ${suffix(viewport)}`)
+    if(viewport.width<=700)await page.getByRole('button',{name:'打开导航',exact:true}).click()
+    await page.getByRole('button',{name:'更新日志',exact:true}).click()
+    await page.keyboard.press('Escape')
+    assert.equal(await page.locator('.update-modal').count(),0,`Escape 必须关闭更新日志 ${suffix(viewport)}`)
+    await page.waitForFunction(label=>document.activeElement?.getAttribute('aria-label')===label,viewport.width<=700?'打开导航':'更新日志')
+    assert.equal(await returnAction.evaluate(element=>document.activeElement===element),true,`Escape 必须归还可见触发点 ${suffix(viewport)}`)
+    if(viewport.width<=700)await page.getByRole('button',{name:'打开导航',exact:true}).click()
+    await page.getByRole('button',{name:'更新日志',exact:true}).click()
+    await page.locator('.site-modal-mask').click({position:{x:4,y:4}})
+    assert.equal(await page.locator('.update-modal').count(),0,`遮罩必须关闭更新日志 ${suffix(viewport)}`)
+    await page.waitForFunction(label=>document.activeElement?.getAttribute('aria-label')===label,viewport.width<=700?'打开导航':'更新日志')
+    assert.equal(await returnAction.evaluate(element=>document.activeElement===element),true,`遮罩关闭必须归还可见触发点 ${suffix(viewport)}`)
   }
   assert.equal(errors.length, 0, `page errors: ${errors.join(' | ')}`)
   assert.equal(anchoredCaptures.length, qaScope==='full'?28:0, 'Only the full scope captures public deck content sections')
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', scope:qaScope, viewports:qaScope==='full'?viewports:[], report, anchoredCaptures, stickyDialogReport, errors }, null, 2))
   console.log(JSON.stringify({ status: 'passed', scope:qaScope, output, viewports:qaScope==='full'?viewports.length:stickyDialogReport.length, screenshots: fs.readdirSync(output).filter(name => name.endsWith('.png')).length }, null, 2))
+} catch (error) {
+  const focus = await activePage?.evaluate(() => {
+    const active = document.activeElement
+    const drawer = document.querySelector('.site-sidebar')
+    return { viewport: { width: innerWidth, height: innerHeight },
+      active: active ? { tag: active.tagName, label: active.getAttribute('aria-label'),
+        rect: active.getBoundingClientRect().toJSON(), inDrawer: !!active.closest('.site-sidebar') } : null,
+      drawer: drawer ? { open: drawer.classList.contains('open'),
+        transform: getComputedStyle(drawer).transform, rect: drawer.getBoundingClientRect().toJSON() } : null }
+  }).catch(() => null)
+  await activePage?.screenshot({ path: path.join(output, 'failure.png') }).catch(() => {})
+  fs.writeFileSync(path.join(output, 'failure-report.json'), JSON.stringify({ status: 'failed', scope: qaScope,
+    error: String(error?.stack || error), focus }, null, 2))
+  throw error
 } finally {
   await browser?.close()
   await server.close()

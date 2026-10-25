@@ -8,7 +8,7 @@ import SiteIcon from './SiteIcon.vue'
 import SocialPopover from './SocialPopover.vue'
 import { chatResource } from '../chatResource'
 import L12SettingsModal from './L12SettingsModal.vue'
-import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './bugFeedbackEntry'
+import { closeSettingsAndRestore, focusDialog, handleDialogKeydown, openBugFeedbackFromSettings, rememberSettingsOpener, visibleFocusTarget } from './bugFeedbackEntry'
 import MaintenanceTicker from './MaintenanceTicker.vue'
 import CardImage from '@/l12/CardImage.vue'
 import SeasonSummaryNotice from './SeasonSummaryNotice.vue'
@@ -603,6 +603,7 @@ const mobileMenuButton = ref<HTMLButtonElement | null>(null)
 const mobileDrawer = ref<HTMLElement | null>(null)
 let bodyOverflowBeforeDrawer = ''
 const modal = ref<'settings' | 'updates' | 'online' | null>(null)
+const updateDialog = ref<HTMLElement | null>(null)
 const socialOpen = ref(false)
 const socialAnchor = ref<HTMLElement | null>(null)
 const socialUtilityButton = ref<HTMLButtonElement | null>(null)
@@ -632,7 +633,7 @@ function refreshSocialReturnAnchor() {
   socialAnchor.value = menu && menu.getClientRects().length > 0
     ? menu : socialUtilityButton.value
 }
-const settingsOpener = ref<HTMLElement | null>(null)
+const siteModalOpener = ref<HTMLElement | null>(null)
 const mainNav = [
   { to: '/', icon: 'home', label: '主页' },
   { to: '/news', icon: 'news', label: '资讯' },
@@ -727,19 +728,25 @@ function toggleMobileNav() {
 }
 function openSiteModal(next: 'settings' | 'updates' | 'online', event?: Event) {
   socialOpen.value = false
-  if (next === 'settings') settingsOpener.value = rememberSettingsOpener(event)
+  // The drawer is about to close. Its button may still look visible during
+  // the transition, but must never be the eventual return-focus target.
+  siteModalOpener.value = mobileOpen.value && visibleFocusTarget(mobileMenuButton.value)
+    ? mobileMenuButton.value : rememberSettingsOpener(event)
   closeMobileNav(false)
   modal.value = next
+  if (next === 'updates') void nextTick(() => focusDialog(updateDialog.value))
 }
 function closeSiteSettings() {
-  void closeSettingsAndRestore(() => { modal.value = null }, settingsOpener.value, mobileMenuButton.value)
+  closeSiteModal()
 }
 function openSiteFeedback() {
-  void openBugFeedbackFromSettings(() => { modal.value = null }, settingsOpener.value, mobileMenuButton.value)
+  void openBugFeedbackFromSettings(() => { modal.value = null }, siteModalOpener.value, mobileMenuButton.value)
 }
 function closeSiteModal() {
-  if (modal.value === 'settings') closeSiteSettings()
-  else modal.value = null
+  void closeSettingsAndRestore(() => { modal.value = null }, siteModalOpener.value, mobileMenuButton.value)
+}
+function onUpdateDialogKeydown(event: KeyboardEvent) {
+  handleDialogKeydown(event, updateDialog.value, closeSiteModal)
 }
 function onMobileNavKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && mobileOpen.value) closeMobileNav()
@@ -830,13 +837,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="site-shell" data-l12-ui-system="site-v1">
-    <header class="site-mobile-head ui-state-scope">
+    <header class="site-mobile-head ui-state-scope" :inert="Boolean(modal)">
       <router-link class="mobile-brand" to="/" title="返回主页"><img :src="siteBrandIcon" alt="十二军团"/></router-link>
       <button ref="mobileMenuButton" :aria-expanded="mobileOpen" aria-controls="site-mobile-drawer" :aria-label="mobileOpen ? '关闭导航' : '打开导航'" @click="toggleMobileNav">{{ mobileOpen ? '×' : '☰' }}</button>
     </header>
 
     <button v-if="mobileOpen" class="site-drawer-backdrop" type="button" aria-label="关闭导航" @click="closeMobileNav()"/>
-    <aside id="site-mobile-drawer" ref="mobileDrawer" class="site-sidebar ui-state-scope" :class="{ open: mobileOpen }" :role="mobileOpen ? 'dialog' : undefined" :aria-modal="mobileOpen ? 'true' : undefined">
+    <aside id="site-mobile-drawer" ref="mobileDrawer" class="site-sidebar ui-state-scope" :class="{ open: mobileOpen }" :role="mobileOpen ? 'dialog' : undefined" :aria-modal="mobileOpen ? 'true' : undefined" :inert="Boolean(modal)">
       <router-link class="site-brand" to="/" title="十二军团官方网站">
         <img :src="siteBrandIcon" alt="十二军团"/>
       </router-link>
@@ -849,19 +856,19 @@ onBeforeUnmount(() => {
 
       <div class="site-utilities">
         <button type="button" title="设置" aria-label="设置" @click="openSiteModal('settings', $event)"><SiteIcon name="settings"/></button>
-        <button type="button" title="更新日志" aria-label="更新日志" @click="openSiteModal('updates')"><SiteIcon name="updates"/></button>
+        <button type="button" title="更新日志" aria-label="更新日志" @click="openSiteModal('updates', $event)"><SiteIcon name="updates"/></button>
         <button ref="socialUtilityButton" type="button" :class="{ 'has-unread': socialPendingCount > 0 }" :title="socialLabel" :aria-label="socialLabel" :aria-expanded="socialOpen" @click="toggleSocial($event)"><span class="utility-icon"><SiteIcon name="online"/><i>{{ onlineCount }}</i><b v-if="socialPendingCount" class="utility-unread" :aria-label="`${socialPendingCount} 条待查看消息或申请`">{{ socialPendingCount }}</b></span></button>
         <button type="button" class="connection" :class="l12State.status" :title="connectionLabel" :aria-label="connectionLabel"><span class="utility-icon"><SiteIcon name="connection"/><i/></span></button>
       </div>
     </aside>
 
-    <main class="site-content" :class="{ 'ui-state-scope': siteUiStates }"><MaintenanceTicker v-if="route.meta.section === 'battle'"/><slot /></main>
+    <main class="site-content" :class="{ 'ui-state-scope': siteUiStates }" :inert="Boolean(modal)"><MaintenanceTicker v-if="route.meta.section === 'battle'"/><slot /></main>
 
     <div v-if="modal" class="site-modal-mask ui-state-scope" @click.self="closeSiteModal">
       <L12SettingsModal v-if="modal === 'settings'" @close="closeSiteSettings" @feedback="openSiteFeedback"/>
 
-      <section v-else-if="modal === 'updates'" class="site-modal update-modal" role="dialog" aria-modal="true" aria-labelledby="site-update-modal-title">
-        <header><div><small>CHANGELOG</small><h2 id="site-update-modal-title">更新日志</h2></div><button type="button" aria-label="关闭更新日志" @click="modal = null">×</button></header>
+      <section v-else-if="modal === 'updates'" ref="updateDialog" class="site-modal update-modal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="site-update-modal-title" @keydown="onUpdateDialogKeydown">
+        <header><div><small>CHANGELOG</small><h2 id="site-update-modal-title">更新日志</h2></div><button type="button" aria-label="关闭更新日志" @click="closeSiteModal">×</button></header>
         <article v-for="(entry, index) in updateEntries" :key="`${entry.date}-${entry.version}-${index}`">
           <time>{{ entry.date }}</time><h3>{{ entry.title }}</h3><code v-if="entry.version">{{ entry.version }}</code>
           <section v-for="section in entry.sections" :key="section.title" class="update-section">
