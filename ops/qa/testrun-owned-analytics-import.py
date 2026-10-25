@@ -1,7 +1,7 @@
 """One fixed, first-append-only analytics fixture import. No network or service control.
 
 The CLI accepts only the fixed legacy operation or an exact SHA-bound owned-control terminal
-binding; neither accepts arbitrary paths or scopes. The injectable function is for offline SQLite tests.
+or normal-profile binding; none accepts arbitrary paths or scopes. The injectable function is for offline SQLite tests.
 An intent without a final receipt is UNKNOWN, never permission to repeat this operation.
 """
 from __future__ import annotations
@@ -200,6 +200,35 @@ class TerminalBinding:
         return Path("/tmp/l12-analytics-import-" + self.fixture_run_id + "-terminal-" + self.operation_run_id)
 
 
+@dataclass(frozen=True)
+class NormalBinding:
+    operation_run_id: str
+    fixture_run_id: str
+    qualification_binding_sha: str
+    database_sha: str
+    proof_sha: str
+    test_pid: int
+    test_commit: str
+    test_dll: str
+    formal_pid: int
+    formal_commit: str
+    formal_dll: str
+    diagnostics_off: bool
+    template_source_sha: str
+
+    @property
+    def diagnostic_setting(self):
+        return ""
+
+    @property
+    def source_root(self):
+        return Path("/tmp/l12-analytics-fixture-" + self.fixture_run_id)
+
+    @property
+    def receipts(self):
+        return Path("/tmp/l12-analytics-import-" + self.fixture_run_id + "-normal-" + self.operation_run_id)
+
+
 def parse_terminal_binding(raw, expected_sha):
     require(type(raw) is bytes and 0 < len(raw) <= 8192, "TERMINAL_BINDING_SIZE_REJECTED")
     require(type(expected_sha) is str and re.fullmatch(r"[A-F0-9]{64}", expected_sha)
@@ -242,6 +271,49 @@ def parse_terminal_binding(raw, expected_sha):
         value["proofSha256"], identities[0]["pid"], identities[0]["commit"], identities[0]["dllSha256"],
         identities[1]["pid"], identities[1]["commit"], identities[1]["dllSha256"], value["diagnosticSetting"],
         value["templateSourceSha256"])
+
+
+def parse_normal_binding(raw, expected_sha):
+    require(type(raw) is bytes and 0 < len(raw) <= 8192, "NORMAL_BINDING_SIZE_REJECTED")
+    require(type(expected_sha) is str and re.fullmatch(r"[A-F0-9]{64}", expected_sha)
+            and digest(raw) == expected_sha, "NORMAL_BINDING_SHA_CHANGED")
+    def exact_object(pairs):
+        result = {}
+        for key, selected in pairs:
+            require(key not in result, "NORMAL_BINDING_DUPLICATE_FIELD_REJECTED")
+            result[key] = selected
+        return result
+    value = json.loads(raw.decode("utf-8"), object_pairs_hook=exact_object)
+    require(type(value) is dict and set(value) == {"schema", "kind", "operationRunId", "fixtureRunId",
+            "qualificationBindingSha256", "databaseSha256", "proofSha256", "test", "formal",
+            "diagnosticsOff", "templateSourceSha256"}, "NORMAL_BINDING_SHAPE_REJECTED")
+    require(type(value["schema"]) is int and value["schema"] == 1
+            and value["kind"] == "normal-owned-analytics-import-v1", "NORMAL_BINDING_KIND_REJECTED")
+    require(all(type(value[name]) is str and re.fullmatch(r"[a-f0-9]{32}", value[name])
+                for name in ("operationRunId", "fixtureRunId")), "NORMAL_BINDING_RUN_REJECTED")
+    require(all(type(value[name]) is str and re.fullmatch(r"[A-F0-9]{64}", value[name])
+                for name in ("qualificationBindingSha256", "databaseSha256", "proofSha256")),
+            "NORMAL_BINDING_FIXTURE_REJECTED")
+    identities = []
+    for name in ("test", "formal"):
+        item = value[name]
+        require(type(item) is dict and set(item) == {"pid", "commit", "dllSha256"},
+                "NORMAL_BINDING_IDENTITY_SHAPE_REJECTED")
+        require(type(item["pid"]) is int and item["pid"] > 0
+                and type(item["commit"]) is str and re.fullmatch(r"[a-f0-9]{40}", item["commit"])
+                and type(item["dllSha256"]) is str and re.fullmatch(r"[A-F0-9]{64}", item["dllSha256"]),
+                "NORMAL_BINDING_IDENTITY_REJECTED")
+        identities.append(item)
+    require(identities[0]["pid"] != identities[1]["pid"], "NORMAL_BINDING_DISTINCT_PID_REQUIRED")
+    require(value["diagnosticsOff"] is True, "NORMAL_BINDING_DIAGNOSTICS_OFF_REQUIRED")
+    require(type(value["templateSourceSha256"]) is str
+            and re.fullmatch(r"[A-F0-9]{64}", value["templateSourceSha256"]),
+            "NORMAL_BINDING_SOURCE_REJECTED")
+    return NormalBinding(value["operationRunId"], value["fixtureRunId"],
+        value["qualificationBindingSha256"], value["databaseSha256"], value["proofSha256"],
+        identities[0]["pid"], identities[0]["commit"], identities[0]["dllSha256"],
+        identities[1]["pid"], identities[1]["commit"], identities[1]["dllSha256"],
+        value["diagnosticsOff"], value["templateSourceSha256"])
 
 
 def append_fixture(source, proof_path, target, receipt_root, policy, *, guard=lambda: None,
@@ -429,6 +501,20 @@ def live_guard(binding=None):
 
 def main():
     global ACTIVE_RECEIPTS
+    if len(sys.argv) == 4 and sys.argv[1:3] == ["--normal-apply", "--binding-sha"]:
+        raw = sys.stdin.buffer.read(8193)
+        binding = parse_normal_binding(raw, sys.argv[3])
+        require(file_sha(Path(__file__)) == binding.template_source_sha, "NORMAL_TEMPLATE_SOURCE_CHANGED")
+        ACTIVE_RECEIPTS = binding.receipts
+        def expired(*_):
+            raise TimeoutError("IMPORT_TOTAL_DEADLINE")
+        signal.signal(signal.SIGALRM, expired)
+        signal.alarm(35)
+        try:
+            apply_fixed(binding)
+        finally:
+            signal.alarm(0)
+        return
     if sys.argv[1:] == ["--apply"]:
         binding = None
     else:

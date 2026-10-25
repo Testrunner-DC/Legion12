@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-normal-analytics-binding-internal",
+  "date": "2026-10-26",
+  "audience": "internal",
+  "reason": "测试服16条合成统计数据工具增加严格SHA绑定的正常诊断关闭入口，复用原固定路径、空库首追加、备份和完整性核心；48项离线回归通过。未导入线上数据，不宣称30＋10性能通过。",
+  "paths": [
+    "ops/qa/testrun-owned-analytics-import.py",
+    "ops/qa/test-testrun-owned-analytics-import.py"
+  ]
+}

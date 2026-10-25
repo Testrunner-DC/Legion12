@@ -108,6 +108,58 @@ def main():
         pass
     results.append({"name": "reject-binding-duplicate-field", "passed": True})
 
+    normal_value = {"schema": 1, "kind": "normal-owned-analytics-import-v1",
+        "operationRunId": "4" * 32, "fixtureRunId": "5" * 32,
+        "qualificationBindingSha256": "F945C94BBC8558DB58E2164348973A57984F94CBDA71BA60B793D119C687A89C",
+        "databaseSha256": "6" * 64, "proofSha256": "7" * 64,
+        "test": {"pid": 201, "commit": "c8750df92e2c9f477c88496c91bd63b105af95cd",
+                 "dllSha256": "8" * 64},
+        "formal": {"pid": 202, "commit": "9" * 40, "dllSha256": "A" * 64},
+        "diagnosticsOff": True, "templateSourceSha256": "B" * 64}
+    normal_raw = json.dumps(normal_value, sort_keys=True, separators=(",", ":")).encode()
+    normal = tool.parse_normal_binding(normal_raw, tool.digest(normal_raw))
+    assert normal.source_root == Path("/tmp/l12-analytics-fixture-" + "5" * 32)
+    assert normal.receipts == Path("/tmp/l12-analytics-import-" + "5" * 32 + "-normal-" + "4" * 32)
+    assert normal.diagnostic_setting == ""
+    assert normal.qualification_binding_sha == normal_value["qualificationBindingSha256"]
+    results.append({"name": "strict-normal-binding-derives-only-fixed-roots-and-diagnostics-off", "passed": True})
+    for name, mutate, expected_sha in (
+        ("normal-extra-field", lambda value: value.__setitem__("extra", True), None),
+        ("normal-bool-schema", lambda value: value.__setitem__("schema", True), None),
+        ("normal-bool-pid", lambda value: value["test"].__setitem__("pid", True), None),
+        ("normal-same-pid", lambda value: value["formal"].__setitem__("pid", value["test"]["pid"]), None),
+        ("normal-diagnostics-false", lambda value: value.__setitem__("diagnosticsOff", False), None),
+        ("normal-diagnostics-int", lambda value: value.__setitem__("diagnosticsOff", 1), None),
+        ("normal-diagnostics-string", lambda value: value.__setitem__("diagnosticsOff", "true"), None),
+        ("normal-missing-field", lambda value: value.pop("proofSha256"), None),
+        ("normal-qualification-binding", lambda value: value.__setitem__("qualificationBindingSha256", "wrong"), None),
+        ("normal-template-source", lambda value: value.__setitem__("templateSourceSha256", "wrong"), None),
+        ("normal-binding-sha", lambda _value: None, "0" * 64)):
+        value = json.loads(json.dumps(normal_value)); mutate(value)
+        changed = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        try:
+            tool.parse_normal_binding(changed, expected_sha or tool.digest(changed))
+            raise AssertionError(name + " accepted")
+        except RuntimeError:
+            pass
+        results.append({"name": "reject-" + name, "passed": True})
+    normal_duplicate = normal_raw[:-1] + b',"diagnosticsOff":true}'
+    try:
+        tool.parse_normal_binding(normal_duplicate, tool.digest(normal_duplicate))
+        raise AssertionError("normal duplicate binding field accepted")
+    except RuntimeError:
+        pass
+    results.append({"name": "reject-normal-binding-duplicate-field", "passed": True})
+    for name, parser, selected in (
+        ("terminal-as-normal", tool.parse_normal_binding, raw),
+        ("normal-as-terminal", tool.parse_terminal_binding, normal_raw)):
+        try:
+            parser(selected, tool.digest(selected))
+            raise AssertionError(name + " accepted")
+        except RuntimeError:
+            pass
+        results.append({"name": "reject-" + name, "passed": True})
+
     def case(name, mutate=None, hook=None, success=False, committed=False, target_count=0):
         args = list(fixture(cache / name))
         if mutate:
@@ -203,13 +255,19 @@ def main():
             assert counts(args[2]) == (0, 0)
         results.append({"name": "reject-real-os-link-" + family + "-before-backup", "passed": True})
     tree = ast.parse(MODULE.read_text(encoding="utf-8"))
+    assert MODULE.read_text(encoding="utf-8").count('sys.argv[1:3] == ["--normal-apply", "--binding-sha"]') == 1
+    results.append({"name": "normal-cli-is-one-explicit-parallel-mode", "passed": True})
     entry = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
-    alarm = next(node for node in ast.walk(entry) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                 and node.func.attr == "alarm" and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == 35)
-    apply_call = next(node for node in ast.walk(entry) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                      and node.func.id == "apply_fixed")
-    assert alarm.lineno < apply_call.lineno
-    results.append({"name": "35-second-CLI-deadline-covers-initial-identity-and-import", "passed": True})
+    alarms = sorted((node for node in ast.walk(entry) if isinstance(node, ast.Call)
+                     and isinstance(node.func, ast.Attribute) and node.func.attr == "alarm"
+                     and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == 35),
+                    key=lambda node: node.lineno)
+    apply_calls = sorted((node for node in ast.walk(entry) if isinstance(node, ast.Call)
+                          and isinstance(node.func, ast.Name) and node.func.id == "apply_fixed"),
+                         key=lambda node: node.lineno)
+    assert len(alarms) == len(apply_calls) == 2
+    assert all(alarm.lineno < apply_call.lineno for alarm, apply_call in zip(alarms, apply_calls))
+    results.append({"name": "35-second-CLI-deadline-covers-normal-and-existing-imports", "passed": True})
     result = {"schema": 1, "status": "passed", "cases": len(results), "results": results,
               "realSqlite": True, "networkCalls": 0, "liveDatabaseWrites": 0,
               "sources": {name: tool.file_sha(Path(__file__).with_name(name)) for name in
