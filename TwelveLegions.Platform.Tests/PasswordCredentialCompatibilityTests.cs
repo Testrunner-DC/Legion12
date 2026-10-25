@@ -184,7 +184,7 @@ public sealed class PasswordCredentialCompatibilityTests
     }
 
     [Fact]
-    public void RecognizedUpgradeCostIsPureHelperOnlyUntilTheStoreActivatesIt()
+    public void StoreReadsRecognizedUpgradeCostWhileLegacyReaderAndDefaultWriterRemain120k()
     {
         var future = L12PasswordCredential.Create(Password, L12PasswordCredential.RecognizedUpgradeIterations);
         Assert.True(L12PasswordCredential.Verify(Password, future.PasswordHash, future.Salt,
@@ -203,7 +203,10 @@ public sealed class PasswordCredentialCompatibilityTests
             SetCredential(Account(store, registered.Account!.Id), future.PasswordHash, future.Salt,
                 future.Algorithm, future.Iterations, future.Version);
 
-            Assert.False(store.Login(username, Password).Success);
+            Assert.True(store.Login(username, Password).Success);
+            Assert.Equal(L12PasswordCredential.RecognizedUpgradeIterations,
+                Property<int?>(Account(store, registered.Account!.Id), "PasswordIterations"));
+            Assert.Equal(L12PasswordCredential.LegacyIterations, L12PasswordCredential.Create(Password).Iterations);
         }
         finally
         {

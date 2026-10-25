@@ -17,6 +17,8 @@ internal static class L12PasswordCredential
     internal const int LegacyIterations = 120_000;
     internal const int ActiveIterations = LegacyIterations;
     internal const int RecognizedUpgradeIterations = 600_000;
+    // Reader compatibility is independent of the cost used for new credentials.
+    internal const int MaximumReadIterations = RecognizedUpgradeIterations;
     internal const int SaltBytes = 16;
     internal const int HashBytes = 32;
 

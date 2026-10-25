@@ -30,7 +30,7 @@ public sealed partial class L12PlatformStore
             try
             {
                 return L12PasswordCredential.Verify(password, Hash, Salt, Algorithm, Iterations, Version,
-                    L12PasswordCredential.ActiveIterations);
+                    L12PasswordCredential.MaximumReadIterations);
             }
             catch { return false; }
         }

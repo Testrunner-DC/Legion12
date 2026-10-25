@@ -20,17 +20,21 @@ internal static class Program
             var future = L12PasswordCredential.Create(SyntheticPassword, L12PasswordCredential.RecognizedUpgradeIterations);
             var readers = new
             {
-                CurrentReaderAcceptsLegacy = Verify(legacy, L12PasswordCredential.ActiveIterations),
-                CurrentReaderAcceptsCandidate = Verify(future, L12PasswordCredential.ActiveIterations),
+                CurrentReaderAcceptsLegacy = Verify(legacy, L12PasswordCredential.MaximumReadIterations),
+                CurrentReaderAcceptsCandidate = Verify(future, L12PasswordCredential.MaximumReadIterations),
                 CompatibleReaderAcceptsLegacy = Verify(legacy, L12PasswordCredential.RecognizedUpgradeIterations),
                 CompatibleReaderAcceptsCandidate = Verify(future, L12PasswordCredential.RecognizedUpgradeIterations),
                 CurrentWriterIterations = legacy.Iterations,
-                RollbackRequiresCompatibleReader = !Verify(future, L12PasswordCredential.ActiveIterations),
+                MaximumReadIterations = L12PasswordCredential.MaximumReadIterations,
+                LegacyReaderAcceptsCandidate = Verify(future, L12PasswordCredential.LegacyIterations),
+                RollbackRequiresCompatibleReader = !Verify(future, L12PasswordCredential.LegacyIterations),
             };
-            Check(readers.CurrentReaderAcceptsLegacy && readers.CompatibleReaderAcceptsLegacy && readers.CompatibleReaderAcceptsCandidate);
+            Check(readers.CurrentReaderAcceptsLegacy && readers.CurrentReaderAcceptsCandidate
+                && readers.CompatibleReaderAcceptsLegacy && readers.CompatibleReaderAcceptsCandidate
+                && !readers.LegacyReaderAcceptsCandidate && readers.CurrentWriterIterations == 120_000);
             if (settings.SelfTest)
             {
-                Console.WriteLine(JsonSerializer.Serialize(new { Schema = "l12-password-work-selftest-v1", Readers = readers }, Json));
+                Console.WriteLine(JsonSerializer.Serialize(new { Schema = "l12-password-work-selftest-v2", Readers = readers }, Json));
                 return 0;
             }
             var operations = new (string Name, Action Work)[]
@@ -52,7 +56,7 @@ internal static class Program
                 bursts.Add(await Burst(operation.Name, operation.Work, workers, settings.Burst));
             Console.WriteLine(JsonSerializer.Serialize(new
             {
-                Schema = "l12-password-work-v1", Scope = "local-synthetic-pure-helper-only",
+                Schema = "l12-password-work-v2", Scope = "local-synthetic-pure-helper-only",
                 Runtime = RuntimeInformation.FrameworkDescription, Platform = RuntimeInformation.OSDescription,
                 ProcessorCount = Environment.ProcessorCount, CpuQuotaEmulated = false,
                 SharedDefaultWorkers = Math.Clamp(Environment.ProcessorCount / 2, 1, 2),

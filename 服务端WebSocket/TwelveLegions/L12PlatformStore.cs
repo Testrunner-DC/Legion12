@@ -1867,7 +1867,7 @@ public sealed partial class L12PlatformStore
         try
         {
             return L12PasswordCredential.Verify(password, row.PasswordHash, row.Salt, row.PasswordAlgorithm,
-                row.PasswordIterations, row.PasswordCredentialVersion, L12PasswordCredential.ActiveIterations);
+                row.PasswordIterations, row.PasswordCredentialVersion, L12PasswordCredential.MaximumReadIterations);
         }
         catch { return false; }
     }

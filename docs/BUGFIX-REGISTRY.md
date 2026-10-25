@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261025-G4-COMPATIBLE-READER｜兼容读先行，保120k写入，本地接受未部署
+
+- 承接F06与持续推进授权：历史v1证已知600k旧读者拒绝，直接提ActiveIterations会混读写策略。两条实际持久合成RED证明登录拒绝与root同密启动重置，先分离MaximumReadIterations=600k，两个具名Verify消费点改读上限；ActiveIterations=120k及所有默认Create不变，无自动重哈希/新开关/现库迁移。
+- 同类扫描全服务端L12PasswordCredential.Create/Verify：PasswordSnapshot覆盖登录、改密、强制/自助改名；另一个仅启动root。四Create调用点均无显式600k。算法/版本/完整元数据、仅120k/600k白名单、规范Base64、锁外budget、完整CAS、限流、会话与审计保持。
+- 验证：2真实RED→151定向；冻结5源/双DLL一次完整2650/2650、12分24秒零失败跳过，25新用例含真实持久/重载、root、三消费者、所有替换写120、12坏元数据、第五失败锁定、busy全状态零写、真实reset竞争、真实HTTP。初轮3夹具失败分别保，不计产品RED。关键只读审查无阻断；架构锁/69边界/差异过。
+- 工具v2明确当前兼容/旧不兼容读者、仍写120k、回滚必须兼容；34真实CLI/版本合同与反例过，v1数值保历史，不重测未变纯计算或冒服务器资格。原规则8417与无关前端证据复用，不冒干净Release/当前30＋10。唯一stage-goals-20261025/g4-reader/main-acceptance.json及synchronization.json。
+- 回滚不回写旧库/不留弱散列兜底；停新写不能降低既有成本。后续先代表性服务器CPU/失败限流/共享负载资格，再限定启新写/成功登录CAS升级。G4仍未总收口；无部署、维护、线上账号/库或统计变更。
+
 ## MAINT-20261025-G4-CAPACITY｜纯合成容量与回滚边界取证，不改认证实现
 
 - 承接阶段目标F06和人类继续推进，仅新增链接现有两纯实现的独立资格工具及预算12回归、工具20真实CLI/自检/反例检查。无新散列算法或第二认证入口，不加载Store/账号/库、HTTP或线上凭据，不改ActiveIterations。
