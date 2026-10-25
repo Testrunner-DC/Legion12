@@ -21,8 +21,29 @@ const riskDialog = read('src/l12/site/AdminRiskActionDialog.vue')
 const riskAction = read('src/l12/site/useAdminRiskAction.ts')
 const platform = read('src/l12/platform.ts')
 const store = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.EmailAuth.cs')
+const passwordPreparation = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.AdminPasswordWork.cs')
 const server = read('../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const seasons = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs')
+
+const securePreparedPassword = (preparation, result) =>
+  preparation.includes('Convert.ToHexString(RandomNumberGenerator.GetBytes(action == "reset" ? 16 : 32))')
+  && preparation.includes('credential = L12PasswordCredential.Create(raw)')
+  && preparation.includes('temporaryPassword = action == "reset" ? raw : null')
+  && result.includes('revokedIds.Length, prepared.TemporaryPassword')
+  && !preparation.includes('"123456"') && !result.includes('"123456"')
+
+// These must still fail after the generation moved into the prepared credential path.
+const passwordMutations = [
+  [passwordPreparation.replace('"reset" ? 16 : 32', '"reset" ? 8 : 32'), store],
+  [passwordPreparation.replace('RandomNumberGenerator.GetBytes', 'FixedPassword.GetBytes'), store],
+  [passwordPreparation.replace('L12PasswordCredential.Create(raw)', 'L12PasswordCredential.Create("fixed")'), store],
+  [passwordPreparation.replace('"reset" ? raw : null', '"reset" ? "fixed" : null'), store],
+  [passwordPreparation, store.replace('revokedIds.Length, prepared.TemporaryPassword', 'revokedIds.Length, "fixed"')],
+]
+for (const [preparation, result] of passwordMutations) {
+  if ((preparation === passwordPreparation && result === store) || securePreparedPassword(preparation, result))
+    throw new Error('Admin random temporary-password regression was not detected')
+}
 
 const checks = [
   [adminSources.every(([, source]) => !source.includes('window.confirm')), '后台模块不得继续使用浏览器原生 confirm'],
@@ -42,7 +63,7 @@ const checks = [
   [seasonActivation.includes("planOwner.value === 'next'") && seasonActivation.includes("current.value?.activationPlan?.status === 'completed'") && seasonActivation.includes('最近一次自动切季已完成'), '完成计划必须从 current 展示且不能作为可取消计划'],
   [platform.includes('SeasonActivationImpactPreview') && platform.includes('/activation-preview') && platform.includes('impactPreviewToken') && !seasonActivation.includes('as any'), '切季影响预览必须版本绑定且不允许弱类型逃逸'],
   [username.includes("hasPermission('admin.accounts.status.write')"), '用户名审核动作必须受账号状态写权限保护'],
-  [store.includes('RandomNumberGenerator.GetBytes(16)') && store.includes('revokedIds.Length, temporaryPassword') && !store.includes('"123456"'), '后台重置必须生成至少 128 位随机一次性临时密码，禁止固定密码'],
+  [securePreparedPassword(passwordPreparation, store), '后台重置必须生成至少 128 位随机一次性临时密码，禁止固定密码'],
   [server.includes('MapPost("/api/admin/security/audit-recovery-rehearsal"') && !server.includes('MapGet("/api/admin/security/audit-recovery-rehearsal"') && platform.includes("method: 'POST'"), '审计恢复演练必须使用 POST 语义'],
   [releases.includes('releasePreviewKey.value === releaseInputKey.value') && releases.includes('rollbackPreviewKey.value !== rollbackInputKey(run)') && security.includes('archivePreviewKey.value === archiveInputKey.value'), '发布、回滚与审计归档的执行资格必须绑定当前完整预演输入，任一输入变化都要使旧预演失效'],
 ]
@@ -53,5 +74,6 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(`Admin safety contracts passed (${checks.length}).`)
+console.log(`Admin prepared password negative controls passed (${passwordMutations.length}).`)
 
 await import('./test-account-ranked-restriction.mjs')

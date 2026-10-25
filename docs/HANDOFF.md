@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-26 当前优先：一次完整测试部署，再推进G4/G6/G7
+
+- 人类已明确测试部署及子对话并行授权；Main唯一发布，正式服务/维护/数据不动。固定IP/原RUD指纹/原key实际只读连通，原formal3a/PID698071/maintenance=false、TEST1fc/PID732779/7隔离功能标记健康。两个子代理仅只读准备G4目标容量边界/G6画廊领域块，不写源码或并发构建。
+- 性能前检已过，完整UI前检捕获旧admin safety合同仍读EmailAuth旧随机/返回变量；产品已在c605迁到prepared路径。Main仅修QA映射、保20约束+5反例，保原失败并续尾，不为工具误配重做旧前缀或询问。下一冻结QA-only干净提交走canonical完整Release，产物cache/primary/release/current-test-20261025；证据单一stage-goals-20261025/test-deployment。SDK已实际核ArtifactsPath指向原D热构建，短PATH实测工具齐。
+- G4纯probe/在线30＋10不同证据；当前在线runner还缺新binding生成，认证专用HTTP并发/429/503采集亦未实现。部署成功后再承接，不提前声称性能/认证总验收；G6只有下片只读计划，G7真机和G8外传仍条件未具备。旧已成功部署/维护操作不重放。
+
 ## 2026-10-25 连续推进：G4已同步，G6邮箱客户端冗余本地接受
 
 - G4兼容读已非强推df0a4b075ed0c9b035f3587455c1822c62691603到origin/main并独立SHA读回，2650完整/151定向/34工具证据已验；仍写120k、无自动升级/部署，见g4-reader两回执。不要再重开已完成读兼容或旧部署。
