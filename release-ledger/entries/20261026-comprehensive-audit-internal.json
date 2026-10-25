@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-comprehensive-audit-internal",
+  "date": "2026-10-26",
+  "audience": "internal",
+  "reason": "登记本轮已验的前端依赖修复、认证凭据格式/读取兼容、原120k写策略、锁外有界计算与并发提交校验，管理两入口prepared适配、HTTP合同原样迁移以及排位准入线性化。高成本写入/自动升级仍关闭；不将内部安全、管理或工程变化写入玩家更新日志，也不宣称代表性认证容量已通过。",
+  "paths": [
+    "opcgpro-vue/package.json",
+    "opcgpro-vue/package-lock.json",
+    "服务端WebSocket/TwelveLegions/L12AdminCommandBus.AccountPasswords.cs",
+    "服务端WebSocket/TwelveLegions/L12AdminControlPlane.cs",
+    "服务端WebSocket/TwelveLegions/L12HttpContracts.cs",
+    "服务端WebSocket/TwelveLegions/L12PasswordCredential.cs",
+    "服务端WebSocket/TwelveLegions/L12PasswordWorkBudget.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminPasswordWork.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PasswordWork.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.UsernameChanges.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs"
+  ]
+}

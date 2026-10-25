@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "20261026-comprehensive-audit-experience",
+  "date": "2026-10-26",
+  "audience": "players",
+  "title": "页面恢复与账号体验",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "浏览器不允许保存本地资料时，公共页面仍可打开；登录或保存失败会明确提示，不再误报成功。首页首次加载失败时显示说明和重试入口，已有内容不会因后续加载失败而消失。",
+      "paths": ["opcgpro-vue/src/l12/browserStorage.ts", "opcgpro-vue/src/l12/decks.ts", "opcgpro-vue/src/l12/net.ts", "opcgpro-vue/src/l12/site/DeckLibraryPage.vue", "opcgpro-vue/src/l12/site/OfficialHomePage.vue", "opcgpro-vue/src/l12/site/homePublishedCache.ts"]
+    },
+    {
+      "category": "ui",
+      "text": "更新日志、设置与反馈弹框统一键盘焦点和关闭后返回位置；普通页面允许手势缩放。访问不存在的网址时显示提示，并可返回主页。",
+      "paths": ["opcgpro-vue/src/l12/site/L12SettingsModal.vue", "opcgpro-vue/src/l12/site/bugFeedbackEntry.ts", "opcgpro-vue/src/l12/site/NotFoundPage.vue", "opcgpro-vue/src/router/index.ts"]
+    },
+    {
+      "category": "accounts",
+      "text": "邮箱绑定和邮件找回密码功能已停用，原邮件恢复链接会显示停用说明；用户名密码登录、修改密码和登录设备管理保持可用。",
+      "paths": ["opcgpro-vue/src/l12/site/AccountRecoveryPage.vue", "opcgpro-vue/src/l12/site/ProfilePage.vue", "服务端WebSocket/TwelveLegions/L12PlatformStore.EmailAuth.cs"]
+    },
+    {
+      "category": "replays",
+      "text": "登录状态失效后不再保留上一身份的私有回放；旧录像按参赛账号确认查看资格，不再通过相同用户名认领。",
+      "paths": ["服务端WebSocket/TwelveLegions/MatchRecorder.PlayerReplayRetention.cs"]
+    }
+  ]
+}
