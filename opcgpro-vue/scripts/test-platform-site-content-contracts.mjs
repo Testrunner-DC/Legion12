@@ -39,4 +39,11 @@ assert.throws(() => validate(moduleSource, platform.replace('import type { SiteC
 assert.throws(() => validate(moduleSource.replace('export interface SiteHomePayload', 'interface SiteHomePayload'), platform))
 assert.throws(() => validate(moduleSource, platform.replace('export type { SiteContentKind', 'export type { SiteMedia as SiteContentKind')))
 assert.throws(() => validate(moduleSource, platform.replace('import type { SiteContentKind', 'import type { SiteMedia as SiteContentKind')))
-console.log('Site content contracts: 17 original type exports, 12 local type imports, no runtime and six negative guards passed')
+const uiGuard = fs.readFileSync(new URL('./check-ui-contracts.mjs', import.meta.url), 'utf8')
+assert(uiGuard.includes("const siteContentContracts = read('../src/l12/platformSiteContentContracts.ts')"))
+for (const fact of ['desktopAltText: string; mobileAltText: string; thumbnailAltText: string; independentVariants: boolean', 'flexibleDimensions: boolean']) {
+  assert(moduleSource.includes(fact), 'the actual media contract must retain its original fields')
+  assert(uiGuard.includes(`siteContentContracts.includes('${fact}')`), 'the UI guard must read the real declaration owner')
+  assert(!uiGuard.includes(`platform.includes('${fact}')`), 'the old API entry is no longer the declaration owner')
+}
+console.log('Site content contracts: 17 original type exports, 12 local type imports, no runtime, six negative guards and two real media guard mappings passed')

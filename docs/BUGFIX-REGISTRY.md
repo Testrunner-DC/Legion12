@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261026-BATTLEFIELD-IMPACT-CONTEXT｜场景与卡牌同拍联动，本地接受
+
+- 人类要求军团落位／进攻受击影响场面，高兵力覆盖更大范围。共享公开兵力档位接Zone和Combat三种受击，不改权威事实、卡效、隐私、唯一调度／owner。正兵力不足3000只影响有证据格位，3000—5999加半场，6000起加整场；实际公开战斗兵力及伤害可增强范围，隐藏卡的troops不读。缺格位不猜锚点，缺半场／错root不任意震全场。
+- Main实际函数9RED定位并补齐：wave／次级surface／follower创建失败时回滚已启动前缀；逐项清退不被异常cancel打断；外置落位／阵亡卡随嵌套场景位移，真实DOM不重复补偿；阵亡沿原920/260/160时长与cubic缓动、.14接触，存活.30及主宰.28匹配各自关键帧。没有新增queue／timer／second bus，旧604落位姿态／异步代际／公开leave回退未撤。
+- 9同名GREEN＋3附加正控、原Combat30／State14／entry14／投影107／owner41和57项UI前缀续尾、两类型／双Vite／架构通过，独立产品复核无阻断。31旧移区反例只是绑定实际共享helper，6媒体类型反例保留且补两归属映射；原失败均保留。类型检查发现Element不符HTMLElement，修输入类型并精确证明运行JS不变，再续类型和构建，不把失败拼成单次全绿。
+- 唯一battlefield-impact-context-20261026/main-acceptance.json，最终9源／QA pins在main-final-result.json；全池324同类入口清单复用，本轮查询legionEntryImpact／三hit／startBattlefieldImpact及旧board/ghost字段，确认共享入口无卡号分支。回滚限三产品与具名QA；真实像素／真机／缩放旋转手感未验，不冒美术最终接受／发布／关单，不重跑未变后端或30＋10。
+
 ## MAINT-20261026-SITE-CONTENT-CONTRACTS｜纯类型领域归属
 
 - 从platform原样提取55行17声明，12本地type导入及17兼容type出口，13消费者不动。新模块无运行时语句/依赖；Main逐SHA证明声明及整个平台编译JS等价，6负控/4实际消费者链/两类型/双Vite与独审过。唯一stage-goals-20261025/g6-site-content-contracts/main-acceptance.json。只是归属整理，非性能/发布/删除未达功能；回滚仅类型位置与两QA，API和身份代码不变。

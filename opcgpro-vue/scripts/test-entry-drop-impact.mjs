@@ -21,6 +21,7 @@ const movement = {
   legionEntry: true, entrySimplified: false, entryImpactTier: 'heavy', entryImpactStrength: 1,
   fromRect: { x: 100, y: 600, width: 72, height: 101 },
   toRect: { x: 650, y: 250, width: 72, height: 101 }, toRotation: 0,
+  playerIndex: 1, key: 'entry:heavy', card: { instanceId: 'heavy' },
 }
 const frames = framesFor(movement)
 const raised = frames.find(frame => frame.offset === .65)
@@ -38,50 +39,65 @@ assert.ok(frames.slice(1).every(frame => !/scale\(1\.0[1-9]/.test(frame.transfor
 
 const calls = []
 let cancelled = 0
-const board = { offsetWidth:800, animate: (keyframes, options) => {
-  calls.push({ keyframes, options })
-  return { cancel() { cancelled++ } }
-} }
+const board = { offsetWidth:800 }
+const target = { name:'destination-card' }
 const root = { value: { closest(selector) {
   assert.equal(selector, '[data-l12-game-board]')
   return board
 } } }
+const battlefieldImpactStrengthFromTroops = value => typeof value !== 'number' || !Number.isFinite(value) || value <= 0
+  ? 0 : value < 3000 ? .35 : value < 6000 ? .65 : 1
+const impactFor = actual('legionEntryImpact', { battlefieldImpactStrengthFromTroops })
+assert.deepEqual(impactFor({ troops:1000, baseTroops:9000 }), { tier:'light', strength:.35 })
+assert.deepEqual(impactFor({ troops:4000 }), { tier:'medium', strength:.65 })
+assert.deepEqual(impactFor({ troops:6000 }), { tier:'heavy', strength:1 })
+const startBattlefieldImpact = input => {
+  calls.push(input)
+  let retired = false
+  return {
+    scopes:input.strength < .5 ? ['slot'] : input.strength < .85 ? ['slot','half'] : ['slot','half','board'],
+    animations:[],
+    cancel() { if (!retired) { retired = true; cancelled++ } },
+  }
+}
 const shake = actual('startEntryBoardImpact', { presentationRoot: root,
-  viewportLayoutRect: () => ({ width:400 }) })
-shake(movement, 820)
-assert.equal(calls.length, 1)
-assert.equal(calls[0].options.composite, 'add', 'preserve any existing inner translate')
-assert.equal(calls[0].options.duration, 820)
-assert.equal(calls[0].keyframes.find(frame => frame.offset === .82).translate, '0px 5px')
-assert.equal(calls[0].keyframes.at(-1).translate, '0px 0px')
-assert.ok(calls[0].keyframes.some(frame => frame.translate === '-7px -3px'))
-assert.ok(calls[0].keyframes.every(frame => !('transform' in frame)), 'never replace board scaling/rotation')
+  viewportLayoutRect: () => ({ top:0, height:800, width:400 }),
+  cardElementInZone: () => target, startBattlefieldImpact })
+for (const [troops, expectedScopes] of [[1000,['slot']], [4000,['slot','half']], [6000,['slot','half','board']]]) {
+  const impact = impactFor({ troops })
+  const sample = { ...movement, card:{ instanceId:`troops-${troops}` }, key:`entry:${troops}`,
+    entryImpactTier:impact.tier, entryImpactStrength:impact.strength }
+  shake(sample, 820)
+  const call = calls.at(-1)
+  assert.deepEqual(sample.entrySceneImpact.scopes, expectedScopes)
+  assert.equal(call.duration, 820)
+  assert.equal(call.contactOffset, .82)
+  assert.equal(call.direction, -1)
+  assert.equal(call.anchor, target)
+}
+const beforeExcluded = calls.length
 for (const change of [
-  { entrySimplified: true }, { legionEntry: false }, { entryImpactTier: 'light' },
-  { entryImpactTier: 'medium' }, { entryImpactTier: undefined },
+  { entrySimplified: true }, { legionEntry: false }, { entryImpactTier: undefined },
 ]) shake({ ...movement, ...change }, 820)
-assert.equal(calls.length, 1, 'off, ordinary moves and lower tiers must not shake the field')
+assert.equal(calls.length, beforeExcluded, 'off, ordinary moves and missing public impact facts stay inert')
+movement.holderWrapper = { name:'landing-ghost' }
 shake(movement, 320)
-assert.equal(cancelled, 1, 'reentry must retire the previous animation')
-assert.equal(calls[1].options.duration, 320, 'fast motion must retain its short duration')
-let ghostFrames
-let ghostCancelled = 0
-movement.holderWrapper = { animate(frames) { ghostFrames = frames; return { cancel() { ghostCancelled++ } } } }
-shake(movement, 820)
-assert.equal(ghostFrames.find(frame => frame.offset === .86).translate, '-3.5px -1.5px',
-  'the landed face must share the scaled field camera displacement')
+assert.equal(calls.at(-1).duration, 320, 'fast motion must retain its short duration')
+assert.deepEqual(calls.at(-1).followers, [{ element:movement.holderWrapper, scale:.5 }],
+  'the landed face must share the scaled scene displacement')
+shake(movement, 320)
+assert.equal(cancelled, 1, 'same movement reentry retires its prior scene feedback')
 const cleanup = actual('cleanupEntryImpact')
 cleanup(movement)
-assert.equal(cancelled, 3)
-assert.equal(ghostCancelled, 1)
-assert.equal(movement.entryBoardAnimation, undefined)
+assert.equal(cancelled, 2)
+assert.equal(movement.entrySceneImpact, undefined)
 cleanup(movement)
-assert.equal(cancelled, 3, 'cleanup is idempotent')
+assert.equal(cancelled, 2, 'cleanup is idempotent')
 root.value = null
 shake(movement, 820)
-assert.equal(calls.length, 3, 'unmounted component cannot shake another board')
+assert.equal(calls.length, beforeExcluded + 2, 'unmounted component cannot shake another board')
 assert.match(sfc.descriptor.template.content, /ref="presentationRoot"/)
-assert.match(source, /activeEventFaceReady\.value = true[\s\S]*startEntryBoardImpact\(active\.value, duration\)/,
+assert.match(source, /activeEventFaceReady\.value = true[\s\S]*startEntryImpact\(active\.value, duration\)/,
   'decoded template fallback must share the same field impact')
 assert.match(source, /65%\{[^}]*perspective\(900px\)[^}]*rotateX\(-18deg\)/,
   'template fallback must keep the depth/drop route')

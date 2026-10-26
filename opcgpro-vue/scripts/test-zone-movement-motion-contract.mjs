@@ -2,11 +2,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
+const impactSource = readFileSync(new URL('../src/l12/game/battlefieldImpactPresentation.ts', import.meta.url), 'utf8')
 
 // Keep the single-entity/source-pixel contract. Staged routes are restricted to
 // public play, public legion entry and public disaster reveal; ordinary zone
 // moves and concealed or identity-less events never receive a center focus.
-export function hasScopedZoneMovementMotion(source) {
+export function hasScopedZoneMovementMotion(source, troopSource = impactSource) {
   try {
     source = source.replace(/\r\n?/g, '\n')
     for (const required of ['publicHolder.cloneNode(true)',
@@ -35,6 +36,10 @@ export function hasScopedZoneMovementMotion(source) {
     assert(source.includes('|| !createMovementHolder(movement, movement.sourceGhost)'))
     const setup = parse(source).descriptor.scriptSetup?.content
     assert(setup)
+    const helperJs = ts.transpileModule(troopSource, {
+      compilerOptions: { target:ts.ScriptTarget.ES2022, module:ts.ModuleKind.CommonJS },
+    }).outputText
+    const troopStrength = Function('exports', helperJs + '\nreturn exports.battlefieldImpactStrengthFromTroops')({})
     const tree = ts.createSourceFile('movement.ts', setup, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const actualFunction = name => {
       const declaration = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)
@@ -42,7 +47,7 @@ export function hasScopedZoneMovementMotion(source) {
       const js = ts.transpileModule(declaration.getText(tree), {
         compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
       }).outputText
-      return Function(js + '\nreturn ' + name)()
+      return Function('battlefieldImpactStrengthFromTroops', js + '\nreturn ' + name)(troopStrength)
     }
     const entry = actualFunction('isLegionEntryMovement')
     for (const type of ['play', 'put', 'enter', 'move', 'attach', 'reveal', 'counter-set', 'mill'])
@@ -151,8 +156,6 @@ const mutations = [
   ['regular move central flight', ': [\n              { transform:', ': legionEntryFrames(movement) || [\n              { transform:'],
   ['off preference bypass', 'return l12BattleMotionDisabled()', 'return false'],
   ['system preference override', 'return l12BattleMotionDisabled()', "return l12BattleMotionDisabled() || window.matchMedia('(prefers-reduced-motion: reduce)').matches"],
-  ['string troop coercion', "typeof troops !== 'number' || !Number.isFinite(troops)", '!Number.isFinite(Number(troops))'],
-  ['non-finite troops', '!Number.isFinite(troops)', 'false'],
   ['zero troop fallback', 'rawTroops == null ?', '!rawTroops ?'],
   ['unguarded template entry', '.moving-card.legion-entry:not(.entry-simplified)', '.moving-card'],
   ['unpaused preparation impact', '.zone-card-movement:not(.movement-ready) .legion-entry-impact', '.unrelated .legion-entry-impact'],
@@ -164,4 +167,13 @@ for (const [name, before, after] of mutations) {
   const changed = source.replace(before, after)
   assert.equal(hasScopedZoneMovementMotion(changed), false, `contract must reject ${name}`)
 }
-console.log(`Scoped zone-motion source contract passed: actual source + ${mutations.length} hostile mutations`)
+const helperMutations = [
+  ['string troop coercion', "typeof value !== 'number' || !Number.isFinite(value)", '!Number.isFinite(Number(value))'],
+  ['non-finite troops', '!Number.isFinite(value)', 'false'],
+]
+for (const [name, before, after] of helperMutations) {
+  assert(impactSource.includes(before), `shared mutation target must exist: ${name}`)
+  assert.equal(hasScopedZoneMovementMotion(source, impactSource.replace(before, after)), false,
+    `contract must reject shared ${name}`)
+}
+console.log(`Scoped zone-motion source contract passed: actual source + ${mutations.length + helperMutations.length} hostile mutations`)

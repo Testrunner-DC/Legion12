@@ -4,6 +4,7 @@ import { l12AnimationDuration, l12BattleMotionDisabled } from '../audioPreferenc
 import { landscapeTeleportElement, viewportLayoutRect, viewportRect } from '../mobileViewport'
 import type { ActionEvent, Card } from '../types'
 import { snapshotDecodedAuthoritativeCardVisual } from './authoritativeCardVisualSnapshot'
+import { battlefieldImpactStrengthFromTroops, startBattlefieldImpact } from './battlefieldImpactPresentation'
 import { battleMotionStrength } from './visualTransitionProjection'
 import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
@@ -22,6 +23,7 @@ type CombatPresentation = {
   captured?: CapturedCard; visualKey: string; generation: number; reservation: PresentationReservation
   release?: (presented?: boolean) => void; closed: boolean; started: boolean
   animations: Set<Animation>; wrapper?: HTMLElement
+  sceneImpactStarted: boolean
   restoreFrame?: () => void
 }
 
@@ -189,7 +191,47 @@ function animatePowerBadge(element: HTMLElement, presentation: CombatPresentatio
   remember(animation, presentation)
 }
 
-function animateSurvivor(element: HTMLElement, presentation: CombatPresentation, damage: number) {
+function combatBattlefieldImpactStrength(event: ActionEvent, targetIndex: number, damage: number) {
+  const sourceIndex = targetIndex === 1 ? 0 : targetIndex === 0 ? 1 : 0
+  const source = event.cards?.[sourceIndex]
+  const publicTroops = source && !source.hidden ? source.troops : undefined
+  const combatTroops = sourceIndex === 0 ? event.playerCombat?.attackerTroops : event.playerCombat?.defenderTroops
+  const publicTroopStrength = Math.max(battlefieldImpactStrengthFromTroops(publicTroops),
+    battlefieldImpactStrengthFromTroops(combatTroops))
+  const damageStrength = battlefieldImpactStrengthFromTroops(targetIndex < 0 ? damage * 2500 : damage)
+  return Math.max(publicTroopStrength, damageStrength)
+}
+
+function animateBattlefieldHit(event: ActionEvent, targetIndex: number, target: HTMLElement | null,
+  presentation: CombatPresentation, damage: number, playerIndex: number, contactOffset = .28,
+  duration = presentationDuration(280, 80), easing = 'linear') {
+  if (presentation.sceneImpactStarted || l12BattleMotionDisabled()) return
+  const closestRoot = target?.closest<HTMLElement>('[data-l12-game-board]')
+  const root = closestRoot && 'l12GameBoard' in closestRoot.dataset ? closestRoot
+    : document.querySelector<HTMLElement>('[data-l12-game-stage] [data-l12-game-board]')
+  if (!root) return
+  const half = target?.closest<HTMLElement>('.battlefield-half')
+    ?? root.querySelector<HTMLElement>(`[data-player-index="${playerIndex}"]`)
+  if (!half || !root.contains(half) || (target && !half.contains(target))) return
+  const strength = combatBattlefieldImpactStrength(event, targetIndex, damage)
+  if (strength <= 0) return
+  const direction: -1 | 1 = half.classList.contains('opponent-half') || half.classList.contains('side-opponent') ? -1 : 1
+  // Defeat cards are teleported outside the moving battlefield; real in-board
+  // survivors already inherit the scene translation and must not receive it twice.
+  const scale = root.offsetWidth > 0 ? viewportLayoutRect(root).width / root.offsetWidth : 1
+  const followers = !target && presentation.wrapper ? [{ element:presentation.wrapper, scale }] : undefined
+  const impact = startBattlefieldImpact({
+    root, anchor:target, playerIndex, strength, direction,
+    duration, contactOffset, easing, followers,
+    transactionKey:`${event.sequence}:${presentation.visualKey}`,
+  })
+  if (!impact.animations.length) return
+  presentation.sceneImpactStarted = true
+  impact.animations.forEach(animation => remember(animation, presentation))
+}
+
+function animateSurvivor(element: HTMLElement, presentation: CombatPresentation, damage: number,
+  event: ActionEvent, targetIndex: number, playerIndex: number) {
   // Animate the authoritative card itself, after its previous visual owner
   // hands off. No duplicate card and no second attack/rest animation.
   const base = getComputedStyle(element).transform || 'none'
@@ -214,6 +256,7 @@ function animateSurvivor(element: HTMLElement, presentation: CombatPresentation,
   ]
   remember(element.animate(frames, { duration: presentationDuration(280, 80), easing: 'linear' }), presentation)
   animatePowerBadge(element, presentation)
+  animateBattlefieldHit(event, targetIndex, element, presentation, damage, playerIndex, .30)
 }
 
 function masterDamageValue(event: ActionEvent) {
@@ -223,7 +266,7 @@ function masterDamageValue(event: ActionEvent) {
   return typeof damage === 'number' && Number.isFinite(damage) && damage > 0 ? damage : null
 }
 
-function animateMasterHit(element: HTMLElement, presentation: CombatPresentation, damage: number) {
+function animateMasterHit(element: HTMLElement, presentation: CombatPresentation, damage: number, event: ActionEvent) {
   const base = getComputedStyle(element).transform || 'none'
   const strength = battleMotionStrength(damage * 2500)
   const direction = element.closest('.side-opponent') ? -1 : 1
@@ -248,6 +291,7 @@ function animateMasterHit(element: HTMLElement, presentation: CombatPresentation
   remember(element.animate(frames,
     { duration: presentationDuration(280, 80), easing: 'linear' }), presentation)
   animatePowerBadge(element, presentation)
+  animateBattlefieldHit(event, -1, element, presentation, damage, event.playerIndex ?? -1)
 }
 
 function combatDamageValue(event: ActionEvent, index: number) {
@@ -358,6 +402,8 @@ function animateDefeat(captured: CapturedCard, event: ActionEvent, index: number
   ], { duration, easing: 'ease-out', fill: 'forwards' })
   remember(animation, presentation)
   remember(damageAnimation, presentation)
+  animateBattlefieldHit(event, index, null, presentation, combatDamageValue(event, index) ?? 0,
+    owner, .14, duration, 'cubic-bezier(.3,.58,.28,1)')
 }
 
 function isDefeatLeave(event: ActionEvent) {
@@ -396,7 +442,7 @@ function presentDefeats(job: DefeatJob) {
     reservation.setPaused(props.paused)
     const presentation: CombatPresentation = {
       captured, visualKey: captured.card.instanceId, generation: playbackGeneration,
-      reservation, closed: false, started: false, animations: new Set(),
+      reservation, closed: false, started: false, animations: new Set(), sceneImpactStarted: false,
     }
     presentations.add(presentation)
     preparationCount++
@@ -440,7 +486,8 @@ function presentDefeats(job: DefeatJob) {
       }
       presentation.started = true
       try {
-        if (isSurvivor && survivor instanceof HTMLElement && damage !== null) animateSurvivor(survivor, presentation, damage)
+        if (isSurvivor && survivor instanceof HTMLElement && damage !== null)
+          animateSurvivor(survivor, presentation, damage, job.event, index, defeatOwner(job.event, captured.card, index))
         else if (defeat) animateDefeat(captured, job.event, index, presentation, defeat.wrapper, defeat.damage)
         await Promise.all([...presentation.animations].map(animation => animation.finished.catch(() => {})))
         finishPresentation(presentation, true)
@@ -456,7 +503,7 @@ function presentDeferredDefeat(job: DefeatJob, pending: PendingDefeatCard) {
   reservation.setPaused(props.paused)
   const presentation: CombatPresentation = {
     visualKey: pending.card.instanceId, generation: playbackGeneration, reservation,
-    closed: false, started: false, animations: new Set(),
+    closed: false, started: false, animations: new Set(), sceneImpactStarted: false,
   }
   presentations.add(presentation)
   preparationCount++
@@ -518,7 +565,7 @@ function presentMasterHit(event: ActionEvent) {
   reservation.setPaused(props.paused)
   const presentation: CombatPresentation = {
     visualKey, generation: playbackGeneration, reservation,
-    closed: false, started: false, animations: new Set(),
+    closed: false, started: false, animations: new Set(), sceneImpactStarted: false,
   }
   presentations.add(presentation)
   preparationCount++
@@ -542,7 +589,7 @@ function presentMasterHit(event: ActionEvent) {
       finishPresentation(presentation, false); return
     }
     presentation.started = true
-    animateMasterHit(target, presentation, damage)
+    animateMasterHit(target, presentation, damage, event)
     await Promise.all([...presentation.animations].map(animation => animation.finished.catch(() => {})))
     finishPresentation(presentation, true)
   }).catch(() => finishPresentation(presentation, false))

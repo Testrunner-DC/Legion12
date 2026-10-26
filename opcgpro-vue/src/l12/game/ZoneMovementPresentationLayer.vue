@@ -6,6 +6,7 @@ import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
 import { acquireAuthoritativeCardVisibility, resolveAuthoritativeCardVisibilitySurface } from './authoritativeCardVisibility'
 import { snapshotDecodedAuthoritativeCardVisual } from './authoritativeCardVisualSnapshot'
+import { battlefieldImpactStrengthFromTroops, startBattlefieldImpact, type BattlefieldImpactRun } from './battlefieldImpactPresentation'
 import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, movementTerminalTapped, resetMovementClaimState, resolveMovementSourceZone, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
 import type { PreparedVisualOwner, PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
@@ -54,8 +55,7 @@ type Movement = {
   entryImpactStrength: number
   entryImpactNode?: HTMLElement
   entryImpactAnimation?: Animation
-  entryBoardAnimation?: Animation
-  entryGhostImpactAnimation?: Animation
+  entrySceneImpact?: BattlefieldImpactRun
 }
 
 const props = withDefaults(defineProps<{
@@ -312,10 +312,9 @@ function legionEntryImpact(card: Card | undefined): { tier?: LegionEntryImpactTi
   const troops = rawTroops == null ? card?.baseTroops : rawTroops
   // Impact is presentation-only and may use public authority data. Never infer
   // a missing value from private zones, card text, cost, or card identity.
-  if (typeof troops !== 'number' || !Number.isFinite(troops) || troops <= 0) return { strength:0 }
-  if (troops < 3000) return { tier:'light', strength:.35 }
-  if (troops < 6000) return { tier:'medium', strength:.65 }
-  return { tier:'heavy', strength:1 }
+  const strength = battlefieldImpactStrengthFromTroops(troops)
+  if (!strength) return { strength:0 }
+  return { tier:strength < .5 ? 'light' : strength < .85 ? 'medium' : 'heavy', strength }
 }
 
 function isLegionEntryMovement(event: ActionEvent, card: Card | undefined, from: Zone, to: Zone,
@@ -735,10 +734,8 @@ function coverTarget(movement: Movement, target: HTMLElement) {
 }
 
 function cleanupEntryImpact(movement: Movement) {
-  movement.entryGhostImpactAnimation?.cancel()
-  movement.entryGhostImpactAnimation = undefined
-  movement.entryBoardAnimation?.cancel()
-  movement.entryBoardAnimation = undefined
+  movement.entrySceneImpact?.cancel()
+  movement.entrySceneImpact = undefined
   if (movement.entryImpactAnimation) {
     movement.entryImpactAnimation.onfinish = null
     movement.entryImpactAnimation.oncancel = null
@@ -750,31 +747,19 @@ function cleanupEntryImpact(movement: Movement) {
 }
 
 function startEntryBoardImpact(movement: Movement, duration: number) {
-  if (!movement.legionEntry || movement.entrySimplified || movement.entryImpactTier !== 'heavy') return
-  // Animate only this board's inner surface. Individual translate leaves the
-  // stage scale and the mobile landscape rotation untouched.
+  if (!movement.legionEntry || movement.entrySimplified || !movement.entryImpactTier) return
   const board = presentationRoot.value?.closest<HTMLElement>('[data-l12-game-board]')
   if (!board) return
-  movement.entryBoardAnimation?.cancel()
-  const frames: Keyframe[] = [
-    { translate:'0px 0px', offset:0 },
-    { translate:'0px 0px', offset:.80 },
-    { translate:'0px 5px', offset:.82 },
-    { translate:'-7px -3px', offset:.86 },
-    { translate:'3px 1px', offset:.92 },
-    { translate:'0px 0px', offset:1 },
-  ]
-  const timing: KeyframeAnimationOptions = { duration, easing:'linear', composite:'add' }
-  movement.entryBoardAnimation = board.animate(frames, timing)
-  if (movement.holderWrapper) {
-    // The flying face lives outside the scaled board. Once it touches down it
-    // must share the same camera displacement, not float over a shaking slot.
-    const scale = board.offsetWidth > 0 ? viewportLayoutRect(board).width / board.offsetWidth : 1
-    movement.entryGhostImpactAnimation = movement.holderWrapper.animate(frames.map(frame => ({
-      offset:frame.offset,
-      translate:String(frame.translate).split(' ').map(value => `${Number.parseFloat(value) * scale}px`).join(' '),
-    })), timing)
-  }
+  movement.entrySceneImpact?.cancel()
+  const boardRect = viewportLayoutRect(board)
+  const direction: -1 | 1 = movement.toRect.y < boardRect.top + boardRect.height / 2 ? -1 : 1
+  const scale = board.offsetWidth > 0 ? boardRect.width / board.offsetWidth : 1
+  const anchor = movement.coveredTarget ?? cardElementInZone(movement.card?.instanceId, 'field')
+  movement.entrySceneImpact = startBattlefieldImpact({
+    root:board, anchor, playerIndex:movement.playerIndex, strength:movement.entryImpactStrength,
+    direction, duration, contactOffset:.82, transactionKey:movement.key,
+    followers:movement.holderWrapper ? [{ element:movement.holderWrapper, scale }] : undefined,
+  })
 }
 
 function createEntryImpactNode(movement: Movement) {
@@ -1051,7 +1036,7 @@ function showNext() {
       activeEventFaceReady.value = true
       active.value.presentationStarted = true
       registerStartedPresentation(active.value)
-      startEntryBoardImpact(active.value, duration)
+      startEntryImpact(active.value, duration)
       timer = setTimeout(finish, duration + replayDuration(20, 10))
     }).catch(() => finish())
   } catch {
