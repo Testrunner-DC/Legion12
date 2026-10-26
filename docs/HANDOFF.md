@@ -1,5 +1,9 @@
 # 十二军团简短交接
 
+## 2026-10-26 G6公开内容合同原样提取本地接受
+
+- 原55行/17纯类型移入platformSiteContentContracts，12本地import type及17原名export type保13消费者；无运行时依赖/API变化。声明SHA与整个platform编译JS SHA均与原件完全相同，6反例/4消费链/两类型/双Vite及独审通过。唯一stage-goals-20261025/g6-site-content-contracts/main-acceptance.json；不冒性能或新Release，不重跑未变全UI/后端，不部署。认证异步族2674/73/192本地已接受，目标收益仍待对照；场景联动由动画专项持三产品/两QA租约，Main不覆盖。
+
 ## 2026-10-26 G4同预算异步准入本地接受，未部署
 
 - 基线8699fe70；仅Budget/Store登录唯一core/HTTP登录三产品与两既有QA，2执行/8排队/250ms/120k写及原CAS/失败桶/会话/存储保持。取消仅等待准入生效；获槽后持许可到真实KDF结束，再沿原事务提交。旧产品missing-API真实3RED+1正控；Main73/73定向绿，独立产品复核无阻断，架构69源及P0—P4过。

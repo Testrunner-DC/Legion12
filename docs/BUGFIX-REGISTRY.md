@@ -1,5 +1,9 @@
 # Legion12 Bug 修复记录
 
+## MAINT-20261026-SITE-CONTENT-CONTRACTS｜纯类型领域归属
+
+- 从platform原样提取55行17声明，12本地type导入及17兼容type出口，13消费者不动。新模块无运行时语句/依赖；Main逐SHA证明声明及整个平台编译JS等价，6负控/4实际消费者链/两类型/双Vite与独审过。唯一stage-goals-20261025/g6-site-content-contracts/main-acceptance.json。只是归属整理，非性能/发布/删除未达功能；回滚仅类型位置与两QA，API和身份代码不变。
+
 ## MAINT-20261026-ASYNC-AUTH-ADMISSION｜同预算非阻塞准入，本地接受
 
 - 同步/异步Login共用一个core和原CAS/失败桶/审计/会话提交；AcquireAsync复用唯一预算的semaphore/counter/Lease，2执行/8排队/250ms/120k写不改。等待可取消，已获槽Task.Run仅包锁外Verify并持槽到真结束，HTTP沿原499/401/429/503处理，不新增断开后禁止提交语义。

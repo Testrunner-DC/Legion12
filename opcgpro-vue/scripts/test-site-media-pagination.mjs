@@ -107,3 +107,4 @@ const freshB=hydrateActual();hydratePending.shift().resolve([row('new-cover')]);
 heldA.resolve([row('old-cover')]);await lateA
 assert.equal(mediaRows.value[0].id,'new-cover');assert.equal(mediaError.value,'');assert.equal(loading.value,false)
 console.log('Actual media SFC/reference modules: lazy pages, lifecycle fences, failure/retry, five consumers; 205 IDs in 100/100/5; corrupt/missing bindings rejected; actual article hydration preserves body and rejects late selections')
+await import('./test-platform-site-content-contracts.mjs')
