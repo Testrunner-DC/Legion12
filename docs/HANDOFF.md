@@ -1,5 +1,9 @@
 # 十二军团简短交接
 
+## 2026-10-26 卡效图上浮裁切本地接受，未部署
+
+- GameBoard仅public-reveal-cards的overflow改visible，原卡图contain/圆角/尺寸/owner/队列均不变；真实RED及Main精确源码反替换、呈现/owner/动效与双Vite通过，正常入口接QA。证据public-effect-card-containment-20261026/main-acceptance.json。脚本/模板逐字未变，复用刚完成的61步/类型证据；真实像素未验。通用三卡窄屏理论越界另留，不冒全部裁切根治。回放核查发现三类投影/坏JSON问题，来源统一征求限定修复批准，暂无产品租约。
+
 ## 2026-10-26 入场后受击本地接受，未部署
 
 - Main补pose/异步代际/公开leave回退三边界，4RED→14GREEN；完整前端61步/两类型/双Vite及独立复核过，QA接原visibility链。唯一entry-before-hit-20261026/main-acceptance.json，Git见同根synchronization。真实像素/真机未验，不关单/重做97a部署。后续G4先同预算非阻塞准入对照；观战/回放/JSON/本地录像新核查已回执子任务。

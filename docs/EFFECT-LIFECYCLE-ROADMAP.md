@@ -1,5 +1,9 @@
 # 效果一致性实施计划
 
+## 2026-10-26 卡效卡图上浮裁切
+
+- 单CSS声明解除父组裁切，本地具名回归/动效/双Vite通过，正常入口已接；public-effect-card-containment-20261026/main-acceptance.json。真实像素及独立三卡窄屏边界未验，不部署/关单。
+
 ## 2026-10-26 入场后受击本地接受
 
 - 14新场景、61前端步骤及独审过，未部署。证据：entry-before-hit-20261026/main-acceptance.json；真实画面未验。

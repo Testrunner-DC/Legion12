@@ -89,3 +89,4 @@ assert.ok(gameBoard.includes('reservation: cardPresentationCoordinator.reserve(e
 assert.ok(gameBoard.includes('if (parent) {') && gameBoard.includes('continue'),
   'a successfully folded child does not create a second reservation or queue item')
 console.log('Public reveal producer-pair presentation: 17 logic assertions and 7 consumer contracts passed.')
+await import('./test-public-effect-card-containment-20261026.mjs')

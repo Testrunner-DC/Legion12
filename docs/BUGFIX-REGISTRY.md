@@ -1,5 +1,9 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261026-PUBLIC-EFFECT-CLIP｜本地接受，未部署
+
+- 共享public-reveal父组overflow:hidden裁掉子卡上浮7px/放大1.035/阴影；仅改visible，卡面contain/圆角/尺寸和owner不变。QA进原public-reveal正常链，真实RED/绿、Main逐字证明仅一CSS声明、受影响呈现/owner/动效/双Vite通过。证据public-effect-card-containment-20261026/main-acceptance.json；脚本/模板未变复用原类型。真实像素未验，三卡窄屏理论越界另列；未部署/关单，回滚只该声明及两QA。
+
 ## FIX-20261026-ENTRY-BEFORE-HIT｜本地接受，未部署
 
 - 原Combat漏接同批已入墓的公开Zone入场holder；沿原coordinator同实例继任，完整落位后才受击。324卡共享入口，无卡号/规则/隐私改变。Main修pose、await旧代际、hidden combat吞公开leave：4RED→14GREEN；61前端步骤/两类型/双Vite/独审过，QA接visibility链。唯一entry-before-hit-20261026/main-acceptance.json；真实像素/真机未验，不关单。回滚限两产品/两QA，原coordinator保护不撤。
