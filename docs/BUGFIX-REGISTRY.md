@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261026-PERSISTENT-MASTER-ZONE｜主宰区域与卡面租约分离，本地接受
+
+- 来源人类在“L12-卡牌区域移动动画专项”要求孙悟空作为军团登场／返回期间主宰区域一直保留。共享根因是可见性租约隐藏整个mini-master；现有PlayerMat区域本来始终挂载，不能用增加另一张卡或卡号分支解决。新增持久卡面surface，Acquire/Count解析同一对象，移区早返同时比较外层与surface；只租卡面，姓名／血量／区域框不隐藏，普通卡仍按原整卡租约。
+- Main独审拦出新增span会命中桌面及移动端姓名规则（含!important）；改为合法纯视觉i载体、inset0和font-style:normal，无全局CSS改动。源／旧surface迟到释放、重叠owner、空卡面和目的替换由同一WeakMap处理，observer仍只监听原身份属性，不监听style自循环。三租约消费者全检，无规则、隐私、事件、队列或服务器改动。
+- 唯一`master-zone-lifecycle-20261026/main-acceptance.json`：真实结构RED与Main二次布局RED保于来源工具输出；Main完整UI前缀＋精确失败点续尾、361UI／49动效／41coordinator／107投影、两类型和双Vite通过，持久化完整frontend.log。新生命周期QA已接原authoritative-card-visibility正常入口。另一新增加成QA的错误“同类只一个图标”预期已按现有每独立条件一标记纠正，产品未为测试改动；原失败保留。
+- 浏览器接管持续超时，未冒真实飞行、完整观战、真机或最终视觉通过；只接受纯函数／真实SFC编译／构建层，不部署、不关闭线上Bug。回滚限PlayerMat、visibility resolver、Zone重绑与具名QA，不触碰权威状态。
+
 ## MAINT-20261026-TRANSPORT-DIAGNOSTICS-EXTRACTION｜G6原样职责拆分
 
 - 只移动WebSocketServer前5个合成诊断顶层类型至同前缀TransportDiagnostics.cs，保类型/可见性/所有时序与数值内容；不是Bug行为修正或删除未达功能。P2/P3守卫通配继续覆盖，Program/RoomManager/Outbound/入站/终局/聊天/恢复实际消费者保持。

@@ -4,7 +4,7 @@ import { l12AnimationDuration, l12BattleMotionDisabled } from '../audioPreferenc
 import { landscapeTeleportElement, landscapeTeleportTarget, settleElementGeometry, viewportLayoutRect, visibleViewport } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
-import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
+import { acquireAuthoritativeCardVisibility, resolveAuthoritativeCardVisibilitySurface } from './authoritativeCardVisibility'
 import { snapshotDecodedAuthoritativeCardVisual } from './authoritativeCardVisualSnapshot'
 import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, movementTerminalTapped, resetMovementClaimState, resolveMovementSourceZone, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
 import type { PreparedVisualOwner, PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
@@ -43,6 +43,7 @@ type Movement = {
   holderWrapper?: HTMLElement
   visualOwner?: PreparedVisualOwner
   coveredTarget?: HTMLElement
+  coveredVisibilitySurface?: HTMLElement | null
   releaseTargetVisibility?: () => void
   presentationStarted?: boolean
   destinationObserver?: MutationObserver
@@ -695,6 +696,7 @@ function revealTarget(movement: Movement | null = active.value) {
   if (movement) {
     movement.releaseTargetVisibility = undefined
     movement.coveredTarget = undefined
+    movement.coveredVisibilitySurface = undefined
   }
 }
 function observeDestination(movement: Movement) {
@@ -717,13 +719,17 @@ function observeDestination(movement: Movement) {
   movement.destinationObserver = observer
 }
 function coverTarget(movement: Movement, target: HTMLElement) {
-  if (movement.coveredTarget === target && movement.releaseTargetVisibility) return
+  const visibilitySurface = resolveAuthoritativeCardVisibilitySurface(target)
+  if (movement.coveredTarget === target
+    && movement.coveredVisibilitySurface === visibilitySurface
+    && movement.releaseTargetVisibility) return
   // A keyed battlefield card can receive a new DOM node after a row/slot move.
   // Cover the replacement before releasing the old node so authority never
   // flashes between a prepared holder and its eventual destination.
   const releaseNext = acquireAuthoritativeCardVisibility(target)
   const releasePrevious = movement.releaseTargetVisibility
   movement.coveredTarget = target
+  movement.coveredVisibilitySurface = visibilitySurface
   movement.releaseTargetVisibility = releaseNext
   releasePrevious?.()
 }

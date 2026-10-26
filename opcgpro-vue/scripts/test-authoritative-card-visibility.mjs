@@ -52,3 +52,6 @@ try {
 assert.equal(exceptional.style.visibility, '', 'animation exceptions release the visibility lease in finally paths')
 
 console.log('authoritative card visibility lease tests passed')
+
+// Keep persistent-zone ownership in the normal shared visibility regression chain.
+await import('./test-master-zone-lifecycle-20261026.mjs')
