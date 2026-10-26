@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-27-stable-gameplay-and-navigation",
+  "date": "2026-10-27",
+  "audience": "players",
+  "title": "卡牌效果、对局演出与移动操作更新",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "修正奈芙蒂斯等按阵营生效的一次性优惠：卡牌转换阵营后，显示费用与实际支付会按有效阵营一致计算。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs"]
+    },
+    {
+      "category": "card-effects",
+      "text": "索尔授予的登场效果会直接发动，不再误用埃吉尔自身的可选费用询问或重复支付；双方原有响应机会保留。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"]
+    },
+    {
+      "category": "card-effects",
+      "text": "戏法师的傀儡把进攻目标从主宰改为自身后，会正确补发迦具土“我方军团被进攻时”的发动机会。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12CombatTimeline.cs"]
+    },
+    {
+      "category": "card-effects",
+      "text": "海伦、霍伦海布、近藤勇、阿喀琉斯与湖中仙女代替临时减兵造成的阵亡时，会抵消本次致死减兵，不再仅以0兵力留场；此前其他增减、费用与活跃或休整状态保留。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs", "服务端WebSocket/TwelveLegions/L12LethalTroopsEffectCancellation.cs", "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs", "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs"]
+    },
+    {
+      "category": "card-effects",
+      "text": "军团获得须佐之男等来源的临时进攻加成时，会显示对应的状态标记，便于查看加成来源与数值。",
+      "paths": ["opcgpro-vue/src/l12/game/PlayerMat.vue"]
+    },
+    {
+      "category": "battle",
+      "text": "调整军团落位、关联登场效果与受击演出的衔接，等卡牌完整落位后再展示后续内容；修正主宰卡面与移动演出的重复显示，并保留原区域框架。",
+      "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue", "opcgpro-vue/src/l12/game/authoritativeCardVisibility.ts", "opcgpro-vue/src/l12/game/presentationSequenceCoordinator.ts"]
+    },
+    {
+      "category": "battle",
+      "text": "按公开兵力分档调整落位、受击和阵亡的战场冲击，让格位、半场与整场震动随动作联动；效果展示卡图上浮时不再被父容器裁去边缘。",
+      "paths": ["opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue", "opcgpro-vue/src/l12/game/battlefieldImpactPresentation.ts", "opcgpro-vue/src/l12/game/GameBoard.vue"]
+    },
+    {
+      "category": "ui",
+      "text": "移动端横向卡牌列表、页签和表格两侧增加左右箭头，可点击代替拖动；原滑动、选牌与排序操作保持，热门牌库仍沿原两行轨道滚动。",
+      "paths": ["opcgpro-vue/src/l12/horizontalScrollArrows.css", "opcgpro-vue/src/l12/horizontalScrollArrows.ts", "opcgpro-vue/src/l12/horizontalScrollGeometry.ts", "opcgpro-vue/src/l12/L12DeckEditor.vue", "opcgpro-vue/src/l12/SingleCardPicker.vue", "opcgpro-vue/src/l12/game/GraveyardOverlay.vue", "opcgpro-vue/src/l12/game/HandArea.vue", "opcgpro-vue/src/l12/site/DeckLibraryPage.vue", "opcgpro-vue/src/l12/site/MasterDisasterStrategyPanel.vue", "opcgpro-vue/src/l12/site/MasterMatchupMatrix.vue", "opcgpro-vue/src/l12/site/NewsPage.vue", "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue", "opcgpro-vue/src/l12/site/RankingsPage.vue", "opcgpro-vue/src/l12/site/RuleCenterPage.vue", "opcgpro-vue/src/l12/site/ScopedDisasterAnalytics.vue", "opcgpro-vue/src/l12/site/TournamentHubPage.vue"]
+    },
+    {
+      "category": "ui",
+      "text": "修正调度时首次查看详情导致候选牌横移、误选邻牌的问题；短横屏与旋转画面中的候选卡、卡名及确认按钮会按可用高度排列。",
+      "paths": ["opcgpro-vue/src/l12/game/PromptOverlay.vue"]
+    },
+    {
+      "category": "ui",
+      "text": "修正移动端旋转画面中阵营、主宰能力弹框的卡图挤入正文的问题，卡图与文字使用一致的可用宽度。",
+      "paths": ["opcgpro-vue/src/l12/mobileViewport.css", "opcgpro-vue/src/l12/game/PlayerMat.vue"]
+    },
+    {
+      "category": "tournaments",
+      "text": "赛事支持自动运行场次，按设定时间开赛、进行轮间准备、处理迟到并推进下一轮；场次可显示运行方式及各自的准备、迟到时限，需要裁定时暂停自动推进。",
+      "paths": ["opcgpro-vue/src/l12/site/TournamentAccountDetail.vue", "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue", "opcgpro-vue/src/l12/site/TournamentSummaryList.vue", "opcgpro-vue/src/l12/tournamentLabels.ts", "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicBrowsing.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentAutomation.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentOperations.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs"]
+    }
+  ]
+}

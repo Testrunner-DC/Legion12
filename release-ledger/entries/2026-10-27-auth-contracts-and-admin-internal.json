@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-27-auth-contracts-and-admin-internal",
+  "date": "2026-10-27",
+  "audience": "internal",
+  "reason": "登录计算预算的异步准入、合成传输诊断职责拆分、纯类型合同抽取，以及管理员专用横向入口和自动赛事创建管理接线。没有证明目标主机登录容量改善，不把内部实现或管理操作写入玩家更新日志；赛事参与者可见的自动场次行为已在同日玩家条目单独说明。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PasswordWorkBudget.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.TransportDiagnostics.cs",
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/platformSiteContentContracts.ts",
+    "opcgpro-vue/src/l12/game/GmPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminAccountDetailPage.vue",
+    "opcgpro-vue/src/l12/site/AdminEffectWorkbenchPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminGlobalAnalyticsSummary.vue",
+    "opcgpro-vue/src/l12/site/AdminGlobalDataPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMasterAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminSiteContentPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue",
+    "opcgpro-vue/src/l12/site/TournamentCreateWizard.vue",
+    "opcgpro-vue/src/l12/site/TournamentManagementPanel.vue",
+    "opcgpro-vue/src/l12/tournamentCreatePolicy.ts"
+  ]
+}
