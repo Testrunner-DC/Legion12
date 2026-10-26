@@ -46,6 +46,27 @@ internal sealed class L12PasswordWorkBudget
         }
     }
 
+    internal async Task<IDisposable> AcquireAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Interlocked.Increment(ref _admitted) > _maximumAdmitted)
+        {
+            Interlocked.Decrement(ref _admitted);
+            throw new L12AuthenticationBusyException();
+        }
+        var acquired = false;
+        try
+        {
+            acquired = await _workers.WaitAsync(_maximumWait, cancellationToken).ConfigureAwait(false);
+            if (!acquired) throw new L12AuthenticationBusyException();
+            return new Lease(this);
+        }
+        finally
+        {
+            if (!acquired) Interlocked.Decrement(ref _admitted);
+        }
+    }
+
     private sealed class Lease(L12PasswordWorkBudget owner) : IDisposable
     {
         private L12PasswordWorkBudget? _owner = owner;

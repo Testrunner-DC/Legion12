@@ -56,17 +56,21 @@ public sealed class PasswordWorkIsolationTests
     }
 
     [Theory]
-    [InlineData("reset")]
-    [InlineData("rename")]
-    [InlineData("disable")]
-    [InlineData("disable-enable")]
-    public async Task LoginRechecksActualLifecycleChangesAfterPasswordWork(string change)
+    [InlineData("reset", false)]
+    [InlineData("rename", false)]
+    [InlineData("disable", false)]
+    [InlineData("disable-enable", false)]
+    [InlineData("reset", true)]
+    [InlineData("rename", true)]
+    [InlineData("disable", true)]
+    [InlineData("disable-enable", true)]
+    public async Task LoginRechecksActualLifecycleChangesAfterPasswordWork(string change, bool asyncLogin)
     {
         using var f = new Fixture();
         f.Store.PasswordWorkBudget = new(2, 0, TimeSpan.Zero);
         using var barrier = new Barrier();
         f.Store.BeforeLoginPasswordVerificationForTesting = barrier.Block;
-        var attempt = Run(() => f.Store.Login(Fixture.Username, Fixture.Password));
+        var attempt = StartLogin(f.Store, asyncLogin, Fixture.Username, Fixture.Password);
         try
         {
             barrier.Wait();
@@ -81,20 +85,28 @@ public sealed class PasswordWorkIsolationTests
     }
 
     [Theory]
-    [InlineData("PasswordHash", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")]
-    [InlineData("Salt", "AAAAAAAAAAAAAAAAAAAAAA==")]
-    [InlineData("PasswordAlgorithm", "unknown")]
-    [InlineData("PasswordIterations", 600000)]
-    [InlineData("PasswordCredentialVersion", 2)]
-    [InlineData("PermissionVersion", 2)]
-    [InlineData("MustChangePassword", true)]
-    [InlineData("MustChangeUsername", true)]
-    public async Task LoginCasComparesEveryCapturedField(string field, object value)
+    [InlineData("PasswordHash", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", false)]
+    [InlineData("Salt", "AAAAAAAAAAAAAAAAAAAAAA==", false)]
+    [InlineData("PasswordAlgorithm", "unknown", false)]
+    [InlineData("PasswordIterations", 600000, false)]
+    [InlineData("PasswordCredentialVersion", 2, false)]
+    [InlineData("PermissionVersion", 2, false)]
+    [InlineData("MustChangePassword", true, false)]
+    [InlineData("MustChangeUsername", true, false)]
+    [InlineData("PasswordHash", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", true)]
+    [InlineData("Salt", "AAAAAAAAAAAAAAAAAAAAAA==", true)]
+    [InlineData("PasswordAlgorithm", "unknown", true)]
+    [InlineData("PasswordIterations", 600000, true)]
+    [InlineData("PasswordCredentialVersion", 2, true)]
+    [InlineData("PermissionVersion", 2, true)]
+    [InlineData("MustChangePassword", true, true)]
+    [InlineData("MustChangeUsername", true, true)]
+    public async Task LoginCasComparesEveryCapturedField(string field, object value, bool asyncLogin)
     {
         using var f = new Fixture();
         using var barrier = new Barrier();
         f.Store.BeforeLoginPasswordVerificationForTesting = barrier.Block;
-        var attempt = Run(() => f.Store.Login(Fixture.Username, Fixture.Password));
+        var attempt = StartLogin(f.Store, asyncLogin, Fixture.Username, Fixture.Password);
         try
         {
             barrier.Wait();
@@ -113,8 +125,10 @@ public sealed class PasswordWorkIsolationTests
         Assert.Null(result.Token);
     }
 
-    [Fact]
-    public async Task CorrectPasswordFinishingAfterFifthFailureCannotClearEitherLockBucket()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CorrectPasswordFinishingAfterFifthFailureCannotClearEitherLockBucket(bool asyncLogin)
     {
         using var f = new Fixture();
         f.Store.PasswordWorkBudget = new(2, 0, TimeSpan.Zero);
@@ -125,13 +139,13 @@ public sealed class PasswordWorkIsolationTests
             if (Interlocked.Increment(ref calls) == 1) barrier.Block();
         };
         var context = new L12LoginAttemptContext("synthetic", "shared-client", "/api/auth/login");
-        var correct = Run(() => f.Store.Login(Fixture.Username, Fixture.Password, context));
+        var correct = StartLogin(f.Store, asyncLogin, Fixture.Username, Fixture.Password, context);
         try
         {
             barrier.Wait();
             for (var index = 0; index < 5; index++)
                 Assert.Equal(index == 4 ? "login_rate_limited" : "authentication_failed",
-                    f.Store.Login(Fixture.Username, "wrong-password", context).Code);
+                    (await StartLogin(f.Store, asyncLogin, Fixture.Username, "wrong-password", context)).Code);
         }
         finally { barrier.Release(); }
         Assert.Equal("login_rate_limited", (await correct.WaitAsync(TimeSpan.FromSeconds(10))).Code);
@@ -264,9 +278,10 @@ public sealed class PasswordWorkIsolationTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void StorageFailureRollsBackLoginAndChangePasswordWithoutLeakingAdmission(bool changePassword)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task StorageFailureRollsBackLoginAndChangePasswordWithoutLeakingAdmission(bool changePassword, bool asyncLogin)
     {
         using var f = new Fixture();
         f.Store.PasswordWorkBudget = new(1, 0, TimeSpan.Zero);
@@ -277,10 +292,10 @@ public sealed class PasswordWorkIsolationTests
         {
             if (stage == "before-commit") throw new IOException("synthetic commit fault");
         };
-        Assert.Throws<L12PlatformStorageUnavailableException>(() =>
+        await Assert.ThrowsAsync<L12PlatformStorageUnavailableException>(async () =>
         {
-            if (changePassword) f.Store.ChangePassword(f.Owner.Id, Fixture.Password, "replacement-123");
-            else f.Store.Login(Fixture.Username, Fixture.Password);
+            if (changePassword) await Run(() => f.Store.ChangePassword(f.Owner.Id, Fixture.Password, "replacement-123"));
+            else await StartLogin(f.Store, asyncLogin, Fixture.Username, Fixture.Password);
         });
         f.Store.StorageFailureInjector = null;
         Assert.Equal(0, notifications);
@@ -320,6 +335,107 @@ public sealed class PasswordWorkIsolationTests
         Assert.Equal(0, notifications);
         Assert.True(f.Store.Login(Fixture.Username, "reset-winner-123").Success);
         Assert.False(new L12PlatformStore(f.Path).Login(Fixture.Username, "replacement-123").Success);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AsyncLoginWaitingCancellationOrTimeoutDoesNotWriteAuthenticationState(bool cancel)
+    {
+        using var f = new Fixture();
+        f.Store.PasswordWorkBudget = new(2, 8, TimeSpan.FromMilliseconds(250));
+        for (var index = 0; index < 4; index++)
+            Assert.Equal("authentication_failed", f.Store.Login(Fixture.Username, "wrong-password").Code);
+        var before = AuthenticationState(f.Store);
+        var held = new[] { f.Store.PasswordWorkBudget.Acquire(), f.Store.PasswordWorkBudget.Acquire() };
+        using var cancellation = new CancellationTokenSource();
+        Task<L12AuthenticationResult>? attempt = null;
+        try
+        {
+            attempt = LoginAsync(f.Store, Fixture.Username, Fixture.Password, cancellation: cancellation.Token);
+            Assert.False(attempt.IsCompleted, "Queued login must return an incomplete task instead of blocking the caller.");
+            if (cancel)
+            {
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await attempt);
+            }
+            else await Assert.ThrowsAsync<L12AuthenticationBusyException>(async () => await attempt);
+            Assert.Equal(before, AuthenticationState(f.Store));
+        }
+        finally
+        {
+            cancellation.Cancel();
+            foreach (var lease in held) lease.Dispose();
+            if (attempt is not null) await Drain(attempt);
+        }
+        // Four real failures before admission remain exactly four afterwards.
+        Assert.Equal("login_rate_limited", f.Store.Login(Fixture.Username, "wrong-password").Code);
+    }
+
+    [Fact]
+    public async Task CancellationAfterKdfAdmissionRetainsThePermitUntilRealWorkEndsAndCommitsTheOriginalLogin()
+    {
+        using var f = new Fixture();
+        f.Store.PasswordWorkBudget = new(2, 8, TimeSpan.FromMilliseconds(250));
+        using var held = f.Store.PasswordWorkBudget.Acquire();
+        using var barrier = new Barrier();
+        using var cancellation = new CancellationTokenSource();
+        f.Store.BeforeLoginPasswordVerificationForTesting = barrier.Block;
+        var before = AuthenticationState(f.Store);
+        Task<L12AuthenticationResult>? attempt = null;
+        try
+        {
+            attempt = LoginAsync(f.Store, Fixture.Username, Fixture.Password, cancellation: cancellation.Token);
+            Assert.False(attempt.IsCompleted);
+            barrier.Wait();
+            cancellation.Cancel();
+            Assert.False(attempt.IsCompleted, "Request cancellation cannot abandon an admitted KDF and release its occupied worker.");
+            Assert.Throws<L12AuthenticationBusyException>(() => f.Store.PasswordWorkBudget.Acquire());
+            Assert.Equal(before, AuthenticationState(f.Store));
+            Assert.Equal(f.Store.Version, await Run(() => f.Store.Version).WaitAsync(TimeSpan.FromSeconds(1)));
+        }
+        finally
+        {
+            barrier.Release();
+            if (attempt is not null) await Drain(attempt);
+        }
+        var result = await attempt!.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(result.Success);
+        Assert.Equal(f.Owner.Id, f.Store.AuthenticateTokenSession(result.Token)!.Account.Id);
+        Assert.Contains(f.Store.AdminAudit("authentication", 100), row => row.Reason == "authenticated" && row.ActorId == f.Owner.Id);
+        using var reusable = f.Store.PasswordWorkBudget.Acquire();
+    }
+
+    [Fact]
+    public async Task AsyncLoginStillRefusesPasswordWorkInsideAnOwningTransaction()
+    {
+        using var f = new Fixture();
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await f.Store.ExecuteAdminTransaction(() => LoginAsync(f.Store, Fixture.Username, Fixture.Password)));
+        Assert.True(f.Store.Login(Fixture.Username, Fixture.Password).Success);
+    }
+
+    private static Task<L12AuthenticationResult> StartLogin(L12PlatformStore store, bool asyncLogin,
+        string username, string password, L12LoginAttemptContext? context = null)
+        => asyncLogin ? LoginAsync(store, username, password, context) : Run(() => store.Login(username, password, context));
+
+    private static Task<L12AuthenticationResult> LoginAsync(L12PlatformStore store, string username, string password,
+        L12LoginAttemptContext? context = null, CancellationToken cancellation = default)
+    {
+        var method = typeof(L12PlatformStore).GetMethod("LoginAsync", BindingFlags.Instance | BindingFlags.Public,
+            null, [typeof(string), typeof(string), typeof(L12LoginAttemptContext), typeof(CancellationToken)], null);
+        Assert.True(method is not null, "Missing shared-core LoginAsync: HTTP login still has no asynchronous admission path.");
+        return method!.CreateDelegate<Func<string, string, L12LoginAttemptContext?, CancellationToken, Task<L12AuthenticationResult>>>(store)
+            (username, password, context, cancellation);
+    }
+
+    private static string AuthenticationState(L12PlatformStore store)
+        => JsonSerializer.Serialize(typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store));
+
+    private static async Task Drain(Task task)
+    {
+        try { await task.WaitAsync(TimeSpan.FromSeconds(10)); }
+        catch (Exception) when (task.IsCompleted) { }
     }
 
     private static Task<T> Run<T>(Func<T> action) => Task.Factory.StartNew(action,

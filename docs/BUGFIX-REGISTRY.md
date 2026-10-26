@@ -1,5 +1,9 @@
 # Legion12 Bug 修复记录
 
+## MAINT-20261026-ASYNC-AUTH-ADMISSION｜同预算非阻塞准入，本地接受
+
+- 同步/异步Login共用一个core和原CAS/失败桶/审计/会话提交；AcquireAsync复用唯一预算的semaphore/counter/Lease，2执行/8排队/250ms/120k写不改。等待可取消，已获槽Task.Run仅包锁外Verify并持槽到真结束，HTTP沿原499/401/429/503处理，不新增断开后禁止提交语义。
+- 可编译3RED+1正控→73定向；同冻结程序集完整2674/2674、11分51秒、零失败跳过及一次清退；192本地真实HTTP和token/限流/清退通过，产品独审无阻断。唯一stage-goals-20261025/g4-async-admission/main-acceptance.json。尚未验证新目标容量/改善，未启600k写或CAS迁移、不部署/关线上Bug；回滚限三产品/两QA，兼容读不撤。
 ## FIX-20261026-PUBLIC-EFFECT-CLIP｜本地接受，未部署
 
 - 共享public-reveal父组overflow:hidden裁掉子卡上浮7px/放大1.035/阴影；仅改visible，卡面contain/圆角/尺寸和owner不变。QA进原public-reveal正常链，真实RED/绿、Main逐字证明仅一CSS声明、受影响呈现/owner/动效/双Vite通过。证据public-effect-card-containment-20261026/main-acceptance.json；脚本/模板未变复用原类型。真实像素未验，三卡窄屏理论越界另列；未部署/关单，回滚只该声明及两QA。

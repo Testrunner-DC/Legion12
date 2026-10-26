@@ -1,5 +1,10 @@
 # 十二军团简短交接
 
+## 2026-10-26 G4同预算异步准入本地接受，未部署
+
+- 基线8699fe70；仅Budget/Store登录唯一core/HTTP登录三产品与两既有QA，2执行/8排队/250ms/120k写及原CAS/失败桶/会话/存储保持。取消仅等待准入生效；获槽后持许可到真实KDF结束，再沿原事务提交。旧产品missing-API真实3RED+1正控；Main73/73定向绿，独立产品复核无阻断，架构69源及P0—P4过。
+- 同冻结5源/双DLL完整平台2674/2674、11分51秒、零失败跳过，监督一次清退；另192次本地真实HTTP（40成功登录/40token核验/88读取/8错密401/16限流429）及私有清退通过。独立产品审查无阻断，Main复验QA；唯一stage-goals-20261025/g4-async-admission/main-acceptance.json，Git见synchronization。未做新目标主机对照/部署或启600k，不能冒性能改善；现有97a线上不动。Tee初期无日志不是失败，没有重跑完整套件。
+
 ## 2026-10-26 卡效图上浮裁切本地接受，未部署
 
 - GameBoard仅public-reveal-cards的overflow改visible，原卡图contain/圆角/尺寸/owner/队列均不变；真实RED及Main精确源码反替换、呈现/owner/动效与双Vite通过，正常入口接QA。证据public-effect-card-containment-20261026/main-acceptance.json。脚本/模板逐字未变，复用刚完成的61步/类型证据；真实像素未验。通用三卡窄屏理论越界另留，不冒全部裁切根治。回放核查发现三类投影/坏JSON问题，来源统一征求限定修复批准，暂无产品租约。

@@ -1112,14 +1112,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var result = _platform.Register(request.Username ?? string.Empty, request.Password ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Message, result.Account, result.Token }) : Results.BadRequest(new { result.Message });
         });
-        _app.MapPost("/api/auth/login", (HttpRequest request, AuthRequest body) =>
+        _app.MapPost("/api/auth/login", async (HttpRequest request, AuthRequest body) =>
         {
             var clientKey = request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-client";
-            var result = _platform.Login(body.Username ?? string.Empty, body.Password ?? string.Empty,
+            var result = await _platform.LoginAsync(body.Username ?? string.Empty, body.Password ?? string.Empty,
                 new L12LoginAttemptContext(CorrelationId(request), clientKey,
                     request.HttpContext.Items.TryGetValue(L12CorrelationIds.OriginalPathItemName, out var path)
                         ? path as string ?? request.Path.Value ?? "/api/auth/login"
-                        : request.Path.Value ?? "/api/auth/login"));
+                        : request.Path.Value ?? "/api/auth/login"), request.HttpContext.RequestAborted);
             if (result.Success)
             {
                 _rankedDevicePrivacy.EnsureCookie(request.HttpContext);

@@ -103,6 +103,143 @@ public sealed class PasswordWorkBudgetCapacityTests
         Assert.Equal(0, Admitted(budget));
     }
 
+    [Fact]
+    public void SharedBudgetKeepsItsExistingCpuQueueAndWaitPolicy()
+    {
+        var budget = L12PasswordWorkBudget.Shared;
+        Assert.Equal(Math.Clamp(Environment.ProcessorCount / 2, 1, 2) + 8,
+            (int)typeof(L12PasswordWorkBudget).GetField("_maximumAdmitted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(budget)!);
+        Assert.Equal(TimeSpan.FromMilliseconds(250),
+            (TimeSpan)typeof(L12PasswordWorkBudget).GetField("_maximumWait", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(budget)!);
+    }
+
+    [Fact]
+    public async Task AsyncAdmissionReturnsIncompleteTasksAndSharesTheExactTwoPlusEightLimitWithSync()
+    {
+        var budget = new L12PasswordWorkBudget(2, 8, TimeSpan.FromMilliseconds(250));
+        var held = new[] { budget.Acquire(), budget.Acquire() };
+        var queued = new List<Task<IDisposable>>();
+        using var cancellation = new CancellationTokenSource();
+        try
+        {
+            for (var index = 0; index < 8; index++)
+            {
+                var attempt = AcquireAsync(budget, cancellation.Token);
+                queued.Add(attempt);
+                Assert.False(attempt.IsCompleted, "Admission must return to its caller while both real workers remain occupied.");
+                Assert.Equal(3 + index, Admitted(budget));
+            }
+            Assert.Throws<L12AuthenticationBusyException>(() => budget.Acquire());
+            await Assert.ThrowsAsync<L12AuthenticationBusyException>(async () => await AcquireAsync(budget));
+            Assert.Equal(10, Admitted(budget));
+            cancellation.Cancel();
+            foreach (var attempt in queued)
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await attempt);
+            Assert.Equal(2, Admitted(budget));
+        }
+        finally
+        {
+            cancellation.Cancel();
+            foreach (var lease in held) lease.Dispose();
+            foreach (var attempt in queued) await DrainLease(attempt);
+        }
+        Assert.Equal(0, Admitted(budget));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AsyncCancelledOrTimedOutWaiterCannotReleaseASynchronousOwnersWorker(bool cancel)
+    {
+        var budget = new L12PasswordWorkBudget(2, 8, TimeSpan.FromMilliseconds(250));
+        var held = new[] { budget.Acquire(), budget.Acquire() };
+        using var cancellation = new CancellationTokenSource();
+        Task<IDisposable>? attempt = null;
+        try
+        {
+            attempt = AcquireAsync(budget, cancellation.Token);
+            Assert.False(attempt.IsCompleted);
+            Assert.Equal(3, Admitted(budget));
+            if (cancel)
+            {
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await attempt);
+            }
+            else await Assert.ThrowsAsync<L12AuthenticationBusyException>(async () => await attempt);
+            Assert.Equal(2, Admitted(budget));
+            Assert.Throws<L12AuthenticationBusyException>(() => budget.Acquire());
+            Assert.Equal(2, Admitted(budget));
+        }
+        finally
+        {
+            cancellation.Cancel();
+            foreach (var lease in held) lease.Dispose();
+            if (attempt is not null) await DrainLease(attempt);
+        }
+        Assert.Equal(0, Admitted(budget));
+        using var first = await AcquireAsync(budget);
+        using var second = budget.Acquire();
+        Assert.Equal(2, Admitted(budget));
+    }
+
+    [Fact]
+    public async Task AsyncLeaseHandoffAndDoubleDisposeNeverMintAnExtraWorker()
+    {
+        var budget = new L12PasswordWorkBudget(2, 8, TimeSpan.FromMilliseconds(250));
+        var first = budget.Acquire();
+        var second = budget.Acquire();
+        Task<IDisposable>? queued = null;
+        IDisposable? granted = null;
+        try
+        {
+            queued = AcquireAsync(budget);
+            Assert.False(queued.IsCompleted);
+            first.Dispose();
+            granted = await queued.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(2, Admitted(budget));
+            granted.Dispose(); granted.Dispose();
+            using var replacement = budget.Acquire();
+            Assert.Equal(2, Admitted(budget));
+            await Assert.ThrowsAsync<L12AuthenticationBusyException>(async () => await AcquireAsync(budget));
+            Assert.Equal(2, Admitted(budget));
+        }
+        finally
+        {
+            first.Dispose(); second.Dispose(); granted?.Dispose();
+            if (queued is not null) await DrainLease(queued);
+        }
+        Assert.Equal(0, Admitted(budget));
+    }
+
+    [Fact]
+    public async Task PreCancelledAsyncAdmissionDoesNotConsumeAnyCapacity()
+    {
+        var budget = new L12PasswordWorkBudget(2, 8, TimeSpan.FromMilliseconds(250));
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await AcquireAsync(budget, cancellation.Token));
+        Assert.Equal(0, Admitted(budget));
+        using var first = budget.Acquire();
+        using var second = await AcquireAsync(budget);
+        Assert.Equal(2, Admitted(budget));
+    }
+
+    private static Task<IDisposable> AcquireAsync(L12PasswordWorkBudget budget, CancellationToken cancellation = default)
+    {
+        // Reflection keeps the old product compilable, so the initial RED is an
+        // executable missing-API assertion rather than a compiler error.
+        var method = typeof(L12PasswordWorkBudget).GetMethod("AcquireAsync", BindingFlags.Instance | BindingFlags.NonPublic,
+            null, [typeof(CancellationToken)], null);
+        Assert.True(method is not null, "Missing shared-budget AcquireAsync(CancellationToken): queued admission still has no nonblocking entry.");
+        return method!.CreateDelegate<Func<CancellationToken, Task<IDisposable>>>(budget)(cancellation);
+    }
+
+    private static async Task DrainLease(Task<IDisposable> task)
+    {
+        try { (await task.WaitAsync(TimeSpan.FromSeconds(10))).Dispose(); }
+        catch (Exception) when (task.IsCompleted) { }
+    }
+
     private static int Admitted(L12PasswordWorkBudget budget) => (int)typeof(L12PasswordWorkBudget)
         .GetField("_admitted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(budget)!;
     private static Task<T> Run<T>(Func<T> work) => Task.Factory.StartNew(work,

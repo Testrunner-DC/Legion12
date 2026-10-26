@@ -601,6 +601,14 @@ public sealed partial class L12PlatformStore
     }
 
     public L12AuthenticationResult Login(string username, string password, L12LoginAttemptContext? context = null)
+        => LoginCoreAsync(username, password, context, false, CancellationToken.None).GetAwaiter().GetResult();
+
+    public Task<L12AuthenticationResult> LoginAsync(string username, string password,
+        L12LoginAttemptContext? context = null, CancellationToken cancellationToken = default)
+        => LoginCoreAsync(username, password, context, true, cancellationToken);
+
+    private async Task<L12AuthenticationResult> LoginCoreAsync(string username, string password,
+        L12LoginAttemptContext? context, bool asynchronous, CancellationToken cancellationToken)
     {
         RequirePasswordWorkOutsideTransaction();
         context ??= new L12LoginAttemptContext("store-login", "local", "/store/login");
@@ -619,10 +627,22 @@ public sealed partial class L12PlatformStore
         var verified = false;
         if (snapshot is not null)
         {
-            using (PasswordWorkBudget.Acquire())
+            bool VerifySnapshot()
             {
                 BeforeLoginPasswordVerificationForTesting?.Invoke();
-                verified = snapshot.Verify(password);
+                return snapshot.Verify(password);
+            }
+            if (asynchronous)
+            {
+                // Cancellation only withdraws a waiting admission. Once CPU work
+                // starts, retain this same lease until it truly completes, then
+                // preserve the existing credential CAS and durable login commit.
+                using (await PasswordWorkBudget.AcquireAsync(cancellationToken).ConfigureAwait(false))
+                    verified = await Task.Run(VerifySnapshot, CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                using (PasswordWorkBudget.Acquire()) verified = VerifySnapshot();
             }
         }
         // Release CPU admission before waiting for persistence. Re-read every credential field
