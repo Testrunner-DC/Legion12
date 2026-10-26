@@ -43,6 +43,8 @@
 
 ## 部署标准：四步完成
 
+2026-10-27具名活局退场并入原准备／切换，不新增通用旁路：用户明确批准结束当时一方断线的那一场137命令好友局，实际公开观战绑定match／房码哈希与断线状态；固定一次性执行器、维护owner及flock，仅允许该局对应unfinished/unrecorded各1，其他room／platform／双lease严格0。两次原生work_remaining的durability为null，必须如实保留，独立完整历史夹验和停服后137命令指纹承担证明，不冒称原生39查询或v1许可。正常stop、最新两库/WAL原始备份proof通过后切同一合格包，启动后房间／活动0；只放弃在线续玩，历史行和录像不改、不伪造胜负。该次完整回执见formal-release-20261027-0600/resumed-release-session-summary.json；已完成退场、TEST和两次各自维护不得重放。此授权不扩展至其他真实活局；复用时冻结当前PID、版本、schema与全部具名常量，不能沿用旧PID或不实“房间全零”文案。
+
 2026-10-22现场修正并入既有阶段，不新增审批链：多份远端备份下载用同一SFTP批连接；scp的多个远端来源会逐项开SSH，可能触及既有连接限流，失败只续缺失项、不覆盖已核SHA副本。独立静态核验必须从包内dist-testrun与testrun-shared-files.txt生成测试可达资源集合，不能混入正式专属chunk；News沿既有share-page动态SEO，核同测试进程/路径与入口资源，不要求和index字节全同。原失败保留，只续失败的读回，不重新切包。完整Release、现场数据保护及主机信任规则均不减少。
 
 2026-10-22标准入口落实既有停服契约：正式与测试正常/恢复路径复用实际stop helper，保留systemctl stop非零退出，并严格核inactive/dead/PID0/Result=success/ExecMainStatus=0；failed/timeout不再被“非active”冒充成功。原生排空拒绝的六字段有界合同JSON存入原日志及既有阻断记录，未知/含secret字段不回显。两行为套件实际通过（正式76合成场景、各13个stop helper反例及测试服隔离/恢复/容量边界）；不是旧d7真实停服已成功的证据。Windows原生tar夹具使用短D路径避免260字符展开失败，完整短工具PATH包含OpenSSH、旧powershell及rg，不在长回归后才发现缺工具；原失败记录保留。
