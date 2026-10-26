@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261026-MOBILE-ABILITY-CONTAINMENT｜共享弹框同源尺寸，本地接受
+
+- 人类01a1780d／01a17810要求根治移动组件侵入的同类原因。真实PlayerMat阵营／能力与MasterOverlay共用规则中，grid自身的cqw回退物理viewport，子图却查询逻辑dialog容器：旋转时列96px、图120.797px，侵入正文19.546875px。只把列与图改为同一现有logical-dialog-width导出的长度，限定mobile，不改模板、桌面、视口内核或卡效。
+- 同类型扫描mobileViewport全部cqw/container规则，确认该直接self-query／child错参照位于这条共享规则，不猜改无关布局。真实浏览器native正控／rotated负例原件保留；最终6组真实组件DOM几何覆盖三消费者、568／844逻辑宽、原生／旋转、横竖图、长短文和三字号，图像解码、可见图文不交叠、按钮及末句可达全过。QA将已滚出scroll视区的正文裁切后再验覆盖，真实可见负例仍拒绝；新QA只作本片验收，未新增全局固定门禁。
+- 唯一mobile-ability-dialog-containment-20261026/main-acceptance.json绑定原始GREEN 4A2483DB及产品／QA；组合63前端步骤、两类型、双Vite和独立只读审查接受。物理真机、整站全交互及所有尺寸组合未验，非线上关单／部署。回滚仅mobileViewport共享宽度及具名QA，原移动／桌面隔离不撤。
+
 ## MAINT-20261026-ASYNC-AUTH-TARGET｜修改候选真实HTTP资格，600k仍不放行
 
 - 原a83异步族的11129450已验DLL仅上传新私有候选目录，复用当前已发布97a的固定19程序依赖／公开catalog，各项复制SHA相同；无DB/env/appsettings复制。原QA probe／driver、loopback合成库／内存口令、nice19／90秒／独立PGID／24health守卫保持；不是部署、现场账号认证或公网反代压测。

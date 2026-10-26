@@ -1,5 +1,17 @@
 # 十二军团任务台账
 
+## 2026-10-26 移动弹框共享侵入本地收口，未部署
+
+- 来源人类01a1780d/01a17810。CUA真实组件/真实CSS在390物理宽、844逻辑宽旋转下复现列96与图120.797差，侵入19.546875；三个共规则消费者均见同机制。仅共用逻辑dialog-width生成同一列／图宽，mobile CSS限定、桌面不动，非单卡margin特判。
+- native对照和rotated真实RED保留；最终6组原始DOM几何、图片解码、可见文本／按钮／末句滚达全过，覆盖三弹框／两逻辑宽／横竖／长短／三字体。独立只读共因扫描和oracle审查无阻断，63组合前端／双类型／双构建过；唯一mobile-ability-dialog-containment-20261026/main-acceptance.json（真实raw4A2483DB）。真实设备仍未验，不新增全局固定门禁或部署／线上关单。
+- 验收工具失败与产品结果分开：fixture runner/alias修正后才测；三处controls警告为被scroll裁切正文的假覆盖，补真实可见负例再纠正；wrapper字符串拼接错误被安全预写拦截、原件保留，改全新无清空D输出后执行。旧热构建／证据完整保，临时浏览器/viewport/server已清退，无线上业务写。
+
+## 2026-10-26 两个新UI共享原因片实施中，尚未验收
+
+- 落位后登场效果：真实source-linked Zone/GameBoard watcher已复现关联Prompt在落位登记／完成前取得暂停；same-seq优先级只列合成兼容边界。动画专项租约四产品coordinator/Zone/GameBoard与test-entry-before-effect-lifecycle-20261026.mjs，延用现pending/active reservation元数据，不新增landing表。必须保权威Prompt阻塞、服务端时限、无关modal、旧抑制／可见性保护，诊断用assert.fail须先改未来行为oracle，Focused冻结后Main独验。
+- 移动阵营／能力／主宰弹框：几何oracle合成自测通过，真实像素／尺寸未验；原截图宿主已纠正为PlayerMat阵营效果。对战文本专项仅QA＋D证据至多3真实组件预览文件租约，真实产品CSS只读、不复制模板／不发API或WS。Main受支持CUA已重新接管原TEST/cards，后续Main启动局部预览取得computed/rect；不是为旧版做无意义采样，而是验证新报告的共享布局缺口。
+- 两专项不得写记录/Git/部署，Main不与其产品叶重叠；构建／浏览器串行，私有预览生成先Assert物理D。当前均实施／取证中，不冒本地接受、线上根治或产品RED；回放三项仍待来源批准。
+
 ## 2026-10-26 G4修改候选真实目标窗口完成，容量边界明确
 
 - 11129450已验DLL在新0700私有candidate运行，原97a程序／两服务不替换；固定19依赖／公开目录逐SHA，32.04669秒／原90秒截止／nice19／同PGID清退。182合成HTTP精确30登录＋30token＋88reader＋8错密401＋12账号限流429＋4流量限流429＋10busy503，独审重算通过；唯一stage-goals-20261025/g4-async-admission/target-acceptance.json，原回执481A88E6。

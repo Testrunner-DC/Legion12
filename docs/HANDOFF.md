@@ -1,5 +1,17 @@
 # 十二军团简短交接
 
+## 2026-10-26 移动阵营／能力／主宰弹框同源尺寸本地接受
+
+- 真实CUA局部组件复现旋转时grid列96px／图120.797px，正文侵入19.546875逻辑px；共享原因是dialog自身与child的cqw参照不同。仅mobileViewport.css两宽度消费改同一逻辑读框长度，原PlayerMat/MasterOverlay模板、卡效、桌面和viewport kernel未改。6真实浏览器几何覆盖三消费者／568及844／原生旋转／横竖图／短长文／三字号，全解码、图文不交叠、按钮和末句可达；不是真机或完整场景全部通过。
+- 唯一mobile-ability-dialog-containment-20261026/main-acceptance.json，raw GREEN SHA4A2483DB；几何oracle保真实侵入负例，剔除已被scroll裁切的不可见正文误报。新QA局部验收暂不加全局固定门禁。共同63步前端／两类型／双Vite通过，7源冻结；原热构建未动，安全检查拦掉损坏wrapper后改新D缓存ui-entry-mobile-20261026，无清空参数、AST预检；原拒绝脚本保留，未绕过。
+- 本片源码同步与线上分开，不部署／关单。浏览器临时视口、页签、局部server已清退，原用户页保留。登场时序另一族已24生命周期＋22旧consumer及共同前端通过，Main独审排序环已修、typeof测试逃生口已删；独立复核无新阻断，但首次paint／autofocus与真人像素仍未验，单独接续记录与同步。
+
+## 2026-10-26 接续：落位前关联提示与移动弹框真实几何
+
+- 动画专项补来源绑定实际watcher后，Main接受关联Prompt先可见→entry reservation被暂停的本地原因；同sequence效果先行仅作合成兼容边界。四产品叶coordinator／Zone／GameBoard＋原具名QA租约已发：只扩原reservation角色／source／transaction元数据及集合变更通知，复用pending/active，不建landing平行表。原Prompt权威阻塞／响应时限、无关modal暂停、ownsEntryMovementTransaction“已开始才抑制”语义都不改；先把诊断assert.fail改可转绿断言、保真实RED，再Focused冻结交回，Main未验收／同步。
+- 移动子任务原图已确认为PlayerMat阵营效果共享弹框，不是详情抽屉；新几何oracle只有合成自身通过，不能叫产品RED。QA单叶＋D证据根至多3局部预览文件租约，挂真实PlayerMat/MasterOverlay/移动CSS，不复制模板；不发API/WS／不读玩家局。Main已读computer-use技能并通过受支持CUA接管本Main原TEST/cards页，浏览器条件改变，Main独占真实运行槽；子任务只准备fixture，不启动server/浏览器/整站构建。两writer分别动画产品与移动fixture，Main只记录／复核；真实页面几何和最终布局尚未验。
+- 当前已同步715f0994，线上仍97a；G4高成本容量不合格的窗口结束，不重跑同配置。后续仅消费两专项具名交付，不能把活跃实现冒完成或再次部署旧版本。
+
 ## 2026-10-26 G4新异步候选目标HTTP完成｜未证明容量改善
 
 - 已验11129450 DLL仅进私有/tmp/candidate，固定19程序依赖／公开catalog复制后逐SHA核验；沿原loopback合成HTTP、nice19/90秒/PGID/liveguard完成32.047秒。182请求=30成功登录＋30本人token核验＋88读取＋8错密401＋16限流429＋10繁忙503，原始481A88E6、唯一g4-async-admission/target-acceptance.json。独立只读重算通过，两服97a/PID774133与788923/重启0/maintenance=false保持，私有组／目录清退，真实账号／业务／统计零写。

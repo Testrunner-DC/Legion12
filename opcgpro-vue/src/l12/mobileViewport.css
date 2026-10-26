@@ -283,7 +283,10 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .has-battlefi
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .has-battlefield-position .prompt-card-candidate__position { display: block; }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate__state { font-size: var(--l12-dialog-meta) !important; line-height: 1.2 !important; }
 html[data-l12-mobile=true][data-l12-viewport] :is(.master-dialog,.faction-effect-dialog) {
-  grid-template-columns: clamp(96px, 24cqw, 156px) minmax(0, 1fr) !important;
+  /* A container cannot query itself: the grid's cqw otherwise falls back to
+     the physical viewport, while the child image queries this logical frame. */
+  --l12-ability-card-width: clamp(96px, calc(var(--l12-mobile-dialog-width) * .24), 156px);
+  grid-template-columns: var(--l12-ability-card-width) minmax(0, 1fr) !important;
   align-content: center;
   align-items: center;
   gap: clamp(12px, 3cqw, 24px) !important;
@@ -291,7 +294,7 @@ html[data-l12-mobile=true][data-l12-viewport] :is(.master-dialog,.faction-effect
   overflow: hidden !important;
 }
 html[data-l12-mobile=true][data-l12-viewport] :is(.master-dialog,.faction-effect-dialog) > .l12-card-image {
-  width: clamp(96px, 24cqw, 156px) !important;
+  width: var(--l12-ability-card-width) !important;
   height: auto !important;
   max-height: calc(100cqh - 32px);
   aspect-ratio: 5 / 7;
