@@ -2732,8 +2732,10 @@ public sealed partial class L12GameEngine
             return;
         }
 
-        State.PendingDefense.Target = new L12AttackTarget("legion", card!.InstanceId);
+        var pendingDefense = State.PendingDefense!;
+        pendingDefense.Target = new L12AttackTarget("legion", card!.InstanceId);
         AddEvent("effect", item.Controller, $"{card.Name} 成为本次进攻目标", card);
+        QueueStarterDefenderMasterTiming(pendingDefense, reopenOrdinaryDefenderTiming: false);
         FinishStackItem(item);
     }
 

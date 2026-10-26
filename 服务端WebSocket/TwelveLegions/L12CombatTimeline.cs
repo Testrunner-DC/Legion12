@@ -188,20 +188,7 @@ public sealed partial class L12GameEngine
     {
         var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
         if (attacker is null) return;
-        if (!pending.StarterDefenderMasterTimingOffered && pending.Target.Type == "legion")
-        {
-            pending.StarterDefenderMasterTimingOffered = true;
-            var defender = State.Players[1 - pending.AttackerPlayer];
-            var target = FindOnField(defender, pending.Target.InstanceId, out _, out _);
-            var candidate = target is null ? null : BuildStarterKagutsuchiCandidate(defender.PlayerIndex, target);
-            if (candidate is not null)
-            {
-                // 该可选触发结束后仍需重新打开通常的防守方【对方进攻时】响应窗口。
-                pending.DefenderAttackTimingOpened = false;
-                QueueTriggerCandidates([candidate]);
-                return;
-            }
-        }
+        if (QueueStarterDefenderMasterTiming(pending, reopenOrdinaryDefenderTiming: true)) return;
         var item = new L12StackItem
         {
             StackItemId = $"stack-{++State.StackSequence}",
@@ -216,6 +203,22 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("combat-stage", 1 - pending.AttackerPlayer, "防守方取得【对方进攻时】响应时点", attacker);
         BeginStackItem(item);
+    }
+
+    private bool QueueStarterDefenderMasterTiming(L12PendingDefense pending,
+        bool reopenOrdinaryDefenderTiming)
+    {
+        if (pending.StarterDefenderMasterTimingOffered || pending.Target.Type != "legion") return false;
+        pending.StarterDefenderMasterTimingOffered = true;
+        var defender = State.Players[1 - pending.AttackerPlayer];
+        var target = FindOnField(defender, pending.Target.InstanceId, out _, out _);
+        var candidate = target is null ? null : BuildStarterKagutsuchiCandidate(defender.PlayerIndex, target);
+        if (candidate is null) return false;
+        // QueueTriggerCandidates can synchronously auto-decline an unpayable optional trigger and
+        // re-enter the combat timeline. Commit the normal-entry reopen before that can happen.
+        if (reopenOrdinaryDefenderTiming) pending.DefenderAttackTimingOpened = false;
+        QueueTriggerCandidates([candidate]);
+        return true;
     }
 
     private bool TryAbortCombatAtSafeBoundary(L12PendingDefense pending, int eventPlayer)

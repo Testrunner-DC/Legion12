@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261027-PUPPET-REDIRECT-KAGUTSUCHI｜改向后沿原队列补防守主宰触发
+
+- BUG-20261024-646ce6f1，复用下方人类明确“应补发”裁定，不重复询问。真实命令原4例1过3红：傀儡已登场并成为军团目标后直接推进战斗，防守迦具土缺询问。提取原QueueStarterDefenderMasterTiming，改向设置目标后、FinishStackItem前复用；原StarterDefenderMasterTimingOffered去重、恢复及pendingTriggerBatches保持，无新持久字段或第二响应窗口。
+- 一般军团被进攻入口与唯一成功改向入口共用；改向不重开已发生的一般防守窗口，不让进攻方重复触发。独审查出无资源候选同步auto-decline重入会漏掉普通防守窗口，具名RED1/1确证后把需要重开的原标记移到Queue之前；真实待支付／已拒绝、普通／改向两分支分清，不能以延长等待掩盖。
+- PuppetRedirectKagutsuchiTrigger20261026Tests最终5/5，原同类269/269（两者同最终DLL、no-build），组合完整8489/8489无跳过；曾中断的旧全量明确aborted，旧QA进攻优先权假设失败原件保留，未冒通过。主根new-bug-rule-reds-20261026/main-acceptance.json及redirect/full-rule-r2。回滚仅CombatTimeline／PromptsAndSetup的共享入队和本族测试；普通窗口、支付／拒绝及原去重守卫不得删除。未部署／线上关单。
+
 ## FIX-20261027-THOR-GRANTED-DECLARATION｜授予效果独立必发，不重付自身费用
 
 - BUG-20261026-6f111590。人类call_a6e3a4aafd504a9195616b809de4fdf6补充“雷神赋予效果并不是可选的直接发动就行了”。根因是带ThorGrantedEntryCharge标记的既有授予候选，被源卡ID分流进埃吉尔自己的可选付费声明；现在在该分流前识别原授予标记并直接完成声明，仍走原堆叠和各自响应。
@@ -15,7 +21,7 @@
 ## RULING-20261026-PUPPET-REDIRECT-KAGUTSUCHI｜改向后补发军团被进攻时点
 
 - 新反馈BUG-20261024-646ce6f1；人类在Main明确裁定：〈戏法师的傀儡〉休整登场并把本次进攻目标从主宰改为自身后，应补发“我方军团被进攻时”的迦具土触发机会。来源为request_user_input_async call_2bf0ebbf7aa747ea8ea2bde1224317f3直接回复“应补发迦具土触发机会”。不能误记为迦具土的“主宰被进攻”效果。
-- 这是已确定预期，待具名复现与共享改向入口方案；当前尚未实施或验收，不因本条裁定关闭反馈。原两条有效阵营减费／索尔授予诗人QA先交回，后续再排本片，不新增规则旁路或重复询问同一裁定。
+- 该条是原裁定过程记录；当前已完成共享修复及本地验收，以FIX-20261027-PUPPET-REDIRECT-KAGUTSUCHI和真实组合TRX为准；仍未部署，不因裁定或本地通过关闭反馈。
 
 ## FIX-20261026-ENTRY-BEFORE-EFFECT｜落位完成后关联效果，共享逻辑本地接受
 
