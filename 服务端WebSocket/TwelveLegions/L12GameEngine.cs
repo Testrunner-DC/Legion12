@@ -1005,6 +1005,15 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             effects.Add(new("power-down", $"临时兵力{negative}", string.Join('、', activeTimed.Where(item => item.TroopsDelta < 0).Select(item => item.Source).Distinct())));
         if (card.TsukuyomiFrontMoveBonusTurn == State.TurnSerial && card.TsukuyomiFrontMoveBonusCount > 0)
             effects.Add(new("conditional-attack", $"本回合每次进攻兵力＋{card.TsukuyomiFrontMoveBonusCount * 1000}", "月读"));
+        if (row == 0 && controller.UsedAbilities.Contains($"susano-buff:{card.InstanceId}"))
+            effects.Add(new("conditional-attack", "本回合位于前排进攻时兵力＋2000", "须佐之男"));
+        if (row == 0 && L12StructuredCardRules.HasFaction(controller, card, "gaotianyuan")
+            && controller.UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))
+            effects.Add(new("conditional-attack", "本回合位于前排进攻时兵力＋1000", "天下布武"));
+        if (card.AttackOnlyTroopsBonusUntilTurn == State.TurnSerial && card.AttackOnlyTroopsBonus != 0)
+            // This legacy authority field has no recorded granting source. Do
+            // not infer a card name or materialize the bonus into standing troops.
+            effects.Add(new("conditional-attack", $"本回合每次进攻兵力{(card.AttackOnlyTroopsBonus > 0 ? "＋" : "")}{card.AttackOnlyTroopsBonus}"));
         if (card.CannotUntapAtNextReset)
             effects.Add(new("lock", "下个重置阶段无法转为活跃"));
         else if (card.CannotUntapUntilRound >= State.Round)

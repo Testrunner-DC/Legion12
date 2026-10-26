@@ -95,19 +95,219 @@ public sealed class TsukuyomiConditionalAttackStatusProjectionTests
         Assert.Equal(card.BaseTroops, projected.GetProperty("troops").GetInt32());
     }
 
+    public static IEnumerable<object[]> GrantedAttackCases()
+    {
+        foreach (var source in new[] { "susano", "tenka", "attack-only" })
+        foreach (var owner in new[] { 0, 1 })
+        foreach (var row in new[] { 0, 1 })
+        foreach (var restore in new[] { false, true })
+            yield return [source, owner, row, restore];
+    }
+
+    [Theory]
+    [MemberData(nameof(GrantedAttackCases))]
+    public void GrantedAttackBonusesAreProjectedFromCurrentAuthorityForEveryAllowedViewWithoutMutation(
+        string source, int owner, int row, bool restore)
+    {
+        var game = Create(owner);
+        Grant(game, owner, source, row);
+        if (restore) game = Restore(game);
+        var card = Assert.IsType<L12CardInstance>(game.State.Players[owner].Field[row][0]);
+        var before = game.SerializeFullState();
+        var hash = game.ComputeStateHash();
+        var random = game.RandomState;
+        var facts = game.CardFactSignalSequence;
+        for (var repetition = 0; repetition < 2; repetition++)
+        foreach (var snapshot in Views(game, owner))
+        {
+            var projected = ProjectedCard(snapshot, owner, row);
+            var statuses = Statuses(projected).Where(item => item.Kind == "conditional-attack").ToArray();
+            if (row == 1 && source != "attack-only") Assert.Empty(statuses);
+            else
+            {
+                var status = Assert.Single(statuses);
+                Assert.Equal(source == "tenka" ? "本回合位于前排进攻时兵力＋1000"
+                    : source == "susano" ? "本回合位于前排进攻时兵力＋2000"
+                    : "本回合每次进攻兵力＋2000", status.Label);
+                Assert.Equal(source == "susano" ? "须佐之男" : source == "tenka" ? "天下布武" : null, status.Source);
+                Assert.Single(projected.GetProperty("statusIcons").EnumerateArray(), item => item.GetString() == "conditional-attack");
+            }
+            Assert.Equal(card.BaseTroops, projected.GetProperty("troops").GetInt32());
+            Assert.Equal(hash, snapshot.StateHash);
+        }
+        Assert.Equal(before, game.SerializeFullState());
+        Assert.Equal(hash, game.ComputeStateHash());
+        Assert.Equal(random, game.RandomState);
+        Assert.Equal(facts, game.CardFactSignalSequence);
+        Assert.Empty(card.StatusEffects);
+        Assert.Equal(card.BaseTroops, card.Troops);
+    }
+
+    public static IEnumerable<object[]> InvalidTimedAttackCases()
+    {
+        foreach (var source in new[] { "tenka", "attack-only" })
+        foreach (var owner in new[] { 0, 1 })
+        foreach (var turn in new[] { 9, 11 })
+            yield return [source, owner, turn];
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidTimedAttackCases))]
+    public void ExpiredAndFutureAttackGrantsAreNotAdvertisedAsCurrent(string source, int owner, int turn)
+    {
+        var game = Create(owner);
+        var card = Grant(game, owner, source);
+        if (source == "tenka")
+        {
+            game.State.Players[owner].UsedAbilities.Clear();
+            game.State.Players[owner].UsedAbilities.Add($"s2-tenka-front-attack:{turn}");
+        }
+        else card.AttackOnlyTroopsBonusUntilTurn = turn;
+        foreach (var snapshot in Views(game, owner))
+            Assert.DoesNotContain(Statuses(ProjectedCard(snapshot, owner)), item => item.Kind == "conditional-attack");
+    }
+
+    [Theory]
+    [InlineData(0)] [InlineData(1)]
+    public void SusanooGrantIsBoundToTheExactCardAndTenkaUsesTheCurrentEffectiveFaction(int owner)
+    {
+        var game = Create(owner);
+        var card = Arrange(game, owner, 0, -1, "S02-0501");
+        game.State.Players[owner].UsedAbilities.Add($"susano-buff:{card.InstanceId}-other");
+        game.State.Players[owner].UsedAbilities.Add($"s2-tenka-front-attack:{game.State.TurnSerial}");
+        Assert.False(L12StructuredCardRules.HasFaction(game.State.Players[owner], card, "gaotianyuan"));
+        foreach (var snapshot in Views(game, owner))
+            Assert.DoesNotContain(Statuses(ProjectedCard(snapshot, owner)), item => item.Kind == "conditional-attack");
+    }
+
+    [Theory]
+    [InlineData(0, 0)] [InlineData(1, 0)]
+    [InlineData(0, -2000)] [InlineData(1, -2000)]
+    public void GenericAttackOnlyValueIsNotInventedOrMislabeledAsARecordedSource(int owner, int bonus)
+    {
+        var game = Create(owner);
+        var card = Grant(game, owner, "attack-only");
+        card.AttackOnlyTroopsBonus = bonus;
+        foreach (var snapshot in Views(game, owner))
+        {
+            var statuses = Statuses(ProjectedCard(snapshot, owner)).Where(item => item.Kind == "conditional-attack").ToArray();
+            if (bonus == 0) Assert.Empty(statuses);
+            else
+            {
+                var status = Assert.Single(statuses);
+                Assert.Equal("本回合每次进攻兵力-2000", status.Label);
+                Assert.Null(status.Source);
+            }
+        }
+    }
+
+    public static IEnumerable<object[]> GrantOwnerCases()
+    {
+        foreach (var source in new[] { "susano", "tenka", "attack-only" })
+        foreach (var owner in new[] { 0, 1 }) yield return [source, owner];
+    }
+
+    [Theory]
+    [MemberData(nameof(GrantOwnerCases))]
+    public void HiddenGrantedCardsNeverPublishTheirAttackStatusesEvenToTheOwner(string source, int owner)
+    {
+        var game = Create(owner);
+        Grant(game, owner, source).Hidden = true;
+        foreach (var snapshot in Views(game, owner))
+            Assert.DoesNotContain(Statuses(ProjectedCard(snapshot, owner)), item => item.Kind == "conditional-attack");
+    }
+
+    [Theory]
+    [MemberData(nameof(GrantOwnerCases))]
+    public void RealTurnEndRemovesGrantedAttackStatus(string source, int owner)
+    {
+        var game = Create(owner);
+        Grant(game, owner, source);
+        Assert.Contains(Statuses(ProjectedCard(game.SnapshotFor(owner), owner)), item => item.Kind == "conditional-attack");
+        var ended = game.Handle(owner, new L12Command("endTurn"));
+        Assert.True(ended.Accepted, ended.Error);
+        foreach (var snapshot in Views(game, owner))
+            Assert.DoesNotContain(Statuses(ProjectedCard(snapshot, owner)), item => item.Kind == "conditional-attack");
+    }
+
+    [Theory]
+    [MemberData(nameof(GrantOwnerCases))]
+    public void ExistingPrivateZoneResetPreventsAReenteredInstanceFromReusingOldAttackGrants(string source, int owner)
+    {
+        var game = Create(owner);
+        var card = Grant(game, owner, source);
+        typeof(L12GameEngine).GetMethod("ResetCardForPrivateZone", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(game, [card]);
+        // Tenka is a player-wide current-turn grant and intentionally applies
+        // again to an eligible reentered legion. A departed private card is not
+        // a battlefield status consumer in any view.
+        game.State.Players[owner].Field[0][0] = null;
+        foreach (var snapshot in Views(game, owner))
+            Assert.Equal(JsonValueKind.Null, ProjectedCard(snapshot, owner).ValueKind);
+        game.State.Players[owner].Field[0][0] = card;
+        foreach (var snapshot in Views(game, owner))
+        {
+            var statuses = Statuses(ProjectedCard(snapshot, owner)).Where(item => item.Kind == "conditional-attack").ToArray();
+            if (source == "tenka") Assert.Single(statuses);
+            else Assert.Empty(statuses);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)] [InlineData(1)]
+    public void IndependentAttackGrantsAndTimedModifiersKeepTheirOwnLabelsWithoutDuplicateKinds(int owner)
+    {
+        var game = Create(owner);
+        var card = Grant(game, owner, "susano");
+        game.State.Players[owner].UsedAbilities.Add($"s2-tenka-front-attack:{game.State.TurnSerial}");
+        card.TsukuyomiFrontMoveBonusCount = 2;
+        card.TsukuyomiFrontMoveBonusTurn = game.State.TurnSerial;
+        card.AttackOnlyTroopsBonus = 2000;
+        card.AttackOnlyTroopsBonusUntilTurn = game.State.TurnSerial;
+        card.TimedModifiers.Add(new L12TimedModifier { TroopsDelta = 500, ExpiresAfterTurn = game.State.TurnSerial, Source = "既有正修正" });
+        card.TimedModifiers.Add(new L12TimedModifier { TroopsDelta = -200, ExpiresAfterTurn = game.State.TurnSerial, Source = "既有负修正" });
+        foreach (var snapshot in Views(game, owner))
+        {
+            var projected = ProjectedCard(snapshot, owner);
+            var statuses = Statuses(projected);
+            Assert.Equal(4, statuses.Count(item => item.Kind == "conditional-attack"));
+            Assert.Single(statuses, item => item.Source == "月读");
+            Assert.Single(statuses, item => item.Source == "须佐之男");
+            Assert.Single(statuses, item => item.Source == "天下布武");
+            Assert.Single(statuses, item => item.Kind == "power-up");
+            Assert.Single(statuses, item => item.Kind == "power-down");
+            Assert.Single(projected.GetProperty("statusIcons").EnumerateArray(), item => item.GetString() == "conditional-attack");
+        }
+    }
+
+    private static L12CardInstance Grant(L12GameEngine game, int owner, string source, int row = 0)
+    {
+        var card = Arrange(game, owner, 0, -1);
+        game.State.Players[owner].Field[0][0] = null;
+        game.State.Players[owner].Field[row][0] = card;
+        if (source == "susano") game.State.Players[owner].UsedAbilities.Add($"susano-buff:{card.InstanceId}");
+        else if (source == "tenka") game.State.Players[owner].UsedAbilities.Add($"s2-tenka-front-attack:{game.State.TurnSerial}");
+        else
+        {
+            card.AttackOnlyTroopsBonus = 2000;
+            card.AttackOnlyTroopsBonusUntilTurn = game.State.TurnSerial;
+        }
+        return card;
+    }
+
     private static L12GameSnapshot[] Views(L12GameEngine game, int owner)
         => [game.SnapshotFor(owner), game.SnapshotFor(1 - owner), game.SnapshotForSpectator(), game.SnapshotForReferee()];
 
-    private static JsonElement ProjectedCard(L12GameSnapshot snapshot, int owner)
-        => JsonSerializer.SerializeToElement(snapshot, WireJson).GetProperty("players")[owner].GetProperty("field")[0][0];
+    private static JsonElement ProjectedCard(L12GameSnapshot snapshot, int owner, int row = 0)
+        => JsonSerializer.SerializeToElement(snapshot, WireJson).GetProperty("players")[owner].GetProperty("field")[row][0];
 
     private static L12StatusEffectView[] Statuses(JsonElement card)
         => card.TryGetProperty("statusEffects", out var effects)
             ? JsonSerializer.Deserialize<L12StatusEffectView[]>(effects, WireJson)! : [];
 
-    private static L12CardInstance Arrange(L12GameEngine game, int owner, int count, int turn)
+    private static L12CardInstance Arrange(L12GameEngine game, int owner, int count, int turn, string cardId = "S02-0401")
     {
-        var definition = Catalog.Cards["S02-0401"];
+        var definition = Catalog.Cards[cardId];
         var card = new L12CardInstance
         {
             InstanceId = $"moon-status-{owner}", CardId = definition.Id, Name = definition.NameZh,

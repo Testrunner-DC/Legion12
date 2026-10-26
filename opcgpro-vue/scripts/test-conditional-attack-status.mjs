@@ -80,6 +80,35 @@ const legacy = await renderTile({ statusIcons: ['CONDITIONAL-ATTACK'] })
 assert.equal(countMoon(legacy), 1); assert(legacy.includes('进攻时兵力增加'))
 console.log('Conditional attack shared CardTile: eight actual-SFC rendered status groups passed; zero projection mutations.')
 
+// New grants reuse the exact same authority-driven icon and current-instance
+// tooltip, without teaching the client any card-specific effect rules.
+const granted = [
+  { kind: 'conditional-attack', label: '本回合位于前排进攻时兵力＋2000', source: '须佐之男' },
+  { kind: 'conditional-attack', label: '本回合位于前排进攻时兵力＋1000', source: '天下布武' },
+  { kind: 'conditional-attack', label: '本回合每次进攻兵力＋2000' },
+  { kind: 'conditional-attack', label: '本回合每次进攻兵力-2000' },
+]
+for (const effect of granted) {
+  const rendered = await renderTile({ statusEffects: [effect], statusIcons: ['conditional-attack'] })
+  assert.equal(countMoon(rendered), 1)
+  const expected = effect.source ? `${effect.label}（来源：${effect.source}）` : effect.label
+  assert(rendered.includes(`aria-label="${expected}"`), 'the actual icon must retain its authoritative condition and source')
+  liveCard.statusEffects = [effect]
+  assert.deepEqual(statusTexts(oldCard), [`${expected}。`])
+  assert.equal(countMoon(await renderTile({ hidden: true, identityKnown: false, statusEffects: [effect] })), 0)
+}
+const stackedGrants = [moon(2), ...granted.slice(0, 3)]
+const stackHtml = await renderTile({ statusEffects: stackedGrants, statusIcons: ['conditional-attack'] })
+assert.equal(countMoon(stackHtml), stackedGrants.length, 'the existing per-condition renderer retains each independently labeled grant')
+for (const effect of stackedGrants) assert(stackHtml.includes(effect.label))
+assert.equal(countMoon(await renderTile({ statusEffects: [...stackedGrants, ...stackedGrants], statusIcons: ['conditional-attack', 'CONDITIONAL-ATTACK'] })),
+  stackedGrants.length, 'repeated authority entries and compatibility kinds do not add duplicate condition icons')
+liveCard.statusEffects = stackedGrants
+assert.equal(statusTexts(oldCard).length, 4, 'details retain every independent authority entry')
+liveCard.statusEffects = []
+assert.deepEqual(statusTexts(oldCard), [], 'grant expiry clears the already-open inspector')
+console.log('Granted attack status: four real-SFC source/signed/hidden groups and stacked/expired details passed.')
+
 if (process.argv.includes('--browser')) {
   const output = process.env.L12_MOON_STATUS_OUT
   const cache = process.env.L12_VITE_CACHE_DIR
