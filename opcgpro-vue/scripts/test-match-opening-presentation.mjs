@@ -61,6 +61,35 @@ function runtimeFunction(name, bindings = {}) {
   return scope.__result
 }
 
+// The first pointer movement may show the inspector before its click is delivered.
+// Reserve the same reading lane before that movement, not only after focus appears.
+{
+  const declarations = scriptAst.statements.filter(ts.isVariableStatement)
+    .flatMap(statement => [...statement.declarationList.declarations])
+  const reservation = declarations.find(node => ts.isIdentifier(node.name)
+    && node.name.text === 'reserveMulliganDetailSpace')
+  assert.ok(reservation?.initializer, 'mulligan must reserve detail space before the first hover')
+  const compiled = ts.transpileModule(`globalThis.__result = ${reservation.initializer.getText(scriptAst)};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None },
+  }).outputText
+  for (const [mobileLayout, mulligan, expected] of [
+    [false, true, true], [false, false, false], [true, true, false], [true, false, false],
+  ]) {
+    const scope = {}
+    const props = { mobileLayout }
+    const phase = { value: mulligan }
+    new Function('globalThis', 'computed', 'props', 'isMulliganPhase', compiled)(
+      scope, getter => ({ get value() { return getter() } }), props, phase)
+    assert.equal(scope.__result.value, expected, 'reserve only the non-mobile mulligan reading lane')
+    props.inspectorVisible = true
+    assert.equal(scope.__result.value, expected, 'inspector visibility cannot move the reserved lane')
+  }
+  assert.match(template, /'inspector-active': inspectorVisible \|\| reservePlacementDetailSpace \|\| reserveMulliganDetailSpace/,
+    'mulligan and placement must share the existing inspector lane rather than create another overlay')
+  assert.match(template, /@click="emit\('mulliganConfirm'\)"/,
+    'layout reservation must preserve the authoritative mulligan confirmation event')
+}
+
 {
   let queried = false
   const offsets = { value: { 0: { x: 1, y: 1, scale: 1 } } }
@@ -294,8 +323,14 @@ assert.match(style, /\.mulligan-card-row\{[^}]*padding:28px 2px 16px[^}]*\}[\s\S
   'selected mulligan cards must lift slightly inside explicit desktop headroom')
 assert.match(style, /\.l12-prompt-overlay\.mobile-safe-overlay \.mulligan-stage \.mulligan-card-row\{[^}]*padding:20px 2px 8px[^}]*overflow-y:hidden/,
   'mobile mulligan rows must reserve enough top headroom before clipping overflow')
-assert.match(style, /data-l12-rotated="true"[^}]*\.mulligan-card\.prompt-card-candidate\)[^{]*\{[^}]*height:184px!important/,
-  'rotated portrait must use logical short-landscape mulligan card dimensions')
+assert.match(style, /html\[data-l12-mobile="true"\]\[data-l12-viewport\][^}]*\.mulligan-card\.prompt-card-candidate\)[^{]*\{[^}]*height:100%!important[^}]*min-height:0!important[^}]*max-height:184px!important/,
+  'mobile and rotated mulligan cards must fit their actual row height, capped at the original 184px footprint')
+assert.match(style, /html\[data-l12-mobile="true"\]\[data-l12-viewport\][^}]*\.mulligan-card \.l12-card-image\)[^{]*\{[^}]*height:calc\(100% - 32px\)!important[^}]*max-height:148px!important/,
+  'short rows must shrink the image while preserving the complete name and spacing')
+assert.doesNotMatch(style, /data-l12-rotated="true"[^}]*\.mulligan-card\.prompt-card-candidate\)[^{]*\{[^}]*height:184px!important/,
+  'a more specific rotated rule must not override the actual-row height constraint')
+assert.doesNotMatch(style, /data-l12-rotated="true"[^}]*\.mulligan-card \.l12-card-image\)[^{]*\{[^}]*height:148px!important/,
+  'rotated images must share the same bounded height owner as normal short landscape')
 assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)/,
   'short landscape battle canvases need a bounded opening layout')
 assert.match(style, /\.opening-presentation\.skipped[^}]*opening-master-card/,
