@@ -17,6 +17,7 @@ const emit = defineEmits<{ busyChange: [busy: boolean]; presentationChange: [bus
 type CardSnapshot = { ghost: HTMLElement; rect: DOMRect; pixelsReady: boolean }
 type CapturedCard = CardSnapshot & { card: Card; eventIndex: number; snapshot: CardSnapshot }
 type DefeatJob = { event: ActionEvent; captured: CapturedCard[]; confirmedDefeatIds: Set<string> }
+type PendingDefeatCard = { card: Card; eventIndex: number }
 type CombatPresentation = {
   captured?: CapturedCard; visualKey: string; generation: number; reservation: PresentationReservation
   release?: (presented?: boolean) => void; closed: boolean; started: boolean
@@ -52,6 +53,32 @@ function notifyBusy() {
 function cardElement(instanceId?: string) {
   if (!instanceId) return null
   return document.querySelector(`[data-l12-game-stage] .formation-slot [data-card-instance-id="${CSS.escape(instanceId)}"]`)
+}
+
+function entryLandingHolder(instanceId: string) {
+  const holder = document.querySelector(`.l12-zone-flight-ghost[data-movement-instance-id="${CSS.escape(instanceId)}"][data-movement-to="field"]`)
+  return holder instanceof HTMLElement ? holder : null
+}
+
+function captureEntryLandingCard(card: Card, eventIndex: number): CapturedCard | null {
+  const holder = entryLandingHolder(card.instanceId)
+  const face = holder?.querySelector('[data-l12-zone-animation-face="true"]')
+  if (!(holder instanceof HTMLElement) || !(face instanceof HTMLElement)) return null
+  const x = Number(holder.dataset.movementToX)
+  const y = Number(holder.dataset.movementToY)
+  const width = Number(holder.dataset.movementToWidth)
+  const height = Number(holder.dataset.movementToHeight)
+  const rotation = Number(holder.dataset.movementToRotation)
+  if (![x, y, width, height, rotation].every(Number.isFinite) || width <= 0 || height <= 0) return null
+  const ghost = face.cloneNode(true) as HTMLElement
+  const snapshot: CardSnapshot = {
+    ghost,
+    rect: { left:x - width / 2, top:y - height / 2, width, height } as DOMRect,
+    pixelsReady: snapshotDecodedAuthoritativeCardVisual(face, ghost),
+  }
+  if (!snapshot.pixelsReady) return null
+  const landedCard = { ...card, tapped: rotation === 90 }
+  return { ...snapshot, card:landedCard, eventIndex, snapshot }
 }
 
 function masterElement(playerIndex: number) {
@@ -128,7 +155,7 @@ function captureCards(event: ActionEvent) {
       concealedInstances.add(card.instanceId)
       fieldSnapshots.delete(card.instanceId)
       for (const presentation of [...presentations])
-        if (presentation.captured?.card.instanceId === card.instanceId) finishPresentation(presentation, false)
+        if (presentation.visualKey === card.instanceId) finishPresentation(presentation, false)
       return []
     }
     concealedInstances.delete(card.instanceId)
@@ -424,6 +451,64 @@ function presentDefeats(job: DefeatJob) {
   }
 }
 
+function presentDeferredDefeat(job: DefeatJob, pending: PendingDefeatCard) {
+  const reservation = props.sequenceCoordinator.reserve(job.event.sequence, 40, { visualKey: pending.card.instanceId })
+  reservation.setPaused(props.paused)
+  const presentation: CombatPresentation = {
+    visualKey: pending.card.instanceId, generation: playbackGeneration, reservation,
+    closed: false, started: false, animations: new Set(),
+  }
+  presentations.add(presentation)
+  preparationCount++
+  notifyBusy()
+  void (async () => {
+    // The final authority snapshot may already place an immediately defeated
+    // entrant in the graveyard. Reserve its combat turn now, but keep the
+    // entry holder alive until that full landing releases; only then clone the
+    // landed pixels and hand the same visual key to hit/defeat.
+    const release = await reservation.waitUntilGranted()
+    if (presentation.closed || presentation.generation !== playbackGeneration) { release(false); return }
+    presentation.release = release
+    await nextTick()
+    if (presentation.closed || presentation.generation !== playbackGeneration) { release(false); return }
+    const captured = captureEntryLandingCard(pending.card, pending.eventIndex)
+    if (!captured || props.paused || props.synchronizing || concealedInstances.has(pending.card.instanceId)
+        || cardElement(pending.card.instanceId) || defeatedInstances.has(pending.card.instanceId)) {
+      finishPresentation(presentation, false)
+      return
+    }
+    presentation.captured = captured
+    defeatedInstances.add(pending.card.instanceId)
+    const defeat = prepareDefeat(captured, job.event, pending.eventIndex, presentation)
+    reservation.prepareVisualOwner({
+      show: () => {
+        if (!presentation.closed && !cardElement(pending.card.instanceId)) {
+          defeat.wrapper.style.clipPath = 'none'
+          defeat.wrapper.style.visibility = 'visible'
+        }
+      },
+      hide: () => {
+        defeat.wrapper.style.visibility = 'hidden'
+        defeat.wrapper.style.clipPath = 'inset(50%)'
+      },
+      dispose: () => finishPresentation(presentation, false),
+    })
+    if (presentation.closed || props.paused || props.synchronizing
+        || concealedInstances.has(pending.card.instanceId) || cardElement(pending.card.instanceId)) {
+      finishPresentation(presentation, false)
+      return
+    }
+    presentation.started = true
+    try {
+      animateDefeat(captured, job.event, pending.eventIndex, presentation, defeat.wrapper, defeat.damage)
+      await Promise.all([...presentation.animations].map(animation => animation.finished.catch(() => {})))
+      finishPresentation(presentation, true)
+    } catch {
+      finishPresentation(presentation, false)
+    }
+  })().catch(() => finishPresentation(presentation, false))
+}
+
 function presentMasterHit(event: ActionEvent) {
   const playerIndex = event.playerIndex
   const damage = masterDamageValue(event)
@@ -508,14 +593,27 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
   // reservation without an owner must not hide the prepared combat snapshot
   // while another card's hit is still playing.
   const combatDefeats = new Set(jobs.filter(job => job.event.type === 'combat')
-    .flatMap(job => job.captured.filter(captured => confirmedDefeatIds.has(captured.card.instanceId))
-      .map(captured => captured.card.instanceId)))
+    .flatMap(job => (job.event.cards ?? []).filter(card => !card.hidden && confirmedDefeatIds.has(card.instanceId)
+      && (job.captured.some(captured => captured.card.instanceId === card.instanceId) || entryLandingHolder(card.instanceId)))
+      .map(card => card.instanceId)))
+  const claimedDeferredDefeats = new Set<string>()
   jobs
     .sort((left, right) => Number(right.event.type === 'combat') - Number(left.event.type === 'combat')
       || left.event.sequence - right.event.sequence)
     .forEach(job => {
       if (job.event.type !== 'combat') job.captured = job.captured.filter(captured => !combatDefeats.has(captured.card.instanceId))
       presentDefeats(job)
+      const capturedIds = new Set(job.captured.map(captured => captured.card.instanceId))
+      const deferred = (job.event.cards ?? []).flatMap((card, eventIndex) =>
+        job.confirmedDefeatIds.has(card.instanceId) && !card.hidden && !capturedIds.has(card.instanceId)
+          && !claimedDeferredDefeats.has(card.instanceId)
+          && (job.event.type === 'combat' || !combatDefeats.has(card.instanceId))
+          && entryLandingHolder(card.instanceId)
+          ? [{ card, eventIndex }] : [])
+      for (const pending of deferred) {
+        claimedDeferredDefeats.add(pending.card.instanceId)
+        presentDeferredDefeat(job, pending)
+      }
     })
   const generation = playbackGeneration
   void nextTick().then(() => { if (generation === playbackGeneration) refreshFieldSnapshots() })

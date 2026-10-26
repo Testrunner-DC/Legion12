@@ -55,3 +55,4 @@ console.log('authoritative card visibility lease tests passed')
 
 // Keep persistent-zone ownership in the normal shared visibility regression chain.
 await import('./test-master-zone-lifecycle-20261026.mjs')
+await import('./test-entry-before-hit-lifecycle-20261026.mjs')

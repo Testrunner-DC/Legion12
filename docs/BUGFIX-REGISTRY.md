@@ -1,5 +1,9 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261026-ENTRY-BEFORE-HIT｜本地接受，未部署
+
+- 原Combat漏接同批已入墓的公开Zone入场holder；沿原coordinator同实例继任，完整落位后才受击。324卡共享入口，无卡号/规则/隐私改变。Main修pose、await旧代际、hidden combat吞公开leave：4RED→14GREEN；61前端步骤/两类型/双Vite/独审过，QA接visibility链。唯一entry-before-hit-20261026/main-acceptance.json；真实像素/真机未验，不关单。回滚限两产品/两QA，原coordinator保护不撤。
+
 ## FIX-20261026-GRANTED-ATTACK-STATUS｜须佐及同类临时进攻加成标记，本地接受
 
 - 来源人类已要求须佐之男受加成军团像月读一样显示标记；全324卡检索susano-buff／s2-tenka-front-attack／AttackOnly／Tsukuyomi／TimedModifiers，25文本候选精确收敛须佐、天下布武、既有月读及猎神赐福远程分支。普通TimedModifiers已有正负标记；萨拉丁动态邻接和印刷进攻设值不冒临时授予效果。

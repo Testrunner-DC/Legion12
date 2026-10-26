@@ -908,6 +908,16 @@ function createMovementHolder(movement: Movement, sourceGhost: HTMLElement) {
   return true
 }
 
+function stampMovementLandingGeometry(movement: Movement) {
+  const wrapper = movement.holderWrapper
+  if (!wrapper) return
+  wrapper.dataset.movementToX = `${movement.toRect.x}`
+  wrapper.dataset.movementToY = `${movement.toRect.y}`
+  wrapper.dataset.movementToWidth = `${movement.toRect.width}`
+  wrapper.dataset.movementToHeight = `${movement.toRect.height}`
+  wrapper.dataset.movementToRotation = `${movement.toRotation ?? 0}`
+}
+
 function showNext() {
   if (active.value || props.paused || queue.length === 0) return
   active.value = queue.shift() ?? null
@@ -977,8 +987,7 @@ function showNext() {
       const target = movement.toRect
       const wrapper = movement.holderWrapper
       if (!wrapper || !movement.visualOwner) { finish(); return }
-      wrapper.dataset.movementToX = `${target.x}`
-      wrapper.dataset.movementToY = `${target.y}`
+      stampMovementLandingGeometry(movement)
       if (movement.preparedFaceGhost) {
         ghost.replaceWith(movement.preparedFaceGhost)
         movement.sourceGhost = movement.preparedFaceGhost
@@ -1237,6 +1246,7 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
         movement.fromRotation = starts[index]?.rotation ?? 0
         movement.toRotation = movementTerminalTapped(movement.to, movement.card,
           movement.publicPlacement, elementRotation(destination) === 90) ? 90 : 0
+        stampMovementLandingGeometry(movement)
       }
       if (movement?.disasterReveal && movement.sourceGhost && !movement.holderWrapper) {
         if (!await waitForDecodedMovementFace(movement.sourceGhost)
