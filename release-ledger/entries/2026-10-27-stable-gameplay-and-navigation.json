@@ -22,7 +22,7 @@
     },
     {
       "category": "card-effects",
-      "text": "海伦、霍伦海布、近藤勇、阿喀琉斯与湖中仙女代替临时减兵造成的阵亡时，会抵消本次致死减兵，不再仅以0兵力留场；此前其他增减、费用与活跃或休整状态保留。",
+      "text": "海伦、霍列姆赫布、近藤勇、阿喀琉斯及湖中仙女的馈赠的阵亡替代，会抵消导致本次阵亡的临时减兵效果，并保留此前其他增减、费用与活跃或休整状态。",
       "paths": ["服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs", "服务端WebSocket/TwelveLegions/L12LethalTroopsEffectCancellation.cs", "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs", "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs"]
     },
     {
