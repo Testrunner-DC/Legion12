@@ -35,6 +35,7 @@
 - 明确输入是原始反馈数组还是唯一工作清单对象的 `items`；工作清单的原文哈希不能冒充API的15字段快照，后者仍绑定最新实际反馈。
 - 固定执行器的SelfTest与Apply都显式传入同一已核验原始反馈数组`QueueSnapshotPath`及执行器精确`SnapshotTag`；不要把工作清单对象当数组，也不要在Apply漏传后重新拉取整队列。派生模板的“旧tag残留”校验不得误把合法新tag中的旧tag前缀判为残留；保留五组逐项发生变化和反向替换后整文件逐字相等、12函数原样及原合同，不能删完整性守卫。
 - 统一schema2 proposal合同先验有界唯一ID、完整15字段/原文指纹、处置及说明；内存中新增的字典先按真实JSON输入归一化，避免把字典键误判为缺少对象属性。`fixed_verified`必须同时包含具名`regressionTest`、精确`fixCommit`及已独立核验的`deployedVersion`，不能等SelfTest赋值或网络阶段才发现缺字段；rejected与duplicate分别按其合同校验。
+- 旧清单的摘要可能保留小写记法，提案使用合同要求的规范摘要；比较原文SHA时按摘要值等价判断，不把大小写当成正文变化，也不为统一记法改写历史清单。不同摘要仍严格拒绝，原15字段、提案文件SHA与单CAS保护不变。
 - duplicate还必须在认证前绑定执行器实际使用的`primary.id`与完整15字段期望指纹；主项已按规则/未复现rejected的，保持其真实处置，不伪装fixed。Main只在writer明确交回租约后读取最终不可变提案并核SHA，避免边写边执行；同一已写CAS的恢复仍只读，不因工具交付差异重复写。
 - 复用现有关单执行根和`Test-ClosureProposalContract-v2.ps1`，其调用不可变的原15字段合同（3正/12负）并同轮预检服务字段归一化：fixCommit、regressionTest、deployedVersion、duplicateOf、closureDisposition均不超过500字符且无需trim；任一将被隐式截断/修剪就先离线拒绝（新增2正/10负），不等写后读回才发现差异。新输出根先解析祖先联接并核准物理D，C历史证据仅保留引用；本轮现有执行根为`D:/GPT/Legion12/artifacts/bug-closure-continuation-20261011/next-authority-batch-20261016/closeout`。实际写入仍是原preview→一次CAS→独立终态读回，单个post-CAS队列快照直接复用本地对账。若已写成功而读回工具失败，只读核对该原写，不重交CAS、不改写失败收据。脚本变更先解析AST、再离线自检；派生脚本须字面替换，不让生成语言的替换元字符改变PowerShell内容。
 - 单反馈关单的并发版本必须绑定同一次权威读取的目标行，不能把预览正文与事务外返回的 ETag 当成原子快照。现有 `/api/admin/bugs/query` 在同一平台锁内返回 Items 与 PlatformVersion；预览后仅一次精确ID分页读取，复核完整15字段、严格整数非负版本，再立即带该版本单次CAS。现场版本检查放在预览前，不在取得最终版本后插入其他网络读取。若再遇409，保留失败、只读核对原字段，不盲目重交；重复项的主项绑定仍另按原合同核实。此方法不改变服务器权限或并发保护。
