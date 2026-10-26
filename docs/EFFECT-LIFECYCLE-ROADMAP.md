@@ -1,5 +1,10 @@
 # 效果一致性实施计划
 
+## 2026-10-26 P4落位后关联效果与提示
+
+- 唯一reservation集合派生关联提示延后，保原authority阻塞／时限；稳定总序加精确前置资格替代非传递role比较，6排列4RED→最终24生命周期／旧inline22和63前端／双类型构建接受。独审无新阻断，证据entry-before-effect-20261026/main-acceptance.json。
+- 注册前首paint／autofocus和真人像素／真机仍未验，不能称完整观战链根治；局部源码接受不触发部署／线上关单，不重复未变30＋10。移动共享尺寸族已独立8f0548f0同步。
+
 ## 2026-10-26 P4移动阵营／能力／主宰弹框同源尺寸
 
 - 共用logical-dialog-width让grid列与子图引用同一长度，解除物理viewport与逻辑容器cqw错位；仅mobile CSS。真实旋转负例及6组实际组件几何、63前端／两类型／双Vite接受，证据mobile-ability-dialog-containment-20261026/main-acceptance.json。

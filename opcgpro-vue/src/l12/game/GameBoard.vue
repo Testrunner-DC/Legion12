@@ -18,7 +18,7 @@ import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import CardStateTransitionLayer from './CardStateTransitionLayer.vue'
 import AttackConnectionPresentationLayer from './AttackConnectionPresentationLayer.vue'
-import { cardEffectPresentationCards, effectResultPresentationFactContinuation, entryEffectContinuationTransaction, isCardEffectPresentationEvent } from './visualTransitionProjection'
+import { cardEffectPresentationCards, effectResultPresentationFactContinuation, entryEffectContinuationTransaction, entryPresentationTransactionKey, isCardEffectPresentationEvent } from './visualTransitionProjection'
 import { effectResultPresentationText } from './effectResultPresentation'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
@@ -241,6 +241,7 @@ const replayZonePresentationBusy = ref(false)
 const replaySequencePresentationBusy = ref(false)
 const replayCombatPresentationBusy = ref(false)
 const combatPresentationBusy = ref(false)
+const presentationReservationEpoch = ref(0)
 const presentationVisualOwnerKeys = ref<ReadonlySet<string>>(new Set())
 function updatePresentationVisualOwnership(instanceId: string, owned: boolean) {
   const next = new Set(presentationVisualOwnerKeys.value)
@@ -251,6 +252,7 @@ function updatePresentationVisualOwnership(instanceId: string, owned: boolean) {
 const cardPresentationCoordinator = createPresentationSequenceCoordinator(
   busy => { replaySequencePresentationBusy.value = busy },
   updatePresentationVisualOwnership,
+  () => { presentationReservationEpoch.value++ },
 )
 const publicRevealPresentationTracker = createPublicRevealPresentationTracker()
 let publicRevealWaiting = false
@@ -566,8 +568,27 @@ const promotionFoundationTargetIds = computed(() => {
 })
 const selectedAttackTargets = computed(() => selectedId.value ? (props.game.legalAttackTargets?.[selectedId.value] ?? []) : [])
 const attackableIds = computed(() => Object.keys(props.game.legalAttackTargets ?? {}))
+function promptPresentationSourceInstanceId(prompt: Prompt) {
+  const candidates = [...new Set([prompt.sourceInstanceId, prompt.data?.sourceInstanceId]
+    .map(value => value?.trim()).filter((value): value is string => Boolean(value)))]
+  return candidates.length === 1 ? candidates[0] : null
+}
+const deferredEntryPromptIds = computed(() => {
+  // The coordinator owns the only pending/active presentation set. Reading the
+  // epoch makes this projection update when a Zone reservation starts, settles,
+  // aborts or is reset without copying that lifecycle into a second registry.
+  presentationReservationEpoch.value
+  return new Set((props.game.prompts ?? []).filter(prompt => {
+    const sourceInstanceId = promptPresentationSourceInstanceId(prompt)
+    return Boolean(sourceInstanceId && cardPresentationCoordinator.reservationState({
+      role: 'entry-movement', sourceInstanceId,
+    }))
+  }).map(prompt => prompt.promptId))
+})
+const presentationPrompts = computed(() => (props.game.prompts ?? [])
+  .filter(prompt => !deferredEntryPromptIds.value.has(prompt.promptId)))
 const responsePlayableIds = computed(() => {
-  const response = props.game.prompts?.find(prompt => prompt.kind === 'response')
+  const response = presentationPrompts.value.find(prompt => prompt.kind === 'response')
   return response?.validChoices.filter(id => id !== 'pass') ?? []
 })
 const handPlayableIds = computed(() => {
@@ -579,7 +600,7 @@ const handPlayableIds = computed(() => {
 })
 const boardTargetPrompt = computed(() => {
   const fieldIds = new Set(props.game.players.flatMap(player => player.field.flat().filter(Boolean).map(card => card!.instanceId)))
-  return props.game.prompts?.find(prompt => {
+  return presentationPrompts.value.find(prompt => {
     if (prompt.data?.choiceMode === 'mixed-board-payment') return true
     if (prompt.data?.choiceMode === 'board-target') return prompt.validChoices.filter(id => id !== 'skip').every(id => fieldIds.has(id))
     if (!['target', 'targets', 'optional-target', 'optional-targets', 'active-target'].includes(prompt.kind)) return false
@@ -593,7 +614,7 @@ const boardTargetSelectionSummary = computed(() => {
   if (!prompt) return ''
   return inlinePromptSelectionSummary(prompt, boardTargetIds.value)
 })
-const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
+const boardSlotPrompt = computed(() => presentationPrompts.value.find(prompt =>
   (prompt.kind === 'slot' || prompt.data?.choiceMode === 'board-slot')
   && prompt.validChoices.some(id => id !== 'skip')
   && prompt.validChoices.filter(id => id !== 'skip').every(id => /^\d+:\d+$/.test(id)),
@@ -603,7 +624,7 @@ const boardSlotTargetPlayerIndex = computed(() => {
   const parsed = raw === undefined ? Number.NaN : Number(raw)
   return Number.isInteger(parsed) ? parsed : controlledPlayerIndex.value
 })
-const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =>
+const resourceSelectionPrompt = computed(() => presentationPrompts.value.find(prompt =>
   prompt.kind === 'resource-payment' || prompt.data?.choiceMode === 'resource-payment'
   || prompt.kind === 'resource-return' || prompt.data?.choiceMode === 'resource-return'
   || prompt.data?.choiceMode === 'resource-selection' || prompt.data?.choiceMode === 'board-selection'
@@ -764,20 +785,26 @@ const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
   }]
   })
 })
-const activeBoardPromptIds = computed(() => [
+const visibleInlinePromptIds = computed(() => [
   boardTargetPrompt.value?.promptId,
   boardSlotPrompt.value?.promptId,
   resourceSelectionPrompt.value?.promptId,
 ].filter((promptId): promptId is string => Boolean(promptId)))
-const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null)
+const activeBoardPromptIds = computed(() => [...new Set([
+  boardTargetPrompt.value?.promptId,
+  boardSlotPrompt.value?.promptId,
+  resourceSelectionPrompt.value?.promptId,
+  ...deferredEntryPromptIds.value,
+].filter((promptId): promptId is string => Boolean(promptId)))])
+const activeBoardPromptId = computed(() => visibleInlinePromptIds.value[0] ?? null)
 const promptOverlayMounted = computed(() => !props.readOnly
   || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative')
 const visibleBoardPromptIds = computed(() => !props.readOnly && !boardControlMinimized.value
-  ? activeBoardPromptIds.value : [])
+  ? activeBoardPromptIds.value.filter(promptId => !deferredEntryPromptIds.value.has(promptId)) : [])
 const visibleBoardPromptId = computed(() => visibleBoardPromptIds.value[0] ?? null)
 const routedPromptModal = computed(() => {
   const inlinePromptIds = new Set(activeBoardPromptIds.value)
-  const prompt = props.game.prompts?.find(item => !inlinePromptIds.has(item.promptId))
+  const prompt = presentationPrompts.value.find(item => !inlinePromptIds.has(item.promptId))
   return Boolean(prompt || (!(props.game.prompts?.length ?? 0) && props.game.waitingPrompt)
     || props.game.phase === 'Mulligan' || props.game.phase === 'DisasterPreparation')
 })
@@ -1090,6 +1117,10 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
       lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
       continue
     }
+    const entryTransactionKey = entryPresentationTransactionKey(event)
+    const entrySourceInstanceId = entryTransactionKey
+      ? event.playerLogSemantic?.sourceInstanceId ?? event.cards?.[0]?.instanceId
+      : undefined
     const queueItem: PublicRevealQueueItem = {
       sequence: event.sequence,
       cards: presentationCards(event),
@@ -1099,6 +1130,11 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
       linkedPublicContinuation: publicRevealDecision.kind === 'linked-continuation',
       reservation: cardPresentationCoordinator.reserve(event.sequence, 10),
     }
+    if (entryTransactionKey) queueItem.reservation.setMetadata({
+      role: 'entry-effect',
+      sourceInstanceId: entrySourceInstanceId,
+      transactionKey: entryTransactionKey,
+    })
     queueItem.reservation.setPaused(modalPresentationPaused.value)
     publicRevealQueue.push(queueItem)
     batchParents.set(event.sequence, queueItem)

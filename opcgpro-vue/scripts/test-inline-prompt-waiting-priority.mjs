@@ -30,8 +30,8 @@ function fixture(you){
  const game=reactive({you,phase:'Main',prompts:[],waitingPrompt:null,
   players:[0,1].map(playerIndex=>({playerIndex,field:[[{instanceId:'field-'+playerIndex},null,null],[null,null,null]]}))})
  const props=reactive({game,readOnly:false})
- const board={props,computed,boardControlMinimized:ref(false)}
- for(const name of ['boardTargetPrompt','boardSlotPrompt','resourceSelectionPrompt','activeBoardPromptIds',
+ const board={props,computed,boardControlMinimized:ref(false),deferredEntryPromptIds:ref(new Set())}
+ for(const name of ['presentationPrompts','boardTargetPrompt','boardSlotPrompt','resourceSelectionPrompt','visibleInlinePromptIds','activeBoardPromptIds',
   'promptOverlayMounted','visibleBoardPromptIds','routedPromptModal'])board[name]=evaluate('board',name,board)
  const overlay={props:{game,get suppressedPromptIds(){return board.activeBoardPromptIds.value},suppressedPromptId:null},
   computed,waitingDefense:ref(false),isMulliganPhase:ref(false),isDisasterPreparation:ref(false)}
@@ -58,6 +58,17 @@ for(const you of [0,1]){
   f.board.boardControlMinimized.value=false
   checks++
  }
+ const stillAuthoritative=f.game.prompts
+ f.board.deferredEntryPromptIds.value=new Set([stillAuthoritative[0].promptId])
+ assert.equal(f.game.prompts,stillAuthoritative,'deferring presentation must not remove the authority prompt')
+ assert.equal(f.board.resourceSelectionPrompt.value,null)
+ assert.deepEqual(f.board.visibleBoardPromptIds.value,[])
+ assert.deepEqual(f.board.activeBoardPromptIds.value,[stillAuthoritative[0].promptId])
+ assert.equal(f.overlay.prompt.value,null)
+ assert.equal(f.overlay.waitingPrompt.value,null)
+ f.board.deferredEntryPromptIds.value=new Set()
+ assert.equal(f.board.resourceSelectionPrompt.value.promptId,stillAuthoritative[0].promptId)
+ checks++
  // All transitions reuse the same reactive instance, without remounting.
  f.game.prompts=[]
  assert.ok(f.overlay.waitingPrompt.value&&f.overlay.visible.value&&f.board.routedPromptModal.value)

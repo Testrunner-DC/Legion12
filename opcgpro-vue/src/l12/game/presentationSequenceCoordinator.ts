@@ -1,9 +1,28 @@
 export type PresentationReservation = {
   waitUntilGranted: () => Promise<(presented?: boolean) => void>
   setPaused: (paused: boolean) => void
+  setMetadata: (metadata: PresentationReservationMetadata) => void
   cancel: () => void
   prepareVisualOwner: (owner: PreparedVisualOwner) => void
 }
+
+export type PresentationReservationRole = 'entry-movement' | 'entry-effect'
+
+export type PresentationReservationQuery = {
+  role?: PresentationReservationRole
+  sourceInstanceId?: string
+  transactionKey?: string
+}
+
+export type PresentationReservationOptions = {
+  visualKey?: string
+  role?: PresentationReservationRole
+  sourceInstanceId?: string
+  transactionKey?: string
+}
+
+export type PresentationReservationMetadata = Pick<PresentationReservationOptions,
+  'role' | 'sourceInstanceId' | 'transactionKey'>
 
 export type PreparedVisualOwner = {
   show: () => void
@@ -20,6 +39,9 @@ type PendingPresentation = {
   cancelled: boolean
   released: boolean
   visualKey?: string
+  role?: PresentationReservationRole
+  sourceInstanceId?: string
+  transactionKey?: string
   visualOwner?: PreparedVisualOwner
   resolve: (release: (presented?: boolean) => void) => void
 }
@@ -29,6 +51,7 @@ export type PresentationSequenceCoordinator = ReturnType<typeof createPresentati
 export function createPresentationSequenceCoordinator(
   onBusyChange?: (busy: boolean) => void,
   onVisualOwnershipChange?: (visualKey: string, owned: boolean) => void,
+  onReservationChange?: () => void,
 ) {
   const pending = new Set<PendingPresentation>()
   const entryMovementTransactions = new Set<string>()
@@ -39,9 +62,34 @@ export function createPresentationSequenceCoordinator(
   let scheduled = false
   let lastBusy = false
 
+  const comparePresentations = (left: PendingPresentation, right: PendingPresentation) => {
+    return left.sequence - right.sequence || left.priority - right.priority || left.order - right.order
+  }
+
+  // Keep a stable total order. A pair-only role comparator would form cycles
+  // with unrelated priorities (entry20 < effect10 < unrelated15 < entry20).
+  // An entry effect is simply ineligible while its exact predecessor exists;
+  // this derives from the original reservation set, not a second queue.
+  const blockedByEntry = (item: PendingPresentation) => item.role === 'entry-effect'
+    && [...pending, ...(active ? [active] : [])].some(candidate => candidate !== item
+      && !candidate.cancelled && !candidate.released && candidate.role === 'entry-movement'
+      && candidate.sequence === item.sequence && candidate.sourceInstanceId === item.sourceInstanceId
+      && candidate.transactionKey === item.transactionKey)
+
   const orderedForVisualKey = (visualKey: string) => [...pending, ...(active ? [active] : [])]
-    .filter(item => !item.cancelled && !item.released && item.visualKey === visualKey)
-    .sort((left, right) => left.sequence - right.sequence || left.priority - right.priority || left.order - right.order)
+    .filter(item => !item.cancelled && !item.released && item.visualKey === visualKey && !blockedByEntry(item))
+    .sort(comparePresentations)
+
+  const matchesReservation = (item: PendingPresentation, query: PresentationReservationQuery) =>
+    !item.cancelled && !item.released
+    && (!query.role || item.role === query.role)
+    && (!query.sourceInstanceId || item.sourceInstanceId === query.sourceInstanceId)
+    && (!query.transactionKey || item.transactionKey === query.transactionKey)
+
+  const reservationState = (query: PresentationReservationQuery): 'pending' | 'active' | null => {
+    if (active && matchesReservation(active, query)) return 'active'
+    return [...pending].some(item => matchesReservation(item, query)) ? 'pending' : null
+  }
 
   const handoffVisualOwner = (item: PendingPresentation, disposePrevious: boolean) => {
     const visualKey = item.visualKey
@@ -127,14 +175,15 @@ export function createPresentationSequenceCoordinator(
     scheduled = false
     if (active) return
     const next = [...pending]
-      .filter(item => !item.cancelled)
-      .sort((left, right) => left.sequence - right.sequence || left.priority - right.priority || left.order - right.order)[0]
+      .filter(item => !item.cancelled && !blockedByEntry(item))
+      .sort(comparePresentations)[0]
     // A lower authoritative sequence is a reservation, not merely a ready
     // animation.  It intentionally blocks later work while its image/DOM
     // anchors are being prepared or while a modal is covering the board.
     if (!next || !next.ready || next.paused) return
     pending.delete(next)
     active = next
+    onReservationChange?.()
     if (next.visualOwner) handoffVisualOwner(next, false)
     let released = false
     next.resolve((_presented = true) => {
@@ -142,6 +191,7 @@ export function createPresentationSequenceCoordinator(
       released = true
       releaseVisualOwner(next)
       if (active === next) active = null
+      onReservationChange?.()
       notifyBusy()
       schedulePump()
     })
@@ -158,7 +208,7 @@ export function createPresentationSequenceCoordinator(
   }
 
   const reserve = (sequence: number, priority = 50,
-    options: { visualKey?: string } = {}): PresentationReservation => {
+    options: PresentationReservationOptions = {}): PresentationReservation => {
     let resolveGrant!: (release: (presented?: boolean) => void) => void
     const granted = new Promise<(presented?: boolean) => void>(resolve => { resolveGrant = resolve })
     const item: PendingPresentation = {
@@ -170,9 +220,14 @@ export function createPresentationSequenceCoordinator(
       cancelled: false,
       released: false,
       visualKey: options.visualKey,
+      role: options.role,
+      sourceInstanceId: options.sourceInstanceId?.trim() || undefined,
+      transactionKey: options.transactionKey?.trim() || undefined,
       resolve: resolveGrant,
     }
+    if (!item.sourceInstanceId || !item.transactionKey) item.role = undefined
     pending.add(item)
+    onReservationChange?.()
     notifyBusy()
     schedulePump()
     return {
@@ -196,11 +251,21 @@ export function createPresentationSequenceCoordinator(
         }
         schedulePump()
       },
+      setMetadata: metadata => {
+        if (item.cancelled || item.released) return
+        item.role = metadata.role
+        item.sourceInstanceId = metadata.sourceInstanceId?.trim() || undefined
+        item.transactionKey = metadata.transactionKey?.trim() || undefined
+        if (!item.sourceInstanceId || !item.transactionKey) item.role = undefined
+        onReservationChange?.()
+        schedulePump()
+      },
       cancel: () => {
         if (item.cancelled) return
         item.cancelled = true
         pending.delete(item)
         releaseVisualOwner(item)
+        onReservationChange?.()
         // An already granted presentation owns its release callback; callers
         // cancel the visual and release it through that normal path.
         notifyBusy()
@@ -242,11 +307,13 @@ export function createPresentationSequenceCoordinator(
     activeVisualOwners.clear()
     for (const visualKey of visualKeys) onVisualOwnershipChange?.(visualKey, false)
     active = null
+    onReservationChange?.()
     notifyBusy()
   }
 
   return {
     reserve,
+    reservationState,
     registerEntryMovementTransaction,
     ownsEntryMovementTransaction,
     clearEntryMovementTransactions,

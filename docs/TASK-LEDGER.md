@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-26 关联登场效果生命周期本地接受，未部署
+
+- P4唯一reservation集合扩角色／source／transaction和只读状态通知，关联modal／场面目标／格位／资源／响应手牌与自动详情只延后显示；原authority Prompt、free-command阻塞、无关modal及真实start后抑制保持。三产品／两QA冻结，不改规则、隐私、状态格式或第二队列。
+- Main修正非传递role comparator：6排列真实4RED，改稳定全序＋同sequence/source/transaction前置资格后24生命周期全过，旧inline22／coordinator41与最终63前端／两类型／双Vite通过。独立只读复核无新阻断；首次paint／注册前auto-focus、真人像素及物理真机未验，不把逻辑链冒完整美术收口。唯一entry-before-effect-20261026/main-acceptance.json；局部接受／源码同步，非新Release、部署或线上关单。
+- 移动弹框族已8f0548f0独立同步／精确读回，原待实施描述为历史过程，当前以上述两份acceptance为准。所有旧失败、QA假覆盖纠正和wrapper安全拦截保原件；新D构建不清空旧热目录。后续先消费回放批准／补具体视觉缺口，G4同配置不再反复，已完成97a发布不重做。
+
 ## 2026-10-26 移动弹框共享侵入本地收口，未部署
 
 - 来源人类01a1780d/01a17810。CUA真实组件/真实CSS在390物理宽、844逻辑宽旋转下复现列96与图120.797差，侵入19.546875；三个共规则消费者均见同机制。仅共用逻辑dialog-width生成同一列／图宽，mobile CSS限定、桌面不动，非单卡margin特判。

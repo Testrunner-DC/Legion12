@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-26 登场落位后关联效果本地接受，两族独立同步
+
+- 原pending/active reservation附role／source／transaction，关联Prompt只投影延后，原权威阻塞与服务端时限不动；取消／abort／reset自动回到当前提示，不建第二landing表。Main实测发现对子role比较形成排序环，保留sequence／priority／order全序、改精确前置项资格过滤；同一规则同时约束grant和visual owner。6种插入顺序原4失败→全过，再补未ready／暂停／异source，共24生命周期通过；旧inline22与coordinator41不撤，产品typeof测试逃生口已全删。
+- 唯一entry-before-effect-20261026/main-acceptance.json绑定5源及最终63前端步骤／两类型／双Vite。独立关键复核无新阻断；首次paint／注册前autofocus和真实像素／真机仍未验，不能称所有观战动画已根治或线上关单。不重跑未变后端／30＋10，不新部署。
+- 移动同源尺寸族已独立8f0548f0非强推并远端精确读回；登场族的commit／远端以本根synchronization.json为准，不合并不同根因。两服最后已验97a／开服状态不回流；G4保120k写／600k兼容读、高成本未获准，回放三项仍等来源一次批准。新构建只落物理D的ui-entry-mobile-20261026，原热构建未动，wrapper生成错误经验已归既有协作流程。
+
 ## 2026-10-26 移动阵营／能力／主宰弹框同源尺寸本地接受
 
 - 真实CUA局部组件复现旋转时grid列96px／图120.797px，正文侵入19.546875逻辑px；共享原因是dialog自身与child的cqw参照不同。仅mobileViewport.css两宽度消费改同一逻辑读框长度，原PlayerMat/MasterOverlay模板、卡效、桌面和viewport kernel未改。6真实浏览器几何覆盖三消费者／568及844／原生旋转／横竖图／短长文／三字号，全解码、图文不交叠、按钮和末句可达；不是真机或完整场景全部通过。

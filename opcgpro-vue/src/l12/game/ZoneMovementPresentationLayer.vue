@@ -1151,7 +1151,12 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
   if (transactionBatch) finalizeMovementTransactionBatch(movementClaims, transactionBatch, authoritativeZones)
   const reservations = drafts.map(({ event, draft }) => {
     const visualKey = draft.card?.instanceId
-    const reservation = props.sequenceCoordinator.reserve(event.sequence, 20, { visualKey })
+    const reservation = props.sequenceCoordinator.reserve(event.sequence, 20, {
+      visualKey,
+      role: draft.entryTransactionKey ? 'entry-movement' : undefined,
+      sourceInstanceId: draft.entryTransactionKey ? draft.card?.instanceId : undefined,
+      transactionKey: draft.entryTransactionKey,
+    })
     reservation.setPaused(props.paused)
     draft.presentationReservation = reservation
     pendingReservations.add(reservation)

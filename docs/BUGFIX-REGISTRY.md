@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261026-ENTRY-BEFORE-EFFECT｜落位完成后关联效果，共享逻辑本地接受
+
+- 来源人类01a1780e要求先飞出落位再登场效果。真实source-linked Zone／GameBoard watcher复现关联提示先取得modal暂停；扩原pending/active reservation元数据和只读查询，所有关联交互仅投影隐藏，不改变权威Prompt及命令阻塞，settle／cancel／abort／reset恢复现提示。缺失／冲突source不猜关联；原ownsEntryMovementTransaction仍是实际开始后的去重，不以pending冒开始。
+- Main发现role对子优先级破坏传递性，实际6插入排列4RED，不能用原15全绿掩盖。保持sequence／priority／order总排序，只将同sequence/source/transaction仍有有效entry前置项的entry-effect标为暂不合格，grant／visual owner共用；未ready／paused前置项不被越过，其他source／事务不互锁。原15＋6排列＋3边界共24通过，旧inline22／coordinator41和63前端／两类型／双Vite接受，独立关键复核无新阻断。
+- 产品3叶coordinator／Zone／GameBoard、QA2叶；同类覆盖共享移区、公开效果队列和modal／目标／格位／资源／手牌响应，非卡名特判或平行状态表。唯一entry-before-effect-20261026/main-acceptance.json绑定源码／RED／最终证据。same-seq合成边界不冒正常服务器事实；注册前首次paint／autofocus、真实画面和真机未验。回滚仅该族增量，旧入场后受击／owner／权威及隐私保护不撤；未部署／关单。
+
 ## FIX-20261026-MOBILE-ABILITY-CONTAINMENT｜共享弹框同源尺寸，本地接受
 
 - 人类01a1780d／01a17810要求根治移动组件侵入的同类原因。真实PlayerMat阵营／能力与MasterOverlay共用规则中，grid自身的cqw回退物理viewport，子图却查询逻辑dialog容器：旋转时列96px、图120.797px，侵入正文19.546875px。只把列与图改为同一现有logical-dialog-width导出的长度，限定mobile，不改模板、桌面、视口内核或卡效。
