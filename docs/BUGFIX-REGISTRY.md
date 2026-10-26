@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261027-THOR-GRANTED-DECLARATION｜授予效果独立必发，不重付自身费用
+
+- BUG-20261026-6f111590。人类call_a6e3a4aafd504a9195616b809de4fdf6补充“雷神赋予效果并不是可选的直接发动就行了”。根因是带ThorGrantedEntryCharge标记的既有授予候选，被源卡ID分流进埃吉尔自己的可选付费声明；现在在该分流前识别原授予标记并直接完成声明，仍走原堆叠和各自响应。
+- 同类查询`ThorGrantedEntryCharge|BuildThorGrantedEntryChargeCandidate`覆盖普通登场／晋升／权威事件／GM，修在共用TryBeginTriggerDeclaration，不按埃吉尔卡名特判、不取消自身可选费用。ThorGrantedEgilDeclaration20261026Tests三项覆盖双方、V2及拒绝跳过／遗漏声明，自身支付一次；原索尔7、奈芙蒂斯7和阵营7对照保留，Focused30/30。
+- 原v4的mode:none错误接受RED保留，最终三族完整8489/8489来源／DLL／TRX一致，唯一new-bug-rule-reds-20261026/main-acceptance.json。只本地接受、verify-live，不把授予必发变成自动付自身费用、取消响应或线上fixed。回滚限该标记路由及具名回归，原授予生成和结算不动。
+
 ## FIX-20261027-EFFECTIVE-FACTION-DISCOUNT｜有效阵营报价与消费一致
 
 - BUG-20261025-48d498f3，人类call_a6e3a4aafd504a9195616b809de4fdf6明确批准1。戒指改变有效阵营后，奈芙蒂斯的下一张太阳城天灾军团优惠仍按印刷Faction报价／消费；四处统一用原HasFaction语义与军团分类，不改印刷字段或优惠期限。

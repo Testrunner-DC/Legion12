@@ -2386,6 +2386,11 @@ public sealed partial class L12GameEngine
 
     private bool TryBeginTriggerDeclaration(L12TriggerCandidate candidate)
     {
+        if (candidate.Data.GetValueOrDefault(ThorGrantedEntryCharge) == "true")
+        {
+            candidate.Data["declaration-complete"] = "true";
+            return false;
+        }
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
