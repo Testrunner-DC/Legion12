@@ -1962,6 +1962,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var sword = card.AttachedCards.FirstOrDefault(attached => attached.CardId == "S02-06S2");
         if (sword is null) return false;
 
+        // 状态检查型致死若来自本次单个负兵力层，先精确撤销该层；战斗和直接击杀
+        // 没有这个调用期配方，继续沿原先的替代时序。
+        _ = TryCancelPendingLethalTroopsEffectContribution(card, reason);
         card.AttachedCards.Remove(sword);
         var owner = CardOwner(sword, controller);
         ResetCardForPrivateZone(sword);
@@ -1999,7 +2002,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         if (!CanUseAchillesLethalReplacement(controller, card))
             return controller.UsedAbilities.Contains($"pending:{AchillesReplacementKey(card)}");
         controller.UsedAbilities.Add($"pending:{AchillesReplacementKey(card)}");
-        CreatePrompt(controller.PlayerIndex, "optional",
+        var prompt = CreatePrompt(controller.PlayerIndex, "optional",
             $"〈{card.Name}〉即将阵亡，是否消耗并翻转1神力，代替承受本次致命效果？",
             ["yes", "no"], 1, 1, "effect-lethal-replacement", isPrivate: false,
             data: new Dictionary<string, string>
@@ -2012,6 +2015,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 ["yes"] = "消耗并翻转1神力，保持当前兵力与活跃/休整状态",
                 ["no"] = "不发动",
             });
+        AttachPendingLethalTroopsEffectCancellation(card, prompt, reason);
         return true;
     }
 
@@ -2045,7 +2049,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         if (applied)
         {
             player.UsedAbilities.Add(AchillesReplacementKey(card));
-            card.Troops = int.Parse(prompt.Data["preservedTroops"]);
+            if (!TryApplyEffectLethalTroopsCancellation(card, prompt))
+                card.Troops = int.Parse(prompt.Data["preservedTroops"]);
             card.Tapped = prompt.Data["preservedTapped"] == "true";
             AddSemanticPlayerLogEvent("replacement", playerIndex,
                 $"{card.Name}消耗并翻转1神力，代替承受致命效果并保持当时状态",
@@ -2343,6 +2348,18 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private void ResolveStateBasedLegionDeaths(bool suppressDeathTriggers = false)
     {
+        try
+        {
+            ResolveStateBasedLegionDeathsCore(suppressDeathTriggers);
+        }
+        finally
+        {
+            ClearPendingLethalTroopsEffectContributions();
+        }
+    }
+
+    private void ResolveStateBasedLegionDeathsCore(bool suppressDeathTriggers)
+    {
         if (State.Phase == L12Phase.GameOver) return;
         suppressDeathTriggers = suppressDeathTriggers || State.Phase == L12Phase.Disaster
             || State.EffectStack.Any(item => item.Trigger == "disaster");
@@ -2368,7 +2385,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 FindOnField(State.Players[entry.Controller], entry.Card.InstanceId, out var row, out _);
                 CaptureLastKnownFieldState(entry.Card, row);
                 var sourceSnapshot = CaptureLastKnownSourceSnapshot(entry.Card);
-                if (RemoveFromFieldWithCause(State.Players[entry.Controller], entry.Card, true, "因兵力不高于0阵亡",
+                if (RemoveFromFieldWithCause(State.Players[entry.Controller], entry.Card, true, StateBasedLethalTroopsReason,
                         queueDeathTrigger: false, defeatCause: L12DefeatCause.CardEffect))
                     removed.Add((entry.Controller, entry.Card, sourceSnapshot));
             }

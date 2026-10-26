@@ -918,12 +918,24 @@ public sealed partial class L12GameEngine
                 ? new L12OwnerTurnEndExpiry { Controller = controller, GrantedTurnSerial = State.TurnSerial }
                 : null);
 
-    private static void AddTimedModifier(L12CardInstance card, int troops, int cost, int expiry, string source,
+    private void AddTimedModifier(L12CardInstance card, int troops, int cost, int expiry, string source,
         L12OwnerTurnEndExpiry? ownerTurnEndExpiry = null)
     {
+        var troopsBeforeModifier = card.Troops;
+        // A pre-fix consumed lethal event may legally remain at raw zero.  Only an
+        // exact current protection fingerprint makes a later negative layer a new
+        // cancellable cause; an arbitrary already-lethal card must not gain one.
+        var extendsProtectedLethalState = troops < 0 && troopsBeforeModifier <= 0
+            && State.Players.Any(player =>
+                FindOnField(player, card.InstanceId, out _, out _) is not null
+                && HasCurrentLethalEventProtection(player, card));
+        var modifierIndex = card.TimedModifiers.Count;
         card.TimedModifiers.Add(new L12TimedModifier { TroopsDelta = troops, CostDelta = cost,
             ExpiresAfterTurn = expiry, Source = source, OwnerTurnEndExpiry = ownerTurnEndExpiry });
         card.Troops += troops; card.CostModifier += cost;
+        if (troops < 0 && (troopsBeforeModifier > 0 && card.Troops <= 0
+                || extendsProtectedLethalState))
+            RecordPendingLethalTroopsEffectContribution(card, modifierIndex);
     }
 
     private void CompleteCampPick(L12StackItem item, string choice)

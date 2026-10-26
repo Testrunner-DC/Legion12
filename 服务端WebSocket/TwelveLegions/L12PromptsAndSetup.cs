@@ -1125,7 +1125,10 @@ public sealed partial class L12GameEngine
 
         // Reject corrupt restored lethal provenance before consuming the real player prompt.
         if (prompt.Continuation == "effect-lethal-replacement")
+        {
             _ = EffectLethalDefeatCause(prompt);
+            ValidateEffectLethalTroopsCancellationRecipe(prompt);
+        }
         State.PendingPrompts.Remove(prompt);
         if (string.Equals(command.Destination, RankedSetupTimeoutDestination, StringComparison.Ordinal))
             AddEvent("setup-timeout", playerIndex,

@@ -164,6 +164,7 @@ public sealed partial class L12GameEngine
                     "请选择代替承受的军团，或选择“不发动”继续结算原致命结果。",
                     L12PromptWaitingAction.LethalReplacement, consequences)));
         prompt.Data["lethalEventId"] = $"lethal-event:{prompt.PromptId}:{protectedCard.InstanceId}";
+        AttachPendingLethalTroopsEffectCancellation(protectedCard, prompt, reason);
         return true;
     }
 
@@ -180,6 +181,7 @@ public sealed partial class L12GameEngine
             return false;
         if (defeatedInstanceId is not null)
             ResolveAttachedCardLethalKillSources(prompt, defeatedInstanceId);
+        _ = TryApplyEffectLethalTroopsCancellation(protectedCard, prompt);
         controller.UsedAbilities.Add(CardLethalSubstitutionKey(protectedCard));
         // TryApplyCardLethalSubstitution has already removed the substitute and
         // recalculated continuous layers.  Bind protection to that authoritative

@@ -15,7 +15,7 @@ public sealed class KondoPersistentLethalReplacementTests
     [InlineData(false, true, true)]
     [InlineData(true, true, true)]
     [Trait("L12Bug", "BUG-20261007-08cd2642")]
-    public void ConsumedMerlinLethalStateSurvivesCommandsProjectionAndV2Restore(
+    public void DirectMerlinCancellationAndLegacySplitProtectionSurviveCommandsProjectionAndV2Restore(
         bool restoreAtPrompt, bool restoreAfterReplacement, bool splitLayersForOrderProbe)
     {
         var setup = KondoPersistentLethalReplacementFixture.BeginMerlinLethal(splitLayersForOrderProbe);
@@ -26,14 +26,24 @@ public sealed class KondoPersistentLethalReplacementTests
 
         var okita = KondoPersistentLethalReplacementFixture.FieldCard(game, 1, setup.OkitaId);
         Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == setup.KondoId);
-        var marker = Assert.Single(
-            KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId));
+        var marker = splitLayersForOrderProbe
+            ? Assert.Single(KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId))
+            : null;
+        if (splitLayersForOrderProbe)
+            Assert.Equal(0, okita.CurrentTroops);
+        else
+        {
+            Assert.Equal(okita.BaseTroops, okita.CurrentTroops);
+            Assert.DoesNotContain(okita.TimedModifiers, modifier => modifier.Source == "梅林");
+            Assert.Empty(KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId));
+        }
         Assert.Contains(game.State.Players[1].UsedAbilities,
             key => key.StartsWith($"lethal-substitution:{okita.CardId}:{okita.InstanceId}:",
                 StringComparison.Ordinal));
 
         // A pure cost modifier, projection reads and collection order are not new
-        // lethal events and cannot consume this exact protection.
+        // lethal events: the repaired path stays healthy, while the explicit
+        // pre-fix checkpoint retains its exact consumed-event protection.
         okita.TimedModifiers.Add(new L12TimedModifier
         {
             TroopsDelta = 0,
@@ -45,15 +55,24 @@ public sealed class KondoPersistentLethalReplacementTests
         _ = game.SnapshotFor(0);
         _ = game.SnapshotFor(1);
         okita.TimedModifiers.Reverse();
-        Assert.Equal(marker, Assert.Single(
-            KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId)));
+        if (splitLayersForOrderProbe)
+            Assert.Equal(marker, Assert.Single(
+                KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId)));
+        else
+            Assert.Empty(KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId));
 
         if (restoreAfterReplacement)
         {
             game = KondoPersistentLethalReplacementFixture.Restore(game);
             okita = KondoPersistentLethalReplacementFixture.FieldCard(game, 1, setup.OkitaId);
-            Assert.Equal(marker, Assert.Single(
-                KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId)));
+            if (splitLayersForOrderProbe)
+                Assert.Equal(marker, Assert.Single(
+                    KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId)));
+            else
+            {
+                Assert.Equal(okita.BaseTroops, okita.CurrentTroops);
+                Assert.Empty(KondoPersistentLethalReplacementFixture.ProtectionKeys(game, 1, setup.OkitaId));
+            }
         }
 
         var probe = game.Handle(0, new L12Command("attack", setup.ProbeAttackerId,
@@ -81,10 +100,11 @@ public sealed class KondoPersistentLethalReplacementTests
 
     [Fact]
     [Trait("L12Bug", "BUG-20261007-08cd2642-positive-reset")]
-    public void PositiveTroopsClearOnlyTheOldProtectionForThatInstance()
+    public void LegacyPositiveTroopsClearOnlyTheOldProtectionForThatInstance()
     {
         var setup = KondoPersistentLethalReplacementFixture.BeginMerlinLethal();
         var game = setup.Game;
+        KondoPersistentLethalReplacementFixture.ConvertPendingCancellationPromptToLegacy(game);
         KondoPersistentLethalReplacementFixture.Resolve(game, setup.KondoId);
         var okita = KondoPersistentLethalReplacementFixture.FieldCard(game, 1, setup.OkitaId);
         game.State.Players[1].UsedAbilities.Add("unrelated-runtime-key");
@@ -102,10 +122,11 @@ public sealed class KondoPersistentLethalReplacementTests
 
     [Fact]
     [Trait("L12Bug", "BUG-20261007-08cd2642-new-source")]
-    public void SameTroopsFromADifferentDebuffSourceIsANewLethalState()
+    public void LegacySameTroopsFromADifferentDebuffSourceIsANewLethalState()
     {
         var setup = KondoPersistentLethalReplacementFixture.BeginMerlinLethal();
         var game = setup.Game;
+        KondoPersistentLethalReplacementFixture.ConvertPendingCancellationPromptToLegacy(game);
         KondoPersistentLethalReplacementFixture.Resolve(game, setup.KondoId);
         var okita = KondoPersistentLethalReplacementFixture.FieldCard(game, 1, setup.OkitaId);
         var oldTroops = okita.Troops;
@@ -132,7 +153,7 @@ public sealed class KondoPersistentLethalReplacementTests
     }
 
     [Fact]
-    public void EqualContinuousPenaltyFromANewSourceIsNotTheConsumedLethalEvent()
+    public void LegacyEqualContinuousPenaltyFromANewSourceIsNotTheConsumedLethalEvent()
     {
         var setup = KondoPersistentLethalReplacementFixture.BeginMerlinLethal();
         var game = setup.Game;
@@ -148,6 +169,7 @@ public sealed class KondoPersistentLethalReplacementTests
             Hidden = false,
         };
         game.State.Players[1].Field[1][2] = Horse("old-continuous-penalty-source");
+        KondoPersistentLethalReplacementFixture.ConvertPendingCancellationPromptToLegacy(game);
         KondoPersistentLethalReplacementFixture.Resolve(game, setup.KondoId);
         var okita = KondoPersistentLethalReplacementFixture.FieldCard(game, 1, setup.OkitaId);
         var protectedTroops = okita.Troops;
@@ -167,10 +189,11 @@ public sealed class KondoPersistentLethalReplacementTests
 
     [Fact]
     [Trait("L12Bug", "BUG-20261007-08cd2642-private-reset")]
-    public void MovingProtectedCardToPrivateZoneClearsOnlyItsPersistentRuntimeKeys()
+    public void MovingLegacyProtectedCardToPrivateZoneClearsOnlyItsPersistentRuntimeKeys()
     {
         var setup = KondoPersistentLethalReplacementFixture.BeginMerlinLethal();
         var game = setup.Game;
+        KondoPersistentLethalReplacementFixture.ConvertPendingCancellationPromptToLegacy(game);
         KondoPersistentLethalReplacementFixture.Resolve(game, setup.KondoId);
         var okita = KondoPersistentLethalReplacementFixture.FieldCard(game, 1, setup.OkitaId);
         game.State.Players[1].UsedAbilities.Add("unrelated-runtime-key");

@@ -41,12 +41,16 @@ internal static class KondoPersistentLethalReplacementFixture
         Assert.Equal("effect-lethal-replacement", replacement.Continuation);
         Assert.Contains(kondo.InstanceId, replacement.ValidChoices);
         Assert.Equal(0, okita.Troops);
+        Assert.Equal("1", replacement.Data["lethalTroopsCancellation:version"]);
+        Assert.Equal(okita.InstanceId, replacement.Data["cardInstanceId"]);
 
         // The default keeps the real Merlin effect untouched.  A separate
-        // adversarial variant splits its exact total only to test canonical
-        // collection ordering; it must not replace the reported real path.
+        // legacy-checkpoint variant removes the post-fix cancellation recipe
+        // before splitting its exact total.  It tests the pre-fix persistent
+        // event fingerprint ordering without corrupting a new prompt recipe.
         if (splitLayersForOrderProbe)
         {
+            ConvertPendingCancellationPromptToLegacy(game);
             var merlinModifier = Assert.Single(okita.TimedModifiers);
             Assert.Equal(-3000, merlinModifier.TroopsDelta);
             okita.TimedModifiers.Clear();
@@ -69,6 +73,17 @@ internal static class KondoPersistentLethalReplacementFixture
         }
         return new(game, okita.InstanceId, kondo.InstanceId,
             probeAttacker.InstanceId, independentAttacker.InstanceId);
+    }
+
+    internal static void ConvertPendingCancellationPromptToLegacy(L12GameEngine game)
+    {
+        var prompt = Prompt(game);
+        var keys = prompt.Data.Keys
+            .Where(key => key.StartsWith("lethalTroopsCancellation:", StringComparison.Ordinal))
+            .ToArray();
+        Assert.NotEmpty(keys);
+        foreach (var key in keys) prompt.Data.Remove(key);
+        game.State.Revision++;
     }
 
     internal static L12GameEngine Restore(L12GameEngine game)
