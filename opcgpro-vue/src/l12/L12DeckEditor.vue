@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from './horizontalScrollArrows'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
@@ -1160,7 +1161,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
       <div><small>DECK EDITOR</small><h1>牌库编辑器</h1></div>
       <label>牌库名称<span v-if="restoredLocalDraft" class="draft-state">本地草稿</span><input v-model="deckName" maxlength="24"/></label>
       <div class="deck-total" :class="{ valid: !validation }"><b>{{ countSummary.label }}</b><span>/ 40–50<span v-if="uncountedCards">（括号内不计构筑）</span></span></div>
-      <div class="deck-file-actions">
+      <div v-horizontal-scroll-arrows="'牌库操作'" class="deck-file-actions">
         <button class="primary" :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSave">{{ deckMutationBusy ? '保存中…' : '保存牌库' }}</button>
         <button class="more-actions-trigger" :aria-expanded="secondaryActionsOpen" @click="secondaryActionsOpen = !secondaryActionsOpen">更多操作</button>
         <div class="secondary-actions" :class="{ open: secondaryActionsOpen }">

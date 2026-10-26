@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { adminApi, hasPermission, platformState, type AdminAudit, type PlatformAccount, type PlatformSession, type AccountRankedRestriction } from '@/l12/platform'
@@ -86,7 +87,7 @@ onMounted(load)
   <section class="account-detail">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :target-label="riskAction.targetLabel" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header><div><router-link to="/admin/users/accounts">← 返回账号列表</router-link><h2>{{ account?.username || '账号详情' }}</h2><code>{{ accountId }}</code></div><button :disabled="loading" @click="load">{{ loading ? '读取中…' : '刷新' }}</button></header>
-    <nav aria-label="账号详情分区"><button v-for="item in tabs" :key="item.id" :aria-current="tab === item.id ? 'page' : undefined" @click="selectTab(item.id)">{{ item.label }}</button></nav>
+    <nav v-horizontal-scroll-arrows="'账号详情分区'" aria-label="账号详情分区"><button v-for="item in tabs" :key="item.id" :aria-current="tab === item.id ? 'page' : undefined" @click="selectTab(item.id)">{{ item.label }}</button></nav>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <section v-if="account && tab === 'profile'" class="panel"><h3>基本资料</h3><dl><dt>用户名</dt><dd>{{ account.username }}</dd><dt>账号 ID</dt><dd><code>{{ account.id }}</code></dd><dt>建立时间</dt><dd>{{ new Date(account.createdAt).toLocaleString() }}</dd><dt>邮箱</dt><dd>{{ account.emailMasked || '未绑定' }}</dd></dl></section>
     <section v-else-if="account && tab === 'access'" class="panel"><h3>身份与状态</h3><label>长期身份<select v-model="account.role" :disabled="!hasPermission('admin.accounts.roles.write') || account.username === 'Admin'"><option value="player">玩家</option><option value="admin">管理员</option></select></label><label>变更理由<input v-model="reason" maxlength="500" placeholder="状态变更会写入审计"/></label><div class="actions"><button :disabled="account.username === 'Admin' || !hasPermission('admin.accounts.roles.write')" @click="saveRole">保存身份</button><button class="danger" :disabled="account.username === 'Admin' || account.id === platformState.account?.id || !hasPermission('admin.accounts.status.write')" @click="saveStatus">{{ account.disabled ? '启用账号' : '禁用账号' }}</button></div><p>有效权限 {{ account.permissions?.length ?? 0 }} 项 · 版本 {{ account.permissionVersion ?? 0 }}</p></section>

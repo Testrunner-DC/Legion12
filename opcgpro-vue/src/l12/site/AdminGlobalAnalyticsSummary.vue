@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, type AdminGlobalAnalyticsDay, type AdminGlobalAnalyticsReport } from '@/l12/platform'
 
@@ -92,7 +93,7 @@ onMounted(load)
       <div class="metric-switch" role="group" aria-label="趋势指标">
         <button v-for="metric in trendMetrics" :key="metric.key" type="button" :aria-pressed="trendMetric === metric.key" :class="{ active: trendMetric === metric.key }" @click="trendMetric = metric.key">{{ metric.label }}</button>
       </div>
-      <div v-if="report.days.length" class="bars" :aria-label="`${selectedMetric.label}逐日趋势，单位${selectedMetric.unit}`">
+      <div v-if="report.days.length" v-horizontal-scroll-arrows="'逐日指标趋势'" class="bars" :aria-label="`${selectedMetric.label}逐日趋势，单位${selectedMetric.unit}`">
         <article v-for="point in trendPoints" :key="point.date" :data-zero="point.value === 0" :data-missing="point.value == null">
           <div class="bar-track"><i :style="{ height: barHeight(point.value) }"></i></div>
           <b>{{ number(point.value) }}</b><small>{{ point.date.slice(5) }}</small>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from './horizontalScrollArrows'
 import { computed, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { filterableCardCost, loadDeckCatalog, type DeckCard } from './decks'
@@ -92,7 +93,7 @@ const filtered = computed(() => {
     <div class="single-card-picker-mask" @click.self="emit('close')">
       <section class="single-card-picker" role="dialog" aria-modal="true" :aria-label="title">
         <header><div><small>单卡查找</small><h2>{{ title }}</h2></div><button type="button" aria-label="关闭" @click="emit('close')">×</button></header>
-        <div class="single-card-filters">
+        <div v-horizontal-scroll-arrows="'卡牌筛选'" class="single-card-filters">
           <input v-model="query" type="search" placeholder="搜索卡名、编号或效果文字" autofocus>
           <select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ cardTypeLabel(key) }}</option></select>
           <select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] ?? key }}</option></select>

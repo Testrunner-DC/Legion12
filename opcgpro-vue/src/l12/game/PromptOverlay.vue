@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { useMobileBattleDock } from './mobileBattleDock'
 const mobileDock = useMobileBattleDock()
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -1121,7 +1122,7 @@ function kindLabel() {
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
-            <div><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
+            <div v-horizontal-scroll-arrows="'天灾准备历史'"><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
               :aria-label="`${entry.card.name || '未揭示天灾'}，${group.label}，${entry.note}`"
               @click="focusHistoryCard(entry.card)" @mouseenter="focusHistoryCard(entry.card)">
               <img v-if="entry.card.hidden" src="/assets/l12/card-back-disaster.png" alt="未揭示天灾"/>
@@ -1129,14 +1130,14 @@ function kindLabel() {
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
-        <div v-if="showPreviewCard && previewCardId && !displayedChoices.includes(previewCardId)" class="prompt-card-strip featured-card-strip">
+        <div v-if="showPreviewCard && previewCardId && !displayedChoices.includes(previewCardId)" v-horizontal-scroll-arrows="'预览卡牌'" class="prompt-card-strip featured-card-strip">
           <PromptCardCandidate :card-id="cardIdFor(previewCardId)" :legacy-url="imageFor(previewCardId)"
             :name="cardName(previewCardId)" :meta="cardMeta(previewCardId)" :horizontal="isHorizontalCardType(detailFor(previewCardId)?.cardType)"
             intent="detail" size="featured" @focus="focusChoice(previewCardId)" @select="focusChoice(previewCardId)"/>
         </div>
         <div v-if="placementMode === 'all-top-bottom' || placementMode === 'all-bottom'" class="all-placement-workspace">
           <strong class="placement-edge top-edge">左侧先抽到</strong>
-          <div class="prompt-card-strip all-placement-row">
+          <div v-horizontal-scroll-arrows="'卡牌排序'" class="prompt-card-strip all-placement-row">
             <PromptCardCandidate v-for="(choice, index) in placementOrder" :key="choice"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
@@ -1150,7 +1151,7 @@ function kindLabel() {
         <div v-else-if="placementMode === 'split-top-bottom'" class="placement-workspace">
           <section class="placement-destination top" @dragover.prevent @drop="dropPlacement('top')">
             <header><strong>放回顶部</strong><small>从左到右：左侧最靠顶，也最先抽到</small></header>
-            <div class="prompt-card-strip placement-row">
+            <div v-horizontal-scroll-arrows="'牌库放置卡牌'" class="prompt-card-strip placement-row">
               <PromptCardCandidate v-for="(choice, index) in placementTop" :key="choice" size="compact"
                 :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
                 :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
@@ -1164,7 +1165,7 @@ function kindLabel() {
 
           <section class="placement-candidates">
             <header><strong>待安排</strong><small>拖动卡牌决定归属和顺序</small></header>
-            <div class="prompt-card-strip placement-row">
+            <div v-horizontal-scroll-arrows="'牌库放置卡牌'" class="prompt-card-strip placement-row">
               <PromptCardCandidate v-for="choice in unassignedChoices" :key="choice" size="compact"
                 :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
                 :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
@@ -1180,7 +1181,7 @@ function kindLabel() {
 
           <section class="placement-destination bottom" @dragover.prevent @drop="dropPlacement('bottom')">
             <header><strong>放回底部</strong><small>其他牌抽完后，从左到右依次抽到；右侧最靠底</small></header>
-            <div class="prompt-card-strip placement-row">
+            <div v-horizontal-scroll-arrows="'牌库放置卡牌'" class="prompt-card-strip placement-row">
               <PromptCardCandidate v-for="(choice, index) in placementBottom" :key="choice" size="compact"
                 :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
                 :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
@@ -1192,7 +1193,7 @@ function kindLabel() {
             </div>
           </section>
         </div>
-        <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'uniform-text-option-list': isUniformTextOptionList, 'response-target-list': prompt.kind === 'response-target' }"
+        <div v-else v-horizontal-scroll-arrows="'候选卡牌'" class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'uniform-text-option-list': isUniformTextOptionList, 'response-target-list': prompt.kind === 'response-target' }"
           :data-ui-contract="hasCardChoices ? 'equal-card-option-group' : 'equal-option-group'">
           <template v-for="choice in primaryChoices" :key="choice">
             <article v-if="prompt.kind === 'response-target'" class="response-target-row" :class="{ selected: activeSelected.includes(choice) }">
@@ -1295,7 +1296,7 @@ function kindLabel() {
             :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         </header>
         <p class="mulligan-instruction">{{ mulliganInstruction }}</p>
-        <div class="mulligan-card-row prompt-card-strip" data-ui-contract="mobile-choice-scroll-body">
+        <div v-horizontal-scroll-arrows="'换牌候选'" class="mulligan-card-row prompt-card-strip" data-ui-contract="mobile-choice-scroll-body">
           <PromptCardCandidate v-for="card in me.hand" :key="card.instanceId" class="mulligan-card"
             :data-tutorial-mulligan-card="card.instanceId"
             :card-id="card.cardId" :legacy-url="card.imageUrl" :name="card.name"
@@ -1316,7 +1317,7 @@ function kindLabel() {
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
-            <div><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
+            <div v-horizontal-scroll-arrows="'天灾准备历史'"><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
               @click="focusHistoryCard(entry.card)" @mouseenter="focusHistoryCard(entry.card)">
               <img v-if="entry.card.hidden" src="/assets/l12/card-back-disaster.png" alt="未揭示天灾"/>
                <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="detail" eager/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>

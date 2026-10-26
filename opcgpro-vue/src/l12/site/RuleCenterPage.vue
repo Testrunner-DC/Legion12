@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
@@ -374,7 +375,7 @@ onBeforeUnmount(() => {
         </MobileFilterSheet>
         <select v-model="coreTopic" class="rule-desktop-filter" aria-label="按章节筛选"><option value="all">全部章节</option><option v-for="value in coreTopics" :key="value" :value="value">{{ value }}</option></select>
       </section>
-      <div class="rule-layout"><aside><b>规则手册</b><span>{{ ruleResults.length }} / {{ ruleCenter.coreBlocks.length }} 个规则内容块</span><nav v-if="coreTableOfContents.length" aria-label="规则手册章节目录"><button v-for="chapter in coreTableOfContents" :key="chapter.chapter" type="button" @click="scrollToCoreChapter(chapter.firstId)"><span>{{ chapter.chapter }}</span><small>{{ chapter.count }} 节</small></button></nav></aside><main><article v-for="block in ruleResults" :id="`rule-entry-${block.id}`" :key="block.id"><header><span v-if="block.topic">{{ block.topic }}</span><b v-if="block.chapter">{{ block.chapter }}</b></header><picture v-if="block.image" class="rule-block-image"><source media="(max-width: 700px)" :srcset="block.image.mobileUrl"><img :src="block.image.desktopUrl" :alt="block.image.altText"></picture><p>{{ displayRuleText(block.text) }}</p></article><UiNotice v-if="!ruleCenter.coreBlocks.length" kind="empty">核心规则资料尚未发布</UiNotice><UiNotice v-else-if="!ruleResults.length" kind="empty">没有匹配的规则内容</UiNotice></main></div>
+      <div class="rule-layout"><aside><b>规则手册</b><span>{{ ruleResults.length }} / {{ ruleCenter.coreBlocks.length }} 个规则内容块</span><nav v-if="coreTableOfContents.length" v-horizontal-scroll-arrows="'规则章节'" aria-label="规则手册章节目录"><button v-for="chapter in coreTableOfContents" :key="chapter.chapter" type="button" @click="scrollToCoreChapter(chapter.firstId)"><span>{{ chapter.chapter }}</span><small>{{ chapter.count }} 节</small></button></nav></aside><main><article v-for="block in ruleResults" :id="`rule-entry-${block.id}`" :key="block.id"><header><span v-if="block.topic">{{ block.topic }}</span><b v-if="block.chapter">{{ block.chapter }}</b></header><picture v-if="block.image" class="rule-block-image"><source media="(max-width: 700px)" :srcset="block.image.mobileUrl"><img :src="block.image.desktopUrl" :alt="block.image.altText"></picture><p>{{ displayRuleText(block.text) }}</p></article><UiNotice v-if="!ruleCenter.coreBlocks.length" kind="empty">核心规则资料尚未发布</UiNotice><UiNotice v-else-if="!ruleResults.length" kind="empty">没有匹配的规则内容</UiNotice></main></div>
     </template>
 
     <template v-else-if="tab === 'quick-start' || tab === 'terms'">

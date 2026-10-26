@@ -37,6 +37,8 @@ function mount(file, overrides = {}, props = {}) {
   }
   const imports = {
     vue: Vue,
+    '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
+    './horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     '@/l12/decks': { loadDeckCatalog: async () => catalog }, './decks': { loadDeckCatalog: async () => catalog, filterableCardCost: c => c.cost ?? null },
     '@/l12/specialAssets': { masterProfileUrl: id => id }, './mobileViewport': { landscapeTeleportTarget: () => 'body' },
     './cardPresentation': { cardTypeFilterKey: value => value, cardTypeLabel: value => value, isHorizontalCardType: () => false },

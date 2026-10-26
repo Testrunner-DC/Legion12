@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { useMobileBattleDock } from './mobileBattleDock'
 const mobileDock = useMobileBattleDock()
 import { computed, ref } from 'vue'
@@ -34,7 +35,7 @@ function selectCard(card: Card) {
         <div class="graveyard-columns single">
           <article>
             <h3>{{ player.name }} <span>{{ player.graveyard?.length ?? player.graveyardCount ?? 0 }} 张</span></h3>
-            <div class="graveyard-cards">
+            <div v-horizontal-scroll-arrows="'墓地卡牌'" class="graveyard-cards">
               <div v-for="card in [...(player.graveyard || [])].reverse()" :key="card.instanceId" class="graveyard-card-entry">
                 <CardTile :card="card" @mouseenter="emit('focus', card)" @select="selectCard(card)" />
                 <span class="graveyard-card-name">{{ card.name }}</span>

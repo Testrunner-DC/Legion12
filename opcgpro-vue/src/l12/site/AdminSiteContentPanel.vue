@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import PagedCollection from './PagedCollection.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { adminApi, hasPermission, type Article, type ContentBatch, type ContentEntry, type SiteCategory, type SiteContentKind, type SiteMedia, type SiteMediaKind } from '@/l12/platform'
@@ -226,7 +227,7 @@ onMounted(load)
   <section class="site-content-admin">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header class="site-content-head"><div><small>SITE CONTENT</small><h2>站点内容</h2><p>素材、首页、资讯、视频、商品、分类与法务由管理员直接维护，并保留权限、审计和持久化边界。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新全部' }}</button></header>
-    <nav class="site-content-nav" aria-label="站点内容模块"><button v-for="item in sections" :key="item.id" :class="{ active: section === item.id }" @click="section = item.id">{{ item.label }}</button></nav>
+    <nav v-horizontal-scroll-arrows="'站点内容模块'" class="site-content-nav" aria-label="站点内容模块"><button v-for="item in sections" :key="item.id" :class="{ active: section === item.id }" @click="section = item.id">{{ item.label }}</button></nav>
 
     <section v-if="section === 'media'" class="content-panel media-library">
       <header><div><h3>素材库</h3><p>原图仅归档；公开端只提供内容哈希 URL 的桌面、移动 WebP 与缩略图，删除前检查全部草稿和历史引用。</p></div><select v-model="mediaKind"><option value="hero">首页轮播</option><option value="news">资讯封面</option><option value="article">资讯正文图片</option><option value="video">视频封面 16:9</option><option value="product">商品图片</option><option value="rule">规则图片</option><option value="card-art">卡图素材</option></select></header>
@@ -244,7 +245,7 @@ onMounted(load)
           <label>第二行：主标题（可空）<input v-model="slide.title" maxlength="180"><small class="line-length-hint" :class="{ warning: heroLineTooLong(slide.title, 10) }">{{ heroLineHint(slide.title, 10) }}</small></label>
           <label class="wide">第三行：副标题/说明（可空）<textarea v-model="slide.summary" rows="3" maxlength="600"></textarea><small class="line-length-hint" :class="{ warning: heroLineTooLong(slide.summary, 20) }">{{ heroLineHint(slide.summary, 20, true) }}</small></label>
           <label class="wide">第四行：日期/发布信息（可空）<input v-model="slide.footer" maxlength="180"><small class="line-length-hint" :class="{ warning: heroLineTooLong(slide.footer, 12) }">{{ heroLineHint(slide.footer, 12) }}</small></label>
-          <span class="scroll-hint wide">原样预览保留手动换行，超长行可横向滚动</span><div class="hero-copy-preview wide" tabindex="0" aria-label="轮播文案手动换行预览"><small v-if="slide.eyebrow">{{ slide.eyebrow }}</small><b v-if="slide.title">{{ slide.title }}</b><p v-if="slide.summary">{{ slide.summary }}</p><strong v-if="slide.footer">{{ slide.footer }}</strong><i v-if="!slide.eyebrow && !slide.title && !slide.summary && !slide.footer">未填写轮播文案</i></div>
+          <span class="scroll-hint wide">原样预览保留手动换行，超长行可横向滚动</span><div v-horizontal-scroll-arrows="'轮播文案预览'" class="hero-copy-preview wide" tabindex="0" aria-label="轮播文案手动换行预览"><small v-if="slide.eyebrow">{{ slide.eyebrow }}</small><b v-if="slide.title">{{ slide.title }}</b><p v-if="slide.summary">{{ slide.summary }}</p><strong v-if="slide.footer">{{ slide.footer }}</strong><i v-if="!slide.eyebrow && !slide.title && !slide.summary && !slide.footer">未填写轮播文案</i></div>
           <label class="wide">整张轮播图点击链接（可空）<input v-model="slide.href" placeholder="留空不跳转；可填 /news 或 https://"></label><label class="check"><input v-model="slide.enabled" type="checkbox"> 启用</label>
         </div>
         <div class="compose-media"><SiteMediaPicker v-model="slide.mediaAssetId" kind="hero" :selected-media="media.find(item => item.id === slide.mediaAssetId)" @selected="mediaUploaded($event, index)"/><MediaUploadField v-model="slide.mediaAssetId" kind="hero" :preview-url="mediaUrl(slide.mediaAssetId)" :initial-alt="slide.title" @uploaded="mediaUploaded($event, index)" @notice="showNotice"/><button class="danger" @click="removeSlide(index)">删除轮播</button></div>

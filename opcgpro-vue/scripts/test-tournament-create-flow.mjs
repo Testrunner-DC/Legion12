@@ -30,6 +30,7 @@ function fixture(options = {}) {
   }
   api.createContext = () => api.summaries({ section: 'host', page: 1, pageSize: 1 })
   const imports = {
+    '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     vue: Vue,
     'vue-router': { useRoute: () => route },
     '@/l12/platform': { platformState, tournamentApi: api, friendApi: { friends: async () => [] }, getEffectiveOperationsPolicy: async () => { policyCalls++; if (policyCalls > 1 && options.policyWait) await options.policyWait.promise; return policy } },

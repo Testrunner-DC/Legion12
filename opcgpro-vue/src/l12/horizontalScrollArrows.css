@@ -1,0 +1,13 @@
+.l12-horizontal-scroll-arrows{position:absolute;display:flex;align-items:stretch;justify-content:space-between;transform:translateY(-50%);pointer-events:none;box-sizing:border-box}
+.l12-horizontal-scroll-arrows[hidden]{display:none!important}
+.l12-horizontal-scroll-arrows>button{flex:none;width:var(--l12-scroll-arrow-width,38px);height:100%;min-width:0;min-height:0;display:grid;place-items:center;padding:0;border:1px solid #78949a;border-radius:4px;background:rgba(7,16,19,.94);box-shadow:0 2px 5px #0009;color:#dbfaff;font:700 24px/1 'Microsoft YaHei','Noto Sans SC',sans-serif;pointer-events:auto;touch-action:manipulation;cursor:pointer}
+.l12-horizontal-scroll-arrows>button:disabled{color:#75858a;border-color:#415157;background:rgba(7,16,19,.86);cursor:default}
+.l12-horizontal-scroll-arrows>button:focus-visible{outline:2px solid #f0cf78;outline-offset:2px}
+[data-l12-native-scroll-arrows=true]{box-sizing:border-box!important;padding-inline:var(--l12-scroll-gutter-start) var(--l12-scroll-gutter-end)!important}
+[data-l12-horizontal-scrollable=true]{isolation:isolate}
+/* The existing 114x160 fan tilts and overlaps its layout boxes. Keep its
+   rendered first/last corners outside the 38px controls, including focus. */
+.l12-hand{--l12-scroll-edge-clearance:24px}
+:is(.strategy-table-scroll,.global-data .table)[data-l12-horizontal-scrollable=true]{min-height:44px}
+.workflow-rail[data-l12-horizontal-scrollable=true]{justify-content:safe center}
+@media(max-width:700px){.mobile-title-strip[data-l12-horizontal-scrollable=true]{min-height:44px}.player-table .tr:has(.mobile-title-strip[data-l12-horizontal-scrollable=true]){grid-template-rows:32px 20px minmax(44px,auto)}}

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import BattleDockPortal from './BattleDockPortal.vue'
 import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
@@ -117,7 +118,7 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>
 
 <template>
-  <div ref="handElement" class="l12-hand" data-l12-zone="hand" data-ui-contract="field-sized-safe-hand" data-tutorial-anchor="hand"
+  <div ref="handElement" v-horizontal-scroll-arrows="'手牌'" class="l12-hand" data-l12-zone="hand" data-ui-contract="field-sized-safe-hand" data-tutorial-anchor="hand"
     :data-player-index="playerIndex" :data-tutorial-player-index="playerIndex"
     :data-more-start="moreAtStart" :data-more-end="moreAtEnd" :class="{ hidden, 'playability-active': dimUnplayable, overflowing: isOverflowing, 'mobile-layout': mobileLayout }"
     @scroll="updateOverflowEdges" @wheel="onHandWheel" @pointerdown="onHandPointerDown" @pointermove="onHandPointerMove"

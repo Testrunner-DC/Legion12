@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed } from 'vue'
 
 export interface MasterMatchupMatrixMaster {
@@ -68,7 +69,7 @@ function initiativeTitle(label: string, wins: number | undefined, samples: numbe
 </script>
 
 <template>
-  <div v-if="masters.length" class="master-matchup-matrix" data-ui-contract="shared-master-matchup-matrix">
+  <div v-if="masters.length" v-horizontal-scroll-arrows="'主宰对阵矩阵'" class="master-matchup-matrix" data-ui-contract="shared-master-matchup-matrix">
     <div class="matrix-grid" :style="{ gridTemplateColumns: `64px repeat(${masters.length + 1}, ${columnWidth}px)` }">
       <div class="matrix-rank-head">排名</div>
       <div class="matrix-corner">我方 ↓<br>对方 →</div>

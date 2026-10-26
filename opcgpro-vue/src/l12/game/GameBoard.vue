@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import MobileBattleDock from './MobileBattleDock.vue'
 import BattleDockPortal from './BattleDockPortal.vue'
 import BattleOverlayPortal from './BattleOverlayPortal.vue'
@@ -1980,7 +1981,7 @@ function statusTexts(card: Card) {
           <p v-else class="mobile-morale-prompt">这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。</p>
           <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
             <section v-if="viewMe.faction === 'otherworld'" class="mobile-rune-row" aria-label="彼界阵营符文">
-              <div v-if="mobileRuneChoices.length">
+              <div v-if="mobileRuneChoices.length" v-horizontal-scroll-arrows="'彼界符文'">
                 <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :data-tutorial-payment-resource="choice.selectable ? choice.id : undefined" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
                   <img :src="choice.iconUrl" alt="" />
                 </button>

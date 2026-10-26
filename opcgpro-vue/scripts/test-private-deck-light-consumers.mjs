@@ -322,6 +322,7 @@ const profileDeckModule = { ensureOfficialPrebuiltDecks: decks.ensureOfficialPre
 
 function tournamentDetailComponent() {
   return compileComponent('src/l12/site/TournamentAccountDetail.vue', {
+    '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     vue, 'vue-router': routeModule, '@/l12/decks': deckModule, '@/l12/net': netModule,
     '@/l12/platform': platformModule, '@/l12/tournamentLabels': noopLabels,
     '@/l12/tournamentRulingPolicy': tournamentRulingPolicy,
@@ -332,6 +333,7 @@ function tournamentDetailComponent() {
 }
 function tournamentWorkbenchComponent() {
   return compileComponent('src/l12/site/AdminTournamentWorkbench.vue', {
+    '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     vue, 'vue-router': routeModule, '@/l12/decks': deckModule, '@/l12/net': netModule,
     './ConstructionRuleEditor.vue': componentModule, './DisasterPoolPicker.vue': componentModule,
     '@/l12/useActionGate': actionGateModule, '@/l12/tournamentSnapshotMerge': { mergeTournamentSnapshot: items => items },

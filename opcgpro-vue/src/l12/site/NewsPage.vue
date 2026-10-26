@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { articleApi, siteContentApi, type Article, type SiteCategory, type SiteContentKind } from '@/l12/platform'
@@ -47,7 +48,7 @@ watch(kind, async value => {
     </template>
     <template v-else>
     <header><div><small>{{ pageCopy.eyebrow }}</small><h1>{{ pageCopy.title }}</h1><p>{{ pageCopy.description }}栏目由后台动态维护。</p></div><div class="content-page-actions"><router-link v-if="kind !== 'news'" to="/">← 返回主页</router-link><input v-model="search" :placeholder="pageCopy.search"></div></header>
-    <nav class="category-tabs"><button :class="{ active: !category }" @click="category = ''">{{ pageCopy.all }}</button><button v-for="item in categories" :key="item.id" :class="{ active: category === item.id }" @click="category = item.id">{{ item.name }}<span>{{ categoryCounts[item.id] || 0 }}</span></button></nav>
+    <nav v-horizontal-scroll-arrows="'内容分类'" class="category-tabs"><button :class="{ active: !category }" @click="category = ''">{{ pageCopy.all }}</button><button v-for="item in categories" :key="item.id" :class="{ active: category === item.id }" @click="category = item.id">{{ item.name }}<span>{{ categoryCounts[item.id] || 0 }}</span></button></nav>
     <main class="news-list" :class="{ 'video-grid': kind === 'video', 'product-list': kind === 'product' }">
       <component :is="entry.link ? 'a' : 'article'" v-for="entry in kind === 'video' ? visible : []" :id="`article-${entry.id}`" :key="entry.id" class="video-card" :class="{ pinned: entry.pinned }" :href="entry.link || undefined" :target="entry.link.startsWith('http') ? '_blank' : undefined" rel="noopener">
         <span class="video-cover"><img v-if="entry.coverUrl" :src="entry.coverUrl" :alt="entry.title"><i>▶</i></span>

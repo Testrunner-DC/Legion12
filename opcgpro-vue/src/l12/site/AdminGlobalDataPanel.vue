@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { ref } from 'vue'
 import { type AdminGlobalAnalyticsReport } from '@/l12/platform'
 import AdminGlobalAnalyticsSummary from './AdminGlobalAnalyticsSummary.vue'
@@ -13,7 +14,7 @@ function number(value?: number | null) {
   <section class="global-data">
     <header class="module-head"><div><small>GLOBAL ANALYTICS</small><h2>全局数据</h2><p>按自然日查看活跃、对局、在线与访问历史；当天数据会随新样本更新。</p></div></header>
     <AdminGlobalAnalyticsSummary heading="关键指标" @loaded="report = $event"/>
-    <section v-if="report" class="history panel"><header><h3>逐日历史</h3><span>可按原始日记录追溯 · 表格可横向滚动</span></header><div class="table" tabindex="0" aria-label="逐日历史表格，可横向滚动"><div class="row head"><b>日期</b><b>DAU / WAU / MAU</b><b>对局 日 / 周 / 月</b><b>平均 / 峰值在线</b><b>新增 / 回访</b><b>PV</b></div><div v-for="day in [...report.days].reverse()" :key="day.date" class="row"><span>{{ day.date }}</span><span>{{ day.dailyActiveUsers }} / {{ day.weeklyActiveUsers }} / {{ day.monthlyActiveUsers }}</span><span>{{ day.dailyMatches }} / {{ day.weeklyMatches }} / {{ day.monthlyMatches }}</span><span>{{ number(day.averageOnline) }} / {{ day.peakOnline }}</span><span>{{ day.newUsers }} / {{ day.returningUsers }}</span><span>{{ day.pageViews }}</span></div></div></section>
+    <section v-if="report" class="history panel"><header><h3>逐日历史</h3><span>可按原始日记录追溯 · 表格可横向滚动</span></header><div v-horizontal-scroll-arrows="'逐日历史数据'" class="table" tabindex="0" aria-label="逐日历史表格，可横向滚动"><div class="row head"><b>日期</b><b>DAU / WAU / MAU</b><b>对局 日 / 周 / 月</b><b>平均 / 峰值在线</b><b>新增 / 回访</b><b>PV</b></div><div v-for="day in [...report.days].reverse()" :key="day.date" class="row"><span>{{ day.date }}</span><span>{{ day.dailyActiveUsers }} / {{ day.weeklyActiveUsers }} / {{ day.monthlyActiveUsers }}</span><span>{{ day.dailyMatches }} / {{ day.weeklyMatches }} / {{ day.monthlyMatches }}</span><span>{{ number(day.averageOnline) }} / {{ day.peakOnline }}</span><span>{{ day.newUsers }} / {{ day.returningUsers }}</span><span>{{ day.pageViews }}</span></div></div></section>
     <section v-if="report" class="panel pages"><header><h3>页面访问量</h3><span>路径已移除查询参数，不记录玩家填写内容</span></header><article v-for="item in report.pageViews" :key="item.path"><code>{{ item.path }}</code><b>{{ item.views }}</b></article><p v-if="!report.pageViews.length" class="empty">所选日期暂无页面访问记录</p></section>
   </section>
 </template>

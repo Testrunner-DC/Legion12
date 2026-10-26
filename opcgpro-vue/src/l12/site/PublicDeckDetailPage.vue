@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDeckImageBlob, deckImageGroups, downloadDeckImage, encodeDeckCode } from './deckShare'
@@ -578,7 +579,7 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
       </section>
       <section id="public-deck-hands" class="content-panel detail-anchor-section" data-detail-section="hands">
         <header><div><h2>随机起手</h2><p>随机展示当前构筑中的 6 张主牌。</p></div><button @click="redrawOpeningHand">重新抽取</button></header>
-        <div class="opening-hand"><article v-for="copy in openingHand" :key="copy.key"><button class="hand-card" :aria-label="`查看${copy.card!.nameZh}详情，${copy.label}`" @click="selectCard(copy.card!)" @dblclick.prevent="openCardDetails(copy.card!)"><CardImage :card-id="copy.cardImageId" :legacy-url="copy.legacyUrl" :alt="`${copy.card!.nameZh} · ${copy.label}`" intent="thumb" fit="contain"/><b>{{ copy.card!.nameZh }}</b><small>{{ copy.label }}</small></button></article></div>
+        <div v-horizontal-scroll-arrows="'起手卡牌'" class="opening-hand"><article v-for="copy in openingHand" :key="copy.key"><button class="hand-card" :aria-label="`查看${copy.card!.nameZh}详情，${copy.label}`" @click="selectCard(copy.card!)" @dblclick.prevent="openCardDetails(copy.card!)"><CardImage :card-id="copy.cardImageId" :legacy-url="copy.legacyUrl" :alt="`${copy.card!.nameZh} · ${copy.label}`" intent="thumb" fit="contain"/><b>{{ copy.card!.nameZh }}</b><small>{{ copy.label }}</small></button></article></div>
       </section>
         </div>
         <aside class="archive-detail public-card-detail" aria-label="卡牌详情"><CardDetailContent v-if="selectedCard" :card="selectedCard" :show-catalog-only="false"/></aside>

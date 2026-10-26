@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261027-MOBILE-HORIZONTAL-ARROWS｜具名横向目标与原循环轨道
+
+- 人类直接要求移动端所有左右拖动场景增加双侧可点箭头。盘点当前活跃入口，25消费者／38模板处：37原生目标、热门v-for一绑定两实际轨道。共享directive只新增原目标前的兄弟控制，不搬卡片／改wrapper，保last-child、选择／拖拽／排序及桌面；局部Resize／childList／Intersection观察和既有视口事件，无全局扫描、轮询或新命令。
+- 原生按可用宽度80%翻动，物理38px、两端留白、无溢出撤除；热门只改原动画currentTime，保双行自动／悬停／焦点／触摸暂停，退出移动或隐藏／卸载释放。三类真实短目标只补44px容纳，粘性表头用目标隔离层，不穿透modal。完整同类排除inactive组件、已自带箭头、最终grid/纵向场景，没有虚报每个overflow字符串均新增。
+- Main浏览器发现焦点重复发视口事件会移除padding，导致末端487回夹377；保原轨迹，稳定viewport签名与真resize恢复offset后最终稳定487/487。41定向／86既有步骤含双类型／双Vite通过；真实手牌／选牌／矩阵、旋转390／横屏844／已缩放0.7挂载、热门双行／Enter／清退通过，箭头选牌计数始终0。纯无事件祖先transform变化的即时放大、所有生产路由及物理真机未全验，不冒完整UI/线上收口。
+- 旧QA五次拒绝均保原件：新具名显示依赖、nav/section字面标签变化；只迁移夹具map／反例定位，原统计／权限／刷新／反例断言不减，从失败点续尾复用成功前缀。唯一mobile-horizontal-arrows-20261026/main-acceptance.json绑定最终36源码及日志／真实raw／局部截图，原热构建不清空，临时server/tab/viewport已清。回滚仅本族directive／消费者绑定及相应QA迁移，不改费用、规则、同步、隐私或历史数据；本地接受、未部署。
+
+## RULING-20261027-TRIAL-NOT-GENERIC-ONCE｜通用试炼无回合一次限制
+
+- Main实际读回来源对话01a0e6d7-4254-7c63-bb5c-e70da0427ee8、用户turn01a178f8-344d-7c12-b1b4-700e8d27734e原话：“进行试炼并没有一回合一次的限制，芬恩是效果的特例”。复用BUG-20260823-62既有实现；普通军团转活跃且满足条件可再次试炼，芬恩仅其自身后续实际转活跃才加trial-card-lock，未转活跃不凭空锁定。
+- 本轮完整8489真实TRX内LatestBugRegressionTests.TrialLegionCanActAgainWhenAnotherEffectReadiesItInTheSameTurn和ExplicitCardTextCanStillLockFinnFromAnotherTrialThisTurn均Passed，当前本轮改动无trial/once键增量。这里只接收裁定与复用同源证据，不改产品、重做已完成修复或冒线上关单；卡面其他回合一次不泛化。
+
 ## FIX-20261027-PUPPET-REDIRECT-KAGUTSUCHI｜改向后沿原队列补防守主宰触发
 
 - BUG-20261024-646ce6f1，复用下方人类明确“应补发”裁定，不重复询问。真实命令原4例1过3红：傀儡已登场并成为军团目标后直接推进战斗，防守迦具土缺询问。提取原QueueStarterDefenderMasterTiming，改向设置目标后、FinishStackItem前复用；原StarterDefenderMasterTimingOffered去重、恢复及pendingTriggerBatches保持，无新持久字段或第二响应窗口。

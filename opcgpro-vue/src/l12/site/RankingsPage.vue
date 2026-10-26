@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { masterProfileUrl } from '@/l12/specialAssets'
 import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'
@@ -200,7 +201,7 @@ onBeforeUnmount(() => {
     </header>
 
     <p v-if="rangeLimited && tab !== 'history'" class="error" role="alert">本时间范围对局过多，暂无法显示完整排行。请切换本赛季。</p>
-    <section v-if="hasAnalytics && !rangeLimited" class="summary-strip">
+    <section v-if="hasAnalytics && !rangeLimited" v-horizontal-scroll-arrows="'排行概览'" class="summary-strip">
       <article><small>有效排位</small><strong>{{ analytics.summary.matches }}</strong></article>
       <article><small>本赛季已定级玩家</small><strong>{{ analytics.summary.placedPlayers }}</strong></article>
       <article><small>活跃主宰</small><strong>{{ analytics.summary.activeMasters }}</strong></article>
@@ -229,7 +230,7 @@ onBeforeUnmount(() => {
     <p v-if="error" class="error" role="alert" aria-live="assertive">{{ error }}</p>
 
     <section v-if="rangeLimited && tab !== 'history'" class="rank-panel empty">当前范围无法提供完整排行</section>
-    <section v-else-if="tab === 'players'" class="rank-panel player-table">
+    <section v-else-if="tab === 'players'" v-horizontal-scroll-arrows="'玩家排行'" class="rank-panel player-table">
       <div class="thead"><span>排名</span><span>昵称</span><span>阵营</span><span>段位</span><span>称号</span><span>最擅长主宰</span><span>{{ range === 'season' ? '七曜值' : '七曜净变化' }}</span><span>场次</span><span>战绩</span><span>胜率</span></div>
       <div v-for="row in visiblePlayers" :key="`${row.rank}-${row.username}-${row.faction}`" class="tr" :class="[`rank-${Math.min(row.rank, 4)}`, { 'is-me': row.username === platformState.account?.username }]">
         <b data-label="排名">#{{ row.rank }}</b>
@@ -241,14 +242,14 @@ onBeforeUnmount(() => {
         <span data-label="战绩"><i>{{ row.wins }}</i>胜 <em>{{ row.losses }}</em>负</span><strong data-label="胜率">{{ percent((row.wins + row.losses) ? row.wins * 100 / (row.wins + row.losses) : 0) }}</strong>
         <span class="player-mobile-meta">{{ row.faction }} · {{ row.wins }}胜{{ row.losses }}负 · {{ percent((row.wins + row.losses) ? row.wins * 100 / (row.wins + row.losses) : 0) }} · {{ row.wins + row.losses }}场</span>
         <span class="player-mobile-extras">
-          <span class="mobile-title-strip"><RankedIdentityBadge v-for="title in row.titles.slice(0, 2)" :key="title" :variant="titleVariant(title)" :faction="row.faction" :label="title"/><b v-if="row.titles.length > 2">+{{ row.titles.length - 2 }}</b><i v-if="!row.titles.length">暂无称号</i></span>
+          <span v-horizontal-scroll-arrows="'玩家称号'" class="mobile-title-strip"><RankedIdentityBadge v-for="title in row.titles.slice(0, 2)" :key="title" :variant="titleVariant(title)" :faction="row.faction" :label="title"/><b v-if="row.titles.length > 2">+{{ row.titles.length - 2 }}</b><i v-if="!row.titles.length">暂无称号</i></span>
           <span v-if="row.favoriteMasterId" class="mobile-favorite-master"><img :src="masterProfileUrl(row.favoriteMasterId)" :alt="`${row.favoriteMasterName || row.favoriteMasterId}头像`"/><b>{{ row.favoriteMasterName || row.favoriteMasterId }}</b></span>
         </span>
       </div>
       <div v-if="!visiblePlayers.length" class="empty">{{ loading ? '正在读取排位数据…' : '当前筛选下暂无完成定级的玩家' }}</div>
     </section>
 
-    <section v-else-if="tab === 'masters'" class="rank-panel master-table">
+    <section v-else-if="tab === 'masters'" v-horizontal-scroll-arrows="'主宰排行'" class="rank-panel master-table">
       <div class="thead"><span>排名</span><span>主宰</span><span title="近 30 日独立称号口径">最强玩家<small>近30日</small></span><span>场次</span><span>战绩</span><span>胜率</span><span>使用率</span><span>先手</span><span>后手</span></div>
       <div v-for="(row, index) in visibleMasters" :key="row.masterId" class="tr" :class="`rank-${Math.min(index + 1, 4)}`">
         <b data-label="排名">#{{ index + 1 }}</b>

@@ -52,8 +52,8 @@ accept('real public and admin rule-center consumers', baselineSources)
 
 let formatted = changed('player', 'class="rules-page ui-state-scope"', 'class="state ui-state-scope rules-page"')
 formatted = changed('admin', 'class="admin-item-card center-editor"', 'class="center-editor active admin-item-card"', 1, formatted)
-formatted = changed('player', 'v-if="coreTableOfContents.length" aria-label=',
-  'v-if=" ( coreTableOfContents.length ) " aria-label=', 1, formatted)
+formatted = changed('player', 'v-if="coreTableOfContents.length"',
+  'v-if=" ( coreTableOfContents.length ) "', 1, formatted)
 accept('class order extra state classes and expression whitespace', formatted)
 
 accept('non-rendering dynamic accessibility state stays compatible', changed('player',
@@ -89,12 +89,12 @@ reject('core directory hidden by native ancestor', 'publicCoreDirectory', change
 reject('core directory borrowed by wrong branch', 'publicCoreDirectory', changed('player',
   '<template v-else-if="tab === \'core\'">', '<template v-else-if="tab === \'quick-start\'">'))
 reject('core directory on wrong host', 'publicCoreDirectory', changed('player',
-  '<nav v-if="coreTableOfContents.length" aria-label="规则手册章节目录">',
-  '<div v-if="coreTableOfContents.length" aria-label="规则手册章节目录">'))
+  '<nav v-if="coreTableOfContents.length" v-horizontal-scroll-arrows="\'规则章节\'" aria-label="规则手册章节目录">',
+  '<div v-if="coreTableOfContents.length" v-horizontal-scroll-arrows="\'规则章节\'" aria-label="规则手册章节目录">'))
 reject('core chapter handler uses wrong argument', 'publicCoreDirectory', changed('player',
   '@click="scrollToCoreChapter(chapter.firstId)"', '@click="scrollToCoreChapter(chapter.chapter)"'))
 reject('core directory object binding can override accessibility', 'publicCoreDirectory', changed('player',
-  '<nav v-if="coreTableOfContents.length" aria-label=', '<nav v-bind="navProps" v-if="coreTableOfContents.length" aria-label='))
+  '<nav v-if="coreTableOfContents.length"', '<nav v-bind="navProps" v-if="coreTableOfContents.length"'))
 
 reject('FAQ answer borrows another item condition', 'publicExpandableRulings', changed('player',
   '<div v-if="openIds.has(item.id)" class="faq-answer">',

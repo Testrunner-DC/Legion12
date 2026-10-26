@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { optionalSessionStorage as sessionStorage } from '@/l12/browserStorage'
+import { vHorizontalScrollArrows, type HorizontalScrollArrowOptions } from '@/l12/horizontalScrollArrows'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { captureDeckAccountGuard, deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, loadPrivatePublicationSource, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type PrivateDeckSummary, type PrivateDeckSummaryPage, type PrivateDeckSummaryQuery, type SavedL12Deck } from '@/l12/decks'
@@ -434,8 +435,43 @@ watch([hotDeckRows, tab], async () => {
   hotDeckTouchPaused.value = [false, false]
   syncHotDeckMotion()
 }, { flush: 'post' })
+const hotDeckArrowPaused = ref([false, false])
+function hotDeckScrollOptions(rowIndex: number): HorizontalScrollArrowOptions {
+  const elements = () => {
+    const viewport = pageRoot.value?.querySelector<HTMLElement>(`[data-hot-row-viewport="${rowIndex + 1}"]`)
+    const track = viewport?.querySelector<HTMLElement>(':scope > .hot-deck-track')
+    const loop = track?.querySelector<HTMLElement>(':scope > .hot-deck-loop:not([aria-hidden="true"])')
+    return { viewport, track, loop }
+  }
+  return { label: `第${rowIndex + 1}行热门牌库`, adapter: {
+    circular: true,
+    position: () => {
+      const { viewport, track, loop } = elements()
+      const fullWidth = viewport?.clientWidth ?? 0
+      const style = viewport ? getComputedStyle(viewport) : null
+      const width = Math.max(0, fullWidth - (Number.parseFloat(style?.paddingLeft ?? '') || 0)
+        - (Number.parseFloat(style?.paddingRight ?? '') || 0))
+      const loopWidth = loop?.offsetWidth ?? 0
+      if (!track || loopWidth <= fullWidth) return { left: 0, width: fullWidth, contentWidth: fullWidth }
+      const transform = getComputedStyle(track).transform
+      const x = transform === 'none' ? 0 : new DOMMatrixReadOnly(transform).m41
+      const left = ((-x % loopWidth) + loopWidth) % loopWidth
+      return { left, width, contentWidth: loopWidth + width }
+    },
+    move: left => {
+      const { track, loop } = elements()
+      if (!track || !loop?.offsetWidth) return
+      const animation = track.getAnimations().find(item => (item as CSSAnimation).animationName === 'hot-decks-slide')
+      const duration = animation?.effect?.getComputedTiming().duration
+      if (!animation || typeof duration !== 'number' || !Number.isFinite(duration)) return
+      const progress = left / loop.offsetWidth
+      animation.currentTime = duration * (rowIndex === 1 ? 1 - progress : progress)
+    },
+    interact: active => { hotDeckArrowPaused.value[rowIndex] = active },
+  } }
+}
 function hotDeckRowPaused(rowIndex: number) {
-  return Boolean(hotDeckHoverPaused.value[rowIndex] || hotDeckFocusPaused.value[rowIndex] || hotDeckTouchPaused.value[rowIndex])
+  return Boolean(hotDeckHoverPaused.value[rowIndex] || hotDeckFocusPaused.value[rowIndex] || hotDeckTouchPaused.value[rowIndex] || hotDeckArrowPaused.value[rowIndex])
 }
 const plazaFilterCount = computed(() => [factionFilter.value !== 'all', masterFilter.value !== 'all', legalFilter.value !== 'all', environmentFilter.value !== 'all', !!cardFilter.value, updatedFilter.value !== 'all', sortMode.value !== 'trend'].filter(Boolean).length)
 const plazaFilterSummary = computed(() => [
@@ -1076,7 +1112,7 @@ watch(plazaPageCount, total => {
       <section v-if="hotDeckRows.length" class="hot-decks" aria-labelledby="hot-decks-title">
         <DeckMotionDiagnostics v-if="route.query.motionDiagnostics === '1'" />
         <header><h2 id="hot-decks-title">热门牌库</h2></header>
-        <div v-for="(row,rowIndex) in hotDeckRows" :key="rowIndex" class="hot-deck-viewport" :class="{ paused: hotDeckRowPaused(rowIndex) }" :data-hot-row-viewport="rowIndex + 1" @mouseenter="hotDeckHoverPaused[rowIndex] = true" @mouseleave="hotDeckHoverPaused[rowIndex] = false" @focusin="handleHotDeckFocusIn($event,rowIndex)" @focusout="handleHotDeckFocusOut($event,rowIndex)" @pointerdown="handleHotDeckPointerDown($event,rowIndex)">
+        <div v-for="(row,rowIndex) in hotDeckRows" :key="rowIndex" v-horizontal-scroll-arrows="hotDeckScrollOptions(rowIndex)" class="hot-deck-viewport" :class="{ paused: hotDeckRowPaused(rowIndex) }" :data-hot-row-viewport="rowIndex + 1" @mouseenter="hotDeckHoverPaused[rowIndex] = true" @mouseleave="hotDeckHoverPaused[rowIndex] = false" @focusin="handleHotDeckFocusIn($event,rowIndex)" @focusout="handleHotDeckFocusOut($event,rowIndex)" @pointerdown="handleHotDeckPointerDown($event,rowIndex)">
           <div class="hot-deck-track" :class="`row-${rowIndex + 1}`" :data-hot-row-track="rowIndex + 1">
             <div v-for="copyIndex in 2" :key="copyIndex" class="hot-deck-loop" :aria-hidden="copyIndex === 2 ? 'true' : undefined">
               <button v-for="entry in row" :key="`${copyIndex}-${entry.id}`" type="button" :tabindex="copyIndex === 2 ? -1 : 0" :data-hot-row="rowIndex + 1" :data-hot-copy="copyIndex" :data-public-code="publicDeckSummaryReference(entry)" :aria-label="`查看热门牌库《${entry.name}》`" @click="openDeck(entry)">
@@ -1127,6 +1163,8 @@ watch(plazaPageCount, total => {
 @media(max-width:700px){.mine-toolbar{grid-template-columns:1fr}.deck-pagination{gap:4px}.deck-pagination button{min-width:38px;padding-inline:8px}.import-modal{width:100%;max-height:100dvh;border:0}.import-modal footer button{flex:1}}
 .hot-decks{margin:0 0 18px;padding:4px 0 0}.hot-decks>header{padding:0 0 10px}.hot-decks h2{margin:0;font-size:17px}.hot-deck-viewport{overflow:hidden}.hot-deck-viewport+.hot-deck-viewport{margin-top:8px}.hot-deck-track{display:flex;width:max-content;animation:none;will-change:transform}.hot-deck-track[data-motion-ready="true"]{animation:hot-decks-slide var(--hot-deck-duration) linear infinite}.hot-deck-track.row-2{animation-direction:reverse}.hot-deck-viewport.paused .hot-deck-track{animation-play-state:paused}.hot-deck-loop{display:flex;flex:none;gap:8px;padding-right:8px}.hot-deck-loop>button{position:relative;width:clamp(325px,26vw,429px);padding:0;border:0;background:transparent;color:inherit;text-align:left}.hot-deck-loop>button:focus-visible{outline:2px solid #e0bf6d;outline-offset:-2px}.hot-deck-loop :deep(.deck-profile){grid-template-columns:50px minmax(0,1fr);height:102px;box-sizing:border-box;gap:10px;padding:9px;background:#101821}.hot-deck-loop :deep(.deck-profile__portrait){width:50px}.hot-deck-loop :deep(.deck-profile__copy){display:flex;min-width:0;flex-direction:column;padding-right:84px}.hot-deck-loop :deep(.deck-profile__copy b){order:1}.hot-deck-loop :deep(.deck-profile__copy small){order:2;margin:3px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hot-deck-loop :deep(.deck-profile__copy span){display:none}.hot-deck-loop :deep(.deck-profile__copy em){order:3}.plaza-grid>article{display:grid;grid-template-rows:auto 1fr}.plaza-summary{position:relative;padding:0}.plaza-summary>:deep(.deck-profile){min-height:102px;padding:14px;border:0;background:transparent}.plaza-summary :deep(.deck-profile__copy){display:flex;min-width:0;flex-direction:column;padding-right:84px}.plaza-summary :deep(.deck-profile__copy b){order:1;font-size:16px}.plaza-summary :deep(.deck-profile__copy small){order:2;margin:5px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.plaza-summary :deep(.deck-profile__copy span){order:3}.plaza-summary :deep(.deck-profile__copy em){order:4}.deck-environment-badge{display:inline-flex!important;min-height:22px;box-sizing:border-box;align-items:center;padding:3px 7px;border:1px solid #59666e;background:#111a21;color:#dce5e5!important;font-size:11px!important;font-weight:900;line-height:1;white-space:nowrap;pointer-events:none}.plaza-grid footer{grid-template-columns:minmax(0,1fr) auto auto}.plaza-card-stats,.plaza-card-actions{display:flex;align-items:center;gap:10px;min-width:0}.plaza-card-stats{flex-wrap:wrap}.plaza-card-actions{justify-content:flex-end}.mine-grid>article{display:grid;grid-template-rows:auto auto 1fr;padding:0}.mine-grid>article>:deep(.deck-profile){min-height:102px;padding:14px}.mine-public-state{margin:0;padding:0 14px 10px}.mine-grid>article>.deck-card-actions{align-self:end;margin:0;padding:10px 14px;border-top:1px solid rgba(235,230,216,.1);background:#0d151c}
 @keyframes hot-decks-slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.hot-deck-viewport[data-hot-row-viewport="2"]{margin-top:8px}
+.hot-deck-viewport[data-l12-horizontal-scrollable=true]{box-sizing:border-box;padding-inline:var(--l12-scroll-adapter-gutter,42px);clip-path:inset(0 var(--l12-scroll-adapter-gutter,42px))}
 .hot-deck-viewport{scrollbar-width:none;scroll-behavior:auto}.hot-deck-viewport::-webkit-scrollbar{display:none}.hot-deck-viewport:has(:focus-visible) .hot-deck-track{transform:none!important}
 @media(max-width:700px){.hot-decks{margin-bottom:14px;padding-top:2px}.hot-decks>header{padding-bottom:8px}.hot-decks h2{font-size:15px}.hot-deck-loop>button{width:230px}.hot-deck-loop :deep(.deck-profile){grid-template-columns:38px minmax(0,1fr);height:74px;gap:8px;padding:7px}.hot-deck-loop :deep(.deck-profile__portrait){width:38px}.plaza-grid footer{grid-template-columns:1fr auto}.plaza-card-stats{grid-column:1/-1}.plaza-grid footer .season-compliance{grid-column:auto;justify-self:start}.plaza-card-actions{min-height:40px}.mine-grid>article{padding:0}}
 .mine-grid>article,.plaza-grid>article,.hot-deck-loop>button{overflow:visible;border-radius:0;transition:transform .3s cubic-bezier(.4,0,.2,1)}

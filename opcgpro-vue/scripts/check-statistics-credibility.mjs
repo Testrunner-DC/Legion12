@@ -122,6 +122,7 @@ const template = compileTemplate({ id: 'rankings-rate-regression', filename, sou
   compilerOptions: { bindingMetadata: script.bindings, hoistStatic: false } })
 assert.deepEqual(template.errors, [])
 const RankingPage = evaluate(script.content, {
+  '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
   '@/l12/specialAssets': { masterProfileUrl: id => `synthetic:${id}` },
   '@/l12/RankedIdentityBadge.vue': stub, './RankedMasterTitleRulesModal.vue': stub,
   './MasterMatchupMatrix.vue': stub, './StatisticsScope.vue': stub,

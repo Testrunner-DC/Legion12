@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, ref, watch } from 'vue'
 import {
   adminApi,
@@ -155,7 +156,7 @@ watch(() => props.effect.cardId, load, { immediate: true })
     </header>
     <div v-if="busy === 'load'" class="workbench-empty">正在载入工作台…</div>
     <template v-else-if="workbench && draft">
-      <nav class="workflow-rail" aria-label="卡效发布流程">
+      <nav v-horizontal-scroll-arrows="'卡效发布流程'" class="workflow-rail" aria-label="卡效发布流程">
         <span :class="{ done: workbench.version > 0 }">1 草稿</span><i>→</i>
         <span :class="{ done: ['validated','reviewed','published'].includes(workbench.status) }">2 结构校验</span><i>→</i>
         <span class="done">3 场景预演</span><i>→</i>

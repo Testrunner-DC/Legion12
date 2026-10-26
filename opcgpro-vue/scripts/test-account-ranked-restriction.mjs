@@ -96,6 +96,7 @@ async function fixture({ permitted = true, active = false, readFails = false, fa
   assert.deepEqual(parseErrors, [])
   const script = compileScript(descriptor, { id: 'account-ranked-restriction' })
   const component = evaluate(script.content, {
+    '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     '@/l12/platform': { adminApi, platformState, hasPermission: () => permitted },
     'vue-router': { useRoute: () => route, useRouter: () => ({ push: async () => {} }) },
     './useAdminRiskAction': { useAdminRiskAction: () => risk },

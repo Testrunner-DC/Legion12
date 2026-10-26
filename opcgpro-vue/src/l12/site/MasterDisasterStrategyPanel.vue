@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, ref, watch } from 'vue'
 import type { DeckCard } from '@/l12/decks'
 import { useDisasterRead, type DisasterAnalyticsScope } from '@/l12/disasterAnalytics'
@@ -85,7 +86,7 @@ async function read() { if (opponent.value) await load() }
         <p>对照仅在相同版本、卡池、我方侧别、执行方、步骤与来源的共同分层中按本对阵机会数加权，非因果比较。30次仅为展示门槛。</p>
         <p>先手随机获得3张候选后，这3张全部移出；后手从剩余池新抽2张，并非承接先手未选的两张。</p>
         <p v-if="report.conditionsTruncated">候选场景仅列频次最高的30组；不代表完整路线或全部场景。</p><p v-if="report.poolsTruncated">卡池仅列最近100个，请缩小日期或版本范围。</p>
-        <div class="strategy-table-scroll" tabindex="0" aria-label="策略完整明细，可横向滚动"><table><thead><tr><th>执行方／步骤</th><th>天灾</th><th>次数／实际机会</th><th>比例</th></tr></thead><tbody><tr v-for="row in report.items" :key="`${row.party}-${row.step}-${row.cardId}`"><td>{{ row.party === 'self' ? '我方' : '对方' }} · {{ strategyStepName(row.step) }}</td><td>{{ name(row.cardId) }}</td><td>{{ row.selections }} / {{ row.opportunities }}</td><td>{{ rate(row.selectionRate) }}</td></tr></tbody></table></div>
+        <div v-horizontal-scroll-arrows="'天灾策略明细'" class="strategy-table-scroll" tabindex="0" aria-label="策略完整明细，可横向滚动"><table><thead><tr><th>执行方／步骤</th><th>天灾</th><th>次数／实际机会</th><th>比例</th></tr></thead><tbody><tr v-for="row in report.items" :key="`${row.party}-${row.step}-${row.cardId}`"><td>{{ row.party === 'self' ? '我方' : '对方' }} · {{ strategyStepName(row.step) }}</td><td>{{ name(row.cardId) }}</td><td>{{ row.selections }} / {{ row.opportunities }}</td><td>{{ rate(row.selectionRate) }}</td></tr></tbody></table></div>
       </details>
     </template>
   </section>
