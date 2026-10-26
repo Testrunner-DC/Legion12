@@ -1,5 +1,9 @@
 # 效果一致性实施计划
 
+## 2026-10-27 有效阵营费用一致性
+
+- 奈芙蒂斯与共用本阵营优惠的报价／消费接原HasFaction；6具名新用例、组合规则8489/8489及原Focused30通过。用户已批准，主记录new-bug-rule-reds-20261026/main-acceptance.json；本地接受、未部署，不把原印刷阵营或一次性优惠状态格式改成新机制。
+
 ## 2026-10-26 P4落位后关联效果与提示
 
 - 唯一reservation集合派生关联提示延后，保原authority阻塞／时限；稳定总序加精确前置资格替代非传递role比较，6排列4RED→最终24生命周期／旧inline22和63前端／双类型构建接受。独审无新阻断，证据entry-before-effect-20261026/main-acceptance.json。

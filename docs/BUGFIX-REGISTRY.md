@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261027-EFFECTIVE-FACTION-DISCOUNT｜有效阵营报价与消费一致
+
+- BUG-20261025-48d498f3，人类call_a6e3a4aafd504a9195616b809de4fdf6明确批准1。戒指改变有效阵营后，奈芙蒂斯的下一张太阳城天灾军团优惠仍按印刷Faction报价／消费；四处统一用原HasFaction语义与军团分类，不改印刷字段或优惠期限。
+- 同类查询`NextFactionLegionDiscount|NextS2SunDisasterLegionDiscount`覆盖全部S1/S2设置与消费：英灵殿／黄泉之门共用本阵营优惠、太阳城三设置入口一并受益；奥林匹斯等既有HasFaction路径保持。产品仅L12Actions，具名NephthysEffectiveFactionDiscount20261026Tests含双方／V2／戒指与非戒指／报价实际支付及一次性消费6项。
+- 原v4具名RED保留，三个规则族组合Focused30/30与最终完整8489/8489、零失败跳过；Main核对源／DLL／真实TRX，完整运行只一次最终成功，不为每个源码提交重跑。唯一`D:/GPT/Legion12/artifacts/new-bug-rule-reds-20261026/main-acceptance.json`。这是本地验收、待上线核验，不冒单独中间提交全量合格／线上关单。回滚仅本族helper及四调用，不能撤掉原有效阵营判定或覆盖其他族。
+
+## RULING-20261026-PUPPET-REDIRECT-KAGUTSUCHI｜改向后补发军团被进攻时点
+
+- 新反馈BUG-20261024-646ce6f1；人类在Main明确裁定：〈戏法师的傀儡〉休整登场并把本次进攻目标从主宰改为自身后，应补发“我方军团被进攻时”的迦具土触发机会。来源为request_user_input_async call_2bf0ebbf7aa747ea8ea2bde1224317f3直接回复“应补发迦具土触发机会”。不能误记为迦具土的“主宰被进攻”效果。
+- 这是已确定预期，待具名复现与共享改向入口方案；当前尚未实施或验收，不因本条裁定关闭反馈。原两条有效阵营减费／索尔授予诗人QA先交回，后续再排本片，不新增规则旁路或重复询问同一裁定。
+
 ## FIX-20261026-ENTRY-BEFORE-EFFECT｜落位完成后关联效果，共享逻辑本地接受
 
 - 来源人类01a1780e要求先飞出落位再登场效果。真实source-linked Zone／GameBoard watcher复现关联提示先取得modal暂停；扩原pending/active reservation元数据和只读查询，所有关联交互仅投影隐藏，不改变权威Prompt及命令阻塞，settle／cancel／abort／reset恢复现提示。缺失／冲突source不猜关联；原ownsEntryMovementTransaction仍是实际开始后的去重，不以pending冒开始。

@@ -400,9 +400,10 @@ public sealed partial class L12GameEngine
             card.HasCharge = true;
             AddEvent("effect", playerIndex, "〈武运在天 铠甲在前〉使〈上杉谦信〉获得冲锋", card);
         }
-        if (card.CardType == "legion" && card.Faction == player.Faction && player.NextFactionLegionDiscount > 0)
+        if (MatchesEffectiveFactionLegion(player, card, player.Faction)
+            && player.NextFactionLegionDiscount > 0)
             player.NextFactionLegionDiscount = 0;
-        if (card.CardType == "legion" && card.Faction == "taiyangcheng" && card.DisasterLevel > 0)
+        if (MatchesEffectiveFactionLegion(player, card, "taiyangcheng") && card.DisasterLevel > 0)
             player.NextS2SunDisasterLegionDiscount = 0;
         if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "olympus")
             && player.NextS2OlympusLegionDiscount > 0)
@@ -675,6 +676,10 @@ public sealed partial class L12GameEngine
             ? choice["rollo:".Length..].Split('|', 2).Skip(1).FirstOrDefault()
             : null;
 
+    private static bool MatchesEffectiveFactionLegion(L12PlayerState player, L12CardInstance card,
+        string faction)
+        => card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, faction);
+
     private int GetPlayCost(int playerIndex, L12CardInstance card, bool useSelfDamageDiscount = false, int spentRunes = 0,
         int rolloReturnCount = 0)
         => GetPlayCostWithSigurdDiscount(playerIndex, card, useSelfDamageDiscount, spentRunes, rolloReturnCount,
@@ -699,10 +704,11 @@ public sealed partial class L12GameEngine
         var selfDamageRule = SelfDamageEntryDiscount(card);
         if (useSelfDamageDiscount && selfDamageRule is not null && CanPayMasterDamageCost(player, selfDamageRule.DamageAmount))
             modifier += selfDamageRule.CostAdjustment;
-        if (card.CardType == "legion" && card.Faction == player.Faction && player.NextFactionLegionDiscount > 0)
+        if (MatchesEffectiveFactionLegion(player, card, player.Faction)
+            && player.NextFactionLegionDiscount > 0)
             modifier -= player.NextFactionLegionDiscount;
         if (card.CardType == "legion") modifier -= player.NextLegionEntryDiscount;
-        if (card.CardType == "legion" && card.Faction == "taiyangcheng" && card.DisasterLevel > 0)
+        if (MatchesEffectiveFactionLegion(player, card, "taiyangcheng") && card.DisasterLevel > 0)
             modifier -= player.NextS2SunDisasterLegionDiscount;
         if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "olympus"))
             modifier -= player.NextS2OlympusLegionDiscount;
