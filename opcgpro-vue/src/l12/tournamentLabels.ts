@@ -23,7 +23,12 @@ export const tournamentMatchStatusText = (value: string) => label({
 
 export const tournamentResultText = (value?: string) => label({
   'player-a': 'A 方获胜', 'player-b': 'B 方获胜', draw: '平局',
-  'no-show-a': 'A 方未到判负', 'no-show-b': 'B 方未到判负', bye: '轮空胜',
+  'no-show-a': 'A 方未到判负', 'no-show-b': 'B 方未到判负', 'double-no-show': '双方未到', bye: '轮空胜',
+}, value)
+
+export const tournamentAutomationStatusText = (value: string) => label({
+  disabled: '人工管理', scheduled: '等待计划时间', 'preparing-round': '轮间准备',
+  'round-running': '自动运行中', 'attention-required': '等待管理员处理', completed: '自动流程已完成',
 }, value)
 
 export const tournamentViewerRoleText = (value: string) => label({

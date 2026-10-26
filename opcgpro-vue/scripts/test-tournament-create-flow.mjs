@@ -15,7 +15,7 @@ async function test(name, run) { try { await run(); cases.push({ name, passed: t
 function fixture(options = {}) {
   let version = 20, policyCalls = 0, creations = 0
   const calls = [], summaryCalls = [], store = new Map(), emitted = []
-  const platformState = Vue.reactive({ token: 'synthetic-session', account: { id: 'synthetic-owner' } })
+  const platformState = Vue.reactive({ token: 'synthetic-session', account: { id: 'synthetic-owner', permissions: options.admin ? ['tournaments.manage'] : [] } })
   const route = Vue.reactive({ fullPath: '/battle/tournaments?section=create' })
   const api = {
     summaries: async query => { summaryCalls.push(query); if (options.contextWait) await options.contextWait.promise; return { platformVersion: version, items: [], page: 1, pageSize: 1, total: 0, totalPages: 0 } },
@@ -33,7 +33,7 @@ function fixture(options = {}) {
     '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     vue: Vue,
     'vue-router': { useRoute: () => route },
-    '@/l12/platform': { platformState, tournamentApi: api, friendApi: { friends: async () => [] }, getEffectiveOperationsPolicy: async () => { policyCalls++; if (policyCalls > 1 && options.policyWait) await options.policyWait.promise; return policy } },
+    '@/l12/platform': { platformState, tournamentApi: api, friendApi: { friends: async () => [] }, hasPermission: permission => platformState.account?.permissions?.includes(permission) === true, getEffectiveOperationsPolicy: async () => { policyCalls++; if (policyCalls > 1 && options.policyWait) await options.policyWait.promise; return policy } },
   }
   const modules = new Map()
   const require = id => {
@@ -71,7 +71,7 @@ await test('stale page version is not reused', async () => {
 })
 await test('real conflict keeps draft, never auto-retries and permits an explicit fresh attempt', async () => {
   const f = await prepared({ oldVersion: 20, conflictAfterPreview: true })
-  try { await f.state.create(); assert.equal(f.creations(), 0); assert.equal(f.calls.length, 2); assert.equal(f.state.form.name, '原始草稿'); assert(f.store.has('l12-tournament-create-draft-v3')); assert.equal(f.state.busy, false); f.options.conflictAfterPreview = false; await f.state.create(); assert.equal(f.creations(), 1); assert.equal(f.calls.length, 4) } finally { f.unmount() }
+  try { await f.state.create(); assert.equal(f.creations(), 0); assert.equal(f.calls.length, 2); assert.equal(f.state.form.name, '原始草稿'); assert(f.store.has('l12-tournament-create-draft-v4')); assert.equal(f.state.busy, false); f.options.conflictAfterPreview = false; await f.state.create(); assert.equal(f.creations(), 1); assert.equal(f.calls.length, 4) } finally { f.unmount() }
 })
 await test('synchronous double click admits only one creation flow', async () => {
   const wait = deferred(), f = await prepared({ oldVersion: 20, policyWait: wait })
@@ -87,7 +87,7 @@ await test('account change during context read cannot submit for either account'
 })
 await test('input is frozen before async reads and a newer draft is retained', async () => {
   const wait = deferred(), f = await prepared({ oldVersion: 20, policyWait: wait })
-  try { const pending = f.state.create(); await flush(); f.state.form.name = '后来编辑的新草稿'; await flush(); wait.resolve(); await pending; assert.equal(f.calls[0].input.name, '原始草稿'); assert.equal(f.creations(), 1); assert(f.store.get('l12-tournament-create-draft-v3')?.includes('后来编辑的新草稿')) } finally { f.unmount() }
+  try { const pending = f.state.create(); await flush(); f.state.form.name = '后来编辑的新草稿'; await flush(); wait.resolve(); await pending; assert.equal(f.calls[0].input.name, '原始草稿'); assert.equal(f.creations(), 1); assert(f.store.get('l12-tournament-create-draft-v4')?.includes('后来编辑的新草稿')) } finally { f.unmount() }
 })
 for (const phase of ['context', 'preview']) for (const aba of [false, true]) await test(`same-path route ${aba ? 'ABA' : 'change'} during ${phase} stops the old creation`, async () => {
   const wait = deferred(), f = await prepared({ oldVersion: 20, [phase === 'context' ? 'contextWait' : 'previewWait']: wait })
@@ -99,7 +99,7 @@ for (const phase of ['context', 'preview']) for (const aba of [false, true]) awa
     wait.resolve(); await pending
     assert.equal(f.calls.length, phase === 'context' ? 0 : 1)
     assert.equal(f.creations(), 0); assert.equal(f.emitted.length, 0)
-    assert(f.store.has('l12-tournament-create-draft-v3'))
+    assert(f.store.has('l12-tournament-create-draft-v4'))
   } finally { f.unmount() }
 })
 await test('same-token account ABA during context read cannot revive creation', async () => {
@@ -110,6 +110,28 @@ await test('same-token account ABA during context read cannot revive creation', 
     f.platformState.account = { id: 'another-owner' }; f.platformState.account = original
     wait.resolve(); await pending; assert.equal(f.calls.length, 0); assert.equal(f.emitted.length, 0)
   } finally { f.unmount() }
+})
+await test('automatic mode is admin-only and keeps the approved timing defaults', async () => {
+  const player = await prepared({ oldVersion: 20 })
+  try {
+    player.state.form.operationMode = 'automated'
+    player.state.form.startAt = '2026-11-01T20:00'
+    await player.state.create()
+    assert.equal(player.calls.length, 0)
+    assert.equal(player.creations(), 0)
+    assert.match(player.state.notice, /无权创建自动运行赛事/)
+  } finally { player.unmount() }
+
+  const admin = await prepared({ oldVersion: 20, admin: true })
+  try {
+    admin.state.form.operationMode = 'automated'
+    admin.state.form.startAt = '2026-11-01T20:00'
+    await admin.state.create()
+    assert.equal(admin.creations(), 1)
+    assert.equal(admin.calls[0].input.operationMode, 'automated')
+    assert.equal(admin.calls[0].input.intermissionMinutes, 3)
+    assert.equal(admin.calls[0].input.lateGraceMinutes, 5)
+  } finally { admin.unmount() }
 })
 console.log(JSON.stringify({ suite: 'real tournament creation script-setup', passed: cases.filter(c => c.passed).length, total: cases.length, cases }, null, 2))
 assert(cases.every(c => c.passed), 'Tournament creation regressions failed')

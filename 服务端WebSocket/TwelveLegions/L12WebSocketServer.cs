@@ -4881,6 +4881,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 {
                     await SendManyAsync(await _rooms.TickRankedClocksAsync(), cancellationToken);
                     await SendManyAsync(await _rooms.TickResponseWindowsAsync(), cancellationToken);
+                    if (_platform.AdvanceAutomaticTournaments(DateTimeOffset.UtcNow).Changed > 0)
+                        NotifyTournamentsChanged();
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

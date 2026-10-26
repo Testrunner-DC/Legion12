@@ -41,7 +41,7 @@ public sealed class PublicTournamentBrowsingTests
         Assert.DoesNotContain(privateTournament.Code, anonymousJson.RootElement.GetRawText(),
             StringComparison.Ordinal);
         AssertAllowlisted(item, "code", "name", "organizerName", "status", "format", "phase",
-            "maxPlayers", "startAt", "roundMinutes", "checkInMinutes", "counts");
+            "maxPlayers", "startAt", "roundMinutes", "checkInMinutes", "operationMode", "counts");
 
         foreach (var token in new[] { playerViewer.Token!, refereeViewer.Token!, fixture.AdminToken })
         {
@@ -62,7 +62,8 @@ public sealed class PublicTournamentBrowsingTests
         using var detailJson = JsonDocument.Parse(detailText);
         AssertAllowlisted(detailJson.RootElement, "code", "name", "organizerName", "status", "format",
             "phase", "maxPlayers", "startAt", "roundMinutes", "checkInMinutes", "counts", "description",
-            "registrationVisibility", "registrationOpen", "rules", "participants", "rounds", "finalStandings");
+            "registrationVisibility", "registrationOpen", "operationMode", "intermissionMinutes",
+            "automationStatus", "nextAutomaticActionAt", "rules", "participants", "rounds", "finalStandings");
         AssertAllowlisted(detailJson.RootElement.GetProperty("rules"), "ruleset", "disasterMode", "banList",
             "disasterCardIds", "cardRestrictions", "deckVisibility", "swissRounds", "cutSize",
             "lateGraceMinutes", "timeControl");
@@ -620,6 +621,7 @@ public sealed class PublicTournamentBrowsingTests
             "id", "accountId", "organizerAccountId", "playerAAccountId", "playerBAccountId", "roomCode",
             "recordedMatchId", "codeHash", "hash", "deck", "deckHash", "rulings", "events", "judgeCases",
             "referees", "permissions", "version", "platformVersion", "reason", "staffNote", "audit",
+            "automaticDropMatchId", "automationAttentionReason",
         };
         Walk(value);
         return;

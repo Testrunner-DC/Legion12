@@ -14,7 +14,7 @@ const displayTime = (value?: string) => value ? new Date(value).toLocaleString('
   <div v-else class="summary-grid">
     <button v-for="item in items" :key="item.code" class="summary-card" type="button" @click="$emit('open', item.code)">
       <span class="summary-top"><span><small>{{ item.code }}</small><b>{{ item.name }}</b></span><i v-if="'requiresAction' in item && item.requiresAction">需要处理</i></span>
-      <span class="summary-tags"><em>{{ tournamentStatusText(item.status) }}</em><em>{{ tournamentFormatText(item.format) }}</em><em v-if="'viewerRole' in item" class="role">{{ tournamentViewerRoleText(item.viewerRole) }}</em></span>
+      <span class="summary-tags"><em>{{ tournamentStatusText(item.status) }}</em><em>{{ tournamentFormatText(item.format) }}</em><em v-if="item.operationMode === 'automated'">自动运行</em><em v-if="'viewerRole' in item" class="role">{{ tournamentViewerRoleText(item.viewerRole) }}</em></span>
       <span class="summary-facts"><span><small>计划时间</small><b>{{ displayTime(item.startAt) }}</b></span><span><small>主办者</small><b>{{ item.organizerName }}</b></span><span><small>席位</small><b>{{ item.counts.active }}/{{ item.maxPlayers }} 人<span v-if="item.counts.waitlisted"> · 候补 {{ item.counts.waitlisted }}</span></b></span></span>
       <span class="open-cue">查看赛事 <b aria-hidden="true">→</b></span>
     </button>

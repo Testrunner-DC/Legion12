@@ -10,7 +10,7 @@ public sealed record L12TournamentSummaryView(
     string Id, string Code, string Name, string OrganizerName, string Status, string Phase,
     string Format, string Visibility, int MaxPlayers, DateTimeOffset? StartAt,
     L12TournamentCountsView Counts, string ViewerRole, bool RequiresAction, long Version,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt, string OperationMode);
 
 public sealed record L12TournamentSummaryPage(
     long PlatformVersion, IReadOnlyList<L12TournamentSummaryView> Items,
@@ -147,6 +147,12 @@ public sealed partial class L12PlatformStore
                     ActorId = actor.Id,
                 });
                 working.StartAt = payload.NewStartAt;
+                if (working.OperationMode == "automated")
+                {
+                    working.AutomationStatus = "scheduled";
+                    working.AutomationAttentionReason = null;
+                    working.NextAutomaticActionAt = payload.NewStartAt.AddMinutes(-working.CheckInMinutes);
+                }
             });
         }
     }
@@ -170,6 +176,9 @@ public sealed partial class L12PlatformStore
                 working.RegistrationOpen = false;
                 working.CanceledAt = now;
                 working.CancellationReason = reason;
+                working.AutomationStatus = working.OperationMode == "automated" ? "completed" : "disabled";
+                working.NextAutomaticActionAt = null;
+                working.AutomationAttentionReason = null;
                 foreach (var round in working.Rounds.Where(candidate => candidate.Status != "completed"))
                 {
                     round.Status = "completed";
@@ -350,6 +359,8 @@ public sealed partial class L12PlatformStore
                 target.Resolution = resolution;
                 target.StaffNote = staffNote;
                 target.UpdatedAt = DateTimeOffset.UtcNow;
+                if (status is "closed" or "rejected")
+                    ResumeAutomationAfterClosedCases(working, target.UpdatedAt);
             });
         }
     }
@@ -447,7 +458,8 @@ public sealed partial class L12PlatformStore
             : row.Participants.Any(item => item.AccountId == viewer.Id) ? "participant" : "viewer";
         return new L12TournamentSummaryView(row.Id, row.Code, row.Name, view.OrganizerName,
             row.Status, row.Phase, row.Format, row.Visibility, row.MaxPlayers, row.StartAt,
-            view.Counts, role, TournamentNeedsViewerAction(row, viewer.Id), row.Version, row.UpdatedAt);
+            view.Counts, role, TournamentNeedsViewerAction(row, viewer.Id), row.Version, row.UpdatedAt,
+            row.OperationMode);
     }
 
     private static bool TournamentNeedsViewerAction(TournamentRow row, string accountId)

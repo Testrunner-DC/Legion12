@@ -62,5 +62,8 @@ export function buildTournamentCreateInput(form: TournamentCreateInput,
     cardRestrictions: normalized.cardRestrictions.map(item => ({ ...item })),
     disasterCardIds: tournamentDisasterSnapshot(normalized.disasterMode, policy),
     timeControl: { ...timeControl },
+    operationMode: normalized.operationMode === 'automated' ? 'automated' : 'managed',
+    intermissionMinutes: boundedInteger(normalized.intermissionMinutes, 3, 0, 60),
+    lateGraceMinutes: boundedInteger(normalized.lateGraceMinutes, 5, 0, 60),
   } satisfies TournamentCreateInput
 }

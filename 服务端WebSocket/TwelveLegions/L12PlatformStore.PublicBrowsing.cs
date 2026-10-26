@@ -17,6 +17,7 @@ public sealed record L12PublicTournamentSummaryView(
     DateTimeOffset? StartAt,
     int RoundMinutes,
     int CheckInMinutes,
+    string OperationMode,
     L12PublicTournamentCountsView Counts);
 
 public sealed record L12PublicTournamentSummaryPage(
@@ -88,6 +89,10 @@ public sealed record L12PublicTournamentDetailView(
     string Description,
     string RegistrationVisibility,
     bool RegistrationOpen,
+    string OperationMode,
+    int IntermissionMinutes,
+    string AutomationStatus,
+    DateTimeOffset? NextAutomaticActionAt,
     L12PublicTournamentRulesView Rules,
     IReadOnlyList<L12PublicTournamentParticipantView> Participants,
     IReadOnlyList<L12PublicTournamentRoundView> Rounds,
@@ -157,7 +162,7 @@ public sealed partial class L12PlatformStore
     private L12PublicTournamentSummaryView ToPublicTournamentSummary(TournamentRow row)
         => new(row.Code, row.Name, PublicTournamentAccountName(row.OrganizerAccountId), row.Status,
             row.Format, row.Phase, row.MaxPlayers, row.StartAt, row.RoundMinutes, row.CheckInMinutes,
-            PublicTournamentCounts(row));
+            row.OperationMode, PublicTournamentCounts(row));
 
     private L12PublicTournamentDetailView ToPublicTournamentDetail(TournamentRow row)
     {
@@ -188,7 +193,9 @@ public sealed partial class L12PlatformStore
         return new L12PublicTournamentDetailView(row.Code, row.Name,
             PublicTournamentAccountName(row.OrganizerAccountId), row.Status, row.Format, row.Phase,
             row.MaxPlayers, row.StartAt, row.RoundMinutes, row.CheckInMinutes, PublicTournamentCounts(row),
-            row.Description, row.RegistrationVisibility, row.RegistrationOpen, rules, participants, rounds,
+            row.Description, row.RegistrationVisibility, row.RegistrationOpen, row.OperationMode,
+            row.IntermissionMinutes, row.AutomationStatus, row.NextAutomaticActionAt,
+            rules, participants, rounds,
             namesVisible
                 ? row.FinalSwissStandings.OrderBy(item => item.Rank).Select(ToPublicTournamentStanding).ToArray()
                 : []);

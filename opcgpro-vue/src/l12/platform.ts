@@ -785,6 +785,8 @@ export type TournamentStatus = 'registration' | 'running' | 'completed' | 'cance
 export type TournamentRoundStatus = 'pending' | 'checkin' | 'running' | 'completed'
 export type TournamentDeckVisibility = 'always' | 'after' | 'private'
 export type TournamentDisasterMode = 'all' | 'random' | 'season' | 'none'
+export type TournamentOperationMode = 'managed' | 'automated'
+export type TournamentAutomationStatus = 'disabled' | 'scheduled' | 'preparing-round' | 'round-running' | 'attention-required' | 'completed'
 export interface TournamentRulesSnapshot {
   ruleset: string; disasterMode: TournamentDisasterMode; banList: string
   disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
@@ -856,6 +858,8 @@ export interface Tournament {
   participants: TournamentParticipant[]; rounds: TournamentRound[]; version: number; legacyImported: boolean
   createdAt: string; updatedAt: string; completedAt?: string; swissRounds: number; cutSize?: number
   registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
+  operationMode: TournamentOperationMode; intermissionMinutes: number; automationStatus: TournamentAutomationStatus
+  nextAutomaticActionAt?: string; automationAttentionReason?: string
   finalSwissStandings: TournamentStanding[]; eliminationBracket: TournamentBracketRound[]
   phase: string; registrationOpen: boolean; canceledAt?: string; cancellationReason?: string
   postponements: TournamentPostponement[]; judgeCases: TournamentJudgeCase[]
@@ -865,6 +869,7 @@ export interface TournamentSummary {
   id: string; code: string; name: string; organizerName: string; status: TournamentStatus; phase: string
   format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
   counts: TournamentCounts; viewerRole: string; requiresAction: boolean; version: number; updatedAt: string
+  operationMode: TournamentOperationMode
 }
 export interface TournamentSummaryPage {
   platformVersion: number; items: TournamentSummary[]; page: number; pageSize: number; total: number; totalPages: number
@@ -873,7 +878,7 @@ export interface TournamentSummaryPage {
 export interface PublicTournamentCounts { registered: number; checkedIn: number; active: number; waitlisted: number }
 export interface PublicTournamentSummary {
   code: string; name: string; organizerName: string; status: TournamentStatus; format: Tournament['format']; phase: string
-  maxPlayers: number; startAt?: string; roundMinutes: number; checkInMinutes: number; counts: PublicTournamentCounts
+  maxPlayers: number; startAt?: string; roundMinutes: number; checkInMinutes: number; operationMode: TournamentOperationMode; counts: PublicTournamentCounts
 }
 export interface PublicTournamentPage {
   items: PublicTournamentSummary[]; page: number; pageSize: number; total: number; totalPages: number
@@ -893,6 +898,7 @@ export interface PublicTournamentRules {
 }
 export interface PublicTournamentDetail extends PublicTournamentSummary {
   description: string; registrationVisibility: 'public' | 'staff'; registrationOpen: boolean; rules: PublicTournamentRules
+  intermissionMinutes: number; automationStatus: TournamentAutomationStatus; nextAutomaticActionAt?: string
   participants: Array<{ name: string; status: string }>
   rounds: Array<{ number: number; stage: 'swiss' | 'elimination'; status: TournamentRoundStatus; startedAt?: string; matches: PublicTournamentMatch[]; standings: PublicTournamentStanding[] }>
   finalStandings: PublicTournamentStanding[]
@@ -915,6 +921,7 @@ export interface TournamentCreateInput {
   roundMinutes: number; checkInMinutes: number; timeControl: RankedTimeControlConfig
   refereeAccountIds: string[]; swissRounds: number; cutSize?: number
   registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
+  operationMode?: TournamentOperationMode; intermissionMinutes?: number
 }
 export interface LegacyTournamentParticipantInput {
   name: string; deckName?: string; deckCode?: string; checkedIn?: boolean; dropped?: boolean
