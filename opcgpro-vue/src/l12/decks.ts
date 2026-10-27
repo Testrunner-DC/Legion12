@@ -158,6 +158,9 @@ export const L12_DECK_SELECTION_SCOPES = [
   'ranked', 'casual', 'friendly', 'sandbox-player', 'sandbox-opponent',
 ] as const
 export type L12DeckSelectionScope = typeof L12_DECK_SELECTION_SCOPES[number]
+// Tournament check-in reuses the shared selector without persisting over a
+// matchmaking, room, or sandbox preference.
+export type L12DeckPickerScope = L12DeckSelectionScope | 'tournament'
 export const MAIN_DECK_TYPES = NORMAL_OPENING_HAND_CARD_TYPES
 
 /** 费用筛选按规则费用维度处理；没有印刷费用的非主宰卡归入0费，但仍不伪造卡面数字。 */

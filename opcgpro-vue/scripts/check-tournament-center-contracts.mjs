@@ -8,6 +8,7 @@ import { tournamentNoticeGroups, tournamentNoticeTemplateContract } from './tour
 const root = process.cwd()
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const detail = read('src/l12/site/TournamentAccountDetail.vue')
+const publicDetail = read('src/l12/site/TournamentPublicDetail.vue')
 const management = read('src/l12/site/TournamentManagementPanel.vue')
 const judge = read('src/l12/site/TournamentJudgeDesk.vue')
 const summary = read('src/l12/site/TournamentSummaryList.vue')
@@ -22,7 +23,29 @@ await import('./test-tournament-create-flow.mjs')
 const gamePage = read('src/l12/GamePage.vue')
 const roomLoadingState = read('src/l12/tournamentRoomLoadingState.ts')
 const tournamentServer = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs')
-const visualSources = [detail, management, judge, summary, wizard, hub]
+const visualSources = [detail, publicDetail, management, judge, summary, wizard, hub]
+function publicLoginStaysReachable(source) {
+  const template = parseSfc(source).descriptor.template?.content
+  if (!template) return false
+  let found = false
+  const visit = (node, headerActions = false) => {
+    const classes = node.props?.find(prop => prop.type === 6 && prop.name === 'class')?.value?.content.split(/\s+/) ?? []
+    const inHeader = headerActions || classes.includes('header-actions')
+    if (node.type === 1 && node.tag === 'button' && inHeader
+        && node.props.some(prop => prop.type === 7 && prop.name === 'on'
+          && prop.arg?.content === 'click' && prop.exp?.content === 'login')) {
+      found = !node.props.some(prop => prop.type === 6 && prop.name === 'disabled'
+        || prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'disabled')
+    }
+    for (const child of node.children ?? []) visit(child, inHeader)
+  }
+  visit(baseParse(template, parserOptions))
+  return found
+}
+const disabledPublicLogin = publicDetail.replace(/(<div class="header-actions">[\s\S]*?<button class="primary") @click="login"/,
+  '$1 :disabled="!tournament.registrationOpen" @click="login"')
+if (disabledPublicLogin === publicDetail || publicLoginStaysReachable(disabledPublicLogin))
+  throw new Error('Closed-registration login guard must reject a disabled login path')
 function hasBoundCreateFlow(source, functionName) {
   const setup = parseSfc(source).descriptor.scriptSetup
   if (!setup) return false
@@ -122,7 +145,7 @@ function ownedMetadataCheckIn(source) {
   return guard >= 0 && calls.length === 1 && calls[0].arguments.length === 5
     && calls[0].arguments.map(node => node.getText(file)).join('|') === "item.id|item.version|deck.name|''|deck.id"
     && calls[0].pos > fn.body.statements[guard].end
-    && source.includes('loadPrivateDeckSummaryPage')
+    && source.includes("import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'")
 }
 for (const [before, after] of [["deck.name, '', deck.id", "deck.name, '', deck.name"],
   ['if (!deck?.id)', 'if (false)'], ['const deck = selectedDeck.value', 'const deck = savedDecks.value[0]']]) {
@@ -151,6 +174,8 @@ const checks = [
       && appearsInOrder(detail, ["name: '胜场'", "name: '对手胜场和'", "name: '对手的对手胜场和'", "name: '最近直接交锋'", "name: '种子'", "name: '最终同分顺序'"])
       && appearsInOrder(standingComparator, ['second.Wins.CompareTo(first.Wins)', 'second.OpponentScore.CompareTo(first.OpponentScore)', 'second.OpponentsOpponentScore.CompareTo(first.OpponentsOpponentScore)', 'matches.LastOrDefault', 'first.Seed.CompareTo(second.Seed)', 'string.CompareOrdinal(first.AccountId, second.AccountId)'])],
   ['creation progress and tournament timing stay visibly structured', wizard.includes('class="stepper"') && wizard.includes('TOURNAMENT TIMING') && wizard.includes('轮次与对局计时') && wizard.includes('报名时无需提交，赛前签到时锁定')],
+  ['public detail exposes event facts and an explicit registration path before sign-in', publicDetail.includes('class="panel registration-callout"') && publicDetail.includes('登录并报名') && publicDetail.includes('登录后可直接报名') && publicDetail.includes('赛前签到时选择并锁定本人牌库')],
+  ['closed registration keeps sign-in available for already registered participants', publicLoginStaysReachable(publicDetail) && publicDetail.includes("'登录查看我的赛事'")],
   ['automatic tournament creation is admin-only with separate 3/5 minute defaults', wizard.includes("hasPermission('tournaments.manage')") && wizard.includes('v-if="canCreateAutomated"') && wizard.includes("operationMode: 'managed', intermissionMinutes: 3") && wizard.includes('lateGraceMinutes: 5') && wizard.includes('轮间准备、每轮迟到和对局内断线分别计时，互不替代') && createPolicy.includes("operationMode: normalized.operationMode === 'automated' ? 'automated' : 'managed'") && createPolicy.includes('boundedInteger(normalized.intermissionMinutes, 3, 0, 60)') && createPolicy.includes('boundedInteger(normalized.lateGraceMinutes, 5, 0, 60)')],
   ['detail separates organizer and judge capabilities', detail.includes('const canOrganize') && detail.includes('const canJudge') && !detail.includes('const canManage')],
   ['participant moderation is organizer-only', detail.includes('v-if="canOrganize && person.accountId !== tournament.organizerAccountId"')],
@@ -164,7 +189,7 @@ const checks = [
   ['check-in range matches server authority', wizard.includes('v-model.number="form.checkInMinutes" type="number" min="1" max="60"')],
   ['admin tournament workbench has an explicit admin-only name', router.includes("import('@/l12/site/AdminTournamentWorkbench.vue')") && !router.includes('TournamentCenterPage')],
   ['player route uses hub and stable detail routes', router.includes("component: () => import('@/l12/site/TournamentHubPage.vue')") && router.includes("path: '/battle/tournaments/:code'")],
-  ['pre-check-in binds an owned deck ID rather than a reusable name', ownedMetadataCheckIn(detail) && detail.includes('v-model="deckId"') && admin.includes('v-model="deckDrafts[detail.id].id"') && admin.includes("preCheckIn(item.id, item.version, selected.name, '', selected.id)") && platform.includes('expectedVersion, deckName, deckCode, deckId')],
+  ['pre-check-in reuses the saved-deck selector and binds an owned deck ID rather than a reusable name', ownedMetadataCheckIn(detail) && detail.includes('<SavedDeckSelector') && detail.includes('mode="tournament"') && detail.includes('confirmDeckSelection') && !detail.includes('<select v-model="deckId"') && admin.includes('v-model="deckDrafts[detail.id].id"') && admin.includes("preCheckIn(item.id, item.version, selected.name, '', selected.id)") && platform.includes('expectedVersion, deckName, deckCode, deckId')],
   ['critical tournament actions use inline reasons', !detail.includes('prompt(') && !judge.includes('prompt(') && !management.includes('confirm(') && detail.includes('participantReasons[person.accountId]') && judge.includes('appealReasons[item.id]')],
   ['organizer transfer uses eligible named candidates', management.includes('transferCandidates') && management.includes('选择本场裁判或主办者好友')],
   ['career history is visible and server-paged', hub.includes('个人赛事履历') && hub.includes('career.totalPages') && platform.includes("params.set('pageSize', String(query.pageSize))")],
@@ -173,12 +198,13 @@ const checks = [
   ['single elimination hides the mutually exclusive swiss-round input', wizard.includes(`<label v-if="form.format !== 'single'">瑞士轮数`) && admin.includes(`<label v-if="form.format!=='single'">瑞士轮数`)],
   ['templates manual changes and restored drafts share format normalization', wizard.includes('normalizeTournamentFormatInPlace(form)') && wizard.includes('watch(() => form.format') && wizard.indexOf('Object.assign(form, saved)') < wizard.lastIndexOf('normalizeTournamentFormatInPlace(form)')],
   ['player and admin creation bind the current-context flow; real script setup locks frozen input and preview version', hasBoundCreateFlow(wizard, 'create') && hasBoundCreateFlow(admin, 'createTournament')],
-  ['disaster modes freeze authoritative policy and none stays empty', createPolicy.includes("if (mode === 'none') return []") && createPolicy.includes('policy.disasterCardIds') && createPolicy.includes('cardIds.length < 9 || cardIds.length > 64') && createPolicy.includes('TOURNAMENT_ANNIHILATION_CARD_ID') && wizard.includes('getEffectiveOperationsPolicy()')],
-  ['empty or invalid operations disaster policy fails readably', createPolicy.includes('当前运营策略未提供可用天灾池') && createPolicy.includes('当前运营策略天灾池必须为 9–64 张') && wizard.includes('policyError')],
+  ['player creation reuses shared disaster and construction-rule components', wizard.includes("import DisasterPoolPicker from './DisasterPoolPicker.vue'") && wizard.includes("import ConstructionRuleEditor from './ConstructionRuleEditor.vue'") && wizard.includes('<DisasterPoolPicker v-model="form.disasterCardIds"') && wizard.includes('<ConstructionRuleEditor v-model="form.cardRestrictions"')],
+  ['disaster modes freeze the organizer selection and none stays empty', createPolicy.includes("if (mode === 'none') return []") && createPolicy.includes('source.disasterCardIds') && createPolicy.includes('tournamentDisasterSnapshot(normalized.disasterMode, normalized)') && createPolicy.includes('cardIds.length < 9 || cardIds.length > 64') && createPolicy.includes('TOURNAMENT_ANNIHILATION_CARD_ID') && wizard.includes('getEffectiveOperationsPolicy()')],
+  ['empty or invalid tournament disaster selection fails readably', createPolicy.includes('本场尚未选择天灾卡') && createPolicy.includes('本场天灾池必须为 9–64 张') && wizard.includes('policyError')],
   ['server keeps strict disaster pool count and annihilation-last authority', tournamentServer.includes('normalizedDisasters.Length is < 9 or > 64') && tournamentServer.includes('normalizedDisasters[^1], L12ActiveDisasterRules.AnnihilationCardId') && tournamentServer.includes('天灾池须为 9–64 张（含湮灭），且湮灭固定在最后一张')],
   ['format normalization behavior removes stale cut values', createPolicyModule.normalizeTournamentFormatFields({ ...formatBase, format: 'single' }).cutSize === undefined && createPolicyModule.normalizeTournamentFormatFields({ ...formatBase, format: 'single' }).swissRounds === 0 && createPolicyModule.normalizeTournamentFormatFields({ ...formatBase, format: 'swiss' }).cutSize === undefined],
-  ['disaster snapshot behavior validates policy and clones authority', createPolicyModule.tournamentDisasterSnapshot('none', { disasterCardIds: [] }).length === 0 && createPolicyModule.tournamentDisasterSnapshot('season', { disasterCardIds: policyCards }).join(',') === policyCards.join(',') && createPolicyModule.tournamentDisasterSnapshot('season', { disasterCardIds: policyCards }) !== policyCards],
-  ['empty short duplicate and misplaced-annihilation policies fail closed', throwsWith(() => createPolicyModule.tournamentDisasterSnapshot('season', { disasterCardIds: [] }), '未提供可用天灾池') && throwsWith(() => createPolicyModule.tournamentDisasterSnapshot('all', { disasterCardIds: ['S01-DS10'] }), '9–64') && throwsWith(() => createPolicyModule.tournamentDisasterSnapshot('random', { disasterCardIds: [...policyCards.slice(0, -1), policyCards[0], 'S01-DS10'] }), '重复卡牌') && throwsWith(() => createPolicyModule.tournamentDisasterSnapshot('season', { disasterCardIds: ['S01-DS10', ...policyCards.slice(0, -1)] }), '最后一张')],
+  ['disaster snapshot behavior validates selection and clones authority', createPolicyModule.tournamentDisasterSnapshot('none', { disasterCardIds: [] }).length === 0 && createPolicyModule.tournamentDisasterSnapshot('season', { disasterCardIds: policyCards }).join(',') === policyCards.join(',') && createPolicyModule.tournamentDisasterSnapshot('season', { disasterCardIds: policyCards }) !== policyCards],
+  ['empty short duplicate and misplaced-annihilation selections fail closed', throwsWith(() => createPolicyModule.tournamentDisasterSnapshot('season', { disasterCardIds: [] }), '尚未选择天灾卡') && throwsWith(() => createPolicyModule.tournamentDisasterSnapshot('all', { disasterCardIds: ['S01-DS10'] }), '9–64') && throwsWith(() => createPolicyModule.tournamentDisasterSnapshot('random', { disasterCardIds: [...policyCards.slice(0, -1), policyCards[0], 'S01-DS10'] }), '重复卡牌') && throwsWith(() => createPolicyModule.tournamentDisasterSnapshot('season', { disasterCardIds: ['S01-DS10', ...policyCards.slice(0, -1)] }), '最后一张')],
   ['tournament room distinguishes waiting loading and true failure', roomLoadingState.includes("kind: 'waiting'") && roomLoadingState.includes("kind: 'loading'") && roomLoadingState.includes("kind: 'failed'") && roomLoadingState.includes('等待对手') && !gamePage.includes('对局状态尚未加载')],
   ['tournament room waiting behavior covers first entrant', roomLoadingModule.tournamentRoomLoadingState(roomBase).kind === 'waiting'],
   ['tournament room loading covers opponent entry', roomLoadingModule.tournamentRoomLoadingState({ ...roomBase, room: { ...roomBase.room, started: true, players: roomBase.room.players.map(player => ({ ...player, connected: true })) } }).kind === 'loading'],

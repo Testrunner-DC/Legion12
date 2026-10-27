@@ -33,7 +33,10 @@ function fixture(options = {}) {
     '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     vue: Vue,
     'vue-router': { useRoute: () => route },
-    '@/l12/platform': { platformState, tournamentApi: api, friendApi: { friends: async () => [] }, hasPermission: permission => platformState.account?.permissions?.includes(permission) === true, getEffectiveOperationsPolicy: async () => { policyCalls++; if (policyCalls > 1 && options.policyWait) await options.policyWait.promise; return policy } },
+    '@/l12/platform': { platformState, tournamentApi: api, friendApi: { friends: async () => [] }, hasPermission: permission => platformState.account?.permissions?.includes(permission) === true, getEffectiveOperationsPolicy: async () => { policyCalls++; if (options.failInitialPolicy && policyCalls === 1) throw new Error('synthetic policy failure'); if (policyCalls > 1 && options.policyWait) await options.policyWait.promise; return policy } },
+    '@/l12/decks': { loadDeckCatalog: async () => [] },
+    './ConstructionRuleEditor.vue': { default: {} },
+    './DisasterPoolPicker.vue': { default: {} },
   }
   const modules = new Map()
   const require = id => {
@@ -48,6 +51,7 @@ function fixture(options = {}) {
     return module.exports
   }
   const localStorage = { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: key => store.delete(key) }
+  if (options.draft) store.set('l12-tournament-create-draft-v4', JSON.stringify(options.draft))
   const source = process.env.L12_TOURNAMENT_CREATE_BASELINE === '1'
     ? execFileSync('git', ['-c', 'safe.directory=D:/GPT/Legion12/worktrees/lubu-pingyang-20261001', '-C', 'D:/GPT/Legion12/worktrees/lubu-pingyang-20261001', 'show', '1160e7cd:opcgpro-vue/src/l12/site/TournamentCreateWizard.vue'], { encoding: 'utf8' })
     : readFileSync(new URL('../src/l12/site/TournamentCreateWizard.vue', import.meta.url), 'utf8')
@@ -132,6 +136,36 @@ await test('automatic mode is admin-only and keeps the approved timing defaults'
     assert.equal(admin.calls[0].input.intermissionMinutes, 3)
     assert.equal(admin.calls[0].input.lateGraceMinutes, 5)
   } finally { admin.unmount() }
+})
+await test('explicit tournament disaster pool survives preview and commit instead of reverting to operations defaults', async () => {
+  const f = await prepared({ oldVersion: 20 })
+  try {
+    const selected = [...policy.disasterCardIds]
+    selected[0] = 'S02-DS01'
+    f.state.form.disasterCardIds = selected
+    await f.state.create()
+    assert.equal(f.creations(), 1)
+    assert.deepEqual(f.calls[0].input.disasterCardIds, selected)
+    assert.deepEqual(f.calls[1].input.disasterCardIds, selected)
+    assert.notDeepEqual(f.calls[0].input.disasterCardIds, policy.disasterCardIds)
+  } finally { f.unmount() }
+})
+await test('restored custom pool survives policy hydration', async () => {
+  const selected = [...policy.disasterCardIds]; selected[0] = 'S02-DS01'
+  const f = fixture({ draft: { disasterMode: 'all', disasterCardIds: selected } })
+  try { await flush(); assert.deepEqual([...f.state.form.disasterCardIds], selected) } finally { f.unmount() }
+})
+await test('failed default-policy hydration keeps a restored pool and can retry creation safely', async () => {
+  const selected = [...policy.disasterCardIds]; selected[0] = 'S02-DS01'
+  const f = fixture({ failInitialPolicy: true, draft: { name: '恢复的赛事', disasterMode: 'all', disasterCardIds: selected } })
+  try {
+    await flush()
+    assert.deepEqual([...f.state.form.disasterCardIds], selected)
+    assert(f.state.policyError.includes('synthetic policy failure'))
+    await f.state.create()
+    assert.equal(f.creations(), 1)
+    assert.deepEqual(f.calls[0].input.disasterCardIds, selected)
+  } finally { f.unmount() }
 })
 console.log(JSON.stringify({ suite: 'real tournament creation script-setup', passed: cases.filter(c => c.passed).length, total: cases.length, cases }, null, 2))
 assert(cases.every(c => c.passed), 'Tournament creation regressions failed')

@@ -209,7 +209,7 @@ const flows = [
 const report = {
   schemaVersion: 1, sourceSha, commit, status: 'running',
   fixtureTransport: 'actual SiteShell and TournamentAccountDetail over local Vite; synthetic stateful tournament/deck APIs; no real service writes',
-  interactionBoundary: 'Every action button uses Playwright touchscreen tap. Native select uses selectOption after a real tap because headless browsers do not expose the operating-system picker.',
+  interactionBoundary: 'Every action button uses Playwright touchscreen tap, including the shared saved-deck selector search, card choice and confirmation.',
   phaseBoundary: 'Participant APIs only register, lock a deck or check in. Separate named fixture-organizer events supply round creation/start responses through the real resource refresh listener. Entry verifies exact room-handler dispatch and synthetic ready navigation, not real net/WebSocket handshake.',
   usabilityFloorPx: 38, advisoryTargetPx: 44, viewports, flows, matrix: [], advisories: [], failures: [], pageErrors: [], requestFailures: [],
 }
@@ -253,18 +253,13 @@ async function activeParticipantFlow(page, port) {
   const touches = {}
   touches.register = await tapControl(page.getByRole('button', { name: '报名（暂不提交牌库）', exact: true }), '报名')
   await page.getByText('报名成功；牌组将在赛前签到时锁定', { exact: true }).waitFor()
-  const search = page.getByLabel('搜索账号牌库')
+  touches.openDeckSelector = await tapControl(page.getByRole('button', { name: '选择本人牌库', exact: true }), '打开本人牌库选择器')
+  const search = page.getByLabel('搜索牌库')
   await search.fill('移动秩序')
   touches.search = await tapControl(page.getByRole('button', { name: '搜索', exact: true }), '搜索牌库')
-  const select = page.getByLabel('选择账号牌库')
-  await select.waitFor({ state: 'visible' })
-  await select.scrollIntoViewIfNeeded()
-  const selectGeometry = await geometry(select)
-  if (selectGeometry.width < 44 || selectGeometry.height < 44) report.advisories.push({ label: '选择账号牌库', viewport: page.viewportSize(), geometry: selectGeometry, recommendation: '可考虑提升至44px；当前达到既有38px最低可达性门槛' })
-  assert.ok(selectGeometry.width >= 38 && selectGeometry.height >= 38, `选择账号牌库 touch target is ${selectGeometry.width.toFixed(1)}x${selectGeometry.height.toFixed(1)}`)
-  await select.tap()
-  await select.selectOption('deck-mobile')
-  touches.deckSelect = selectGeometry
+  touches.deckSelect = await tapControl(page.locator('.selector-list > button').filter({ hasText: '移动秩序牌组' }), '选择账号牌库')
+  touches.confirmDeck = await tapControl(page.getByRole('button', { name: '确认使用', exact: true }), '确认使用账号牌库')
+  await page.getByRole('button', { name: '已选：移动秩序牌组', exact: true }).waitFor()
   touches.preCheckIn = await tapControl(page.getByRole('button', { name: '签到并锁定牌库', exact: true }), '赛前签到锁牌')
   await page.getByText('牌库快照已锁定，赛前签到完成', { exact: true }).waitFor()
   const afterLock = await page.evaluate(() => window.__tournamentQa.snapshot())

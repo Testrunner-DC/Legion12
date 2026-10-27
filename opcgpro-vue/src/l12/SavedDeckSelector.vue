@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import DeckCover from './DeckCover.vue'
-import { deckCountSummary, loadPrivateDeckSummaryPage, validateDeck, type DeckCard, type L12DeckSelectionScope,
+import { deckCountSummary, loadPrivateDeckSummaryPage, validateDeck, type DeckCard, type L12DeckPickerScope,
   type PrivateDeckSummary, type PrivateDeckSummaryPage, type SavedL12Deck } from './decks'
 import { platformState, type OperationsCardRestriction } from './platform'
 import { landscapeTeleportTarget } from './mobileViewport'
@@ -11,7 +11,7 @@ type DeckSelectionCandidate = PrivateDeckSummary | SavedL12Deck
 const props = withDefaults(defineProps<{
   open: boolean
   teleportTarget?: string | HTMLElement
-  mode: L12DeckSelectionScope
+  mode: L12DeckPickerScope
   guestDecks?: SavedL12Deck[]
   catalog: DeckCard[]
   currentDeckId?: string
@@ -66,7 +66,7 @@ function resetDraftSelection() {
 }
 
 function selectorContextCurrent(epoch: number, accountId: string | undefined, token: string,
-    mode: L12DeckSelectionScope) {
+    mode: L12DeckPickerScope) {
   return selectorAlive && props.open && selectorEpoch === epoch && props.mode === mode
     && platformState.account?.id === accountId && platformState.token === token
 }
@@ -118,6 +118,7 @@ const modeLabel = computed(() => ({
   ranked: '排位匹配',
   casual: '休闲匹配',
   friendly: '好友房',
+  tournament: '赛事签到',
   'sandbox-player': '沙盒 · 我方',
   'sandbox-opponent': '沙盒 · 对手',
 })[props.mode])
