@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import './test-battle-log-follow-latest.mjs'
 import './test-library-return-log.mjs'
 import './test-battle-troops-modifier.mjs'
 import './test-battle-selected-targets.mjs'

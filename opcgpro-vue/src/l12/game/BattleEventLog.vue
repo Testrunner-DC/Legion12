@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { projectLog } from './logViewModel'
 import type { ActionEvent, Card } from '../types'
 
 const props = defineProps<{ events: ActionEvent[]; you: number; names: string[]; neutralView?: boolean }>()
 const emit = defineEmits<{ focus: [card: Card] }>()
 const list = ref<HTMLElement | null>(null)
+const content = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
+let disposed = false
+let resizeObserver: ResizeObserver | undefined
+let touchY: number | undefined
 const expandedCombats = ref(new Set<number>())
 const expandedActions = ref(new Set<number>())
 const visible = computed(() => projectLog(props.events, props.you, props.names, props.neutralView ?? false))
@@ -26,19 +30,70 @@ function toggleAction(sequence: number) {
 }
 function onScroll() {
   const node = list.value
-  if (node) followLatest.value = node.scrollHeight - node.scrollTop - node.clientHeight < 48
+  // Layout/anchoring can also emit scroll events. Only user input pauses
+  // following; reaching the bottom always resumes it.
+  if (node && isAtBottom(node)) followLatest.value = true
 }
-async function latest() {
-  followLatest.value = true
+function isAtBottom(node: HTMLElement) {
+  return node.scrollHeight - node.scrollTop - node.clientHeight <= 2
+}
+function onScrollIntent(delta: number) {
+  const node = list.value
+  if (!node || !delta) return
+  if ((delta < 0 && node.scrollTop > 0) || (delta > 0 && !isAtBottom(node))) followLatest.value = false
+}
+function onWheel(event: WheelEvent) { onScrollIntent(event.deltaY) }
+function onTouchStart(event: TouchEvent) { touchY = event.touches[0]?.clientY }
+function onTouchMove(event: TouchEvent) {
+  const next = event.touches[0]?.clientY
+  if (next != null && touchY != null) onScrollIntent(touchY - next)
+  touchY = next
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.target !== list.value) return
+  if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) onScrollIntent(-1)
+  if (['ArrowDown', 'PageDown', 'End'].includes(event.key) || (event.key === ' ' && !event.shiftKey)) onScrollIntent(1)
+}
+function onPointerDown(event: PointerEvent) {
+  // Native scrollbar dragging has no wheel/touch event. Card/detail clicks
+  // remain ordinary clicks and do not opt out of following.
+  if (event.pointerType !== 'mouse' || event.target !== list.value) return
+  const node = list.value
+  if (!node) return
+  const scrollbarWidth = node.offsetWidth - node.clientWidth
+  if (scrollbarWidth > 0 && event.clientX >= node.getBoundingClientRect().right - scrollbarWidth
+    && node.scrollHeight > node.clientHeight) followLatest.value = false
+}
+async function scrollLatestIfFollowing() {
   await nextTick()
-  if (list.value) list.value.scrollTop = list.value.scrollHeight
+  if (!disposed && followLatest.value && list.value && list.value.clientHeight > 0) list.value.scrollTop = list.value.scrollHeight
 }
-watch(() => visible.value.at(-1)?.sequence, async () => { if (followLatest.value) await latest() }, { immediate: true })
+function latest() {
+  followLatest.value = true
+  void scrollLatestIfFollowing()
+}
+// A combat/effect summary can grow without changing its first sequence.
+watch(visible, () => { void scrollLatestIfFollowing() }, { flush: 'post' })
+watch([expandedCombats, expandedActions], () => { void scrollLatestIfFollowing() }, { flush: 'post' })
+onMounted(() => {
+  void scrollLatestIfFollowing()
+  if (typeof ResizeObserver === 'undefined') return
+  resizeObserver = new ResizeObserver(() => { void scrollLatestIfFollowing() })
+  if (list.value) resizeObserver.observe(list.value)
+  if (content.value) resizeObserver.observe(content.value)
+})
+onBeforeUnmount(() => {
+  disposed = true
+  resizeObserver?.disconnect()
+})
 </script>
 
 <template>
   <div class="battle-event-log" data-ui-contract="perspective-battle-log">
-    <div ref="list" class="event-list" @scroll="onScroll">
+    <div ref="list" class="event-list" tabindex="0" @scroll="onScroll" @wheel.passive="onWheel"
+      @touchstart.passive="onTouchStart" @touchmove.passive="onTouchMove" @keydown="onKeydown"
+      @pointerdown="onPointerDown" @pointerup="onScroll">
+      <div ref="content" class="event-content">
       <template v-for="row in visible" :key="`${row.kind}:${row.sequence}`">
         <h4 v-if="row.kind === 'turn'" class="turn-divider" :data-event-sequence="row.sequence">
           {{ row.round ? `第 ${row.round} 回合` : '回合开始' }} · {{ row.side }}回合
@@ -82,12 +137,14 @@ watch(() => visible.value.at(-1)?.sequence, async () => { if (followLatest.value
         </div>
       </template>
       <p v-if="!visible.length">等待对局开始</p>
+      </div>
     </div>
     <button v-if="!followLatest" class="jump-latest" @click="latest">回到最新记录 ↓</button>
   </div>
 </template>
 
 <style scoped>
+.event-list>.event-content{display:flex;flex:none;flex-direction:column;gap:7px}
 .battle-event-log{display:flex;min-height:0;flex:1;flex-direction:column;position:relative}.event-list{display:flex;flex:1;min-height:0;flex-direction:column;gap:7px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-right:5px}.battle-event-log .battle-event{display:grid;grid-template-columns:1.6em minmax(0,1fr);gap:6px;margin:0;padding:7px 0;border:0;border-bottom:1px solid #39434a;background:none;font-size:var(--l12-board-copy,13px);line-height:1.55}.event-icon{display:grid;width:1.6em;height:1.6em;place-items:center;color:#8addf3}.event-message{min-width:0;overflow-wrap:anywhere;color:#d7dfdf;font-size:calc(var(--l12-board-copy,13px) * var(--l12-font-scale,1));line-height:1.55}.event-side{font-weight:500;color:#9aa8b1}.battle-event-log .log-card-link{display:inline;padding:0;border:0;border-bottom:1px solid currentColor;background:none;color:#87d9ed;font-size:inherit;font-weight:700;line-height:inherit;text-align:left}.event-badge{display:inline-block;margin-left:5px;padding:0 5px;border:1px solid #687882;background:#182328;color:#d9e0e2;line-height:1.45}.event-badge.pos{border-color:#4d8d67;color:#91deb0}.event-badge.neg{border-color:#9d5661;color:#f0a1ad}.event-effect{display:block;margin-top:5px;color:#b9c4c8;white-space:pre-wrap}.turn-divider{margin:9px 0 2px;padding:7px 0;color:#e7c760;text-align:center;font-size:var(--l12-board-copy,13px);border-block:1px solid #665829}.combat-summary{border:1px solid #485963;background:#111a1f}.combat-main{display:grid;grid-template-columns:1.6em minmax(0,1fr) auto;align-items:center;gap:6px;padding:8px;font-size:var(--l12-board-copy,13px);line-height:1.55}.combat-cards{min-width:0;overflow-wrap:anywhere;color:#d7dfdf;font-size:calc(var(--l12-board-copy,13px) * var(--l12-font-scale,1));line-height:1.55}.combat-cards b{margin-inline:3px;color:#f0d889}.combat-toggle{align-self:stretch;min-width:52px;border:0;border-left:1px solid #43535c;background:transparent;color:#a9cbd5;font:inherit}.combat-detail{margin:0 8px 5px;padding-left:8px;border-left:2px solid #354750}.combat-detail .battle-event:last-child{border-bottom:0}.jump-latest{min-height:34px;border:1px solid #586873;background:#172630;color:#e5d29b;font-size:var(--l12-board-copy,13px)}
 .action-summary{border:1px solid #43535c;background:#111a1f}.action-summary>.battle-event{margin:0 8px;border-bottom:0}.action-toggle{display:block;width:100%;min-height:32px;border:0;border-top:1px solid #354750;background:transparent;color:#a9cbd5;font:inherit;text-align:right;padding:3px 10px}.action-summary .combat-detail{margin-top:5px}
 </style>
