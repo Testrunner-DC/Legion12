@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-response-sandbox-tournament",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "响应操作、练习与赛事入口更新",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "连续出现新的响应选择时，会关闭上一选择遗留的临时卡牌详情，避免登场演出与响应框互相等待；同一选择中的已选内容保持不变。",
+      "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue"]
+    },
+    {
+      "category": "battle",
+      "text": "戏法师的傀儡把进攻目标改为自身后，会继续进行合法的被进攻时效果、响应及支援；已经完成的同次进攻步骤不会重复结算。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs"]
+    },
+    {
+      "category": "replays",
+      "text": "对局记录默认跟随最新内容；手动翻阅时保留当前位置，滚回底部或点击回到最新记录后恢复跟随。",
+      "paths": ["opcgpro-vue/src/l12/game/BattleEventLog.vue"]
+    },
+    {
+      "category": "battle",
+      "text": "正常登录的玩家可进入自己的沙盒练习并操作双方；维护及房间限制仍然有效，不开放他人的练习或管理权限。",
+      "paths": ["opcgpro-vue/src/l12/site/ProfilePage.vue", "opcgpro-vue/src/l12/site/SandboxPage.vue", "opcgpro-vue/src/router/index.ts", "服务端WebSocket/TwelveLegions/L12RoomManager.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.Tutorial.cs"]
+    },
+    {
+      "category": "tournaments",
+      "text": "赛事详情可查看比赛信息并衔接报名、候补、退赛、选牌锁定及签到；创建赛事时可用现有选择器设置天灾池和禁限卡，牌库选择不覆盖其他模式的偏好。",
+      "paths": ["opcgpro-vue/src/l12/SavedDeckSelector.vue", "opcgpro-vue/src/l12/decks.ts", "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue", "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue", "opcgpro-vue/src/l12/site/TournamentCreateWizard.vue", "opcgpro-vue/src/l12/tournamentCreatePolicy.ts"]
+    },
+    {
+      "category": "ui",
+      "text": "修正窄屏单卡选择器的搜索框被裁出画面的问题，筛选、左右箭头、详情和选牌操作保持可用。",
+      "paths": ["opcgpro-vue/src/l12/SingleCardPicker.vue"]
+    }
+  ]
+}

@@ -288,7 +288,7 @@ await test('actual GameBoard queue: a same-sequence entry effect waits for the Z
   coordinator.reset()
 })
 
-function actualPromptRouting({ prompt = null, readOnly = false, minimized = false,
+function actualPromptRouting({ prompt = null, readOnly = false, minimized = false, modalInspectorVisible = false,
   coordinator = createPresentationSequenceCoordinator() } = {}) {
   const ref = value => ({ value })
   const computed = getter => ({ value: getter() })
@@ -350,7 +350,7 @@ function actualPromptRouting({ prompt = null, readOnly = false, minimized = fals
     mobileMoralePickerOpen: ref(false),
     mobileTrialAbilityCard: ref(null),
     mobileTrialAbilityMinimized: ref(false),
-    modalInspectorVisible: ref(false),
+    modalInspectorVisible: ref(modalInspectorVisible),
   })
   return {
     boardTargetPrompt: boardTargetPrompt.value,
@@ -571,6 +571,25 @@ await test('unrelated modal retains the existing pause/cancel priority', () => {
   const route = actualPromptRouting({ prompt: unrelated })
   assert.equal(route.modalPresentationPaused, true)
   assert.match(runActualZonePause(true).join(','), /entry-flight-cancelled/)
+})
+
+await test('an existing inspector pauses a pending entry while its matching response remains deferred', () => {
+  const coordinator = createPresentationSequenceCoordinator()
+  const reservation = coordinator.reserve(entryEvent.sequence, 20, {
+    role: 'entry-movement', sourceInstanceId: entryCard.instanceId,
+    transactionKey: projection.entryPresentationTransactionKey(entryEvent),
+  })
+  try {
+    const prompt = { ...entryPrompt('response'), validChoices: ['pass'] }
+    const blocked = actualPromptRouting({ prompt, coordinator, modalInspectorVisible: true })
+    assert.deepEqual(blocked.deferredEntryPromptIds, [prompt.promptId])
+    assert.equal(blocked.visiblePromptModal, false)
+    assert.equal(blocked.modalPresentationPaused, true)
+    const unpaused = actualPromptRouting({ prompt, coordinator, modalInspectorVisible: false })
+    assert.equal(unpaused.modalPresentationPaused, false)
+    reservation.cancel()
+    assert.equal(actualPromptRouting({ prompt, coordinator, modalInspectorVisible: true }).visiblePromptModal, true)
+  } finally { coordinator.reset() }
 })
 
 await test('landing completion releases the deferred prompt path exactly once', () => {

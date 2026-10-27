@@ -1,5 +1,30 @@
 # Legion12 Bug 修复记录
 
+## FEAT-20261028-PLAYER-OWNED-SANDBOX｜本人隔离沙盒开放（本地具名验收，待最终发布资格）
+
+- 来源人类明确“批准开放给所有玩家”。五产品／七QA只开放正常有效登录账号自己的隔离练习，创建后可代行双方；不授后台权限、跨房控制，不豁免当前／预约维护及部署围栏，原管理员维护例外保留。原会话引用／账号有效性／持锁后再验及房间owner继续约束，教学准入复用，不改P1单局写入和P2权限边界。
+- 前端memory40/profile20/tutorial38/private46、Rules24、真实本机认证WS教学链通过。Platform17初16过、唯一注册夹具超长未到产品断言，改短名并断言注册成功后同项1/1实际过；原失败保留，不能声称单次17全绿。组合2697中唯一无关AdminPassword清理占用已同DLL该类8/8复查，完整Release尚待。
+- `sandbox-player-access-20261028/focused-results.json`及具名receipt为准；共享后台浏览器QA仅同步新“测试沙盒”标题，不放松权限／业务断言。运行中的活动基础三叶不纳入本批，RoomManager产品只取固定源内已验沙盒改动。
+
+## PERF-20261028-ADMIN-MEDIA-PAGES｜后台分页、候选时效及有界读取（本地候选）
+
+- 权益沿原权限增加20项分页／筛选；账号选择器使用现有分页请求并按本人登录／权限／请求代次隔离，输入即使处于220ms防抖也立即使旧候选不可提交。真实旧SFC三红、新11绿；文章作者和权益卡名改同锁字典投影，不改返回协议／内容／授权。图片转换串行3个WebP后释放canvas，原两类上传持久化出口不变。
+- 原媒体后台完整2689通过。Main全前端链实际拦截初始化并发6>3，原产品返修为最多3的真实波次，共享catalog不叠权益，权益先3项后按代次读懒缓存卡表；七个延迟mock实际SFC场景峰值3，失败／赛季缺失／空页／旧账号请求退休保留，原来源峰值5/5/5/4红证据保留。未增加预算或修改守卫，不宣称后台全性能根治／线上30＋10容量通过。
+- 最终产品15B32289、并发QA E9F9EA1D，Main固定树271cb596，未变后台不重复跑。前端完整链的环境失败另有原件：CRLF导出改同Git树原始LF；随后QA所有权要求干净Git源，应在正式提交候选隔离工作树验收，不能伪造clean或删除断言。最终类型／完整链／双构建与完整Release待新干净候选。
+
+## 2026-10-28 当前验收补记（以下旧“浏览器未过”仅保留过程）
+
+- 响应循环已由Main在1280×720真实完整GameBoard原生浏览器重现：旧卡详情导致新响应缺失，时钟持续、同版重收不恢复、重挂相同状态恢复。最终产品双方均能在登场后显示响应且按钮中心命中；原生“不响应”各发唯一准确绑定的合成命令，同一prompt仅时钟变化保留1/2选择。QA仅修PNG误拦Vite图片import模块，不放松CSP/外联/点击断言。具名观察记录`response-prompt-visibility-20261028/main-browser-observation.json`；不是真实WS/ACK、线上玩家或真机验收。
+- SingleCardPicker最小CSS修复在390×844、844×390、1440×900原生浏览器通过，390搜索完整可达且44px命中，真实箭头0→224→0，宽屏自然不溢出不强造箭头；筛选、详情与选牌保留。原left=-44.27的RED保留；唯一`single-card-picker-reachability-20261028-r3/report.json`。
+- 当前组合固定源6b70完整平台2697例2696过/1清理失败，无跳过：AdminPasswordWorkIsolationTests.RealHttpAdmissionAndFinalRevalidationFailClosed(delete,changed)在业务断言后删除matches.db报Windows占用，原TRX/临时库保留；仅同DLL该类具名复查，不把单例补过称单次完整绿。最终Release仍待，不能宣称已发布。
+- 完整低成本前端链另外实际拦截画廊并发6高于既有3，已原owner在同批仅返修真实并发波次/实际SFC回归，预算及守卫不改；因此媒体旧类型/UI361/Vite通过不等于最终Release通过。活动基础三叶独审发现空场destroyAll误记及Resolving漏记，按人类最新要求本次排除并挂起，保留dirty；不阻碍独立稳定集合发布。
+
+## BUG-20261028-RESPONSE-INSPECTOR-ENTRY-CYCLE｜连续响应旧详情与登场预约互等（已批准，本地候选）
+
+- 人类反馈本人已计时但无响应框，刷新恢复；Main已实际读回来源原话并取得限定修复批准。真实net接收分支／Vue响应／Zone预约／coordinator／PromptOverlay原生模板的轻量复现中，上一提示focusChoice留下显式详情；连续新提示使hasBlockingPrompt一直true不清详情；新响应等entry落位，而旧详情暂停entry，双方×展开/最小化4红。相同revision重收仍隐、重挂相同权威状态及取消预约恢复；本地钟30000→29000，非真实服务器/线上原局证成。
+- 候选只改GameBoard的原清理watch，按未经过动画过滤的promptId/activationId/step/createdRevision事务身份转换触发旧交互清理，不按每次revision／时钟更新，不改服务端／计时／net／响应规则。加双prompt切换和同提示保选后基线6红＋16绿，新22/22；原entry25、inline22、autoFocus16、coordinator41及相邻守卫通过。完整浏览器尚未验证通过，baseline加载夹具空白正在有界定位，不能用轻量模板冒完整DOM命中。
+- 来源唯一`response-prompt-visibility-20261028`的reactive-final-baseline-red.json／reactive-final-green.json、原失败日志及最终4叶SHA；Main未部署、未改线上Bug状态，完整验收后才源码同步。
+
 ## UI-20261028-BATTLE-LOG-FOLLOW｜对局记录默认跟随最新，手动翻阅保位（已验收，未部署）
 
 - 人类直接要求“对战界面对局记录应该持续显示最新的为主，除非玩家手动滚动”。P4只改共享BattleEventLog，不改记录内容、投影隐私、服务器或计时；桌面及移动记录入口复用同一组件。原观察器只盯最后一行sequence，合并进攻／效果行增补不变号时漏跟随；布局滚动事件又可能被误当手动退出。

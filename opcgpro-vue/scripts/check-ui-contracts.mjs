@@ -56,6 +56,8 @@ const mainNav = shell.match(/const mainNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const battleNav = shell.match(/const battleNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
 const router = read('../src/router/index.ts')
 const boardComponent = read('../src/l12/game/GameBoard.vue')
+const blockingPromptTransactionSource = boardComponent.slice(boardComponent.indexOf('const blockingPromptIdentity = computed('),
+  boardComponent.indexOf('watch(blockingPromptIdentity'))
 const boardMobileStyle = read('../src/l12/game/GameBoard.mobile.css')
 const mobileActionDockStyle = read('../src/l12/game/MobileBattleDock.css')
 const board = `${boardComponent}\n${boardMobileStyle}`
@@ -1306,7 +1308,12 @@ const contracts = [
   [l12Net.includes("type: 'sandboxAction', requestId: createActionRequestId(), actingPlayerIndex, command") && board.includes('controlledPlayerIndex') && board.includes('const viewMe = computed(() => props.game.players[props.game.you])') && board.includes('const viewEnemy = computed(() => props.game.players[1 - props.game.you])') && board.includes('v-if="l12State.gmEnabled || showBothHands" class="opponent-hand" :class="{ \'mobile-primary-hand\': mobilePrimaryHandPlayerIndex === viewEnemy.playerIndex }" :cards="viewEnemy.hand"') && board.includes(':cards="viewMe.hand"') && board.includes(':controllable="isControlledPlayer(viewEnemy.playerIndex)"') && prompt.includes('sandboxAction(actingPlayerIndex, command)') && globalStyle.includes('.opponent-hand .hand-actions{top:calc(100% + 4px);bottom:auto}'), '沙盒必须固定我方在下、对方在上，不交换棋盘，同时可查看双方手牌并代行双方规则内选择；上方手牌操作按钮必须朝棋盘中心展开而不被裁切'],
   [board.includes(':mine="masterPlayerIndex === controlledPlayerIndex"') && board.includes("sandboxAction(controlledPlayerIndex.value, { type, ...extra })") && prompt.includes('sandboxAction(actingPlayerIndex, command)'), '沙盒代操作对方时必须按受控方索引开放主宰效果并完成后续提示，正式房仍只允许登录座位'],
   [board.includes('watch(activeBoardPromptId, promptId => {') && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null'), '任何场面直选 Prompt 开始时必须关闭墓地、效果弹框与浮动卡牌详情'],
-  [board.includes('const hasBlockingPrompt = computed') && board.includes('function clearOrdinaryInteractionState()') && board.includes('watch(hasBlockingPrompt')
+  [board.includes('const hasBlockingPrompt = computed') && board.includes('function clearOrdinaryInteractionState()')
+    && board.includes('watch(blockingPromptIdentity')
+    && ['hasBlockingPrompt.value', 'props.game.prompts', 'prompt.promptId', 'prompt.activationId', 'prompt.step', 'prompt.createdRevision']
+      .every(field => blockingPromptTransactionSource.includes(field))
+    && !blockingPromptTransactionSource.includes('props.game.revision')
+    && board.includes('if (hasBlockingPrompt.value) clearOrdinaryInteractionState()')
     && board.includes('function freeCommand(') && board.includes('if (hasBlockingPrompt.value || freeActionBusy.value) return')
     && board.includes('if (!props.game.prompts?.some(candidate => candidate.promptId === prompt.promptId)) return')
     && board.includes("dispatchCommand('resolvePrompt', withPromptBinding({ ...extra, promptId:prompt.promptId }))")

@@ -958,8 +958,17 @@ function clearOrdinaryInteractionState() {
   customDisasterSlot.value = null
   closeMobileTrialAbility()
 }
-watch(hasBlockingPrompt, blocking => {
-  if (blocking) clearOrdinaryInteractionState()
+// Consecutive authority prompts may never pass through an unblocked state.
+// Track their transactions before animation routing filters any prompt: an old
+// explicit inspector must not pause the entry that the next prompt awaits.
+// Revisions, clocks and same-prompt choice updates do not start a new transaction.
+const blockingPromptIdentity = computed(() => JSON.stringify([
+  hasBlockingPrompt.value,
+  (props.game.prompts ?? []).map(prompt => [prompt.promptId, prompt.activationId ?? '',
+    prompt.step ?? -1, prompt.createdRevision ?? -1]),
+]))
+watch(blockingPromptIdentity, () => {
+  if (hasBlockingPrompt.value) clearOrdinaryInteractionState()
 }, { immediate: true, flush: 'sync' })
 watch(activeBoardPromptId, promptId => {
   if (!promptId) return
