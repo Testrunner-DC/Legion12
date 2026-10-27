@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { l12State } from '@/l12/net'
 import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'
 import RankedPenaltyHistory from './RankedPenaltyHistory.vue'
-import { alternateArtApi, canAccessAdmin, changePassword, changeUsername, hasPermission, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformState, playerApi, rankedApi, refreshCurrentAccount, register, sessionApi, usernameChangeApi, type AlternateArt, type MfaCapability, type PlatformSession, type PlayerStatLine, type PlayerStatistics, type PlayerStatisticsRange, type RankedOverview, type UsernameChangeStatus } from '@/l12/platform'
+import { alternateArtApi, authState, canAccessAdmin, changePassword, changeUsername, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformState, playerApi, rankedApi, refreshCurrentAccount, register, sessionApi, usernameChangeApi, type AlternateArt, type MfaCapability, type PlatformSession, type PlayerStatLine, type PlayerStatistics, type PlayerStatisticsRange, type RankedOverview, type UsernameChangeStatus } from '@/l12/platform'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
 import { masterProfileUrl } from '@/l12/specialAssets'
 import CardImage from '@/l12/CardImage.vue'
@@ -14,7 +14,9 @@ import UiNotice from './UiNotice.vue'
 import { optionalLocalStorage as localStorage, optionalSessionStorage as sessionStorage, BrowserLoginStorageError } from '@/l12/browserStorage'
 
 const publicHistory = ref(localStorage.getItem('l12-public-history') === 'true')
-const canUseSandbox = computed(() => canAccessAdmin.value && hasPermission('admin.operations.write'))
+const canUseSandbox = computed(() => authState.verified && !!platformState.token && !!platformState.account?.id
+  && !platformState.account.disabled && !platformState.account.deleted
+  && !platformState.account.mustChangePassword && !platformState.account.mustChangeUsername)
 const notice = ref('')
 const authNotice = ref('')
 const authMode = ref<'login' | 'register'>('login')
@@ -315,9 +317,9 @@ const rankedWinRate = computed(() => {
       <div class="avatar">{{ (platformState.account?.username || '游').slice(0,1) }}</div>
       <div class="identity-copy"><small>当前玩家</small><h2>{{ platformState.account?.username || '游客' }}</h2><span>{{ platformState.account.role === 'admin' ? '管理员' : '玩家' }} · {{ l12State.status === 'online' ? '服务器在线' : '尚未连接对战服务' }}</span></div>
       <div v-if="ranked || playerStatistics" class="record-chip"><b>{{ ranked?.profile.placed ? ranked.profile.tier : overallGames }}</b><span>{{ ranked?.profile.placed ? `七曜值 ${ranked.profile.sevenValue.toLocaleString()}` : `${statisticsRangeLabel}对局` }}</span></div>
-      <nav v-if="canAccessAdmin" class="identity-actions" aria-label="管理与测试">
+      <nav v-if="canUseSandbox || canAccessAdmin" class="identity-actions" aria-label="管理与测试">
         <router-link v-if="canUseSandbox" class="profile-action sandbox-button" to="/sandbox">▧ 测试沙盒</router-link>
-        <router-link class="profile-action admin-button" to="/admin">⚙ 管理后台</router-link>
+        <router-link v-if="canAccessAdmin" class="profile-action admin-button" to="/admin">⚙ 管理后台</router-link>
       </nav>
     </section>
     <UiNotice v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">{{ notice }}</UiNotice>

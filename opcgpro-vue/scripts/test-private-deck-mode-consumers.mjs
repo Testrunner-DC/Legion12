@@ -511,11 +511,10 @@ function createRoomHarness(deckModule, { useRestrictions = true, matchmakingOnly
     submissions, readyCalls, validationCalls, rule }
 }
 
-function createSandboxHarness(deckModule, player, opponent, access = { role: 'admin', allowed: true }) {
-  const sandboxPlatform = { ...platformState, account: { ...platformState.account, role: access.role } }
+function createSandboxHarness(deckModule, player, opponent, access = { role: 'player', verified: true }) {
+  const sandboxPlatform = { ...platformState, account: access.guest ? null : { ...platformState.account, ...access } }
   const canUseSandbox = evaluateExpression(initializer(sources.sandbox, 'canUseSandbox'), {
-    computed, platformState: sandboxPlatform,
-    hasPermission: permission => permission === 'admin.operations.write' && access.allowed,
+    computed, platformState: sandboxPlatform, authState: { verified: access.verified !== false },
   })
   const selectedDecks = ref({ 'sandbox-player': player, 'sandbox-opponent': opponent })
   const selectionMessages = ref({ 'sandbox-player': '', 'sandbox-opponent': '' })
@@ -549,7 +548,7 @@ function createSandboxHarness(deckModule, player, opponent, access = { role: 'ad
     validateDeck: (...args) => { validationCalls.push(args); return '' },
     connect: async () => {}, createSandbox: (playerBody, opponentBody, mode) => creations.push({ playerBody, opponentBody, mode }),
   })
-  return { runtime, refs: { selectedDecks, selectionMessages, disasterMode, creating }, l12State, creations, validationCalls }
+  return { runtime, refs: { selectedDecks, selectionMessages, disasterMode, creating }, identity: sandboxPlatform, l12State, creations, validationCalls }
 }
 
 function createSandboxConfirmHarness(deckModule, scope) {
@@ -1118,16 +1117,16 @@ async function main() {
     assert.equal(harness.validationCalls[1].length, 2)
   })
 
-  await check('sandbox current role and permission reject before private body reads', 'negative', async () => {
+  await check('sandbox invalid identity rejects before private body reads', 'negative', async () => {
     const body = makeBody('sandbox-denied', 2, '受限正文')
     const selection = { id: body.id, revision: body.revision, name: body.name, body }
-    for (const access of [{ role: 'player', allowed: true }, { role: 'admin', allowed: false }]) {
+    for (const access of [{ guest: true }, { verified: false }, { disabled: true }, { deleted: true }, { mustChangePassword: true }, { mustChangeUsername: true }]) {
       const harness = createSandboxHarness(deckModule, selection, { ...selection }, access)
       requestHandler = async () => { assert.fail('Denied sandbox must not load a private body') }
       await harness.runtime.startSandbox()
       assert.equal(harness.creations.length, 0)
       assert.equal(harness.validationCalls.length, 0)
-      assert.match(harness.l12State.notice, /权限/)
+      assert.match(harness.l12State.notice, /登录.*验证/)
     }
   })
 
@@ -1157,6 +1156,22 @@ async function main() {
     pending.resolve(body)
     await task
     assert.equal(harness.creations.length, 0)
+  })
+
+  await check('sandbox identity invalidation during private body read prevents late creation', 'negative', async () => {
+    localStorage.clear()
+    const body = makeBody('sandbox-identity-change', 2, '身份迟到正文')
+    const selection = { id: body.id, revision: body.revision, name: body.name, body }
+    const harness = createSandboxHarness(deckModule, selection, { ...selection })
+    const pending = deferred()
+    requestHandler = () => pending.promise
+    const task = harness.runtime.startSandbox()
+    await tick()
+    harness.identity.account.disabled = true
+    pending.resolve(body)
+    await task
+    assert.equal(harness.creations.length, 0)
+    assert.equal(harness.refs.creating.value, false)
   })
 
   await check('sandbox opponent 409 marks only opponent, refreshes explicitly and never retries', 'negative', async () => {

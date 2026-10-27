@@ -120,12 +120,9 @@ public sealed class MaintenanceSandboxAuthorizationTests
             manager.JoinRoom(guestSession, roomCode);
             await manager.SetReadyAsync(hostSession, true);
             await manager.SetReadyAsync(guestSession, true);
-            Assert.Equal("sandboxForbidden", Payload(Assert.Single(await manager.CreateSandboxAsync(
-                playerSandboxSession, new L12SandboxRequest()))).GetProperty("type").GetString());
-            // A real former administrator remains covered by scheduled-maintenance retirement.
-            Assert.True(platform.SetRole(admin, sandboxPlayer.Id, "admin"));
-            await manager.CreateSandboxAsync(playerSandboxSession, new L12SandboxRequest());
-            Assert.True(platform.SetRole(admin, sandboxPlayer.Id, "player"));
+            var playerSandbox = await manager.CreateSandboxAsync(playerSandboxSession, new L12SandboxRequest());
+            Assert.True(EnvelopeFor(playerSandboxSession, playerSandbox, "gameState").GetProperty("gmEnabled").GetBoolean());
+            // Player sandboxes remain covered by scheduled-maintenance retirement.
 
             var current = platform.OperationsConfig(admin);
             platform.ApplyOperationsConfig(admin, current.Config with

@@ -59,7 +59,7 @@ export const router = createRouter({
     { path: '/battle/records', name: 'records', component: () => import('@/l12/MatchRecords.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/battle/records/replay/json', name: 'json-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAccount: true } },
     { path: '/battle/records/replay/:matchId', name: 'match-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAccount: true } },
-    { path: '/sandbox', name: 'sandbox', component: () => import('@/l12/site/SandboxPage.vue'), meta: { requiresAdmin: true, landscapeCanvas: true } },
+    { path: '/sandbox', name: 'sandbox', component: () => import('@/l12/site/SandboxPage.vue'), meta: { requiresAccount: true, landscapeCanvas: true } },
     { path: '/admin/operations/sandbox', name: 'admin-sandbox', redirect: to => ({ path: '/sandbox', query: to.query, hash: to.hash }) },
     { path: '/deck-editor', component: () => import('@/l12/L12DeckEditor.vue'), meta: { immersive: true, landscapeCanvas: true, editorAdaptiveCanvas: true } },
     { path: '/game', component: () => import('@/l12/GamePage.vue'), meta: { immersive: true, landscapeCanvas: true } },
@@ -103,6 +103,8 @@ router.beforeEach(async to => {
   } catch { /* 权限校验不可用时保持失败关闭。 */ }
   finally { window.clearTimeout(timeout) }
   if (!authState.verified || !platformState.account) return { name: 'me', query: { redirect: to.fullPath } }
+  if (platformState.account.disabled || platformState.account.deleted)
+    return { name: 'me', query: { redirect: to.fullPath } }
   if (platformState.account.mustChangeUsername && to.name !== 'me')
     return { name: 'me', query: { redirect: to.fullPath, reason: 'username-change-required' } }
   if (platformState.account.mustChangePassword && to.name !== 'me')

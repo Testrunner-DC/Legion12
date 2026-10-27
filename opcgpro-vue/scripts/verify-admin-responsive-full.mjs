@@ -216,7 +216,7 @@ const readyText={
  '/admin/content/alternate-arts':'移动端验收限定异画','/admin/matches/archive':'MATCH-QA-RESPONSIVE-001-LONG-IDENTIFIER',
  '/admin/matches/governance':'draw-request-responsive-qa','/admin/matches/integrity':'MATCH-INTEGRITY-0',
  '/admin/operations/config':'operations-config-responsive-qa-v37','/admin/operations/global':'逐日历史',
- '/admin/operations/sandbox':'管理员测试沙盒',
+ '/admin/operations/sandbox':'测试沙盒',
  '/admin/system/releases':'发布适配器只读快照','/admin/system/security':'qa-warning',
  '/admin/system/storage':'存储容量需要关注','/admin/system/commands':'command-very-long-identifier-0123456789abcdef',
  '/admin/system/audit':'account-001',

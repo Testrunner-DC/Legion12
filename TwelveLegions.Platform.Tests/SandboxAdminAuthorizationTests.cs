@@ -10,10 +10,14 @@ namespace TwelveLegions.Platform.Tests;
 public sealed class SandboxAdminAuthorizationTests
 {
     [Fact]
-    public async Task PublicSandboxRejectsPlayerAndMissingPlatformButExplicitPureFixtureUsesSameCore()
+    public async Task OrdinaryPlayerCreatesPersonalSandboxWithoutAdminPermissionWhileMissingPlatformStillFailsClosed()
     {
         await using var f = await Fixture.Create();
-        Assert.DoesNotContain(await f.Manager.CreateSandboxAsync(f.Student, null), IsGame);
+        Assert.False(L12Authorization.HasPermission(f.Platform.Account(f.AccountId)!, L12Permission.AdminOperationsWrite));
+        var player = Message(await f.Manager.CreateSandboxAsync(f.Student, new(DisasterMode: "none")), "gameState");
+        Assert.True(player.GetProperty("gmEnabled").GetBoolean());
+        Assert.True(player.GetProperty("state").GetProperty("players")[1].TryGetProperty("hand", out _));
+        Assert.Empty(await f.Recorder.ListMatchesForAccountAsync(f.AccountId, "learner"));
         var pure = new L12RoomManager(f.Catalog, f.Recorder, maintenanceSandboxFenceActive: () => false);
         var owner = Guid.NewGuid();
         pure.Connect(owner, "trusted-fixture", "fixture");
@@ -26,12 +30,13 @@ public sealed class SandboxAdminAuthorizationTests
             Assert.DoesNotContain("CreateSandboxForTestsAsync", File.ReadAllText(source));
     }
 
-    [Fact]
-    public async Task CurrentAdminCanCreateAndBothGmAndDualActorWorkThenDowngradeFencesAllMutationAndPrivateView()
+    [Theory]
+    [InlineData("disabled")]
+    [InlineData("deleted")]
+    [InlineData("password")]
+    public async Task PlayerControlsBothSidesThenAccountInvalidationFencesAllMutationAndPrivateView(string reason)
     {
         await using var f = await Fixture.Create();
-        var root = f.Platform.Login("Admin", "L12master").Account!;
-        Assert.True(f.Platform.SetRole(root, f.AccountId, "admin"));
         var initial = Message(await f.Manager.CreateSandboxAsync(f.Student, new(DisasterMode: "none")), "gameState");
         Assert.True(initial.GetProperty("gmEnabled").GetBoolean());
         var gm = await f.Manager.HandleGmActionAsync(f.Student,
@@ -41,7 +46,7 @@ public sealed class SandboxAdminAuthorizationTests
         var dual = await f.Manager.HandleSandboxActionAsync(f.Student, current,
             JsonSerializer.SerializeToElement(new { type = "endTurn" }), "dual-ok");
         Assert.Contains(dual, IsGame);
-        Assert.True(f.Platform.SetRole(root, f.AccountId, "player"));
+        InvalidateAccount(f, reason);
         Assert.DoesNotContain(await f.Manager.HandleGmActionAsync(f.Student,
             JsonSerializer.SerializeToElement(new { type = "addMorale", targetPlayer = 0, value = 1 }), "gm-no"), IsGame);
         Assert.DoesNotContain(await f.Manager.HandleSandboxActionAsync(f.Student, 1,
@@ -58,11 +63,9 @@ public sealed class SandboxAdminAuthorizationTests
     [InlineData("dual")]
     [InlineData("ordinary")]
     [InlineData("response")]
-    public async Task DowngradeWhileWaitingForRoomGateIsRecheckedBeforeMutation(string lane)
+    public async Task DisabledPlayerWhileWaitingForRoomGateIsRecheckedBeforeMutation(string lane)
     {
         await using var f = await Fixture.Create();
-        var root = f.Platform.Login("Admin", "L12master").Account!;
-        Assert.True(f.Platform.SetRole(root, f.AccountId, "admin"));
         await f.Manager.CreateSandboxAsync(f.Student, new(DisasterMode: "none"));
         var dictionary = (System.Collections.IEnumerable)typeof(L12RoomManager)
             .GetField("_rooms", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(f.Manager)!;
@@ -81,7 +84,7 @@ public sealed class SandboxAdminAuthorizationTests
                     L12GameEngine.ValidOnlyResponseMode, "waiting")
                 : f.Act(new("surrender"), "waiting");
             Assert.False(command.IsCompleted);
-            Assert.True(f.Platform.SetRole(root, f.AccountId, "player"));
+            InvalidateAccount(f, "disabled");
         }
         finally { gate.Release(); }
         Assert.DoesNotContain(await command!, IsGame);
@@ -98,8 +101,6 @@ public sealed class SandboxAdminAuthorizationTests
     public async Task QueuedOldResponsePreferenceCannotReadOrWriteAfterSeatTakeover(bool write)
     {
         await using var f = await Fixture.Create();
-        var root = f.Platform.Login("Admin", "L12master").Account!;
-        Assert.True(f.Platform.SetRole(root, f.AccountId, "admin"));
         var initial = Message(await f.Manager.CreateSandboxAsync(f.Student, new(DisasterMode: "none")), "gameState");
         var match = initial.GetProperty("state").GetProperty("matchId").GetString()!;
         var before = (await f.Recorder.LoadJournalEngineAsync(match))!.Engine.ComputeStateHash();
@@ -125,6 +126,103 @@ public sealed class SandboxAdminAuthorizationTests
         Assert.Equal(before, (await f.Recorder.LoadJournalEngineAsync(match))!.Engine.ComputeStateHash());
         Assert.Equal(L12GameEngine.DefaultResponseMode, f.Platform.ResponsePreference(f.AccountId));
         Assert.Null(await f.Recorder.LatestPendingResponsePreferenceAsync(f.AccountId));
+    }
+
+    [Fact]
+    public async Task ReconnectedPlayerKeepsOwnSandboxWhileReplacedAndDisconnectedSessionsCannotControlIt()
+    {
+        await using var f = await Fixture.Create();
+        await f.Manager.CreateSandboxAsync(f.Student, new(DisasterMode: "none"));
+        var replacement = Guid.NewGuid();
+        Assert.True((await f.Manager.ConnectAsync(replacement, f.AccountId, "learner")).Recovered);
+        var recovery = Message(await f.Manager.RecoveryStateAsync(replacement), "gameState");
+        Assert.True(recovery.GetProperty("gmEnabled").GetBoolean());
+        Assert.True(recovery.GetProperty("state").GetProperty("players")[1].TryGetProperty("hand", out _));
+        var command = JsonSerializer.SerializeToElement(new { type = "addMorale", targetPlayer = 0, value = 1 });
+        Assert.DoesNotContain(await f.Manager.HandleGmActionAsync(f.Student, command), IsGame);
+        Assert.DoesNotContain(await f.Manager.HandleSandboxActionAsync(f.Student, 0, command), IsGame);
+        Assert.Contains(await f.Manager.HandleGmActionAsync(replacement, command), IsGame);
+        f.Manager.Disconnect(replacement);
+        Assert.DoesNotContain(await f.Manager.HandleGmActionAsync(replacement, command), IsGame);
+        Assert.DoesNotContain(await f.Manager.HandleSandboxActionAsync(replacement, 0, command), IsGame);
+    }
+
+    [Theory]
+    [InlineData("disabled")]
+    [InlineData("deleted")]
+    [InlineData("password")]
+    public async Task InvalidPlayerCannotCreateSandbox(string reason)
+    {
+        await using var f = await Fixture.Create();
+        InvalidateAccount(f, reason);
+        Assert.DoesNotContain(await f.Manager.CreateSandboxAsync(f.Student, new(DisasterMode: "none")), IsGame);
+        Assert.Equal(0, f.Manager.RuntimeStats().RoomCount);
+    }
+
+    [Fact]
+    public async Task PlayerSandboxDoesNotAuthorizeAnotherRoomOrOrdinaryMatch()
+    {
+        await using var f = await Fixture.Create();
+        var initial = Message(await f.Manager.CreateSandboxAsync(f.Student, new(DisasterMode: "none")), "gameState");
+        var code = initial.GetProperty("state").GetProperty("roomCode").GetString()!;
+        var match = initial.GetProperty("state").GetProperty("matchId").GetString()!;
+        var before = (await f.Recorder.LoadJournalEngineAsync(match))!.Engine.ComputeStateHash();
+        var registration = f.Platform.Register("sboxother", "Password123!");
+        Assert.True(registration.Success, registration.Message);
+        Assert.NotNull(registration.Account);
+        var outsider = registration.Account!;
+        var otherSession = Guid.NewGuid();
+        f.Manager.Connect(otherSession, outsider.Id, "Admin");
+        Assert.DoesNotContain(f.Manager.JoinRoom(otherSession, code), IsGame);
+        Assert.DoesNotContain(f.Manager.SpectateRoom(otherSession, code), IsGame);
+        var command = JsonSerializer.SerializeToElement(new { type = "setLife", targetPlayer = 0, value = 1, roomCode = code });
+        Assert.DoesNotContain(await f.Manager.HandleGmActionAsync(otherSession, command), IsGame);
+        Assert.DoesNotContain(await f.Manager.HandleSandboxActionAsync(otherSession, 0, command), IsGame);
+        f.Manager.CreateRoom(otherSession);
+        Assert.DoesNotContain(await f.Manager.HandleGmActionAsync(otherSession, command), IsGame);
+        Assert.DoesNotContain(await f.Manager.HandleSandboxActionAsync(otherSession, 0, command), IsGame);
+        Assert.Equal(before, (await f.Recorder.LoadJournalEngineAsync(match))!.Engine.ComputeStateHash());
+        Assert.False(L12Authorization.HasPermission(f.Platform.Account(outsider.Id)!, L12Permission.AdminOperationsWrite));
+    }
+
+    [Fact]
+    public async Task PlayerSandboxRemainsSubjectToMaintenanceAndDeploymentFence()
+    {
+        await using var f = await Fixture.Create();
+        var fenced = new L12RoomManager(f.Catalog, f.Recorder, f.Platform,
+            maintenanceSandboxFenceActive: () => true);
+        var fencedSession = Guid.NewGuid();
+        fenced.Connect(fencedSession, f.AccountId, "learner");
+        var denied = Message(await fenced.CreateSandboxAsync(fencedSession, new(DisasterMode: "none")), "operationsBlocked");
+        Assert.Equal("sandbox_deployment_fenced", denied.GetProperty("code").GetString());
+
+        var initial = Message(await f.Manager.CreateSandboxAsync(f.Student, new(DisasterMode: "none")), "gameState");
+        var match = initial.GetProperty("state").GetProperty("matchId").GetString()!;
+        var before = (await f.Recorder.LoadJournalEngineAsync(match))!.Engine.ComputeStateHash();
+        f.ScheduledMaintenance();
+        Assert.DoesNotContain(await f.Manager.HandleGmActionAsync(f.Student,
+            JsonSerializer.SerializeToElement(new { type = "addMorale", value = 1 })), IsGame);
+        Assert.DoesNotContain(await f.Manager.HandleSandboxActionAsync(f.Student, 0,
+            JsonSerializer.SerializeToElement(new { type = "endTurn" })), IsGame);
+        var recovery = Message(await f.Manager.RecoveryStateAsync(f.Student), "gameState");
+        Assert.False(recovery.GetProperty("gmEnabled").GetBoolean());
+        Assert.False(recovery.GetProperty("state").GetProperty("players")[1].TryGetProperty("hand", out _));
+        Assert.Equal(before, (await f.Recorder.LoadJournalEngineAsync(match))!.Engine.ComputeStateHash());
+        f.Manager.LeaveRoom(f.Student);
+        Assert.Equal("maintenance_active", Message(await f.Manager.CreateSandboxAsync(f.Student,
+            new(DisasterMode: "none")), "operationsBlocked").GetProperty("code").GetString());
+    }
+
+    private static void InvalidateAccount(Fixture f, string reason)
+    {
+        var root = f.Platform.Login("Admin", "L12master").Account!;
+        var context = new L12AdminAuditContext("sandbox-" + reason, "admin.accounts.status.write");
+        if (reason == "deleted")
+            Assert.True(f.Platform.DeleteAccountPersonalData(root, f.AccountId, "sandbox identity regression", context, true).Applied);
+        else if (reason == "password")
+            Assert.True(f.Platform.AdminResetPassword(root, f.AccountId, "sandbox identity regression", context, true).Applied);
+        else
+            Assert.True(f.Platform.SetAccountDisabled(root, f.AccountId, true, "sandbox identity regression", context, true).Applied);
     }
 
     private static bool IsGame(OutgoingMessage message)

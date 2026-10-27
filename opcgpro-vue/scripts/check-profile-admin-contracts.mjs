@@ -29,21 +29,24 @@ const alternateArtIdentityControls = source => source.includes('SingleCardPicker
 const checks = [
   [profile.includes('class="identity-actions" aria-label="管理与测试"')
     && profile.includes('v-if="canUseSandbox" class="profile-action sandbox-button" to="/sandbox"')
-    && profile.includes('class="profile-action admin-button" to="/admin"')
-    && profile.includes("const canUseSandbox = computed(() => canAccessAdmin.value && hasPermission('admin.operations.write'))")
+    && profile.includes('v-if="canAccessAdmin" class="profile-action admin-button" to="/admin"')
+    && profile.includes('v-if="canUseSandbox || canAccessAdmin"')
+    && profile.includes('authState.verified && !!platformState.token && !!platformState.account?.id')
     && profile.includes('.profile-action{') && profile.includes('min-height:44px')
     && profile.includes('.identity-copy{min-width:0;overflow-wrap:anywhere}')
     && profile.includes('@media(max-width:360px){.identity-actions{grid-template-columns:minmax(0,1fr)}}'),
-  '沙盒入口必须在我的身份卡与管理后台同级排列，仅已验证且有运营写入权限的管理员可见，窄屏自然换行且保留44px命中'],
+  '沙盒入口向有效登录玩家开放，后台入口仍仅管理员可见；窄屏自然换行并保留44px命中'],
   [!adminNavigation.includes("id: 'sandbox'")
-    && router.includes("{ path: '/sandbox', name: 'sandbox', component: () => import('@/l12/site/SandboxPage.vue'), meta: { requiresAdmin: true, landscapeCanvas: true } }")
+    && router.includes("{ path: '/sandbox', name: 'sandbox', component: () => import('@/l12/site/SandboxPage.vue'), meta: { requiresAccount: true, landscapeCanvas: true } }")
     && router.includes("{ path: '/admin/operations/sandbox', name: 'admin-sandbox', redirect: to => ({ path: '/sandbox', query: to.query, hash: to.hash }) }")
     && router.includes("to.query.section === 'sandbox' ? '/sandbox' : adminSections.find(item => item.id === to.query.section)?.path")
     && router.includes("if (!canAccessAdmin.value) return { name: 'me', query: { redirect: to.fullPath } }")
-    && sandbox.includes("platformState.account?.role === 'admin'\n  && hasPermission('admin.operations.write')")
+    && sandbox.includes('authState.verified && !!platformState.token && !!platformState.account?.id')
+    && sandbox.includes('!platformState.account.disabled && !platformState.account.deleted')
+    && sandbox.includes('!platformState.account.mustChangePassword && !platformState.account.mustChangeUsername')
     && sandbox.includes('<router-link to="/me">← 返回我的</router-link>')
     && game.includes(": sandboxRoom ? '/sandbox'"),
-  '沙盒须脱离后台壳并从后台各同源导航移除；旧地址和section链接保留兼容，页面/路由权限不放宽且返回链闭合'],
+  '玩家沙盒独立于后台，须有效登录且完成账号验证；旧地址兼容、后台权限和返回链保留'],
   [analyzeSource(profile, 'ProfilePage.vue').maximumParallelPageLoad <= 3 && analyzeSource(adminWorkbench, 'AdminWorkbenchPage.vue').maximumParallelPageLoad <= 3, '本批后台与个人页 AST 扇出必须不超过三路'],
   [profile.includes("{ id: 'overview', label: '排位与战绩' }")
     && !profile.includes("{ id: 'performance', label:")

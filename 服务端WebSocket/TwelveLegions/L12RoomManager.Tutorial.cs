@@ -1110,7 +1110,11 @@ public sealed partial class L12RoomManager
 
     private bool CanControlSandbox(Room room, Session session)
         => room.IsSandbox && room.GmControllerSessionId == session.Id
-           && (room.TrustedSandboxFixture && _platform is null || HasMaintenanceSandboxPermission(session));
+           && IsCurrentPlayerMembership(session.Id, session, room)
+           && (room.TrustedSandboxFixture && _platform is null
+               || HasPlayerSandboxPermission(session)
+               && (!CaptureOperationsPolicy().IsNewGameEntryBlocked(_utcNow())
+                   || HasMaintenanceSandboxPermission(session)));
 
     internal Task<IReadOnlyList<OutgoingMessage>> CreateSandboxForTestsAsync(Guid sessionId,
         L12SandboxRequest? request)

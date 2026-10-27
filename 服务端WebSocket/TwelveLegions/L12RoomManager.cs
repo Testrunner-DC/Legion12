@@ -1238,8 +1238,8 @@ public sealed partial class L12RoomManager
         if (currentPolicy.IsNewGameEntryBlocked(_utcNow())
             && !HasMaintenanceSandboxPermission(session))
             return MaintenanceBlocked(sessionId, currentPolicy);
-        if (!trustedFixture && !HasMaintenanceSandboxPermission(session))
-            return Error(sessionId, "仅当前管理员可使用沙盒", "sandboxForbidden");
+        if (!trustedFixture && !HasPlayerSandboxPermission(session))
+            return Error(sessionId, "请使用有效登录账号建立测试沙盒", "sandboxForbidden");
         var disasterMode = (request.DisasterMode ?? string.Empty).Trim().ToLowerInvariant();
         if (disasterMode is not ("all" or "random" or "custom" or "none"))
             return Error(sessionId, "沙盒天灾模式仅支持全部、随机、自定或不使用天灾", "sandboxRejected");
@@ -2712,6 +2712,15 @@ public sealed partial class L12RoomManager
     private static IReadOnlyList<OutgoingMessage> MaintenanceBlocked(Guid sessionId,
         L12OperationsPolicySnapshot policy)
         => OperationsBlocked(sessionId, "maintenance_active", "维护即将开始/维护中，对局功能已关闭。");
+
+    private bool HasPlayerSandboxPermission(Session session)
+    {
+        if (_platform is null || !session.Connected || session.IsVirtual
+            || !_sessions.TryGetValue(session.Id, out var current) || !ReferenceEquals(session, current)
+            || string.IsNullOrWhiteSpace(session.AccountId)) return false;
+        return _platform.Account(session.AccountId) is
+            { Disabled: false, Deleted: false, MustChangePassword: false, MustChangeUsername: false };
+    }
 
     private bool HasMaintenanceSandboxPermission(Session session)
     {

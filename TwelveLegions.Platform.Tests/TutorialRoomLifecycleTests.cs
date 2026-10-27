@@ -565,8 +565,11 @@ public sealed class TutorialRoomLifecycleTests
             Assert.True((await ReceiveWire(socket, "session", deadline.Token)).GetProperty("tutorialAvailable").GetBoolean());
             await SendWire(socket, new { type = "createTutorial", lessonId = "deploy", requestId = "wire-create", seed = 1 }, deadline.Token);
             Assert.Equal("wire-create", (await ReceiveWire(socket, "tutorialRejected", deadline.Token)).GetProperty("requestId").GetString());
-            await SendWire(socket, new { type = "createSandbox" }, deadline.Token);
-            await ReceiveWire(socket, "sandboxForbidden", deadline.Token);
+            await SendWire(socket, new { type = "createSandbox", request = new { disasterMode = "none" } }, deadline.Token);
+            await ReceiveWire(socket, "roomState", deadline.Token);
+            Assert.True((await ReceiveWire(socket, "gameState", deadline.Token)).GetProperty("gmEnabled").GetBoolean());
+            await SendWire(socket, new { type = "leaveRoom" }, deadline.Token);
+            await ReceiveWire(socket, "roomLeft", deadline.Token);
             await SendWire(socket, new { type = "createTutorial", lessonId = "deploy", requestId = "wire-create" }, deadline.Token);
             var room = await ReceiveWire(socket, "roomState", deadline.Token);
             Assert.False(room.GetProperty("sandbox").GetBoolean());

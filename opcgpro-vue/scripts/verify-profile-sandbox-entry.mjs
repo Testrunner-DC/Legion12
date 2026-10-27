@@ -51,7 +51,7 @@ function evaluate(source, imports = {}, globals = {}) {
   })
   return module.exports
 }
-const accountState = reactive({ account: null })
+const accountState = reactive({ account: null, token: '' })
 const authentication = reactive({ verified: false })
 const hasPermission = evaluate(`${functionText(sources.platform, 'hasPermission')}\nexports.permission = hasPermission`, {}, {
   authState: authentication, platformState: accountState,
@@ -60,16 +60,17 @@ const canAccessAdmin = vm.runInNewContext(initializer(sources.platform, 'canAcce
   computed, authState: authentication, platformState: accountState,
 })
 const profileAccess = vm.runInNewContext(initializer(sources.profile, 'canUseSandbox'), {
-  computed, canAccessAdmin, hasPermission,
+  computed, authState: authentication, platformState: accountState,
 })
 const sandboxAccess = vm.runInNewContext(initializer(sources.sandbox, 'canUseSandbox'), {
-  computed, platformState: accountState, hasPermission,
+  computed, authState: authentication, platformState: accountState,
 })
 const navigation = evaluate(sources.navigation).adminSections
 const cases = []
 async function check(name, action) { await action(); cases.push(name) }
 function setIdentity({ role = 'admin', permissions = ['admin.operations.write'], verified = true, guest = false, ...extra } = {}) {
   accountState.account = guest ? null : { id: 'synthetic-sandbox-entry', username: '本地布局验收账号', role, permissions, ...extra }
+  accountState.token = guest ? '' : 'synthetic-local-token'
   authentication.verified = verified
 }
 function makeRouter() {
@@ -85,9 +86,13 @@ function makeRouter() {
 for (const [name, identity, expectedAdmin, expectedSandbox] of [
   ['guest', { guest: true, verified: false }, false, false],
   ['unverified admin', { verified: false }, false, false],
-  ['ordinary player', { role: 'player', permissions: [] }, false, false],
-  ['player with stray operations permission', { role: 'player' }, false, false],
-  ['admin without operations write', { permissions: ['admin.operations.read'] }, true, false],
+  ['ordinary player', { role: 'player', permissions: [] }, false, true],
+  ['player with stray operations permission', { role: 'player' }, false, true],
+  ['admin without operations write', { permissions: ['admin.operations.read'] }, true, true],
+  ['password change required', { mustChangePassword: true }, true, false],
+  ['username change required', { mustChangeUsername: true }, true, false],
+  ['deleted account', { deleted: true }, true, false],
+  ['disabled account', { disabled: true }, true, false],
   ['authorized admin', {}, true, true],
 ]) {
   await check(`permission matrix: ${name}`, () => {
@@ -99,10 +104,11 @@ for (const [name, identity, expectedAdmin, expectedSandbox] of [
 }
 await check('permission revocation, identity switch and logout update both consumers', () => {
   setIdentity(); assert.equal(profileAccess.value, true)
-  accountState.account.permissions = []; assert.equal(profileAccess.value, false); assert.equal(sandboxAccess.value, false)
+  accountState.account.permissions = []; assert.equal(profileAccess.value, true); assert.equal(sandboxAccess.value, true)
   setIdentity(); assert.equal(profileAccess.value, true)
   authentication.verified = false; assert.equal(profileAccess.value, false); assert.equal(sandboxAccess.value, false)
-  setIdentity({ role: 'player' }); assert.equal(profileAccess.value, false)
+  setIdentity({ role: 'player' }); assert.equal(profileAccess.value, true); assert.equal(canAccessAdmin.value, false)
+  accountState.token = ''; assert.equal(profileAccess.value, false); assert.equal(sandboxAccess.value, false)
   accountState.account = null; assert.equal(profileAccess.value, false); assert.equal(sandboxAccess.value, false)
 })
 await check('all shared admin navigation consumers omit sandbox, preserve match archive', () => {
@@ -111,7 +117,7 @@ await check('all shared admin navigation consumers omit sandbox, preserve match 
 })
 for (const input of ['/sandbox?source=profile#setup', '/admin/operations/sandbox?source=old#setup', '/admin?section=sandbox&source=legacy#setup']) {
   await check(`actual router compatibility: ${input}`, async () => {
-    setIdentity()
+    setIdentity({ role: 'player', permissions: [] })
     const router = makeRouter()
     await router.push(input)
     const route = router.currentRoute.value
@@ -120,12 +126,13 @@ for (const input of ['/sandbox?source=profile#setup', '/admin/operations/sandbox
     assert.equal(route.query.source, input.includes('legacy') ? 'legacy' : input.includes('old') ? 'old' : 'profile')
     assert.equal(route.query.section, undefined)
     assert.equal(route.hash, '#setup')
-    assert.equal(route.meta.requiresAdmin, true)
+    assert.equal(route.meta.requiresAdmin, undefined)
+    assert.equal(route.meta.requiresAccount, true)
     assert.equal(route.meta.landscapeCanvas, true)
     assert.equal(route.matched.length, 1, 'sandbox cannot remain inside AdminPage')
   })
 }
-for (const identity of [{ guest: true, verified: false }, { verified: false }, { role: 'player' }, { mustChangeUsername: true }, { mustChangePassword: true }]) {
+for (const identity of [{ guest: true, verified: false }, { verified: false }, { disabled: true }, { deleted: true }, { mustChangeUsername: true }, { mustChangePassword: true }]) {
   for (const input of ['/sandbox?probe=denied#setup', '/admin/operations/sandbox?probe=denied#setup', '/admin?section=sandbox&probe=denied#setup']) {
     await check(`actual route denial: ${JSON.stringify(identity)} at ${input}`, async () => {
       setIdentity(identity)
@@ -138,6 +145,12 @@ for (const identity of [{ guest: true, verified: false }, { verified: false }, {
     })
   }
 }
+await check('ordinary sandbox player cannot enter administration', async () => {
+  setIdentity({ role: 'player', permissions: [] })
+  const router = makeRouter()
+  await router.push('/admin')
+  assert.equal(router.currentRoute.value.path, '/me')
+})
 await check('other legacy admin sections retain query/hash and permissions', async () => {
   setIdentity()
   const router = makeRouter()
@@ -298,12 +311,12 @@ window.__sandboxEntryQA={router,platform,identity,async update(value){identity(v
       results.push({ viewport: { width, height }, geometry })
     }
     await page.setViewportSize({ width: 390, height: 844 })
-    for (const [identity, admin, sandbox] of [[{},1,1],[{permissions:['admin.operations.read']},1,0],[{role:'player'},0,0],[{verified:false},0,0],[{guest:true},0,0]]) {
+    for (const [identity, admin, sandbox] of [[{},1,1],[{permissions:['admin.operations.read']},1,1],[{role:'player',permissions:[]},0,1],[{disabled:true},1,0],[{mustChangePassword:true},1,0],[{verified:false},0,0],[{guest:true},0,0]]) {
       await page.evaluate(value => window.__sandboxEntryQA.update(value), identity)
       assert.equal(await page.locator('.admin-button').count(), admin)
       assert.equal(await page.locator('.sandbox-button').count(), sandbox)
     }
-    await page.evaluate(() => window.__sandboxEntryQA.update({}))
+    await page.evaluate(() => window.__sandboxEntryQA.update({ role: 'player', permissions: [] }))
     await page.locator('.sandbox-button').click()
     await page.locator('.sandbox-page').waitFor()
     assert.equal(await page.locator('.admin-page').count(), 0, 'sandbox still uses admin shell')
@@ -315,7 +328,7 @@ window.__sandboxEntryQA={router,platform,identity,async update(value){identity(v
       await page.locator('.sandbox-page').waitFor()
       assert.equal(await page.evaluate(() => window.__sandboxEntryQA.router.currentRoute.value.fullPath), '/sandbox?source=old#setup')
     }
-    await page.evaluate(() => window.__sandboxEntryQA.update({ permissions: ['admin.operations.read'] }))
+    await page.evaluate(() => window.__sandboxEntryQA.update({ role: 'player', permissions: [], verified: false }))
     assert.equal(await page.locator('.sandbox-page footer button').isDisabled(), true)
     assert.equal(await page.locator('.sandbox-deck>button:enabled').count(), 0)
     await page.locator('.sandbox-page footer a').click()
@@ -337,7 +350,7 @@ window.__sandboxEntryQA={router,platform,identity,async update(value){identity(v
     assert.deepEqual(unexpectedRequests, [], 'all network must stay in the bounded synthetic fixture')
     for (const [key, relative] of Object.entries(paths)) assert.equal(sha256(readFileSync(path.join(root, relative))), sha256(raw[key]), `Source changed during browser run: ${relative}`)
     report.status = 'passed'
-    report.browserChecks = ['17 viewport identity layouts', 'keyboard focus and tab order', '5 live permission states', 'sandbox navigation and return', 'both legacy links preserve query/hash', 'live permission revocation disables sandbox', 'all admin entry consumers removed', 'real sign-out hides entries and denies route']
+    report.browserChecks = ['17 viewport identity layouts', 'keyboard focus and tab order', '7 live account states', 'ordinary player sandbox navigation without admin entry', 'both legacy links preserve query/hash', 'live identity invalidation disables sandbox', 'all admin entry consumers removed', 'real sign-out hides entries and denies route']
     console.log(JSON.stringify({ status: report.status, output, viewports: results.length, browserChecks: report.browserChecks }, null, 2))
   } catch (error) {
     report.status = 'failed'; report.failure = error.stack || String(error)

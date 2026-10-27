@@ -99,16 +99,18 @@ check('live presentation busy is exposed without changing replay speed gating', 
   assert.match(source.combatMotion, /emit\('presentationChange', Boolean\(preparationCount \|\| animations\.size\)\)/)
   assert.match(source.combatMotion, /emit\('busyChange', Boolean\(props\.playbackSpeed && animations\.size\)\)/)
 })
-check('tutorial route replaces public single-player while sandbox is admin-only', () => {
+check('tutorial entry stays independent while personal sandbox requires a valid account', () => {
   assert.ok(source.router.includes("path: '/battle/tutorial'"))
   assert.match(source.router, /path: '\/battle\/tutorial'[\s\S]{0,180}BattleHubPage\.vue'[\s\S]{0,120}props: \{ initialTab: 'tutorial' \}/)
   assert.doesNotMatch(source.router, /path: '\/battle\/tutorial'[\s\S]{0,180}TutorialPage\.vue'/)
   assert.match(source.hub, /initialTab\?: 'match' \| 'friendly' \| 'tutorial'/)
   assert.match(source.hub, /watch\(\(\) => props\.initialTab, next => \{ tab\.value = next \}, \{ immediate: true \}\)/)
-  assert.match(source.router, /path: '\/sandbox'[\s\S]{0,180}SandboxPage\.vue'[\s\S]{0,120}requiresAdmin: true/)
+  assert.match(source.router, /path: '\/sandbox'[\s\S]{0,180}SandboxPage\.vue'[\s\S]{0,120}requiresAccount: true/)
   assert.match(source.router, /path: '\/admin\/operations\/sandbox'[\s\S]{0,180}redirect: to => \(\{ path: '\/sandbox', query: to\.query, hash: to\.hash \}\)/)
   assert.doesNotMatch(source.admin, /id: 'sandbox'/)
-  assert.match(source.sandbox, /platformState\.account\?\.role === 'admin'[\s\S]{0,100}hasPermission\('admin\.operations\.write'\)/)
+  assert.match(source.sandbox, /authState\.verified && !!platformState\.token && !!platformState\.account\?\.id/)
+  assert.match(source.sandbox, /!platformState\.account\.mustChangePassword && !platformState\.account\.mustChangeUsername/)
+  assert.doesNotMatch(source.sandbox, /hasPermission\('admin\.operations\.write'\)/)
 })
 check('wire request is exact and has no client fixture authority', () => {
   assert.match(source.net, /pendingActionEnvelope = \{ type: 'createTutorial', lessonId, requestId \}/)
