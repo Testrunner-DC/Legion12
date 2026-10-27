@@ -121,6 +121,21 @@ public sealed partial class L12WebSocketServer
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.AlternateArtGrants(username));
         });
+        app.MapGet("/api/admin/alternate-art-grants/search", (HttpRequest request, string? query,
+            string? sourceKind, string? state, int? page, int? pageSize) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.SearchAlternateArtGrants(query, sourceKind, state,
+                    page ?? 1, pageSize ?? 20));
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "alternate_art_grant_search_invalid", error.Message,
+                    StatusCodes.Status400BadRequest);
+            }
+        });
         app.MapPost("/api/admin/alternate-art-grants", (HttpRequest request, L12AlternateArtGrantDraft draft) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;

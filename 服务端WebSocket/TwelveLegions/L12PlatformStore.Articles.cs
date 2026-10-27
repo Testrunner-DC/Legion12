@@ -222,7 +222,7 @@ public sealed partial class L12PlatformStore
         {
             var now = DateTimeOffset.UtcNow;
             var normalizedKind = NormalizeSiteKind(kind);
-            return _data.Articles
+            var rows = _data.Articles
                 .Where(row => row.Published is not null &&
                     (row.Status == "published" || row.Status == "scheduled" && row.PublishAt <= now))
                 .Where(row => row.Published!.Kind == normalizedKind)
@@ -233,9 +233,9 @@ public sealed partial class L12PlatformStore
                 .OrderByDescending(row => row.Published!.Pinned)
                 .ThenByDescending(row => row.Published!.PublishedAt)
                 .ThenBy(row => row.Id)
-                .Take(Math.Clamp(limit, 1, 200))
-                .Select(ToPublicArticleView)
-                .ToArray();
+                .Take(Math.Clamp(limit, 1, 200)).ToArray();
+            var accountNames = ArticleAccountNamesLocked(rows);
+            return rows.Select(row => ToPublicArticleView(row, accountNames)).ToArray();
         }
     }
 
@@ -261,7 +261,7 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var normalizedKind = NormalizeSiteKind(kind);
-            return _data.Articles
+            var rows = _data.Articles
                 .Where(row => row.Kind == normalizedKind)
                 .Where(row => string.IsNullOrWhiteSpace(status) || row.Status == status.Trim())
                 .Where(row => string.IsNullOrWhiteSpace(category) || row.Category == category.Trim() ||
@@ -270,9 +270,9 @@ public sealed partial class L12PlatformStore
                 .OrderByDescending(row => row.Pinned)
                 .ThenByDescending(row => row.PublishAt ?? DateTimeOffset.MinValue)
                 .ThenBy(row => row.Id)
-                .Take(Math.Clamp(limit, 1, 500))
-                .Select(ToAdminArticleView)
-                .ToArray();
+                .Take(Math.Clamp(limit, 1, 500)).ToArray();
+            var accountNames = ArticleAccountNamesLocked(rows);
+            return rows.Select(row => ToAdminArticleView(row, accountNames)).ToArray();
         }
     }
 
@@ -456,29 +456,54 @@ public sealed partial class L12PlatformStore
 
     private ArticleRow? FindArticle(string id) => _data.Articles.FirstOrDefault(item => item.Id == id.Trim());
 
-    private L12ArticleView ToAdminArticleView(ArticleRow row) => new(row.Id, row.Title, row.Summary, row.Body,
+    private L12ArticleView ToAdminArticleView(ArticleRow row) => ToAdminArticleView(row, null);
+
+    private L12ArticleView ToAdminArticleView(ArticleRow row, IReadOnlyDictionary<string, string>? accountNames)
+        => new(row.Id, row.Title, row.Summary, row.Body,
         row.Category, string.IsNullOrWhiteSpace(row.MediaAssetId) ? row.CoverUrl : SiteMediaUrl(row.MediaAssetId),
         row.Link, row.Slug, row.Pinned, row.Status, row.HasUnpublishedChanges,
-        row.PublishAt, row.CreatedAt, row.UpdatedAt, row.Published?.PublishedAt, ArticleAccountName(row.CreatedByAccountId),
-        ArticleAccountName(row.UpdatedByAccountId), row.Published is null ? null : ArticleAccountName(row.Published.PublishedByAccountId),
+        row.PublishAt, row.CreatedAt, row.UpdatedAt, row.Published?.PublishedAt,
+        ArticleAccountName(row.CreatedByAccountId, accountNames),
+        ArticleAccountName(row.UpdatedByAccountId, accountNames),
+        row.Published is null ? null : ArticleAccountName(row.Published.PublishedByAccountId, accountNames),
         row.Revision, row.Kind, row.CategoryId, row.MediaAssetId, row.SortOrder,
         ArticleBodyMedia(row.Body), row.VideoAuthorName);
 
-    private L12ArticleView ToPublicArticleView(ArticleRow row)
+    private L12ArticleView ToPublicArticleView(ArticleRow row) => ToPublicArticleView(row, null);
+
+    private L12ArticleView ToPublicArticleView(ArticleRow row, IReadOnlyDictionary<string, string>? accountNames)
     {
         var value = row.Published!;
         var coverUrl = string.IsNullOrWhiteSpace(value.MediaAssetId) ? value.CoverUrl : SiteMediaUrl(value.MediaAssetId);
         return new L12ArticleView(row.Id, value.Title, value.Summary, value.Body, value.Category, coverUrl,
             value.Link, value.Slug, value.Pinned, "published", false, value.PublishedAt, row.CreatedAt,
-            value.PublishedAt, value.PublishedAt, ArticleAccountName(row.CreatedByAccountId), ArticleAccountName(value.PublishedByAccountId),
-            ArticleAccountName(value.PublishedByAccountId), row.Revision, value.Kind, value.CategoryId,
+            value.PublishedAt, value.PublishedAt, ArticleAccountName(row.CreatedByAccountId, accountNames),
+            ArticleAccountName(value.PublishedByAccountId, accountNames),
+            ArticleAccountName(value.PublishedByAccountId, accountNames), row.Revision, value.Kind, value.CategoryId,
             value.MediaAssetId, value.SortOrder, ArticleBodyMedia(value.Body), value.VideoAuthorName);
     }
 
-    private string ArticleAccountName(string accountId) => string.IsNullOrWhiteSpace(accountId) ? "系统迁移"
-        : _data.Accounts.FirstOrDefault(item => item.Id == accountId) is { } account
-            ? PublicUsername(account)
-            : "已注销管理员";
+    private IReadOnlyDictionary<string, string> ArticleAccountNamesLocked(IEnumerable<ArticleRow> rows)
+    {
+        var accountIds = rows.SelectMany(row => new[]
+            {
+                row.CreatedByAccountId,
+                row.UpdatedByAccountId,
+                row.Published?.PublishedByAccountId ?? string.Empty,
+            })
+            .Where(id => !string.IsNullOrWhiteSpace(id)).ToHashSet(StringComparer.Ordinal);
+        return _data.Accounts.Where(item => accountIds.Contains(item.Id))
+            .ToDictionary(item => item.Id, PublicUsername, StringComparer.Ordinal);
+    }
+
+    private string ArticleAccountName(string accountId, IReadOnlyDictionary<string, string>? accountNames = null)
+    {
+        if (string.IsNullOrWhiteSpace(accountId)) return "系统迁移";
+        if (accountNames is not null)
+            return accountNames.TryGetValue(accountId, out var name) ? name : "已注销管理员";
+        return _data.Accounts.FirstOrDefault(item => item.Id == accountId) is { } account
+            ? PublicUsername(account) : "已注销管理员";
+    }
 
     private void AppendArticleRevision(ArticleRow row, string actorId, string action)
     {

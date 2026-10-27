@@ -41,8 +41,10 @@ import CardImage from '/src/l12/CardImage.vue'
 import {adminApi,alternateArtApi,platformState,authState} from '/src/l12/platform.ts'
 import {l12State} from '/src/l12/net.ts'
 const calls=[]
-for(const name of ['alternateArtProducts','alternateArtRarities','siteCategories','alternateArtGrants','alternateArtAwardRules','alternateArts'])
+for(const name of ['alternateArtProducts','alternateArtRarities','siteCategories','alternateArtAwardRules','alternateArts'])
   adminApi[name]=async()=>{calls.push(name);return []}
+adminApi.seasonCatalog=async()=>{calls.push('seasonCatalog');return {current:{seasonId:'qa-current',name:'当前赛季'},next:null,archives:[]}}
+adminApi.searchAlternateArtGrants=async()=>{calls.push('searchAlternateArtGrants');return {items:[],total:0,page:1,pageSize:20}}
 adminApi.searchAlternateArts=async()=>{calls.push('searchAlternateArts');return {items:[],total:0,page:1,pageSize:20}}
 platformState.account={id:'synthetic-admin',username:'QA',role:'admin',permissions:['admin.content.read','admin.content.draft']}
 platformState.token='synthetic-test-only';authState.verified=true;authState.initialized=true
@@ -92,8 +94,9 @@ window.__sharedGallery.publicReadDone=true
     assert.deepEqual(mediaRequests, ['/api/site/media/fixture/desktop/card.png'])
     assert.deepEqual([...publicRequests].sort(),['/api/alternate-arts','/api/gallery/presentation'])
     const calls = await page.evaluate(() => [...window.__sharedGallery.calls])
-    assert.ok(shared ? calls.includes('alternateArtGrants') : calls.includes('searchAlternateArts'))
+    assert.ok(shared ? calls.includes('searchAlternateArtGrants') : calls.includes('searchAlternateArts'))
     if (shared) {
+      assert.equal(calls.includes('seasonCatalog'), true)
       for (const name of ['alternateArtProducts','alternateArtRarities','siteCategories','searchAlternateArts']) assert.equal(calls.includes(name), false)
       assert.equal(await page.locator('.workspace-tabs').count(), 0)
       assert.equal(await page.locator('.gallery-workspace').count(), 0)
@@ -106,7 +109,7 @@ window.__sharedGallery.publicReadDone=true
       await link.focus(); await page.keyboard.press('Enter')
       assert.equal(await page.evaluate(() => window.__sharedLinkClicks), 1)
       await page.getByRole('button', { name: '刷新当前资料', exact: true }).click()
-      await page.waitForFunction(() => window.__sharedGallery.calls.filter(name => name === 'alternateArtGrants').length === 2)
+      await page.waitForFunction(() => window.__sharedGallery.calls.filter(name => name === 'searchAlternateArtGrants').length === 2)
       for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
         await page.setViewportSize(viewport)
         const box = await link.boundingBox()

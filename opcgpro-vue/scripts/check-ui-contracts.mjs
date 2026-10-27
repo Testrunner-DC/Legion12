@@ -1914,8 +1914,10 @@ contracts.push(
     && adminAlternateArts.includes('showCardDetails(art)')
     && ['name', 'artCode', 'baseCard'].every(key => adminAlternateArts.includes(`registryFilters.${key}`))
     && adminAlternateArts.includes('pageSize: registry.value.pageSize')
-    && adminAlternateArts.includes('await searchRegistry(1)')
-    && !/async function load\(\)[\s\S]*?Promise\.all\(\[\s*adminApi\.alternateArts\(/.test(adminAlternateArts),
+    && adminAlternateArts.includes('void searchRegistry(1)')
+    && adminAlternateArts.includes('@submit.prevent="searchRegistry(1)"')
+    && !adminAlternateArts.slice(adminAlternateArts.indexOf('async function load()'),
+      adminAlternateArts.indexOf('async function loadRights()')).includes('adminApi.alternateArts()'),
     '正式画廊保留常规卡、异画/联动卡及权益分页页签；测试共用正式资料管理入口且只保留本地权益'],
   [shell.includes('alternateArtApi.notifications()')
     && shell.includes('alternateArtApi.acknowledgeNotification')
@@ -1942,7 +1944,14 @@ contracts.push(
     && !adminAlternateArts.includes('eventUsernames')
     && platform.includes('dispatchAlternateArtEvent: (ruleId: string, accountIds: string[])')
     && alternateArtStore.includes('IReadOnlyList<string> AccountIds')
-    && adminAccountPicker.includes("adminApi.accounts()")
+    && adminAccountPicker.includes("adminApi.accountsPage({ page: 1, pageSize: PAGE_SIZE, search, deleted: false })")
+    && adminAccountPicker.includes("adminApi.accountsPage({ page: 1, pageSize: PAGE_SIZE, search, deleted: true })")
+    && !adminAccountPicker.includes("adminApi.accounts()")
+    && adminAccountPicker.includes('const PAGE_SIZE = 20')
+    && adminAccountPicker.includes('watch(accessScope')
+    && adminAccountPicker.includes("{ flush: 'sync' }")
+    && adminAccountPicker.includes('requestGeneration')
+    && adminAccountPicker.includes('scheduleSearch()')
     && adminAccountPicker.includes("hasPermission('admin.accounts.read')")
     && adminAccountPicker.includes('useId')
     && adminAccountPicker.includes(':aria-controls="listboxId"')

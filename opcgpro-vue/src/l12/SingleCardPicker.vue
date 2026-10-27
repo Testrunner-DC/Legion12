@@ -135,6 +135,7 @@ const filtered = computed(() => {
 @container single-picker style(--picker-mobile: 1) {
   .single-card-picker {
     box-sizing: border-box;
+    min-width: 0;
     width: min(100%, var(--l12-mobile-dialog-width, 94vw));
     height: min(100%, var(--l12-mobile-dialog-height, 90dvh));
     max-width: 100%;
@@ -146,7 +147,7 @@ const filtered = computed(() => {
   .single-card-picker > header small { display: none; }
   .single-card-picker h2 { margin: 0; font-size: var(--l12-dialog-title, 1rem); overflow-wrap: anywhere; }
   .single-card-picker > header button { width: 44px; height: 44px; flex: 0 0 44px; font-size: 1.125rem; }
-  .single-card-filters { display: flex; gap: 5px; overflow-x: auto; padding: 4px 7px; }
+  .single-card-filters { display: flex; min-width: 0; max-width: 100%; gap: 5px; overflow-x: auto; padding: 4px 7px; }
   .single-card-filters :is(input,select) { min-height: 44px; min-width: 108px; flex: 0 0 108px; padding: 5px; font-size: .875rem; }
   .single-card-filters input { flex-basis: 180px; }
   .single-card-result { padding: 3px 7px; font-size: .6875rem; }

@@ -264,6 +264,81 @@ public sealed class AlternateArtGalleryWorkflowHttpTests
                 && !row.GetProperty("showInGalleryFilter").GetBoolean());
     }
 
+    [Fact]
+    public async Task GrantHistorySearchIsServerFilteredPagedAndAuthorized()
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var admin = f.Store.AuthenticateTokenSession(f.AdminToken)!.Account;
+        var art = f.Store.AlternateArts().First(row => row.Active && row.Kind == "alternate-art");
+        for (var index = 0; index < 23; index++)
+        {
+            var account = f.Store.Register($"grantuser{index:00}", "password-123").Account!;
+            var grant = f.Store.GrantAlternateArt(admin, new(art.Id, account.Id,
+                index % 2 == 0 ? "manual" : "event", $"批次-{index:00}"));
+            if (index == 0) f.Store.RevokeAlternateArtGrant(admin, grant.Id);
+        }
+
+        const string endpoint = "/api/admin/alternate-art-grants/search?sourceKind=manual&state=active&page=2&pageSize=5";
+        using var anonymous = await Send(f, HttpMethod.Get, endpoint, null);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        using var player = await Send(f, HttpMethod.Get, endpoint, f.PlayerToken);
+        Assert.Equal(HttpStatusCode.Forbidden, player.StatusCode);
+        using var response = await Send(f, HttpMethod.Get, endpoint, f.AdminToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var page = (await response.Content.ReadFromJsonAsync<L12AlternateArtGrantSearchPage>())!;
+        Assert.Equal(11, page.Total);
+        Assert.Equal(2, page.Page);
+        Assert.Equal(5, page.PageSize);
+        Assert.Equal(5, page.Items.Count);
+        Assert.All(page.Items, item =>
+        {
+            Assert.Equal("manual", item.SourceKind);
+            Assert.Null(item.RevokedAt);
+        });
+
+        using var query = await Send(f, HttpMethod.Get,
+            "/api/admin/alternate-art-grants/search?query=grantuser22&page=1&pageSize=20", f.AdminToken);
+        Assert.Equal(HttpStatusCode.OK, query.StatusCode);
+        var match = (await query.Content.ReadFromJsonAsync<L12AlternateArtGrantSearchPage>())!;
+        Assert.Equal("grantuser22", Assert.Single(match.Items).Username);
+        using var beyondLast = await Send(f, HttpMethod.Get,
+            "/api/admin/alternate-art-grants/search?sourceKind=manual&state=active&page=2147483647&pageSize=5",
+            f.AdminToken);
+        Assert.Equal(HttpStatusCode.OK, beyondLast.StatusCode);
+        var last = (await beyondLast.Content.ReadFromJsonAsync<L12AlternateArtGrantSearchPage>())!;
+        Assert.Equal(3, last.Page);
+        Assert.Single(last.Items);
+        using var invalid = await Send(f, HttpMethod.Get,
+            "/api/admin/alternate-art-grants/search?state=unknown", f.AdminToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
+    [Fact]
+    public async Task OneCardArtUploadCanBackRegularAndAlternateImagesThroughTheSameMediaStore()
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var admin = f.Store.AuthenticateTokenSession(f.AdminToken)!.Account;
+        var media = Upload(f.Store, admin, "card-art");
+        var alternate = f.Store.AlternateArts().First(row => row.BuiltIn);
+        var regular = f.Store.GalleryPresentationCatalog().RegularCards.First();
+
+        using var alternateResponse = await Send(f, HttpMethod.Put, ImageEndpoint, f.AdminToken,
+            new { alternateArtId = alternate.Id, mediaAssetId = media.Id });
+        using var regularResponse = await Send(f, HttpMethod.Put, "/api/admin/gallery/regular-cards/image", f.AdminToken,
+            new { cardId = regular.Id, mediaAssetId = media.Id });
+        Assert.Equal(HttpStatusCode.OK, alternateResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, regularResponse.StatusCode);
+
+        var savedAlternate = (await alternateResponse.Content.ReadFromJsonAsync<L12AlternateArtView>())!;
+        var savedRegular = (await regularResponse.Content.ReadFromJsonAsync<L12AlternateArtView>())!;
+        Assert.Equal(media.Id, savedAlternate.MediaAssetId);
+        Assert.Equal(media.Id, savedRegular.MediaAssetId);
+        Assert.Equal(media.DesktopUrl, savedAlternate.ImageUrl);
+        Assert.Equal(media.DesktopUrl, savedRegular.ImageUrl);
+        var stored = Assert.Single(f.Store.AdminSiteMedia("card-art").Where(item => item.Id == media.Id));
+        Assert.Equal(2, stored.ReferenceCount);
+    }
+
     private static void AssertStableIdentity(L12AlternateArtView baseline, JsonElement actual)
     {
         Assert.Equal(baseline.Id, actual.GetProperty("id").GetString());

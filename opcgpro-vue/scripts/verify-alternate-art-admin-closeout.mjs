@@ -25,7 +25,7 @@ const accounts=[
  {id:'player-0005-other',username:'青禾',role:'player',createdAt:'',publicHistory:false,permissions:[]},
 ]
 let reads=0
-adminApi.accounts=async()=>{reads++;return accounts}
+adminApi.accountsPage=async(query={})=>{reads++;const rows=accounts.filter(item=>Boolean(item.deleted)===Boolean(query.deleted)&&(!query.search||item.username.includes(query.search)||item.id.includes(query.search)));return{items:rows.slice(0,20),page:1,pageSize:20,total:rows.length,activeCount:accounts.filter(item=>!item.deleted).length,deletedCount:accounts.filter(item=>item.deleted).length}}
 authState.verified=true
 platformState.token='qa-token'
 platformState.account={id:'admin-a',username:'AdminA',role:'admin',createdAt:'',publicHistory:false,permissions:['admin.accounts.read','admin.content.draft']}
@@ -92,7 +92,7 @@ const calls={metadata:[],regularMetadata:[],saveArt:[],saveImage:[],saveRegularI
 let failNextGalleryMetadata=false
 let failNextProductsRefresh=false
 let delayNextProductSave=false
-adminApi.alternateArtGrants=async()=>[]
+adminApi.searchAlternateArtGrants=async()=>({items:[],total:0,page:1,pageSize:20})
 adminApi.siteMedia=async()=>[media]
 adminApi.searchSiteMedia=async()=>({items:[media],page:1,pageSize:24,total:1,hasMore:false})
 adminApi.alternateArtAwardRules=async()=>[]
@@ -112,7 +112,7 @@ adminApi.saveArticle=async draft=>{calls.saveArticle.push(structuredClone(draft)
 adminApi.publishArticle=async id=>{calls.publishArticle.push(id);throw new Error('画廊流程不应发布产品')}
 adminApi.saveAlternateArtRarity=async draft=>{calls.saveRarity.push(structuredClone(draft));return {...draft,id:'unexpected',createdAt:now,updatedAt:now}}
 adminApi.grantAlternateArt=async draft=>{calls.grant.push(structuredClone(draft));throw new Error('gallery card must not grant')}
-adminApi.accounts=async()=>[]
+adminApi.accountsPage=async()=>({items:[],page:1,pageSize:20,total:0,activeCount:0,deletedCount:0})
 authState.verified=true
 platformState.token='qa-token'
 platformState.account={id:'admin-a',username:'AdminA',role:'admin',createdAt:'',publicHistory:false,permissions:['admin.accounts.read','admin.content.draft']}
@@ -211,8 +211,13 @@ try {
     await input.press('Enter')
     assert.equal(await page.locator('#selected-id').textContent(), 'player-0001-unique', `keyboard selection did not submit unique id at ${suffix(viewport)}`)
     await input.fill('不存在的玩家')
-    assert.equal(await page.getByText('没有匹配的玩家账号').count(), 1, `empty state missing at ${suffix(viewport)}`)
+    const emptyState = page.getByText('没有匹配的玩家账号', { exact: true })
+    await emptyState.waitFor({ state: 'visible', timeout: 2_000 })
+    assert.equal(await emptyState.count(), 1, `empty state missing at ${suffix(viewport)}`)
     await input.fill('青禾')
+    const qingheOption = options.filter({ hasText: 'player-0005-other' })
+    await qingheOption.waitFor({ state: 'visible', timeout: 2_000 })
+    assert.equal(await qingheOption.isDisabled(), false, `second matching account was not selectable at ${suffix(viewport)}`)
     await input.press('Enter')
     assert.equal(await page.locator('#selected-id').textContent(), 'player-0005-other', `second selection failed at ${suffix(viewport)}`)
     const readsBeforeSwitch = await page.evaluate(() => window.__qa.reads())

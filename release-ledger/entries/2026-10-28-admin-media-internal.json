@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-admin-media-internal",
+  "date": "2026-10-28",
+  "audience": "internal",
+  "reason": "后台画廊分页与有界读取、账号候选时效隔离、文章作者字典投影和图片转换资源释放；不在玩家更新日志展示内部实现。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminAccountPicker.vue",
+    "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+    "opcgpro-vue/src/l12/site/MediaUploadField.vue",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Articles.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.Gallery.cs"
+  ]
+}

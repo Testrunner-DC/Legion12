@@ -214,6 +214,7 @@ export interface ServerStorageCategory { id: string; label: string; bytes: numbe
 export interface ServerStorageTrendPoint { observedAt: string; workingSetBytes: number; volumeUsedPercent: Record<string, number> }
 export interface ServerStorageStatus { observedAt: string; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[]; health: 'healthy'|'warning'|'critical'|'unknown'; conclusion: string; impact: string; recommendedAction: string; thresholds: { warningPercent: number; criticalPercent: number; source: string }; trend: ServerStorageTrendPoint[]; trendScope: 'current-process'; trendDescription: string; sampleState: 'complete'|'partial'|'unavailable'; unavailableSourceCount: number }
 export interface AlternateArtGrant { id: string; accountId: string; username: string; alternateArtId: string; sourceKind: 'manual' | 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event' | 'ranked-participants'; sourceReference: string; grantedAt: string; revokedAt?: string }
+export interface AlternateArtGrantSearchPage { items: AlternateArtGrant[]; total: number; page: number; pageSize: number }
 export interface AlternateArtAwardRule { id: string; alternateArtId: string; kind: 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event'; seasonId: string; eventId: string; minimumTierIndex: number; active: boolean; createdAt: string; updatedAt: string; masterId?: string }
 export interface AdminAnalyticsMetricCoverage {
   metric: string; unit: string; eligibleSamples: number; observedSamples: number
@@ -1527,6 +1528,15 @@ export const adminApi = {
   saveRegularGalleryCardMetadata: (draft: { cardId: string; productIds: string[]; rarityIds: string[]; artist?: string; collaboration?: string }) => platformRequest<AlternateArt>('/api/admin/gallery/regular-cards/metadata', { method: 'PUT', body: JSON.stringify(draft) }),
   saveRegularGalleryCardImage: (draft: { cardId: string; mediaAssetId: string }) => platformRequest<AlternateArt>('/api/admin/gallery/regular-cards/image', { method: 'PUT', body: JSON.stringify(draft) }),
   alternateArtGrants: (username?: string) => platformRequest<AlternateArtGrant[]>(`/api/admin/alternate-art-grants${username ? `?username=${encodeURIComponent(username)}` : ''}`),
+  searchAlternateArtGrants: (query: { query?: string; sourceKind?: string; state?: string; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams()
+    if (query.query) params.set('query', query.query)
+    if (query.sourceKind) params.set('sourceKind', query.sourceKind)
+    if (query.state) params.set('state', query.state)
+    params.set('page', String(query.page ?? 1))
+    params.set('pageSize', String(query.pageSize ?? 20))
+    return platformRequest<AlternateArtGrantSearchPage>(`/api/admin/alternate-art-grants/search?${params}`)
+  },
   grantAlternateArt: (draft: { alternateArtId: string; accountId: string; sourceKind: AlternateArtGrant['sourceKind']; sourceReference?: string }) => platformRequest<AlternateArtGrant>('/api/admin/alternate-art-grants', { method: 'POST', body: JSON.stringify(draft) }),
   previewAlternateArtRankedParticipants: (draft: { alternateArtId: string; seasonId?: string }) => platformRequest<AlternateArtRankedParticipantDispatchPreview>('/api/admin/alternate-art-grants/ranked-participants/preview', { method: 'POST', body: JSON.stringify(draft) }),
   dispatchAlternateArtRankedParticipants: (draft: { alternateArtId: string; seasonId?: string }) => platformRequest<AlternateArtGrant[]>('/api/admin/alternate-art-grants/ranked-participants/dispatch', { method: 'POST', body: JSON.stringify(draft) }),

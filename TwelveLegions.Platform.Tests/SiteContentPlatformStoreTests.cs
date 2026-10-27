@@ -1894,6 +1894,73 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void ArticleBatchProjectionKeepsAllBodiesAndActorNamesAcrossManyAccounts()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-article-batch-actors-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var actors = Enumerable.Range(0, 40)
+                .Select(index =>
+                {
+                    var registration = store.Register($"artact{index:00}", "password-123");
+                    Assert.True(registration.Success, registration.Message);
+                    Assert.NotNull(registration.Account);
+                    return registration.Account!;
+                })
+                .ToArray();
+            var expected = new Dictionary<string, (string Author, string UpdatedBy, string? PublishedBy,
+                string Body)>(StringComparer.Ordinal);
+            for (var index = 0; index < 24; index++)
+            {
+                var creator = actors[index];
+                var updater = actors[index + 1];
+                var publisher = actors[index + 2];
+                var title = $"批量稿件-{index:00}";
+                var body = $"正文-{index:00}-" + new string((char)('甲' + index % 8), 512);
+                var created = store.SaveArticleDraft(creator, new L12ArticleDraft(null, title, $"摘要-{index:00}",
+                    body, "官方公告", "", "", $"batch-actor-{index:00}", false, null));
+                var updated = store.SaveArticleDraft(updater, new L12ArticleDraft(created.Id, created.Title,
+                    created.Summary, created.Body, created.Category, created.CoverUrl, created.Link, created.Slug,
+                    created.Pinned, created.PublishAt, created.Revision));
+                if (index % 2 == 0)
+                {
+                    store.PublishArticle(publisher, updated.Id);
+                    expected[title] = (creator.Username, publisher.Username, publisher.Username, body);
+                }
+                else expected[title] = (creator.Username, updater.Username, null, body);
+            }
+
+            var adminRows = store.AdminArticles(limit: 500, kind: "news").ToDictionary(item => item.Title,
+                StringComparer.Ordinal);
+            Assert.Equal(expected.Count, adminRows.Count);
+            foreach (var (title, values) in expected)
+            {
+                var row = adminRows[title];
+                Assert.Equal(values.Author, row.Author);
+                Assert.Equal(values.UpdatedBy, row.UpdatedBy);
+                Assert.Equal(values.PublishedBy, row.PublishedBy);
+                Assert.Equal(values.Body, row.Body);
+            }
+
+            var publicRows = store.PublicArticles(limit: 200, kind: "news").ToDictionary(item => item.Title,
+                StringComparer.Ordinal);
+            Assert.Equal(expected.Count / 2, publicRows.Count);
+            Assert.All(publicRows, pair =>
+            {
+                var values = expected[pair.Key];
+                Assert.Equal(values.Author, pair.Value.Author);
+                Assert.Equal(values.PublishedBy, pair.Value.PublishedBy);
+                Assert.Equal(values.Body, pair.Value.Body);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public async Task SiteContentHttpMutationsRejectPlayerTokensAndAcceptAdminPermission()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-site-http-{Guid.NewGuid():N}");

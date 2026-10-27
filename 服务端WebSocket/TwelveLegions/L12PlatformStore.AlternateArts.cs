@@ -18,6 +18,8 @@ public sealed record L12AlternateArtRarityView(string Id, string Code, string Na
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12AlternateArtGrantView(string Id, string AccountId, string Username, string AlternateArtId,
     string SourceKind, string SourceReference, DateTimeOffset GrantedAt, DateTimeOffset? RevokedAt);
+public sealed record L12AlternateArtGrantSearchPage(IReadOnlyList<L12AlternateArtGrantView> Items, int Total,
+    int Page, int PageSize);
 public sealed record L12AlternateArtDraft(string? Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
     bool Active = true, string ProductId = "", string Kind = "alternate-art", string Effect = "");
 public sealed record L12AlternateArtProductDraft(string? Id, string Name, bool Active = true);
@@ -566,10 +568,52 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var accounts = _data.Accounts.ToDictionary(row => row.Id, row => row.Username);
+            var accounts = _data.Accounts.ToDictionary(row => row.Id, row => row.Username, StringComparer.Ordinal);
             return _data.AlternateArtGrants.Where(row => string.IsNullOrWhiteSpace(username)
                     || (accounts.TryGetValue(row.AccountId, out var name) && string.Equals(name, username.Trim(), StringComparison.OrdinalIgnoreCase)))
-                .OrderByDescending(row => row.GrantedAt).Take(1000).Select(ToAlternateArtGrantView).ToArray();
+                .OrderByDescending(row => row.GrantedAt).Take(1000)
+                .Select(row => ToAlternateArtGrantView(row, accounts.GetValueOrDefault(row.AccountId))).ToArray();
+        }
+    }
+
+    public L12AlternateArtGrantSearchPage SearchAlternateArtGrants(string? query, string? sourceKind,
+        string? state, int page = 1, int pageSize = 20)
+    {
+        lock (_gate)
+        {
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            var queryTerm = LimitSiteText(query, 160);
+            var sourceTerm = LimitSiteText(sourceKind, 80).ToLowerInvariant();
+            var stateTerm = LimitSiteText(state, 20).ToLowerInvariant();
+            if (stateTerm is not ("" or "active" or "revoked"))
+                throw new ArgumentException("异画权益状态筛选无效");
+
+            var accounts = _data.Accounts.ToDictionary(row => row.Id, row => row.Username, StringComparer.Ordinal);
+            var artNames = AlternateArtDefinitionsLocked(true, true, requireAvailable: true)
+                .ToDictionary(row => row.Id, row => row.DisplayName, StringComparer.Ordinal);
+            IEnumerable<AlternateArtGrantRow> rows = _data.AlternateArtGrants;
+            if (!string.IsNullOrWhiteSpace(sourceTerm))
+                rows = rows.Where(row => string.Equals(row.SourceKind, sourceTerm, StringComparison.OrdinalIgnoreCase));
+            if (stateTerm == "active") rows = rows.Where(row => row.RevokedAt is null);
+            else if (stateTerm == "revoked") rows = rows.Where(row => row.RevokedAt is not null);
+            if (!string.IsNullOrWhiteSpace(queryTerm))
+            {
+                rows = rows.Where(row =>
+                    (accounts.TryGetValue(row.AccountId, out var username)
+                        && username.Contains(queryTerm, StringComparison.OrdinalIgnoreCase))
+                    || row.AlternateArtId.Contains(queryTerm, StringComparison.OrdinalIgnoreCase)
+                    || (artNames.TryGetValue(row.AlternateArtId, out var artName)
+                        && artName.Contains(queryTerm, StringComparison.OrdinalIgnoreCase))
+                    || row.SourceReference.Contains(queryTerm, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var ordered = rows.OrderByDescending(row => row.GrantedAt).ThenBy(row => row.Id, StringComparer.Ordinal).ToArray();
+            var pages = Math.Max(1, (int)Math.Ceiling(ordered.Length / (double)pageSize));
+            page = Math.Clamp(page, 1, pages);
+            var items = ordered.Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(row => ToAlternateArtGrantView(row, accounts.GetValueOrDefault(row.AccountId))).ToArray();
+            return new(items, ordered.Length, page, pageSize);
         }
     }
 
@@ -1130,7 +1174,10 @@ public sealed partial class L12PlatformStore
             .Distinct(StringComparer.Ordinal).Take(100).ToArray();
 
     private L12AlternateArtGrantView ToAlternateArtGrantView(AlternateArtGrantRow row)
-        => new(row.Id, row.AccountId, _data.Accounts.FirstOrDefault(account => account.Id == row.AccountId)?.Username ?? "已删除账号",
+        => ToAlternateArtGrantView(row, _data.Accounts.FirstOrDefault(account => account.Id == row.AccountId)?.Username);
+
+    private static L12AlternateArtGrantView ToAlternateArtGrantView(AlternateArtGrantRow row, string? username)
+        => new(row.Id, row.AccountId, username ?? "已删除账号",
             row.AlternateArtId, row.SourceKind, row.SourceReference, row.GrantedAt, row.RevokedAt);
 
     private static string AlternateArtGrantReason(AlternateArtGrantRow row)

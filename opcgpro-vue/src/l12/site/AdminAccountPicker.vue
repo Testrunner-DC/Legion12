@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, useId, watch } from 'vue'
-import { adminApi, hasPermission, platformState, type PlatformAccount } from '@/l12/platform'
+import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { adminApi, hasPermission, platformState, type AdminAccountPage, type PlatformAccount } from '@/l12/platform'
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -24,16 +24,19 @@ const open = ref(false)
 const loading = ref(false)
 const error = ref('')
 const activeIndex = ref(-1)
+const candidatesCurrent = ref(false)
 let requestGeneration = 0
+let searchTimer: number | null = null
+let blurTimer: number | null = null
+const PAGE_SIZE = 20
+const SEARCH_DEBOUNCE_MS = 220
 
 const selectedAccount = computed(() => accounts.value.find(account => account.id === props.modelValue) ?? null)
-const normalizedQuery = computed(() => query.value.trim().toLocaleLowerCase())
-const candidates = computed(() => {
-  const term = normalizedQuery.value
-  if (!term) return accounts.value.slice(0, 20)
-  return accounts.value.filter(account => `${account.username} ${account.id}`.toLocaleLowerCase().includes(term)).slice(0, 20)
-})
-const selectableCandidates = computed(() => candidates.value.filter(account => !account.disabled && !account.deleted))
+const accessScope = computed(() => `${platformState.account?.id || ''}\u0000${platformState.token || ''}\u0000${hasPermission('admin.accounts.read') ? '1' : '0'}`)
+const candidates = computed(() => accounts.value.slice(0, PAGE_SIZE))
+const selectableCandidates = computed(() => candidatesCurrent.value
+  ? candidates.value.filter(account => !account.disabled && !account.deleted)
+  : [])
 const activeAccount = computed(() => activeIndex.value >= 0 ? selectableCandidates.value[activeIndex.value] : undefined)
 
 function accountStatus(account: PlatformAccount) {
@@ -47,39 +50,84 @@ function syncSelected() {
   if (selected) query.value = selected.username
   emit('selected', selected)
 }
-async function loadAccounts() {
+function validatedItems(result: AdminAccountPage | null | undefined, deleted: boolean) {
+  if (!result || !Array.isArray(result.items)) throw new Error('账号候选分页响应无效')
+  const integers = [result.page, result.pageSize, result.total, result.activeCount, result.deletedCount]
+  if (integers.some(value => !Number.isSafeInteger(value) || value < 0)
+    || result.page !== 1 || result.pageSize !== PAGE_SIZE || result.items.length > PAGE_SIZE
+    || result.total < result.items.length || result.items.some(account => Boolean(account.deleted) !== deleted))
+    throw new Error('账号候选分页响应无效')
+  return result.items
+}
+function clearSearchTimer() {
+  if (searchTimer === null) return
+  window.clearTimeout(searchTimer)
+  searchTimer = null
+}
+function retireRequests() {
+  clearSearchTimer()
+  if (blurTimer !== null) { window.clearTimeout(blurTimer); blurTimer = null }
+  requestGeneration += 1
+  candidatesCurrent.value = false
+  activeIndex.value = -1
+  loading.value = false
+}
+async function loadAccounts(search = query.value.trim()) {
   const generation = ++requestGeneration
-  accounts.value = []
   error.value = ''
+  candidatesCurrent.value = false
+  activeIndex.value = -1
   if (!hasPermission('admin.accounts.read')) {
     error.value = '当前管理员没有读取玩家账号候选的权限'
+    loading.value = false
     emit('selected', null)
     return
   }
   loading.value = true
+  const scope = accessScope.value
   try {
-    const result = await adminApi.accounts()
-    if (generation !== requestGeneration) return
-    accounts.value = result
+    const activeRequest = adminApi.accountsPage({ page: 1, pageSize: PAGE_SIZE, search, deleted: false })
+    const deletedRequest = search
+      ? adminApi.accountsPage({ page: 1, pageSize: PAGE_SIZE, search, deleted: true })
+      : Promise.resolve<AdminAccountPage | null>(null)
+    const [activePage, deletedPage] = await Promise.all([activeRequest, deletedRequest])
+    if (generation !== requestGeneration || scope !== accessScope.value) return
+    const rows = [...validatedItems(activePage, false), ...(deletedPage ? validatedItems(deletedPage, true) : [])]
+    accounts.value = [...new Map(rows.map(account => [account.id, account])).values()]
+    if (props.modelValue && selectedAccount.value) query.value = selectedAccount.value.username
+    candidatesCurrent.value = true
+    activeIndex.value = selectableCandidates.value.length ? 0 : -1
     syncSelected()
   } catch (cause) {
-    if (generation !== requestGeneration) return
+    if (generation !== requestGeneration || scope !== accessScope.value) return
     error.value = cause instanceof Error ? cause.message : '玩家账号候选读取失败'
   } finally {
     if (generation === requestGeneration) loading.value = false
   }
 }
+function scheduleSearch() {
+  clearSearchTimer()
+  searchTimer = window.setTimeout(() => {
+    searchTimer = null
+    void loadAccounts(query.value.trim())
+  }, SEARCH_DEBOUNCE_MS)
+}
 function onInput(event: Event) {
+  requestGeneration += 1
   query.value = (event.target as HTMLInputElement).value
   open.value = true
-  activeIndex.value = selectableCandidates.value.length ? 0 : -1
+  error.value = ''
+  candidatesCurrent.value = false
+  activeIndex.value = -1
+  loading.value = hasPermission('admin.accounts.read')
   if (props.modelValue) {
     emit('update:modelValue', '')
     emit('selected', null)
   }
+  scheduleSearch()
 }
 function choose(account: PlatformAccount) {
-  if (account.disabled || account.deleted) return
+  if (loading.value || error.value || !selectableCandidates.value.includes(account)) return
   query.value = account.username
   open.value = false
   activeIndex.value = -1
@@ -107,21 +155,43 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 function onFocus() {
+  if (blurTimer !== null) { window.clearTimeout(blurTimer); blurTimer = null }
   open.value = true
   activeIndex.value = selectableCandidates.value.length ? 0 : -1
 }
-function onBlur() { window.setTimeout(() => { open.value = false }, 100) }
+function onBlur() {
+  if (blurTimer !== null) window.clearTimeout(blurTimer)
+  blurTimer = window.setTimeout(() => { blurTimer = null; open.value = false }, 100)
+}
 
-watch(() => props.modelValue, () => syncSelected())
-watch(() => platformState.account?.id, (next, previous) => {
+watch(() => props.modelValue, (value, previous) => {
+  if (value === previous) return
+  if (!value) { syncSelected(); return }
+  if (selectedAccount.value) { syncSelected(); return }
+  query.value = value
+  void loadAccounts(value)
+}, { flush: 'sync' })
+watch(accessScope, (next, previous) => {
   if (next === previous) return
-  if (!previous) { void loadAccounts(); return }
-  emit('update:modelValue', '')
-  emit('selected', null)
-  query.value = ''
-  void loadAccounts()
-})
-onMounted(loadAccounts)
+  retireRequests()
+  accounts.value = []
+  error.value = ''
+  activeIndex.value = -1
+  const nextActor = platformState.account?.id || ''
+  const previousActor = previous.split('\u0000', 1)[0]
+  if (nextActor !== previousActor) {
+    query.value = ''
+    if (props.modelValue) emit('update:modelValue', '')
+    emit('selected', null)
+  }
+  if (!hasPermission('admin.accounts.read')) {
+    error.value = '当前管理员没有读取玩家账号候选的权限'
+    return
+  }
+  void loadAccounts(nextActor === previousActor ? props.modelValue || query.value.trim() : '')
+}, { flush: 'sync' })
+onMounted(() => { void loadAccounts(props.modelValue || '') })
+onBeforeUnmount(retireRequests)
 </script>
 
 <template>
@@ -130,6 +200,7 @@ onMounted(loadAccounts)
     <input
       :value="query"
       :placeholder="placeholder"
+      maxlength="200"
       role="combobox"
       autocomplete="off"
       aria-autocomplete="list"

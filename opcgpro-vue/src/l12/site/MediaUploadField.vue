@@ -107,6 +107,13 @@ async function chooseHero(key: HeroVariantKey, event: Event) {
 function canvasBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
   return new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('浏览器无法生成 WebP')), type, quality))
 }
+function yieldToBrowser() {
+  return new Promise<void>(resolve => {
+    if (document.visibilityState === 'visible' && typeof requestAnimationFrame === 'function')
+      requestAnimationFrame(() => resolve())
+    else setTimeout(resolve, 0)
+  })
+}
 function createOrientedBitmap(source: Blob) {
   return createImageBitmap(source, { imageOrientation: 'from-image' })
 }
@@ -121,7 +128,8 @@ async function renderFlexibleVariant(bitmap: ImageBitmap, maxEdge: number, quali
   context.imageSmoothingEnabled = true
   context.imageSmoothingQuality = 'high'
   context.drawImage(bitmap, 0, 0, width, height)
-  return canvasBlob(canvas, 'image/webp', quality)
+  try { return await canvasBlob(canvas, 'image/webp', quality) }
+  finally { canvas.width = 1; canvas.height = 1 }
 }
 async function renderIndependentVariant(bitmap: ImageBitmap, spec: HeroVariantSpec) {
   return renderFlexibleVariant(bitmap, Math.max(spec.width, spec.height), spec.key === 'thumbnail' ? .8 : .87)
@@ -146,9 +154,11 @@ async function upload() {
   try {
     assertAcceptedSource(file.value)
     bitmap = await createOrientedBitmap(file.value)
-    const [desktop, mobile, thumbnail] = await Promise.all([
-      renderFlexibleVariant(bitmap, 2400, .87), renderFlexibleVariant(bitmap, 1280, .86), renderFlexibleVariant(bitmap, 600, .8),
-    ])
+    const desktop = await renderFlexibleVariant(bitmap, 2400, .87)
+    await yieldToBrowser()
+    const mobile = await renderFlexibleVariant(bitmap, 1280, .86)
+    await yieldToBrowser()
+    const thumbnail = await renderFlexibleVariant(bitmap, 600, .8)
     validateOutputSizes(desktop, mobile, thumbnail)
     const estimatedRequestBytes = file.value.size + desktop.size + mobile.size + thumbnail.size + 64 * 1024
     if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('图片上传总量超过 32MB，请压缩原图后重试')
@@ -188,6 +198,7 @@ async function uploadHeroGroup() {
       const bitmap = await createOrientedBitmap(source)
       try { blobs[spec.key] = await renderIndependentVariant(bitmap, spec) }
       finally { bitmap.close() }
+      await yieldToBrowser()
     }
     const desktop = blobs.desktop!; const mobile = blobs.mobile!; const thumbnail = blobs.thumbnail!
     validateOutputSizes(desktop, mobile, thumbnail)
