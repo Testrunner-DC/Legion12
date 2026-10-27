@@ -366,6 +366,10 @@ public sealed class S2UniversalEffectsTests
         Assert.False(game.Handle(1, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
             Choice: "0:2")).Accepted);
 
+        // Retargeting can make a hand response legal for the first time. Explicitly
+        // decline the reopened defender timing before asserting the combat outcome.
+        PassResponses(game);
+
         var restoredPuppet = Assert.Single(game.State.Players[1].Graveyard,
             card => card.InstanceId == puppet.InstanceId);
         Assert.Equal(puppet.InstanceId, restoredPuppet.InstanceId);

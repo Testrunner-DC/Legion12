@@ -55,7 +55,7 @@ public sealed class PuppetRedirectKagutsuchiTrigger20261026Tests
         return game;
     }
 
-    private static L12CardInstance Card(string cardId, string instanceId, int owner)
+    private static L12CardInstance Card(string cardId, string instanceId, int owner, int? troops = null)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
@@ -73,8 +73,8 @@ public sealed class PuppetRedirectKagutsuchiTrigger20261026Tests
             Traits = [.. definition.Traits],
             Profession = definition.Profession,
             EffectiveProfession = definition.Profession,
-            BaseTroops = definition.Troops ?? 0,
-            Troops = definition.Troops ?? 0,
+            BaseTroops = troops ?? definition.Troops ?? 0,
+            Troops = troops ?? definition.Troops ?? 0,
             DisasterLevel = definition.DisasterLevel ?? 0,
             TrialValue = definition.TrialValue ?? 0,
             SummonRound = -1,
@@ -102,6 +102,169 @@ public sealed class PuppetRedirectKagutsuchiTrigger20261026Tests
             && prompt.ValidChoices.Contains("mode:none")
             && (prompt.ValidChoices.Contains("mode:morale")
                 || prompt.ValidChoices.Contains("mode:discard"));
+
+    private static L12GameEngine BeginRedirectWithFollowup(int attackerIndex, bool restore,
+        bool support, bool mercenary, bool counter = false)
+    {
+        var defenderIndex = 1 - attackerIndex;
+        var game = Create(attackerIndex, 281001 + attackerIndex);
+        game.State.Players[attackerIndex].Field[0][0] = Card("S01-0003", "flow-attacker", attackerIndex);
+        game.State.Players[defenderIndex].Hand.Add(Card("S02-0005", "flow-puppet", defenderIndex));
+        if (mercenary)
+            game.State.Players[defenderIndex].Hand.Add(Card("S01-0002", "flow-mercenary", defenderIndex));
+        if (counter)
+        {
+            var response = Card("S01-0020", "flow-counter", defenderIndex);
+            response.Hidden = true;
+            game.State.Players[defenderIndex].Field[1][2] = response;
+        }
+        if (support)
+        {
+            var supporter = Card("S01-0002", "flow-supporter", defenderIndex, troops: 9000);
+            game.State.Players[defenderIndex].Field[1][0] = supporter;
+        }
+        var attack = game.Handle(attackerIndex, new L12Command("attack", "flow-attacker",
+            Target: new L12AttackTarget("master")));
+        Assert.True(attack.Accepted, attack.Error);
+        for (var guard = 0; guard < 30; guard++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (prompt.ValidChoices.Contains("flow-puppet"))
+            {
+                Resolve(game, "flow-puppet");
+                Assert.Equal("stack-response-puppet-slot", Assert.Single(game.State.PendingPrompts).Continuation);
+                Resolve(game, "0:0");
+                return restore ? Restore(game) : game;
+            }
+            Resolve(game, IsKagutsuchiModePrompt(prompt) ? "mode:none" : "pass");
+        }
+        throw new Xunit.Sdk.XunitException("未到达傀儡改向声明");
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [Trait("L12Evidence", "ruling:puppet-redirect-keeps-opponent-attack-responses")]
+    public void RedirectedAttackOffersNewlyLegalMercenaryBeforeDefense(int attackerIndex, bool restore)
+    {
+        var defenderIndex = 1 - attackerIndex;
+        var game = BeginRedirectWithFollowup(attackerIndex, restore, support: false, mercenary: true);
+        for (var guard = 0; guard < 60 && game.State.PendingPrompts.Count > 0; guard++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (game.State.PendingDefense?.Target.InstanceId == "flow-puppet"
+                && prompt.ValidChoices.Contains("flow-mercenary"))
+            {
+                Assert.Equal(defenderIndex, prompt.PlayerIndex);
+                Assert.Contains(game.State.EffectStack, item => item.Trigger == "opponent-attack");
+                if (restore)
+                {
+                    game = Restore(game);
+                    Assert.Contains("flow-mercenary", Assert.Single(game.State.PendingPrompts).ValidChoices);
+                }
+                Resolve(game, "flow-mercenary");
+                for (var finish = 0; finish < 60 && game.State.PendingPrompts.Count > 0; finish++)
+                    Resolve(game, IsKagutsuchiModePrompt(game.State.PendingPrompts[0]) ? "mode:none" : "pass");
+                Assert.Null(game.State.PendingDefense);
+                Assert.Contains(game.State.Players[defenderIndex].Graveyard,
+                    card => card.InstanceId == "flow-mercenary");
+                Assert.Contains(game.State.Players[defenderIndex].Field[0],
+                    card => card?.InstanceId == "flow-puppet");
+                Assert.Equal(10, game.State.Players[defenderIndex].Hp);
+                return;
+            }
+            Resolve(game, IsKagutsuchiModePrompt(prompt) ? "mode:none" : "pass");
+        }
+        Assert.Fail("傀儡改向后跳过了新合法的佣兵响应机会");
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [Trait("L12Evidence", "ruling:puppet-redirect-keeps-support-choice")]
+    public void RedirectedAttackKeepsLegalSupportAndSettlesOnlyOnce(int attackerIndex, bool restore)
+    {
+        var defenderIndex = 1 - attackerIndex;
+        var game = BeginRedirectWithFollowup(attackerIndex, restore, support: true, mercenary: false);
+        for (var guard = 0; guard < 60 && game.State.PendingPrompts.Count > 0; guard++)
+            Resolve(game, IsKagutsuchiModePrompt(game.State.PendingPrompts[0]) ? "mode:none" : "pass");
+        Assert.Equal(L12CombatStage.DefenseChoice, game.State.PendingDefense?.Stage);
+        Assert.Equal("flow-puppet", game.State.PendingDefense?.Target.InstanceId);
+        var combatId = game.State.PendingDefense!.CombatId;
+        var result = game.Handle(defenderIndex, new L12Command("resolveDefense",
+            CardInstanceIds: ["flow-supporter"]));
+        Assert.True(result.Accepted, result.Error);
+        for (var guard = 0; guard < 60 && game.State.PendingPrompts.Count > 0; guard++)
+            Resolve(game, IsKagutsuchiModePrompt(game.State.PendingPrompts[0]) ? "mode:none" : "pass");
+        Assert.Null(game.State.PendingDefense);
+        Assert.Contains(game.State.Players[defenderIndex].Field[0], card => card?.InstanceId == "flow-puppet");
+        Assert.Contains(game.State.Players[defenderIndex].Graveyard, card => card.InstanceId == "flow-supporter");
+        Assert.Equal(10, game.State.Players[defenderIndex].Hp);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "support-skipped");
+        Assert.Single(game.State.Events, entry => entry.PlayerCombat is { EventKind: "attack", OutcomeCode: "declared" } combat
+            && combat.CombatId == combatId);
+        Assert.Single(game.State.Events, entry => entry.PlayerCombat is { EventKind: "support", OutcomeCode: "supported" } combat
+            && combat.CombatId == combatId);
+        Assert.False(game.Handle(defenderIndex, new L12Command("resolveDefense",
+            CardInstanceIds: ["flow-supporter"])).Accepted);
+        Assert.False(string.IsNullOrEmpty(combatId));
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [Trait("L12Evidence", "ruling:puppet-redirect-keeps-other-attack-effects-and-support")]
+    public void RedirectedAttackAllowsCounterEffectThenSupport(int attackerIndex, bool restore)
+    {
+        var defenderIndex = 1 - attackerIndex;
+        var game = BeginRedirectWithFollowup(attackerIndex, restore,
+            support: true, mercenary: false, counter: true);
+        var activated = false;
+        for (var guard = 0; guard < 80 && game.State.PendingPrompts.Count > 0; guard++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (!activated && game.State.PendingDefense?.Target.InstanceId == "flow-puppet"
+                && prompt.PlayerIndex == defenderIndex && prompt.ValidChoices.Contains("flow-counter"))
+            {
+                Resolve(game, "flow-counter");
+                activated = true;
+            }
+            else Resolve(game, IsKagutsuchiModePrompt(prompt) ? "mode:none" : "pass");
+        }
+        Assert.True(activated, "改向后漏掉其他【对方进攻时】效果");
+        Assert.Equal(2000, game.State.Players[defenderIndex].Field[0][0]?.Troops);
+        Assert.Equal(L12CombatStage.DefenseChoice, game.State.PendingDefense?.Stage);
+        Assert.True(game.Handle(defenderIndex, new L12Command("resolveDefense",
+            CardInstanceIds: ["flow-supporter"])).Accepted);
+        for (var guard = 0; guard < 60 && game.State.PendingPrompts.Count > 0; guard++)
+            Resolve(game, IsKagutsuchiModePrompt(game.State.PendingPrompts[0]) ? "mode:none" : "pass");
+        Assert.Null(game.State.PendingDefense);
+        Assert.Contains(game.State.Players[defenderIndex].Field[0], card => card?.InstanceId == "flow-puppet");
+        Assert.Single(game.State.Players[defenderIndex].Graveyard, card => card.InstanceId == "flow-counter");
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [Trait("L12Evidence", "boundary:puppet-redirect-without-support-finishes-once")]
+    public void RedirectedAttackWithoutLegalSupportFinishesOnce(int attackerIndex, bool restore)
+    {
+        var defenderIndex = 1 - attackerIndex;
+        var game = BeginRedirectWithFollowup(attackerIndex, restore, support: false, mercenary: false);
+        for (var guard = 0; guard < 60 && game.State.PendingPrompts.Count > 0; guard++)
+            Resolve(game, IsKagutsuchiModePrompt(game.State.PendingPrompts[0]) ? "mode:none" : "pass");
+        Assert.Null(game.State.PendingDefense);
+        Assert.Equal(L12Phase.Main, game.State.Phase);
+        Assert.Single(game.State.Players[defenderIndex].Graveyard, card => card.InstanceId == "flow-puppet");
+        Assert.Single(game.State.Events, entry => entry.Type == "support-skipped");
+        Assert.Single(game.State.Events, entry => entry.PlayerCombat?.EventKind == "attack"
+            && entry.PlayerCombat.OutcomeCode == "declared");
+        Assert.Equal(10, game.State.Players[defenderIndex].Hp);
+    }
 
     private static RedirectResult RunPuppetRedirect(int attackerIndex, bool restoreAfterPuppetCommit,
         bool attackerUsesKagutsuchi)

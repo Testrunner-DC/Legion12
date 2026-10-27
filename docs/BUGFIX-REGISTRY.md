@@ -10,6 +10,15 @@
 - 独审返修3缺口：精确持久化AutomaticDropMatchId恢复本次自动退赛的合法判胜者/重赛双方，不撤销后来主动退赛或移除；暂停tick不判迟到，恢复顺延waiting GraceDeadline，旧running Deadline保持。Main另补真实2红/1正控：raw mode门禁而Allowed Trim落库可被空白变体绕过，现唯一规范值同时用于Manage门禁/创建，拒绝前不变版本。全池同类为唯一创建、持久化加载和交接接受，未另增模式更新API。
 - 初Focused10过，完整2684首轮2683过/1旧DTO严格白名单失败；只补summary1/detail4既有公开字段，严格集合/匿名一致/嵌套/私密拒绝不减，并加2私有字段禁漏，原产品DLL不变公开类7过。新权限唯一源差异后47相关HTTP/创建/赛事/公开/自动（12）全过，独审接受；原失败保留。最终新DLL无单次完整全绿，不冒Release/容量/线上验收。唯一automatic-tournament-repair-20261027/main-acceptance.json，源码同步独立于部署。
 
+## RULING-20261027-PUPPET-REDIRECT-COMBAT-CONTINUES｜傀儡改向后正常进行进攻流程（本地验收通过，未部署）
+
+- 人类明确补充：“傀儡是转移攻击对象到其身上，所以攻击流程相关步骤还是要正常进行的，比如发动其他对方进攻时效果或进行支援”。这是同一次进攻的目标改变，不是另一次进攻或直接伤害；改向后符合条件的效果时点、响应和支援必须仍可用，已完成的步骤／已结算效果不得无依据重做。
+- 当前8ec同源修复只在ResolveResponseRetargetMaster中改Target后调用QueueStarterDefenderMasterTiming；既有5例只证明防守迦具土及进攻方不重复，不能外推其他响应／支援完整通过。原一般窗口不重开断言不能代替本次完整流程裁定。
+- 人类随后直接要求“推进修改”。真实命令RED在双方／恢复两场确认：改向后仍保留DefenderAttackTimingOpened=true，原栈结束后直接走支援／伤害，新合法佣兵响应无机会；支援两场对照本已正常。成功改向仅重置原DefenderAttackTimingOpened，由同一L12CombatTimeline在原栈结束后重开防守时点，其他进攻阶段与StarterDefenderMasterTimingOffered／使用次数不重置，无新状态／第二时间线。
+- 同类扫描`Target = new L12AttackTarget|rest-enter-front-and-retarget|opponent-attack|BuildStarterKagutsuchiCandidate`确认同次进攻改向仅S02-0005此入口；Actions另一次master赋值是独立生成进攻，不能当作改向迁移。原LegalResponseSources涵盖佣兵、S1/S2反击；DefenseChoice／支援／必中／目标失效边界原样保留。
+- 新12场及原5场同族覆盖双方×直接／V2佣兵与支援、战斗至黎明后真实支援、无支援一次结算、恢复响应／拒绝重复支援／同CombatId单次进攻与支援；连同S2Universal／响应资格／战斗展示121/121通过。原恢复傀儡用例补真实“不响应”步骤，保格位／重复提交／恢复／结算断言，原120/121失败保留；初夹具init-only编译失败与真正2红分别保留。
+- P0-P4／70源内核边界和16项全卡池／预声明守卫通过。首次自定义全量漏项目串行参数，8523执行／8518过／5失败（3长链限时、1统计超时、1SQLite清退占用），不冒通过或归因为产品；同DLL无重编译按标准串行完整8523/8523通过，零失败跳过、门槛不变。后续自定义全量必须沿标准串行参数，不重复此次入口错误。唯一`puppet-combat-flow-20261028/main-acceptance.json`绑定源码／DLL／真实TRX，源码同步见同根synchronization；未部署／线上关单。后到异画候选与赛事9文件不在此次已验源码／提交内。P0/P1/P3原唯一结算／时间线／检查点保持。
+
 ## BUG-20261027-CLOSEOUT-CURRENT-RULES｜两规则符合、新重复项与单张异画纠正
 
 - 原两项5ca16ae6／d1e22f0b复用正式97a同源的暴怒合法目标／贯穿正反例与真实赵云相关回归；天照新增真实费用、普通士气与神力、双方及逐步V2共2/2通过。无产品修复，不伪造原局重演；按当前规则符合closed/rejected。新7cc971c8原文明确同为傀儡改向漏迦具土询问，单次duplicate至646ce6f1，主项仍待部署。

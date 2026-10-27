@@ -2737,6 +2737,11 @@ public sealed partial class L12GameEngine
 
         var pendingDefense = State.PendingDefense!;
         pendingDefense.Target = new L12AttackTarget("legion", card!.InstanceId);
+        // The attack remains the same, but the new target can make previously illegal
+        // defender responses legal. After the current stack settles, let the existing
+        // combat timeline offer that timing again before support/damage. Keep all
+        // attacker and per-effect usage flags so already completed effects do not repeat.
+        pendingDefense.DefenderAttackTimingOpened = false;
         AddEvent("effect", item.Controller, $"{card.Name} 成为本次进攻目标", card);
         QueueStarterDefenderMasterTiming(pendingDefense, reopenOrdinaryDefenderTiming: false);
         FinishStackItem(item);
