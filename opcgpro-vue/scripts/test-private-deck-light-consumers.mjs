@@ -13,6 +13,7 @@ const { compileScript, compileStyle, compileTemplate, parse } = requireDependenc
 const { computed, createRenderer, nextTick, reactive, ref, watch } = vue
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8')
 const sources = Object.fromEntries([
+  'src/l12/SavedDeckSelector.vue',
   'src/l12/site/TournamentAccountDetail.vue',
   'src/l12/site/AdminTournamentWorkbench.vue',
   'src/l12/site/ProfilePage.vue',
@@ -44,6 +45,8 @@ const sessionStorage = new MemoryStorage()
 const windowEvents = new MemoryEvents()
 const documentEvents = new MemoryEvents()
 Object.assign(globalThis, {
+  Document: class MemoryDocument {},
+  ShadowRoot: class MemoryShadowRoot {},
   localStorage,
   sessionStorage,
   window: Object.assign(windowEvents, {
@@ -139,7 +142,7 @@ function importedBindings(compiled, modules, filename) {
   return { bindings, body }
 }
 
-function compileComponent(relative, modules) {
+function compileComponent(relative, modules, renderTemplate = false) {
   const parsed = parse(sources[relative], { filename: relative })
   assert.deepEqual(parsed.errors, [], `${relative} must parse`)
   const template = compileTemplate({ source: parsed.descriptor.template?.content ?? '', filename: relative,
@@ -156,13 +159,35 @@ function compileComponent(relative, modules) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const exports = {}
-  return new Function(...Object.keys(bindings), 'exports', `${output}\nreturn exports.default`)(...Object.values(bindings), exports)
+  const component = new Function(...Object.keys(bindings), 'exports', `${output}\nreturn exports.default`)(...Object.values(bindings), exports)
+  if (renderTemplate) {
+    const rendered = compileTemplate({ source: parsed.descriptor.template.content, filename: relative,
+      id: `light-${relative.replace(/\W/g, '-')}`, compilerOptions: { bindingMetadata: script.bindings } })
+    assert.deepEqual(rendered.errors, [], `${relative} executable template must compile`)
+    const renderModule = importedBindings(rendered.code, { vue }, relative)
+    const renderOutput = ts.transpileModule(renderModule.body, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText
+    component.render = new Function(...Object.keys(renderModule.bindings), 'exports',
+      `${renderOutput}\nreturn exports.render`)(...Object.values(renderModule.bindings), {})
+  }
+  return component
 }
 
-function hostNode(type = 'root') { return { type, children: [], parent: null, text: '', props: {} } }
+function hostNode(type = 'root') {
+  return { type, tagName: type.toUpperCase(), children: [], parent: null, text: '', props: {}, style: {},
+    addEventListener() {}, removeEventListener() {}, setAttribute() {}, removeAttribute() {},
+    getRootNode() { return document },
+    get options() { return this.children.filter(child => child.type === 'option') } }
+}
+const teleportRoot = hostNode('teleport-root')
 const renderer = createRenderer({
   patchProp(node, key, _previous, value) { node.props[key] = value },
   insert(child, parent, anchor) {
+    if (child.parent) {
+      const oldIndex = child.parent.children.indexOf(child)
+      if (oldIndex >= 0) child.parent.children.splice(oldIndex, 1)
+    }
     child.parent = parent
     const index = anchor ? parent.children.indexOf(anchor) : -1
     if (index < 0) parent.children.push(child); else parent.children.splice(index, 0, child)
@@ -185,12 +210,57 @@ const renderer = createRenderer({
   },
 })
 
+const activeMounts = new Set()
 function mount(component, props = {}) {
   const app = renderer.createApp(component, props)
   app.config.warnHandler = () => {}
   const rootNode = hostNode()
   app.mount(rootNode)
-  return { app, rootNode, state: app._instance.setupState, unmount: () => app.unmount() }
+  const mounted = { app, rootNode, state: app._instance.setupState,
+    unmount() { if (activeMounts.delete(mounted)) app.unmount() } }
+  activeMounts.add(mounted)
+  return mounted
+}
+function hostNodes(node) { return [node, ...node.children.flatMap(hostNodes)] }
+function nodeText(node) { return node.text + node.children.map(nodeText).join('') }
+function clickButton(mounted, label, predicate = () => true) {
+  const matches = [...hostNodes(mounted.rootNode), ...hostNodes(teleportRoot)]
+    .filter(node => node.type === 'button' && predicate(node)
+      && (nodeText(node).includes(label) || node.props['aria-label'] === label))
+  assert.equal(matches.length, 1, `one rendered button must match ${label}`)
+  assert.ok(!matches[0].props.disabled, `${label} must be enabled`)
+  matches[0].props.onClick({ target: matches[0], currentTarget: matches[0] })
+}
+function selectorInstance(mounted) {
+  const walk = vnode => {
+    if (!vnode) return null
+    if (vnode.component?.type.__name === 'SavedDeckSelector') return vnode.component
+    return walk(vnode.component?.subTree) || (Array.isArray(vnode.children)
+      ? vnode.children.map(walk).find(Boolean) : null)
+  }
+  const instance = walk(mounted.app._instance.subTree)
+  assert.ok(instance, 'real SavedDeckSelector must be mounted by TournamentAccountDetail')
+  return instance
+}
+async function openSelector(mounted) {
+  clickButton(mounted, mounted.state.selectedDeck ? `已选：${mounted.state.selectedDeck.name}` : '选择本人牌库')
+  await flush()
+  const instance = selectorInstance(mounted)
+  assert.equal(instance.props.open, true)
+  assert.equal(instance.props.mode, 'tournament')
+  return instance.setupState
+}
+async function selectDeck(mounted, id) {
+  if (!mounted.state.deckSelectorOpen) await openSelector(mounted)
+  const state = selectorInstance(mounted).setupState
+  assert.ok(state.rows.some(row => row.deck.id === id), `${id} must come from the bounded server summary`)
+  clickButton(mounted, state.rows.find(row => row.deck.id === id).deck.name,
+    node => node.props['aria-pressed'] !== undefined)
+  await flush()
+  clickButton(mounted, '确认使用')
+  await flush()
+  assert.equal(mounted.state.deckId, id, 'real child confirm must reach parent selection handler')
+  assert.equal(mounted.state.deckSelectorOpen, false)
 }
 async function flush(turns = 8) {
   for (let index = 0; index < turns; index += 1) { await Promise.resolve(); await nextTick() }
@@ -329,7 +399,12 @@ function tournamentDetailComponent() {
     '@/l12/tournamentTime': timeModule, './TournamentJudgeDesk.vue': componentModule,
     './TournamentManagementPanel.vue': componentModule,
     './TournamentDisasterSummary.vue': componentModule,
-  })
+    '@/l12/SavedDeckSelector.vue': { default: compileComponent('src/l12/SavedDeckSelector.vue', {
+      vue, './decks': { ...decks, loadDeckCatalog: deckModule.loadDeckCatalog },
+      './platform': platformModule, './mobileViewport': { landscapeTeleportTarget: () => teleportRoot },
+      './DeckCover.vue': { default: { props: ['name'], render() { return vue.h('span', this.name) } } },
+    }, true) },
+  }, true)
 }
 function tournamentWorkbenchComponent() {
   return compileComponent('src/l12/site/AdminTournamentWorkbench.vue', {
@@ -394,11 +469,15 @@ const fullDeckRequests = requests => requests.filter(request => request.path ===
 
 let passed = 0, failed = 0
 const failures = []
+const caseResults = []
 async function check(label, run) {
   try {
-    await run(); passed += 1; console.log(`PASS ${passed + failed}: ${label}`)
+    await run(); passed += 1; caseResults.push({ label, status: 'passed' }); console.log(`PASS ${passed + failed}: ${label}`)
   } catch (error) {
+    caseResults.push({ label, status: 'failed' })
     failed += 1; failures.push(label); console.error(`FAIL ${passed + failed}: ${label}\n${error?.stack || error}`)
+  } finally {
+    for (const mounted of [...activeMounts]) mounted.unmount()
   }
 }
 
@@ -441,12 +520,15 @@ for (const boundary of ['unmount', 'account', 'route']) await check(`real admin 
   } finally { if (boundary !== 'unmount') mounted.unmount() }
 })
 
-await check('authenticated TournamentAccountDetail mount reads one bounded summary page and never full deck bodies', async () => {
-  resetIdentity(); tournamentList = [tournamentFixture()]
+await check('authenticated TournamentAccountDetail lazily reads one bounded summary page on opening the shared selector and never full deck bodies', async () => {
+  resetIdentity(); tournamentList = [tournamentFixture({ participants: [participantFixture()] })]
   const requests = captureRequests(requestPath => requestPath.startsWith('/api/decks/summaries?')
     ? summaryPage(requestPath) : requestPath === '/api/decks' ? [] : Promise.reject(new Error(`unexpected ${requestPath}`)))
   const mounted = mount(tournamentDetailComponent())
-  await flush(); mounted.unmount()
+  await flush()
+  assert.equal(requests.length, 0, 'closed shared selector must not read the private directory')
+  assert.equal(selectorInstance(mounted).props.open, false)
+  await openSelector(mounted)
   console.log('OBSERVE TournamentAccountDetail', requests.map(item => item.path))
   assert.equal(fullDeckRequests(requests).length, 0)
   assert.equal(summaryRequests(requests).length, 1)
@@ -454,6 +536,10 @@ await check('authenticated TournamentAccountDetail mount reads one bounded summa
   const url = new URL(summaryRequests(requests)[0].path, 'http://synthetic.invalid')
   assert.equal(url.searchParams.get('page'), '1'); assert.equal(url.searchParams.get('pageSize'), '30')
   assert.equal(url.searchParams.get('sort'), 'latest'); assert.equal(url.searchParams.has('legal'), false)
+  clickButton(mounted, '取消更换牌库'); await flush()
+  assert.equal(mounted.state.deckId, '', 'opening/canceling must not silently pick the first deck')
+  assert.equal(requests.length, 1, 'close must not trigger an extra directory/body read')
+  mounted.unmount()
 })
 
 await check('authenticated non-admin TournamentWorkbench mount reads summaries while adminMode preserves its early return', async () => {
@@ -478,7 +564,10 @@ await check('guest tournament surfaces never read the private deck directory', a
   resetIdentity(null, '', false); tournamentList = [tournamentFixture()]
   const requests = captureRequests(requestPath => Promise.reject(new Error(`unexpected ${requestPath}`)))
   const detail = mount(tournamentDetailComponent()); const workbench = mount(tournamentWorkbenchComponent(), { adminMode: false })
-  await flush(); detail.unmount(); workbench.unmount()
+  await flush()
+  assert.equal(selectorInstance(detail).props.open, false)
+  assert.equal(hostNodes(detail.rootNode).some(node => node.type === 'button' && nodeText(node).includes('选择本人牌库')), false)
+  detail.unmount(); workbench.unmount()
   assert.equal(requests.length, 0)
 })
 
@@ -487,19 +576,38 @@ await check('both tournament surfaces keep only the newest same-token A-B-A dire
     ['detail', () => mount(tournamentDetailComponent())],
     ['workbench', () => mount(tournamentWorkbenchComponent(), { adminMode: false })],
   ]) {
-    resetIdentity(); tournamentList = [tournamentFixture({ participants: [participantFixture()] })]
+    resetIdentity(); tournamentList = [tournamentFixture({ participants: [participantFixture(), participantFixture({ accountId: 'account-B' })] })]
     const pending = []
-    captureRequests(requestPath => {
+    const requests = captureRequests(requestPath => {
       const gate = deferred(); pending.push({ gate, requestPath }); return gate.promise
     })
-    const mounted = create(); await flush(2)
+    const mounted = create(); await flush()
+    if (label === 'detail') await openSelector(mounted)
     platformState.account = { id: 'account-B', username: 'Account B', permissions: [] }; await flush(2)
+    if (label === 'detail') {
+      await flush()
+      assert.equal(mounted.state.deckSelectorOpen, false, 'actor change closes the old selector')
+      assert.equal(selectorInstance(mounted).setupState.directoryPage, null)
+    }
     platformState.account = { id: 'account-A', username: 'Account A', permissions: [] }; await flush(2)
+    if (label === 'detail') { await flush(); await openSelector(mounted) }
     assert.equal(pending.length, 3, `${label} should issue one bounded read per actor generation`)
+    assert.equal(platformState.token, 'token-A', 'A-B-A keeps the same token')
+    assert.equal(summaryRequests(requests).length, 3)
+    for (const request of requests) {
+      assert.equal(request.init.cache, 'no-store')
+      assert.equal(new URL(request.path, 'http://synthetic.invalid').searchParams.get('pageSize'), '30')
+    }
     pending[2].gate.resolve(summaryPage(pending[2].requestPath, [summary('newest')]))
     pending[0].gate.reject(Object.assign(new Error('old A 401'), { status: 401 }))
     pending[1].gate.reject(Object.assign(new Error('old B 403'), { status: 403 })); await flush()
-    assert.equal(mounted.state.savedDecks[0]?.id, 'newest'); assert.equal(mounted.state.deckError, '')
+    if (label === 'detail') {
+      const selector = selectorInstance(mounted).setupState
+      assert.equal(selector.rows[0]?.deck.id, 'newest'); assert.equal(selector.directoryError, '')
+      assert.equal(mounted.state.deckId, '')
+    } else {
+      assert.equal(mounted.state.savedDecks[0]?.id, 'newest'); assert.equal(mounted.state.deckError, '')
+    }
     mounted.unmount()
   }
 })
@@ -517,57 +625,82 @@ await check('TournamentAccountDetail reaches later summary pages, searches serve
     return summaryPage(requestPath, [summary('deck-A')], 31, { legal: 30, illegal: 1 })
   })
   const mounted = mount(tournamentDetailComponent()); await flush()
-  mounted.state.deckId = 'deck-A'; mounted.state.selectDeck()
+  await selectDeck(mounted, 'deck-A')
   assert.equal(mounted.state.selectedDeck.id, 'deck-A')
-  mounted.state.changeDeckPage(1); await flush()
-  assert.equal(mounted.state.deckPage, 2); assert.equal(mounted.state.savedDecks[0].id, 'deck-illegal')
+  await openSelector(mounted)
+  clickButton(mounted, '下一页'); await flush()
+  const selector = selectorInstance(mounted).setupState
+  assert.equal(selector.directoryPage.page, 2); assert.equal(selector.rows[0].deck.id, 'deck-illegal')
   assert.equal(mounted.state.deckId, 'deck-A'); assert.equal(mounted.state.selectedDeck.id, 'deck-A')
-  mounted.state.deckId = 'deck-illegal'; mounted.state.selectDeck()
+  assert.equal(selector.selectedOutsidePage, true)
+  clickButton(mounted, '取消更换牌库'); await flush()
+  assert.equal(mounted.state.deckId, 'deck-A', 'cancel from another page must preserve parent selection')
+  await openSelector(mounted); clickButton(mounted, '下一页'); await flush()
+  await selectDeck(mounted, 'deck-illegal')
   assert.equal(mounted.state.selectedDeck.legal, false, 'season legality metadata must not hide a tournament choice')
-  mounted.state.deckSearchInput = '关键字'; mounted.state.applyDeckSearch(); await flush()
+  await openSelector(mounted)
+  const searchInput = hostNodes(teleportRoot).find(node => node.type === 'input' && node.props.type === 'search')
+  assert.ok(searchInput, 'real selector must render search input')
+  searchInput.props['onUpdate:modelValue']('关键字')
+  const form = hostNodes(teleportRoot).find(node => node.type === 'form')
+  form.props.onSubmit({ preventDefault() {} }); await flush()
   const searched = new URL(summaryRequests(requests).at(-1).path, 'http://synthetic.invalid')
   assert.equal(searched.searchParams.get('keyword'), '关键字'); assert.equal(searched.searchParams.get('page'), '1')
   assert.equal(searched.searchParams.has('legal'), false)
   assert.equal(mounted.state.deckId, 'deck-illegal'); assert.equal(mounted.state.selectedDeck.id, 'deck-illegal')
+  assert.equal(selectorInstance(mounted).setupState.selectedOutsidePage, true)
+  assert.equal(selectorInstance(mounted).setupState.rows[0].deck.id, 'search-result')
+  assert.equal(requests.length, 7, 'each explicit open/page/search action gets exactly one bounded summary request')
+  assert.equal(fullDeckRequests(requests).length, 0)
   mounted.unmount()
 })
 
 await check('TournamentAccountDetail submits only selected id and name once, including an illegal season summary', async () => {
   resetIdentity()
   tournamentList = [tournamentFixture({ participants: [participantFixture()] })]
-  captureRequests(requestPath => requestPath.startsWith('/api/decks/summaries?')
+  const requests = captureRequests(requestPath => requestPath.startsWith('/api/decks/summaries?')
     ? summaryPage(requestPath, [summary('deck-illegal', { name: '赛事自定牌库', legal: false, legalityReason: '赛季规则不合法' })], 1,
       { legal: 0, illegal: 1 }) : Promise.reject(new Error(`unexpected ${requestPath}`)))
   const gate = deferred(); preCheckInBehavior = () => gate.promise
   const mounted = mount(tournamentDetailComponent()); await flush()
-  mounted.state.deckId = 'deck-illegal'; mounted.state.selectDeck()
-  mounted.state.preCheckIn(); mounted.state.preCheckIn()
+  await selectDeck(mounted, 'deck-illegal')
+  clickButton(mounted, '签到并锁定牌库'); clickButton(mounted, '签到并锁定牌库')
   assert.equal(preCheckIns.length, 1, 'busy guard must suppress a repeated write')
   assert.deepEqual(preCheckIns[0], ['tournament-A', 5, '赛事自定牌库', '', 'deck-illegal'])
   gate.resolve(tournamentFixture({ id: 'tournament-A', version: 6 })); await flush()
   assert.equal(mounted.state.notice, '牌库快照已锁定，赛前签到完成')
+  assert.equal(requests.length, 1); assert.equal(fullDeckRequests(requests).length, 0)
   mounted.unmount()
 })
 
 await check('TournamentAccountDetail ignores a late changed-selection response and keeps drafts through 403/404/409', async () => {
   resetIdentity(); tournamentList = [tournamentFixture({ participants: [participantFixture()] })]
-  captureRequests(requestPath => requestPath.startsWith('/api/decks/summaries?')
+  const requests = captureRequests(requestPath => requestPath.startsWith('/api/decks/summaries?')
     ? summaryPage(requestPath, [summary('deck-A'), summary('deck-B')], 2)
     : Promise.reject(new Error(`unexpected ${requestPath}`)))
   const gate = deferred(); preCheckInBehavior = () => gate.promise
   const mounted = mount(tournamentDetailComponent()); await flush()
-  mounted.state.deckId = 'deck-A'; mounted.state.selectDeck(); mounted.state.preCheckIn()
-  mounted.state.deckId = 'deck-B'; mounted.state.selectDeck()
+  await selectDeck(mounted, 'deck-A')
+  await openSelector(mounted)
+  const candidateB = selectorInstance(mounted).setupState.rows.find(row => row.deck.id === 'deck-B').deck
+  clickButton(mounted, '取消更换牌库'); await flush()
+  clickButton(mounted, '签到并锁定牌库'); await flush()
+  assert.equal(selectorInstance(mounted).props.disabled, true, 'in-flight writes disable the real picker')
+  // Defensive interleaving: deliver a previously queued child confirmation after
+  // the write starts. Ordinary UI cannot change selection while busy.
+  selectorInstance(mounted).emit('confirm', candidateB); await flush()
   gate.resolve(tournamentFixture({ id: 'tournament-A', version: 6 })); await flush()
   assert.equal(mounted.state.tournament.version, 5); assert.equal(mounted.state.deckId, 'deck-B')
   const beforeErrors = preCheckIns.length
   for (const status of [403, 404, 409]) {
     preCheckInBehavior = async () => { throw Object.assign(new Error(`写入失败 ${status}`), { status }) }
-    mounted.state.preCheckIn(); await flush()
+    clickButton(mounted, '签到并锁定牌库'); await flush()
     assert.equal(mounted.state.deckId, 'deck-B'); assert.equal(mounted.state.selectedDeck.id, 'deck-B')
     assert.match(mounted.state.notice, new RegExp(String(status)))
   }
   assert.equal(preCheckIns.length - beforeErrors, 3, 'failed writes must not retry silently')
+  assert.equal(requests.length, 2, 'writes and failures must not refresh full bodies or summaries')
+  assert.equal(fullDeckRequests(requests).length, 0)
   mounted.unmount()
 })
 
@@ -740,10 +873,13 @@ await check('consumer sources contain no legacy full-sync or cache-latest fallba
   assert.equal(sources['src/l12/site/HomeRevisitActions.vue'].includes('我的牌库'), false)
   assert.equal(sources['src/l12/site/HomeRevisitActions.vue'].includes('我的赛事'), false)
   for (const name of ['src/l12/site/TournamentAccountDetail.vue', 'src/l12/site/AdminTournamentWorkbench.vue']) {
-    assert.match(sources[name], /pageSize:\s*30/)
+    if (name.endsWith('AdminTournamentWorkbench.vue')) assert.match(sources[name], /pageSize:\s*30/)
     assert.equal(sources[name].includes('loadPrivateDeckBody'), false)
     assert.equal(sources[name].includes('expectedRevision'), false)
   }
+  assert.equal(sources['src/l12/SavedDeckSelector.vue'].includes('syncSavedDecksFromAccount'), false)
+  assert.equal(sources['src/l12/SavedDeckSelector.vue'].includes('loadPrivateDeckBody'), false)
+  assert.equal(sources['src/l12/SavedDeckSelector.vue'].includes('expectedRevision'), false)
 })
 
 const report = {
@@ -752,6 +888,8 @@ const report = {
     crypto.createHash('sha256').update(value).digest('hex')])),
   realVueMounts: true,
   realProductionDeckReaders: true,
+  renderedTournamentParentAndSelector: true,
+  presentationOnlyStub: 'DeckCover (name only; summary reader, selector, parent handlers and templates are real)',
   compiledVueTemplates: true,
   compiledVueStyles: true,
   syntheticPlatformTransport: true,
@@ -761,6 +899,7 @@ const report = {
   passed,
   failed,
   failureLabels: failures,
+  caseResults,
 }
 console.log(JSON.stringify(report, null, 2))
 if (failed) process.exitCode = 1
