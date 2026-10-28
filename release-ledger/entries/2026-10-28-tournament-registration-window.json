@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-tournament-registration-window",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "赛事报名时间",
+  "changes": [
+    {
+      "category": "tournaments",
+      "text": "创建赛事时可设置报名开放和截止时间，主办者可在开赛前调整；赛事详情同步显示报名时间，到期后不能继续报名。原报名开关仍生效，调整计划开赛时间不会自动改变报名时间。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentOperations.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicBrowsing.cs",
+        "服务端WebSocket/TwelveLegions/L12HttpContracts.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/TournamentCreateWizard.vue",
+        "opcgpro-vue/src/l12/site/TournamentManagementPanel.vue",
+        "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue",
+        "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue"
+      ]
+    }
+  ]
+}

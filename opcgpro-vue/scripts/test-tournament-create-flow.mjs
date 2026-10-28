@@ -168,5 +168,69 @@ await test('failed default-policy hydration keeps a restored pool and can retry 
     assert.deepEqual(f.calls[0].input.disasterCardIds, selected)
   } finally { f.unmount() }
 })
+await test('registration window is converted to UTC once and frozen across preview and commit', async () => {
+  const wait = deferred(), f = await prepared({ policyWait: wait })
+  try {
+    f.state.registrationOpensLocal = '2026-12-01T09:30'
+    f.state.registrationClosesLocal = '2026-12-02T10:00'
+    await flush()
+    const pending = f.state.create(); await flush()
+    f.state.registrationOpensLocal = '2026-12-03T11:00'
+    await flush(); wait.resolve(); await pending
+    assert.equal(f.creations(), 1)
+    for (const call of f.calls) {
+      assert.equal(call.input.registrationOpensAt, new Date('2026-12-01T09:30').toISOString())
+      assert.equal(call.input.registrationClosesAt, new Date('2026-12-02T10:00').toISOString())
+    }
+    assert.match(f.store.get('l12-tournament-create-draft-v4'), /2026-12-03T11:00/)
+  } finally { f.unmount() }
+})
+await test('restored registration draft populates both actual controls and submitted UTC fields', async () => {
+  const f = fixture({ draft: { name: '恢复报名窗口', registrationOpensAt: '2026-12-01T09:30', registrationClosesAt: '2026-12-02T10:00' } })
+  try {
+    await flush()
+    assert.equal(f.state.registrationOpensLocal, '2026-12-01T09:30')
+    assert.equal(f.state.registrationClosesLocal, '2026-12-02T10:00')
+    await f.state.create()
+    assert.equal(f.creations(), 1)
+    assert.equal(f.calls[1].input.registrationOpensAt, new Date('2026-12-01T09:30').toISOString())
+    assert.equal(f.calls[1].input.registrationClosesAt, new Date('2026-12-02T10:00').toISOString())
+  } finally { f.unmount() }
+})
+await test('clearing either registration control sends null instead of a previous draft date', async () => {
+  const f = fixture({ draft: { name: '清除报名窗口', registrationOpensAt: '2026-12-01T09:30', registrationClosesAt: '2026-12-02T10:00' } })
+  try {
+    await flush(); f.state.registrationOpensLocal = ''; f.state.registrationClosesLocal = ''; await flush()
+    await f.state.create()
+    assert.equal(f.creations(), 1)
+    assert.equal(f.calls[1].input.registrationOpensAt, null)
+    assert.equal(f.calls[1].input.registrationClosesAt, null)
+  } finally { f.unmount() }
+})
+await test('management preserves untouched timestamp precision while editing the other boundary', async () => {
+  const original = { id: 'window-event', version: 7, organizerAccountId: 'owner', referees: [],
+    registrationOpensAt: '2026-12-01T01:30:45.1234567Z', registrationClosesAt: '2026-12-02T02:00:59.7654321Z' }
+  const calls = []
+  const source = readFileSync(new URL('../src/l12/site/TournamentManagementPanel.vue', import.meta.url), 'utf8')
+  const compiled = compileScript(parse(source).descriptor, { id: 'tournament-registration-management-runtime' })
+  const module = { exports: {} }
+  const imports = { vue: Vue, '@/l12/tournamentLabels': { tournamentAutomationStatusText: value => value },
+    '@/l12/platform': { friendApi: { friends: async () => [] }, tournamentApi: { setRegistrationWindow: async (...args) => { calls.push(args); return original } } } }
+  vm.runInNewContext(ts.transpileModule(compiled.content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
+    { module, exports: module.exports, require: id => { assert(id in imports); return imports[id] }, Date, Error, Map, console })
+  module.exports.default.render = () => null
+  const vnode = Vue.h(module.exports.default, { tournament: original, accountId: 'owner', canOrganize: true })
+  const root = { children: [] }; renderer.render(vnode, root)
+  try {
+    const state = vnode.component.setupState
+    state.saveRegistrationWindow(); await flush()
+    assert.equal(calls[0][2], original.registrationOpensAt)
+    assert.equal(calls[0][3], original.registrationClosesAt)
+    state.registrationClosesLocal = '2026-12-04T10:00'
+    state.saveRegistrationWindow(); await flush()
+    assert.equal(calls[1][2], original.registrationOpensAt)
+    assert.equal(calls[1][3], new Date('2026-12-04T10:00').toISOString())
+  } finally { renderer.render(null, root) }
+})
 console.log(JSON.stringify({ suite: 'real tournament creation script-setup', passed: cases.filter(c => c.passed).length, total: cases.length, cases }, null, 2))
 assert(cases.every(c => c.passed), 'Tournament creation regressions failed')

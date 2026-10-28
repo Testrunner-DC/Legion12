@@ -96,7 +96,7 @@ public sealed record L12PublicTournamentDetailView(
     L12PublicTournamentRulesView Rules,
     IReadOnlyList<L12PublicTournamentParticipantView> Participants,
     IReadOnlyList<L12PublicTournamentRoundView> Rounds,
-    IReadOnlyList<L12PublicTournamentStandingView> FinalStandings);
+    IReadOnlyList<L12PublicTournamentStandingView> FinalStandings, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null);
 
 public sealed partial class L12PlatformStore
 {
@@ -193,12 +193,12 @@ public sealed partial class L12PlatformStore
         return new L12PublicTournamentDetailView(row.Code, row.Name,
             PublicTournamentAccountName(row.OrganizerAccountId), row.Status, row.Format, row.Phase,
             row.MaxPlayers, row.StartAt, row.RoundMinutes, row.CheckInMinutes, PublicTournamentCounts(row),
-            row.Description, row.RegistrationVisibility, row.RegistrationOpen, row.OperationMode,
+            row.Description, row.RegistrationVisibility, IsRegistrationAvailable(row, DateTimeOffset.UtcNow), row.OperationMode,
             row.IntermissionMinutes, row.AutomationStatus, row.NextAutomaticActionAt,
             rules, participants, rounds,
             namesVisible
                 ? row.FinalSwissStandings.OrderBy(item => item.Rank).Select(ToPublicTournamentStanding).ToArray()
-                : []);
+                : [], row.RegistrationOpensAt, row.RegistrationClosesAt);
     }
 
     private L12PublicTournamentStandingView ToPublicTournamentStanding(TournamentStandingRow row)

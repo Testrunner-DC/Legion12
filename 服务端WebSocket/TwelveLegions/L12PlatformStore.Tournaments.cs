@@ -215,7 +215,7 @@ public sealed record L12TournamentView(
     int IntermissionMinutes,
     string AutomationStatus,
     DateTimeOffset? NextAutomaticActionAt,
-    string? AutomationAttentionReason);
+    string? AutomationAttentionReason, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null);
 
 public sealed record L12TournamentListView(long PlatformVersion, IReadOnlyList<L12TournamentView> Items);
 
@@ -241,7 +241,7 @@ public sealed record L12TournamentCreatePayload(
     int LateGraceMinutes = 5,
     L12RankedTimeControlConfig? TimeControl = null,
     string OperationMode = "managed",
-    int IntermissionMinutes = 3);
+    int IntermissionMinutes = 3, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null);
 
 public sealed record L12TournamentRegistrationPayload(string? DeckName = null, string? DeckCode = null);
 public sealed record L12TournamentPreCheckInPayload(string DeckName, string DeckCode, string? DeckId = null);
@@ -580,6 +580,8 @@ public sealed partial class L12PlatformStore
         public string Visibility { get; set; } = "public";
         public int MaxPlayers { get; set; } = 16;
         public DateTimeOffset? StartAt { get; set; }
+        public DateTimeOffset? RegistrationOpensAt { get; set; }
+        public DateTimeOffset? RegistrationClosesAt { get; set; }
         public string Description { get; set; } = string.Empty;
         public TournamentRulesSnapshotRow Rules { get; set; } = new();
         public int RoundMinutes { get; set; } = 50;
@@ -765,6 +767,9 @@ public sealed partial class L12PlatformStore
             var row = RequireTournament(tournamentId, expectedVersion);
             if (row.Status != "registration" || !row.RegistrationOpen)
                 throw new L12TournamentVersionConflictException("赛事已停止报名");
+            var registrationNow = DateTimeOffset.UtcNow;
+            if (!IsRegistrationWindowOpen(row.RegistrationOpensAt, row.RegistrationClosesAt, registrationNow))
+                throw new L12TournamentVersionConflictException("当前不在报名时间内");
             if (row.RegistrationBans.Any(item => item.AccountId == actor.Id && item.LiftedAt is null))
                 throw new L12TournamentScopeException("你已被禁止再次报名本场赛事");
             if (row.Participants.Any(item => item.AccountId == actor.Id && !item.Removed))
@@ -1629,6 +1634,8 @@ public sealed partial class L12PlatformStore
         var visibility = Allowed(payload.Visibility, "可见性", "public", "code");
         var registrationVisibility = Allowed(payload.RegistrationVisibility, "报名名单可见性", "public", "staff");
         var operationMode = Allowed(payload.OperationMode, "运行方式", "managed", "automated");
+        if (payload.RegistrationOpensAt is { } opensAt && payload.RegistrationClosesAt is { } closesAt && opensAt >= closesAt)
+            throw new ArgumentException("报名开放时间必须早于截止时间");
         if (payload.MaxPlayers is < 2 or > 256) throw new ArgumentException("赛事人数必须为 2–256");
         if (payload.CheckInMinutes is < 1 or > 60) throw new ArgumentException("签到时限必须为 1–60 分钟");
         if (payload.LateGraceMinutes is < 0 or > 60) throw new ArgumentException("迟到宽限期必须为 0–60 分钟");
@@ -1661,6 +1668,8 @@ public sealed partial class L12PlatformStore
             Visibility = visibility,
             MaxPlayers = payload.MaxPlayers,
             StartAt = payload.StartAt,
+            RegistrationOpensAt = payload.RegistrationOpensAt?.ToUniversalTime(),
+            RegistrationClosesAt = payload.RegistrationClosesAt?.ToUniversalTime(),
             Description = OptionalText(payload.Description, 2000),
             Rules = rules,
             RoundMinutes = payload.RoundMinutes,
@@ -2097,6 +2106,12 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    private static bool IsRegistrationWindowOpen(DateTimeOffset? opensAt, DateTimeOffset? closesAt, DateTimeOffset now)
+        => (opensAt is null || now >= opensAt) && (closesAt is null || now < closesAt);
+
+    private static bool IsRegistrationAvailable(TournamentRow row, DateTimeOffset now)
+        => row.Status == "registration" && row.RegistrationOpen
+            && IsRegistrationWindowOpen(row.RegistrationOpensAt, row.RegistrationClosesAt, now);
     private L12TournamentView ToView(TournamentRow row, L12AccountView viewer)
     {
         var organizer = _data.Accounts.FirstOrDefault(item => item.Id == row.OrganizerAccountId);
@@ -2183,7 +2198,7 @@ public sealed partial class L12PlatformStore
             (participantIdentitiesRestricted
                 ? row.FinalSwissStandings.Where(item => item.AccountId == viewer.Id)
                 : row.FinalSwissStandings).Select(ToStandingView).ToArray(), bracket,
-            row.Phase, row.RegistrationOpen, row.CanceledAt, row.CancellationReason,
+            row.Phase, IsRegistrationAvailable(row, DateTimeOffset.UtcNow), row.CanceledAt, row.CancellationReason,
             row.Postponements.OrderByDescending(item => item.CreatedAt).Select(item =>
             {
                 var actor = AccountById(item.ActorId);
@@ -2194,7 +2209,7 @@ public sealed partial class L12PlatformStore
                 .Where(item => configuredStaff || JudgeCaseIncludesViewer(row, item, viewer.Id))
                 .Select(item => ToJudgeCaseView(row, item, viewer, configuredStaff)).ToArray(),
             row.OperationMode, row.IntermissionMinutes, row.AutomationStatus,
-            row.NextAutomaticActionAt, row.AutomationAttentionReason);
+            row.NextAutomaticActionAt, row.AutomationAttentionReason, row.RegistrationOpensAt, row.RegistrationClosesAt);
     }
 
     private L12TournamentOrganizerTransferView ToOrganizerTransferView(TournamentOrganizerTransferRow row)

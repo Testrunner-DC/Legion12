@@ -124,6 +124,25 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12TournamentView SetTournamentRegistrationWindow(L12AccountView actor, string tournamentId,
+        DateTimeOffset? opensAt, DateTimeOffset? closesAt, long expectedVersion,
+        L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            RequireOrganizerOrGlobalManager(actor, row);
+            if (row.Status != "registration")
+                throw new L12TournamentVersionConflictException("赛事已开赛，不能修改报名时间");
+            if (opensAt is { } start && closesAt is { } end && start >= end)
+                throw new ArgumentException("报名开放时间必须早于截止时间");
+            return Mutate(actor, row, "registration-window", tournamentId, context, apply, working =>
+            {
+                working.RegistrationOpensAt = opensAt?.ToUniversalTime();
+                working.RegistrationClosesAt = closesAt?.ToUniversalTime();
+            });
+        }
+    }
     public L12TournamentView PostponeTournament(L12AccountView actor, string tournamentId,
         L12TournamentPostponePayload payload, long expectedVersion,
         L12AdminAuditContext context, bool apply)
@@ -496,7 +515,7 @@ public sealed partial class L12PlatformStore
         if (pendingCheckIn > 0) warnings.Add($"仍有 {pendingCheckIn} 名正式报名者未完成签到锁牌");
         var openCases = row.JudgeCases.Count(item => item.Status is not ("closed" or "rejected"));
         if (openCases > 0) warnings.Add($"仍有 {openCases} 个未关闭裁判案件");
-        if (row.RegistrationOpen) warnings.Add("报名仍开放；开赛时将自动关闭报名");
+        if (IsRegistrationAvailable(row, DateTimeOffset.UtcNow)) warnings.Add("报名仍开放；开赛时将自动关闭报名");
         return new L12TournamentStartCheckView(blockers.Count == 0, blockers, warnings,
             eligible.Length, waiting, openCases);
     }

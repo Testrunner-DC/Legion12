@@ -7,6 +7,25 @@ const props = defineProps<{ tournament: Tournament; accountId: string; canOrgani
 const emit = defineEmits<{ updated: [value: Tournament]; notice: [value: string] }>()
 const busy = ref(false)
 const reason = ref('')
+const localDate = (value?: string | null) => {
+  if (!value) return ''
+  const date = new Date(value)
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+const registrationOpensLocal = ref(localDate(props.tournament.registrationOpensAt))
+const registrationClosesLocal = ref(localDate(props.tournament.registrationClosesAt))
+watch(() => [props.tournament.id, props.tournament.registrationOpensAt, props.tournament.registrationClosesAt], () => {
+  registrationOpensLocal.value = localDate(props.tournament.registrationOpensAt)
+  registrationClosesLocal.value = localDate(props.tournament.registrationClosesAt)
+})
+function saveRegistrationWindow() {
+  const submittedTime = (local: string, original?: string | null) => local === localDate(original)
+    ? original ?? null : local ? new Date(local).toISOString() : null
+  void mutate(item => tournamentApi.setRegistrationWindow(item.id, item.version,
+    submittedTime(registrationOpensLocal.value, item.registrationOpensAt),
+    submittedTime(registrationClosesLocal.value, item.registrationClosesAt),
+    reason.value.trim() || '主办者调整报名时间'), '报名时间已保存')
+}
 const postponeAt = ref('')
 const transferAccountId = ref('')
 const transferReason = ref('')
@@ -74,7 +93,7 @@ onMounted(() => { void friendApi.friends().then(value => { friends.value = value
       <section v-if="tournament.operationMode === 'automated'" class="automation-state" :class="{attention:tournament.automationStatus === 'attention-required'}"><header><b>自动运行赛事</b><span>{{ tournamentAutomationStatusText(tournament.automationStatus) }}</span></header><p>轮间准备 {{ tournament.intermissionMinutes }} 分钟 · 每轮迟到宽限 {{ tournament.lateGraceMinutes }} 分钟</p><p v-if="tournament.nextAutomaticActionAt">下一次自动处理：{{ new Date(tournament.nextAutomaticActionAt).toLocaleString('zh-CN') }}</p><p v-if="tournament.automationAttentionReason"><b>需要处理：</b>{{ tournament.automationAttentionReason }}</p></section>
       <label class="reason-field"><span>本次操作理由</span><input v-model.trim="reason" maxlength="500" placeholder="供工作人员审计与后续复核"></label>
       <section class="operation-group"><header><b>公开范围</b><span>凭码赛事不向游客公开；名单隐藏也会隐藏赛程姓名与排名。</span></header><div class="visibility-form"><label><span>赛事可见性</span><select v-model="visibility"><option value="public">公开浏览</option><option value="code">凭码访问（需登录）</option></select></label><label><span>参赛名单</span><select v-model="registrationVisibility"><option value="public">公开</option><option value="staff">仅工作人员可见</option></select></label><button :disabled="busy || (visibility === tournament.visibility && registrationVisibility === tournament.registrationVisibility)" @click="saveVisibility">保存公开范围</button></div></section>
-      <section v-if="tournament.status === 'registration'" class="operation-group"><header><b>报名与签到</b><span>调整当前阶段或发布新的开赛时间</span></header><div class="actions"><button v-if="tournament.phase === 'registration-open'" @click="setPhase('registration-closed','报名已关闭')">关闭报名</button><button v-if="tournament.phase !== 'registration-open'" @click="setPhase('registration-open','报名已开放')">重新开放报名</button><button v-if="tournament.phase !== 'pre-check-in'" class="primary" @click="setPhase('pre-check-in','已进入赛前签到')">进入赛前签到</button><button v-if="tournament.phase === 'pre-check-in'" @click="setPhase('registration-closed','已退出赛前签到')">退出赛前签到</button></div><div class="postpone"><label><span>新的计划时间</span><input v-model="postponeAt" type="datetime-local"></label><button :disabled="!postponeAt" @click="postpone">发布延期</button></div></section>
+      <section v-if="tournament.status === 'registration'" class="operation-group"><header><b>报名与签到</b><span>调整当前阶段或发布新的开赛时间</span></header><div class="actions"><button v-if="tournament.phase === 'registration-open'" @click="setPhase('registration-closed','报名已关闭')">关闭报名</button><button v-if="tournament.phase !== 'registration-open'" @click="setPhase('registration-open','报名已开放')">重新开放报名</button><button v-if="tournament.phase !== 'pre-check-in'" class="primary" @click="setPhase('pre-check-in','已进入赛前签到')">进入赛前签到</button><button v-if="tournament.phase === 'pre-check-in'" @click="setPhase('registration-closed','已退出赛前签到')">退出赛前签到</button></div><div class="postpone"><label><span>报名开放时间</span><input v-model="registrationOpensLocal" type="datetime-local"></label><label><span>报名截止时间</span><input v-model="registrationClosesLocal" type="datetime-local"></label><button :disabled="busy" @click="saveRegistrationWindow">保存报名时间</button></div><p>调整计划开赛时间不会自动改变报名时间。</p><div class="postpone"><label><span>新的计划时间</span><input v-model="postponeAt" type="datetime-local"></label><button :disabled="!postponeAt" @click="postpone">发布延期</button></div></section>
       <section class="operation-group"><header><b>开赛与结算</b><span>开赛前必须先完成检查</span></header><div class="actions"><button v-if="tournament.status === 'registration'" @click="checkStart">执行开赛检查</button><button v-if="tournament.status === 'registration'" class="primary" :disabled="!startCheck?.canStart" @click="start">正式开赛</button><button v-if="tournament.status === 'running' && tournament.phase === 'running'" @click="setPhase('result-confirmation','进入成绩确认')">进入成绩确认</button><button v-if="tournament.phase === 'result-confirmation'" @click="setPhase('running','返回赛事进行中')">返回赛事进行中</button><button v-if="tournament.phase === 'result-confirmation'" class="primary" @click="complete">确认成绩并归档</button></div><article v-if="startCheck" class="start-check" :class="{passed:startCheck.canStart}"><b>{{ startCheck.canStart ? '开赛检查通过' : '暂不可开赛' }}</b><p v-for="item in startCheck.blockers" :key="item"><span>阻塞</span>{{ item }}</p><p v-for="item in startCheck.warnings" :key="item"><span>提醒</span>{{ item }}</p></article></section>
     </template>
 

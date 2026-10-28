@@ -45,6 +45,10 @@ const templates = [
   { id: 'swiss', label: '标准瑞士轮', format: 'swiss' as const, swissRounds: 4, cutSize: undefined },
   { id: 'swiss-cut', label: '瑞士轮 + Cut 8', format: 'swiss-cut' as const, swissRounds: 4, cutSize: 8 },
 ]
+const registrationOpensLocal = ref('')
+const registrationClosesLocal = ref('')
+watch(registrationOpensLocal, value => { form.registrationOpensAt = value || null }, { flush: 'sync' })
+watch(registrationClosesLocal, value => { form.registrationClosesAt = value || null }, { flush: 'sync' })
 const stepTitle = computed(() => ['基础信息', '赛制与名额', '规则与牌组', '工作人员与计时', '预览与创建'][step.value - 1])
 const timerSummary = computed(() => tournamentTimeControlLabel(tournamentTimeControlSeconds(timeControlMinutes)))
 const canCreateAutomated = computed(() => hasPermission('tournaments.manage'))
@@ -90,6 +94,8 @@ async function create() {
   const generation = ++createGeneration
   const isCurrent = () => !disposed && generation === createGeneration
   const draft = JSON.stringify(form)
+  const submittedRegistrationOpens = registrationOpensLocal.value
+  const submittedRegistrationCloses = registrationClosesLocal.value
   const submittedForm = JSON.parse(draft) as TournamentCreateInput
   const submittedTimeControl = tournamentTimeControlSeconds({ ...timeControlMinutes })
   busy.value = true; notice.value = '正在执行开赛前校验…'
@@ -97,7 +103,9 @@ async function create() {
     const created = await createTournamentWithCurrentContext(async current => {
       const policy = await getEffectiveOperationsPolicy()
       if (!current()) throw new Error('页面或账号已变化，本次创建已停止')
-      const input = buildTournamentCreateInput(submittedForm, submittedTimeControl, policy)
+      const input = { ...buildTournamentCreateInput(submittedForm, submittedTimeControl, policy),
+        registrationOpensAt: submittedRegistrationOpens ? new Date(submittedRegistrationOpens).toISOString() : null,
+        registrationClosesAt: submittedRegistrationCloses ? new Date(submittedRegistrationCloses).toISOString() : null }
       return input
     }, { preview: true, isCurrent })
     if (!isCurrent()) return
@@ -117,6 +125,8 @@ watch(() => form.format, () => normalizeTournamentFormatInPlace(form))
 watch(() => form.disasterMode, applyDisasterPolicy)
 onMounted(async () => {
   try { const saved = JSON.parse(localStorage.getItem(draftKey) || 'null'); if (saved) Object.assign(form, saved) } catch { /* 忽略损坏草稿 */ }
+  registrationOpensLocal.value = form.registrationOpensAt || ''
+  registrationClosesLocal.value = form.registrationClosesAt || ''
   if (!canCreateAutomated.value) form.operationMode = 'managed'
   normalizeTournamentFormatInPlace(form)
   Object.assign(timeControlMinutes, tournamentTimeControlMinutes(form.timeControl))
@@ -130,7 +140,7 @@ onBeforeUnmount(() => { disposed = true; ++createGeneration })
   <section class="wizard">
     <header class="wizard-head"><div><small>CREATE TOURNAMENT · 第 {{ step }}/5 步</small><h2>{{ stepTitle }}</h2><p>草稿会自动保存在当前设备。</p></div><button type="button" @click="clearDraft">清空草稿</button></header>
     <ol v-horizontal-scroll-arrows="'创建赛事步骤'" class="stepper" aria-label="创建赛事进度"><li v-for="(title, index) in ['基础信息','赛制名额','规则牌组','人员计时','预览创建']" :key="title" :class="{active: step === index + 1, done: step > index + 1}" :aria-current="step === index + 1 ? 'step' : undefined"><b>{{ index + 1 }}</b><span>{{ title }}</span></li></ol>
-    <div v-if="step === 1" class="fields"><label>赛事名称<input v-model.trim="form.name" maxlength="100" placeholder="为参赛者提供易识别的名称"></label><label>可见性<select v-model="form.visibility"><option value="public">公开</option><option value="code">凭代码</option></select></label><label>计划开赛<input v-model="form.startAt" type="datetime-local" :required="form.operationMode === 'automated'"></label><label v-if="canCreateAutomated">运行方式<select v-model="form.operationMode"><option value="managed">人工管理</option><option value="automated">自动运行</option></select></label><p v-if="form.operationMode === 'automated'" class="wide info-note"><b>自动运行</b><span>系统按现有赛事规则自动关闭报名、开赛、启动轮次、处理迟到、生成下一轮并归档；无法唯一裁定的异常会暂停并等待管理员。</span></p><label class="wide">简介<textarea v-model.trim="form.description" rows="4" maxlength="2000" placeholder="说明赛事定位、适合人群与重要安排" /></label></div>
+    <div v-if="step === 1" class="fields"><label>赛事名称<input v-model.trim="form.name" maxlength="100" placeholder="为参赛者提供易识别的名称"></label><label>可见性<select v-model="form.visibility"><option value="public">公开</option><option value="code">凭代码</option></select></label><label>计划开赛<input v-model="form.startAt" type="datetime-local" :required="form.operationMode === 'automated'"></label><label v-if="canCreateAutomated">运行方式<select v-model="form.operationMode"><option value="managed">人工管理</option><option value="automated">自动运行</option></select></label><p v-if="form.operationMode === 'automated'" class="wide info-note"><b>自动运行</b><span>系统按现有赛事规则自动关闭报名、开赛、启动轮次、处理迟到、生成下一轮并归档；无法唯一裁定的异常会暂停并等待管理员。</span></p><label>开放报名时间（可留空）<input v-model="registrationOpensLocal" type="datetime-local"></label><label>报名截止时间（可留空）<input v-model="registrationClosesLocal" type="datetime-local"></label><label class="wide">简介<textarea v-model.trim="form.description" rows="4" maxlength="2000" placeholder="说明赛事定位、适合人群与重要安排" /></label></div>
     <div v-else-if="step === 2" class="fields"><label>套用模板<select @change="applyTemplate(($event.target as HTMLSelectElement).value)"><option value="">自定义</option><option v-for="item in templates" :key="item.id" :value="item.id">{{ item.label }}</option></select></label><label>赛制<select v-model="form.format"><option value="single">单败淘汰</option><option value="swiss">瑞士轮</option><option value="swiss-cut">瑞士轮 + Cut</option></select></label><label>人数上限<input v-model.number="form.maxPlayers" type="number" min="2" max="256"></label><label v-if="form.format !== 'single'">瑞士轮数<input v-model.number="form.swissRounds" type="number" min="1" max="20"></label><label v-if="form.format === 'swiss-cut'">Cut 人数<input v-model.number="form.cutSize" type="number" min="2" :max="form.maxPlayers"></label><p class="wide info-note"><b>候补规则</b><span>满额后新报名自动进入候补；正式席位释放后按候补顺序递补。</span></p></div>
     <div v-else-if="step === 3" class="fields"><label>规则版本<input v-model.trim="form.ruleset"></label><label>牌组公开<select v-model="form.deckVisibility"><option value="always">始终公开</option><option value="after">赛后公开</option><option value="private">仅裁判可见</option></select></label><label>天灾范围<select v-model="form.disasterMode"><option value="season">赛季天灾</option><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="none">不使用</option></select></label><label>签到窗口（分钟）<input v-model.number="form.checkInMinutes" type="number" min="1" max="60"></label><p class="wide info-note"><b>牌组锁定</b><span>报名不要求牌组；玩家只在赛前签到时选择牌组并锁定快照。</span></p><p v-if="policyLoading || catalogLoading" class="wide status-note">正在读取权威运营策略与卡牌图鉴…</p><p v-else-if="policyError || catalogError" class="wide policy-error" role="alert">{{ policyError || catalogError }}</p><template v-else><fieldset v-if="form.disasterMode !== 'none'" class="wide rule-fieldset"><legend>本场天灾池</legend><p>选择本场使用的天灾；湮灭固定末位，创建后不可更改。</p><DisasterPoolPicker v-model="form.disasterCardIds" :cards="catalog" locked-id="S01-DS10"/></fieldset><fieldset class="wide rule-fieldset"><legend>本场禁限卡</legend><p>设置所有主宰或指定主宰的卡牌构筑上限。</p><ConstructionRuleEditor v-model="form.cardRestrictions" :cards="catalog"/></fieldset><label class="wide">补充规则说明<textarea v-model.trim="form.banList" rows="3" maxlength="2000" placeholder="结构化禁限以外的补充说明（可留空）"/></label><p class="wide status-note">将冻结 {{ form.disasterCardIds.length }} 张天灾与 {{ form.cardRestrictions.length }} 条禁限卡规则；不使用天灾时天灾快照为空。</p></template></div>
     <div v-else-if="step === 4" class="fields timing-fields"><fieldset class="wide referee-field"><legend>从好友中选择裁判</legend><label v-for="person in friends" :key="person.accountId"><input type="checkbox" :checked="form.refereeAccountIds.includes(person.accountId)" @change="toggleReferee(person.accountId)"><span>{{ person.username }}</span></label><p v-if="!friends.length">暂无可选好友，创建后仍可在管理页调整工作人员。</p></fieldset><div class="wide timing-intro"><small>TOURNAMENT TIMING</small><h3>轮次与对局计时</h3><p>轮间准备、每轮迟到和对局内断线分别计时，互不替代。</p></div><label v-if="form.operationMode === 'automated'">轮间准备（分钟）<input v-model.number="form.intermissionMinutes" type="number" min="0" max="60" step="1"></label><label>每轮迟到宽限（分钟）<input v-model.number="form.lateGraceMinutes" type="number" min="0" max="60" step="1"></label><label>总时限（分钟）<input v-model.number="timeControlMinutes.total" type="number" min="5" max="120" step="0.25"></label><label>单次操作（分钟）<input v-model.number="timeControlMinutes.operation" type="number" min="0.25" :max="Math.min(15, timeControlMinutes.total)" step="0.25"></label><label>断线宽限（分钟）<input v-model.number="timeControlMinutes.reconnect" type="number" min="0.25" max="15" step="0.25"></label><label>天灾决定（分钟）<input v-model.number="timeControlMinutes.disaster" type="number" min="0.25" max="5" step="0.25"></label><label>调度决定（分钟）<input v-model.number="timeControlMinutes.mulligan" type="number" min="0.25" max="5" step="0.25"></label><p class="wide timer-summary">{{ operationSummary }} · {{ timerSummary }}</p></div>

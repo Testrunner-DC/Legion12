@@ -842,6 +842,7 @@ export interface TournamentBracketMatch {
 }
 export interface TournamentBracketRound { number: number; matches: TournamentBracketMatch[] }
 export interface Tournament {
+  registrationOpensAt?: string | null; registrationClosesAt?: string | null
   id: string; code: string; name: string; organizerAccountId: string; organizerName: string; referees: TournamentStaff[]
   status: TournamentStatus; format: 'single' | 'swiss' | 'swiss-cut' | 'league'; visibility: 'public' | 'code'; maxPlayers: number
   startAt?: string; description: string; rules: TournamentRulesSnapshot; roundMinutes: number; checkInMinutes: number
@@ -889,6 +890,7 @@ export interface PublicTournamentRules {
   cutSize?: number; lateGraceMinutes: number; timeControl: RankedTimeControlConfig
 }
 export interface PublicTournamentDetail extends PublicTournamentSummary {
+  registrationOpensAt?: string | null; registrationClosesAt?: string | null
   description: string; registrationVisibility: 'public' | 'staff'; registrationOpen: boolean; rules: PublicTournamentRules
   intermissionMinutes: number; automationStatus: TournamentAutomationStatus; nextAutomaticActionAt?: string
   participants: Array<{ name: string; status: string }>
@@ -907,6 +909,7 @@ export interface TournamentCareer {
   items: TournamentCareerEntry[]; page: number; pageSize: number; total: number; totalPages: number
 }
 export interface TournamentCreateInput {
+  registrationOpensAt?: string | null; registrationClosesAt?: string | null
   name: string; format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
   ruleset: string; description: string; deckVisibility: TournamentDeckVisibility; disasterMode: TournamentDisasterMode
   banList: string; disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
@@ -1846,6 +1849,9 @@ export const tournamentApi = {
   }),
   setPhase: (id: string, expectedVersion: number, phase: 'registration-open' | 'registration-closed' | 'pre-check-in' | 'result-confirmation' | 'running', reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/phase`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-phase', { expectedVersion, phase, reason })),
+  }),
+  setRegistrationWindow: (id: string, expectedVersion: number, registrationOpensAt: string | null, registrationClosesAt: string | null, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration-window`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-registration-window', { expectedVersion, registrationOpensAt, registrationClosesAt, reason })),
   }),
   postpone: (id: string, expectedVersion: number, newStartAt: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/postpone`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-postpone', { expectedVersion, newStartAt, reason })),

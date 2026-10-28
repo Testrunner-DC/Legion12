@@ -62,7 +62,7 @@ public sealed class PublicTournamentBrowsingTests
         using var detailJson = JsonDocument.Parse(detailText);
         AssertAllowlisted(detailJson.RootElement, "code", "name", "organizerName", "status", "format",
             "phase", "maxPlayers", "startAt", "roundMinutes", "checkInMinutes", "counts", "description",
-            "registrationVisibility", "registrationOpen", "operationMode", "intermissionMinutes",
+            "registrationVisibility", "registrationOpen", "registrationOpensAt", "registrationClosesAt", "operationMode", "intermissionMinutes",
             "automationStatus", "nextAutomaticActionAt", "rules", "participants", "rounds", "finalStandings");
         AssertAllowlisted(detailJson.RootElement.GetProperty("rules"), "ruleset", "disasterMode", "banList",
             "disasterCardIds", "cardRestrictions", "deckVisibility", "swissRounds", "cutSize",

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { publicTournamentApi, type PublicTournamentDetail } from '@/l12/platform'
 import { tournamentDisasterModeText, tournamentFormatText, tournamentMatchStatusText, tournamentPhaseText, tournamentResultText, tournamentRoundStatusText, tournamentStatusText } from '@/l12/tournamentLabels'
@@ -30,12 +30,24 @@ async function copyLink() {
   try { await navigator.clipboard.writeText(location.href); notice.value = '赛事链接已复制' }
   catch { notice.value = '无法复制，请复制浏览器地址栏中的链接' }
 }
+let registrationBoundaryTimer: number | undefined
+watch(tournament, value => {
+  window.clearTimeout(registrationBoundaryTimer)
+  if (!value || value.status !== 'registration') return
+  const now = Date.now()
+  const next = [value.registrationOpensAt, value.registrationClosesAt]
+    .filter((time): time is string => !!time)
+    .map(time => new Date(time).getTime())
+    .filter(time => Number.isFinite(time) && time > now)
+    .sort((a, b) => a - b)[0]
+  if (next !== undefined) registrationBoundaryTimer = window.setTimeout(() => void load(), Math.min(next - now + 100, 2_147_000_000))
+} )
 const onResource = () => { void load() }
 const onVisibility = () => { if (document.visibilityState === 'visible') void load() }
 let refreshTimer: number | undefined
 function refresh() { void load(); refreshTimer = window.setTimeout(refresh, 60_000) }
 onMounted(() => { void load(); refreshTimer = window.setTimeout(refresh, 60_000); window.addEventListener('l12-resource-tournaments', onResource); document.addEventListener('visibilitychange', onVisibility) })
-onBeforeUnmount(() => { disposed = true; ++generation; window.clearTimeout(refreshTimer); window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility) })
+onBeforeUnmount(() => { window.clearTimeout(registrationBoundaryTimer); disposed = true; ++generation; window.clearTimeout(refreshTimer); window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
 
 <template>
@@ -48,7 +60,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; window.clearTimeout(refre
       <section v-if="tournament.status === 'registration'" class="panel registration-callout" aria-label="赛事报名"><div><small>REGISTRATION</small><h2>{{ tournament.registrationOpen ? '报名开放中' : '本场报名已关闭' }}</h2><p>{{ tournament.registrationOpen ? '登录后可直接报名；获得正式席位后，再在赛前签到时选择并锁定本人牌库。' : '仍可查看本场赛事信息、规则、赛程和公开参赛状态。' }}</p></div><button class="primary" :disabled="!tournament.registrationOpen" @click="login">{{ tournament.registrationOpen ? '登录后报名' : '报名已关闭' }}</button></section>
       <nav class="tabs" aria-label="赛事详情"><button v-for="item in tabs" :key="item[0]" :class="{ active: tab === item[0] }" :aria-current="tab === item[0] ? 'page' : undefined" @click="tab = item[0]">{{ item[1] }}</button></nav>
       <p v-if="notice" class="notice" role="status">{{ notice }}</p>
-      <section v-if="tab === 'overview'" class="panel facts"><p><small>主办者</small><b>{{ tournament.organizerName }}</b></p><p><small>赛制</small><b>{{ tournamentFormatText(tournament.format) }}</b></p><p><small>运行方式</small><b>{{ tournament.operationMode === 'automated' ? '自动运行' : '人工管理' }}</b></p><p><small>参赛人数</small><TournamentParticipantCounts :counts="tournament.counts" :max-players="tournament.maxPlayers"/></p><p><small>计划时间</small><b>{{ tournament.startAt ? new Date(tournament.startAt).toLocaleString('zh-CN') : '待定' }}</b></p><p><small>赛事阶段</small><b>{{ tournamentPhaseText(tournament.phase) }}</b></p><p><small>报名状态</small><b>{{ tournament.registrationOpen ? '报名开放' : '报名关闭' }}</b></p><p v-if="tournament.operationMode === 'automated'"><small>自动计时</small><b>轮间 {{ tournament.intermissionMinutes }} 分钟 · 迟到 {{ tournament.rules.lateGraceMinutes }} 分钟</b></p></section>
+      <section v-if="tab === 'overview'" class="panel facts"><p v-if="tournament.registrationOpensAt || tournament.registrationClosesAt"><small>报名时间</small><b>{{ tournament.registrationOpensAt ? new Date(tournament.registrationOpensAt).toLocaleString('zh-CN') : '不限' }} 至 {{ tournament.registrationClosesAt ? new Date(tournament.registrationClosesAt).toLocaleString('zh-CN') : '不限' }}</b></p><p><small>主办者</small><b>{{ tournament.organizerName }}</b></p><p><small>赛制</small><b>{{ tournamentFormatText(tournament.format) }}</b></p><p><small>运行方式</small><b>{{ tournament.operationMode === 'automated' ? '自动运行' : '人工管理' }}</b></p><p><small>参赛人数</small><TournamentParticipantCounts :counts="tournament.counts" :max-players="tournament.maxPlayers"/></p><p><small>计划时间</small><b>{{ tournament.startAt ? new Date(tournament.startAt).toLocaleString('zh-CN') : '待定' }}</b></p><p><small>赛事阶段</small><b>{{ tournamentPhaseText(tournament.phase) }}</b></p><p><small>报名状态</small><b>{{ tournament.registrationOpen ? '报名开放' : '报名关闭' }}</b></p><p v-if="tournament.operationMode === 'automated'"><small>自动计时</small><b>轮间 {{ tournament.intermissionMinutes }} 分钟 · 迟到 {{ tournament.rules.lateGraceMinutes }} 分钟</b></p></section>
       <section v-else-if="tab === 'schedule'" class="rounds">
         <p v-if="!tournament.rounds.length" class="panel empty">赛程尚未公布</p>
         <section v-for="round in tournament.rounds" :key="round.number" class="panel round"><header><h2>第 {{ round.number }} 轮</h2><span>{{ round.stage === 'elimination' ? '淘汰赛' : '瑞士轮' }} · {{ tournamentRoundStatusText(round.status) }}</span></header><article v-for="match in round.matches" :key="match.table" class="match"><b>第 {{ match.table }} 桌</b><span>{{ match.playerAName || '参赛者' }} <i>vs</i> {{ match.playerBName || (match.result === 'bye' ? '轮空' : '参赛者') }}</span><span>{{ match.status === 'completed' ? tournamentResultText(match.result) : tournamentMatchStatusText(match.status) }}</span></article></section>
