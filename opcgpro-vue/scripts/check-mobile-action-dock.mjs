@@ -58,7 +58,7 @@ assert.ok(!playerMat.includes('<img v-if="mobileMoralePicker && factionLogoUrls[
 assert.ok(!legacy.includes(':global(.mobile-action-dock)'), 'old independent fixed dock cannot reappear')
 assert.ok(legacy.includes('--l12-mobile-right-rail-w:calc(var(--l12-mobile-dock-width) + 8px)'))
 assert.ok(css.includes('--l12-mobile-left-rail-w:max(78px,calc(var(--l12-mobile-master-w) * 1.3))'))
-assert.ok(css.includes('--l12-mobile-dock-width:clamp(92px,calc(var(--l12-mobile-master-w) * 1.18),108px)'))
+assert.ok(css.includes('--l12-mobile-dock-width:clamp(112px,calc(var(--l12-viewport-width,100vw) * .15),132px)'))
 assert.ok(css.includes('class="mobile-battle-dock__utility"') || dock.includes('class="mobile-battle-dock__utility"'))
 assert.ok(legacy.includes('--l12-mobile-relic-w:calc(var(--l12-mobile-master-w) * .9)'))
 assert.ok(legacy.includes('--l12-mobile-pile-w:calc(var(--l12-mobile-master-w) * .7)'))

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-mobile-dock-resources",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "移动端对战操作与士气显示",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "加宽移动端对战操作栏，修正士气数量显示被裁切及无士气时残留的底条；资源较多时可在原区域内滚动查看，原支付选择和桌面布局保持不变。",
+      "paths": ["opcgpro-vue/src/l12/game/MobileBattleDock.css", "opcgpro-vue/src/l12/game/GameBoard.mobile.css"]
+    }
+  ]
+}

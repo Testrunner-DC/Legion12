@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261028-MOBILE-DOCK-RESOURCES｜移动右栏宽度与士气可用空间一并收束
+
+- 人类在牌库来源直接要求扩大移动右栏、去士气下方残留及修正计数内缩。原生568×320实际RED：dock92px，summary22px而count16px，原生button padding1px 6px及边框挤内列；零资源仍绘6px空底板。只在MobileBattleDock.css和GameBoard.mobile.css调整移动域预算：dock按viewport112—132独立求宽，master预算先扣真实dock、最小32，避免卡宽和dock循环依赖；计数重置盒模型/内列最小宽，空栈不绘并去桌面余数伪元素，不删任何真实资源。
+- 后续大量资源真实RED（12实体＋2临时，含1神力）暴露68px图标区溢出所属半场；沿原资源flex区域收束、可滚动，46px可视／66px内容，原生滚动0→20且全部14元素保留。未引入资源上限或更改神力/临时士气规则。原GameBoard4EB73BF8与PlayerMat未改，支付仍走原picker，不新增直接支付或规则副本。
+- 原生5场：568×320零资源与12＋2、844×390八实体混合、390×844实际旋转、1920×1080桌面阴性；双边count无裁切、计数同高，summary/faction/stack均contained，桌面无mobile dock且原flex保留。最窄实点summary→选神力→小化→右栏恢复→确认，仅一条resolvePrompt、弹框结束；临时资源仅验展示，不冒其支付或真实服务器ACK。Main已目视真实568全图，原clip起点问题与夹具加载修正独立保留，不冒产品RED。
+- 原移动15守卫通过；另一旧dock宽字面锁实际失败后仅更新已实测112/viewport/132，保其余全部断言，再通过。Main最终frontend-main-r5完整UI/两类型/双610构建同过，CSS源E0FDF6DC与0CD93316，三QA逐SHA绑定。证据`mobile-dock-resource-20261028/specialist-delivery.json`及`browser-green-raw.json`，没有后端变更，不重复完整平台或30＋10。
+- P4移动/桌面隔离保持；原临时tab关闭、viewport复位、5179 listener0。物理手机/触摸真机及未挂到此GameBoard夹具的实际GamePage返回/投降组合仍未验，不把合成fixture冒全链闭环。未部署/线上关单。回滚两移动CSS预算/盒模型/空栈/滚动规则即可，原SFC和资源/支付语义保持。
+
 ## REFACTOR-20261028-ALTERNATE-ART-CONTRACTS｜G6画廊纯类型边界原样提取
 
 - 已批准的综合工程目标G6下一最小片：platform.ts的204—211与216—218原11接口移入platformAlternateArtContracts，夹在中间的4存储类型不移动。所有自定义引用在这11名内闭合；原入口11个import type/原名export type保CardArchive、L12DeckEditor、GameBoard、AdminAlternateArtsPanel、DeckLibraryPage、ProfilePage、SiteShell七消费页，页面无需改导入。P2/P4组织扩展不碰P0/P1/P3。

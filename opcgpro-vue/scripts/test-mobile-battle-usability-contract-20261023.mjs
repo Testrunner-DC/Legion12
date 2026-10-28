@@ -29,7 +29,7 @@ assert.equal((mobileSummary.match(/show-master-details/g) ?? []).length, 2,
   'both persistent player identities must include master details')
 
 assert.match(dock, /--l12-mobile-left-rail-w:max\(78px,calc\(var\(--l12-mobile-master-w\) \* 1\.3\)\)/)
-assert.match(dock, /--l12-mobile-dock-width:clamp\(92px,calc\(var\(--l12-mobile-master-w\) \* 1\.18\),108px\)/)
+assert.match(dock, /--l12-mobile-dock-width:clamp\(112px,calc\(var\(--l12-viewport-width,100vw\) \* \.15\),132px\)/)
 assert.match(mobile, /--l12-mobile-relic-w:calc\(var\(--l12-mobile-master-w\) \* \.9\)/)
 assert.match(mobile, /--l12-mobile-pile-w:calc\(var\(--l12-mobile-master-w\) \* \.7\)/)
 assert.match(mobile, /--l12-mobile-action-h:clamp\(40px,[^;]+,44px\)/,

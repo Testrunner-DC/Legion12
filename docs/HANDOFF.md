@@ -4,10 +4,11 @@
 
 - 11点补记：赛事/响应/墓地52叶已实际提交并非强推、远端同`104648a3285f728d1d0e91c441d65157a4d582c7`读回，唯一`integration-20261028/followup-synchronization.json`。下方3f与“尚未提交”是此前阶段，不重做同步。两服仍d557，维护已解除，无本轮线上关单。
 - 人类要求关闭反复开启的1.5×：全局config.toml仅service_tier priority→default，模型/思考档不变，实际读回仍default。Computer Use禁止代操作Codex自身界面，未改会话数据库或冒称已运行任务独立档位均已关闭；后续不得主动启用加速。
-- G6画廊11纯接口已原样提取、七消费入口不变，声明9023ed85及整platform擦除JS A9D22B2F与原件相同；8反例/17旧合同6反例/权益SFC/会话/UI361均过。最终frontend-main-r5完整UI/两类型/双610构建通过，两个CSS的另批移动修复亦绑定；不重复后台/原30＋10，不冒性能或Release。当前G6待源码同步，原Windows入口/旧QA变异失败保留；回执`g6-alternate-art-contracts/focused-r3-result.json`。
+- G6画廊11纯接口已原样提取、七消费入口不变，声明9023ed85及整platform擦除JS A9D22B2F与原件相同；8反例/17旧合同6反例/权益SFC/会话/UI361均过。最终frontend-main-r5完整UI/两类型/双610构建通过，两个CSS的另批移动修复亦绑定；不重复后台/原30＋10，不冒性能或Release。G6已实际非强推并远端同cf326e7a5edf7263eb0dfb04f1e0fa611380cf33读回，唯一`g6-alternate-art-contracts/main-acceptance.json`；原Windows入口/旧QA变异失败保留。
+- 移动右栏/士气直接需求已完成并独审接受：仅2移动CSS，原568 dock92→112，count16→22同summary，空栈底条消失；14资源均保留、原生滚0→20、神力支付/小化恢复唯一提交。5场真实浏览器及最终r5完整前端通过，Main已目视568全图；物理真机、实际GamePage返回/投降组合未验。来源5叶冻结、临时页/5179已清退；当前Main做本族源码同步，证据`mobile-dock-resource-20261028/specialist-delivery.json`，两服仍d557。
 - 数据终态95bf584f与活动基础3f356187已分族非强推并独立远端同3f读回；两服仍d557，不重复部署或解除维护。Main39专项/2736完整平台/前端15/两类型等真实验收见`bug-closeout-remaining-20261027/integration-20261028/main-acceptance.json`及`synchronization.json`。活动worker/慢Recorder/部署消费未实现，不能把基础同步冒全功能完成。
 - 赛事新族后台NewTournament不自动参赛、legacy不补actor、登录/公共Registered排Dropped均已实现，原4RED→4绿；48直接夹具真实组合报名，另2HTTP旧夹具改主动POST，全关联224/224。固定服务/测试DLL A67332B7/827881AB的完整平台r5已实际2740/2740零失败跳过，TRX2E39F231；仅随后测试行尾空格清理，有原字节重建校验，不重复全量。
-- 赛事18前端叶（唯一规则展示/正确人数/个人退赛状态）冻结；共享13/light30/mode46等、最终两类型/双610及12浏览器实际通过。Main复查原始截图与公共DTO，图像为合成manifest映射，不冒真实线上数据或真机。后到GameBoard产品不在该前端构建中；余下整体资格须重绑实际源。实际最后HEAD/remote为3f，赛事尚未提交/热修。
+- 赛事18前端叶（唯一规则展示/正确人数/个人退赛状态）冻结；共享13/light30/mode46等、两类型/双610及12浏览器实际通过。Main复查原始截图与公共DTO，图像为合成manifest映射，不冒真实线上数据或真机。后到GameBoard经r4完整前端/四场实际点击，已同赛事一起同步104648a3；后续移动及类型族经r5重新绑定。不再采用此前3f“赛事未提交”的旧阶段结论，尚未热修上线。
 - 新反馈940/3已入唯一队列，原938项及647/555关闭计数不变。c25墓地已按人类call_a9b2546b6eb741df9b5790d586990073批准修复，20/20；实际窄屏另复现新提示遗留空详情抽屉挡按钮，沿既批新提示清理修复，双方新增2RED→响应32/32。Main最终完整UI/两类型/双610构建及原生400×770四场Defense中心命中均过，GameBoard4EB73BF8，源与边界见registry和native-observation.json，不冒原局或真机。两反馈仍待含修复版本线上验证才关；7eb亦待数据终态能力上线。
 - 当前已无后台重验或临时浏览器进程；旧失败均保留。Main做当前族整合/同步，赛事和响应来源已冻结。新移动右栏/士气残留直接需求由活动来源只读定位，当前不与GameBoard验收重叠；G6纯类型提取与实际40分钟worker等仍依赖排队，不覆盖已完成发布或当前新需求。
 

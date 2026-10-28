@@ -1053,14 +1053,18 @@
 .mobile-landscape-board :deep(.battlefield-half .resource-faction-action),
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-summary),
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { box-sizing:border-box !important; width:var(--l12-mobile-resource-w) !important; max-width:var(--l12-mobile-resource-w) !important; }
-.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) { grid-template-columns:minmax(24px,42%) minmax(34px,58%) !important; height:var(--l12-mobile-resource-summary-h) !important; min-height:var(--l12-mobile-resource-summary-h) !important; overflow:hidden !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-summary) { grid-template-columns:minmax(0,42%) minmax(0,58%) !important; height:var(--l12-mobile-resource-summary-h) !important; min-height:var(--l12-mobile-resource-summary-h) !important; padding:0 !important; border:0 !important; border-radius:0 !important; background:transparent !important; overflow:hidden !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-label),
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-count) { width:auto !important; min-width:0 !important; max-width:none !important; height:100% !important; min-height:0 !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; overflow:hidden !important; font-size:var(--l12-mobile-resource-font) !important; white-space:nowrap !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-label img) { width:calc(var(--l12-mobile-resource-summary-h) - 8px) !important; height:calc(var(--l12-mobile-resource-summary-h) - 8px) !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-faction-action) { min-height:calc(var(--l12-mobile-resource-summary-h) - 2px) !important; padding:1px var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-resource-font) !important; line-height:1.1 !important; }
-.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns:repeat(4,minmax(11px,1fr)) !important; grid-auto-rows:var(--l12-mobile-morale-orb) !important; gap:2px !important; padding:2px !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack) { grid-template-columns:repeat(4,minmax(11px,1fr)) !important; grid-auto-rows:var(--l12-mobile-morale-orb) !important; gap:2px !important; padding:2px !important; flex:1 1 auto !important; align-content:start !important; overflow:auto !important; overscroll-behavior:contain; touch-action:pan-y; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb) { width:var(--l12-mobile-morale-orb) !important; min-width:var(--l12-mobile-morale-orb) !important; height:var(--l12-mobile-morale-orb) !important; min-height:var(--l12-mobile-morale-orb) !important; }
 .mobile-landscape-board :deep(.battlefield-half .resource-morale-stack .morale-orb img) { width:calc(var(--l12-mobile-morale-orb) - 4px) !important; height:calc(var(--l12-mobile-morale-orb) - 4px) !important; }
+/* An empty old resource strip must not leave a painted sliver under the count.
+   Real resources and their shared payment-picker target remain in place. */
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack:not(:has(.morale-orb))) { display:none !important; }
+.mobile-landscape-board :deep(.battlefield-half .resource-morale-stack)::after { content:none !important; display:none !important; }
 .mobile-landscape-board .board-center { grid-template-columns:minmax(0,1fr) !important; grid-template-rows:0 0 minmax(0,1fr) 0 var(--l12-mobile-hand-h) !important; }
 .mobile-landscape-board .board-center>.opponent-hand,.mobile-landscape-board .opponent-status-lane { grid-row:1 !important; }
 .mobile-landscape-board .felt-board { grid-row:3 !important; }
