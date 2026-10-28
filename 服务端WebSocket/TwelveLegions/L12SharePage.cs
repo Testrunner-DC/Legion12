@@ -134,7 +134,7 @@ internal static partial class L12SharePage
         return null;
     }
 
-    private static string PlainText(string? body)
+    internal static string PlainText(string? body)
     {
         var value = (body ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(value)) return string.Empty;
@@ -156,7 +156,7 @@ internal static partial class L12SharePage
             using var document = JsonDocument.Parse(value);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("format", out var format)
-                || format.GetString() != "l12-blocks" || !root.TryGetProperty("blocks", out var blocks)
+                || format.ValueKind != JsonValueKind.String || format.GetString() != "l12-blocks" || !root.TryGetProperty("blocks", out var blocks)
                 || blocks.ValueKind != JsonValueKind.Array) return false;
             text = string.Join(' ', blocks.EnumerateArray().Select(block =>
                 block.ValueKind == JsonValueKind.Object && block.TryGetProperty("text", out var content)

@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-28 资讯／图鉴读取优化已验收（最新）
+
+- 人类明确“按你规划的推进”。Main资讯列表改显式摘要合同，单篇走`/api/articles/by-key/{id}`，同一Published查询/权限/搜索/排序不变；旧完整接口、管理员列表及主页未迁移。前端正文搜索250ms防抖，清页/换kind/卸载用原watch清理拒收迟到回复。67关联专项与9实际SFC通过，最终完整UI/类型/双610构建r2及完整平台2783/2783零失败跳过通过。唯一`article-summary-read-20261028/main-acceptance.json`已实际重读原TRX/前端pins/17源/两DLL；源码分族同步结果见同根`synchronization.json`，不是Release或部署。
+- 独审发现合法非字符串format旧正文使摘要整页500、summaries合法slug冲突，两真实HTTP RED已修；结构纯文本不走HTML解析。原首轮类别/视频封面夹具失败及中间1103通过后主动取消的完整运行保留，后者不是全绿资格。唯一证据根`article-summary-read-20261028`，不重复未变Rules/30＋10或线上采样，无部署/维护/关单。
+- 图鉴来源三叶已冻结交回，Main已读差异且合并最终前端验证：lookup只共享在途请求/JSON解析，settle按identity清理；冷静态4→3、lookup2→1，保后续archive刷新、失败重试与324构筑/360图鉴身份。14实际函数反例及五个唯一源路径AST/六反例通过；627540→372605仅本地源字节，不冒实传。`catalog-read-reuse-20261028`原RED/旧计数QA失败保留。
+- 赛事来源新`TournamentAnnouncement.vue`/具名SFC QA两独立新叶已交回冻结，Main实跑8/8、核两SHA，原U+0008守卫/空白公告返修已补；不接API/父组件/后端，精确排除当前两稳定提交。公告尚未接入，更非提醒已送达。上传四临时文件锁外准备方案已只读交回，尚未实施。两服仍d557、Bug仍3待上线，已完成发布和维护不回流。
+
 ## 2026-10-28 报名窗口首片已验收（最新）
 
 - 来源01a0cf3a的12叶交回已由Main独验，另补1个既有SFC QA叶：实际全赛事130、创建/管理SFC20、完整UI、两类型与双610构建全过，4图已Main目视（合成API、非线上/真机）。字段可空、UTC/本地、开放含/截止不含、原手动开关/阶段交集，编辑沿原scoped permission/版本/预演/幂等/审计；延期不移动绝对窗口。Main修StartCheck不再报未来窗口“仍开放”，保未编辑端点完整秒/小数。唯一`tournament-registration-window-20261028/main-acceptance.json`；源码同步见同根`synchronization.json`，未部署/维护写/关单，不冒Release或30＋10。

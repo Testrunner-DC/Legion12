@@ -30,6 +30,7 @@ export interface Article {
   kind: SiteContentKind; categoryId?: string; mediaAssetId?: string; sortOrder: number; bodyMedia?: SiteMediaEmbed[]
   videoAuthorName?: string
 }
+export type ArticleSummary = Omit<Article, 'body' | 'bodyMedia'> & { bodyPreview: string }
 export interface ArticleRevision {
   revision: number; action: string; title: string; summary: string; body: string; category: string; coverUrl: string
   link: string; slug: string; pinned: boolean; publishAt?: string; actor: string; createdAt: string

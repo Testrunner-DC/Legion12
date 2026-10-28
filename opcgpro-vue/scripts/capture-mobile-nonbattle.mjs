@@ -58,6 +58,8 @@ const coverData='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" vi
 const article=(id,kind,index)=>({id,title:'第一弹补充包「诸神黄昏」发售公告与移动端长标题换行验收 '+index,summary:'这是一段用于验收移动端换行与截断的资讯摘要，长度 deliberately 拉长以观察两行以上的排布效果。',body:'正文',category:'公告',coverUrl:coverData,link:'',slug:id,pinned:index===0,status:'published',hasUnpublishedChanges:false,createdAt:'2026-09-01T08:00:00Z',updatedAt:'2026-09-01T08:00:00Z',publishedAt:'2026-09-0'+index+'T08:00:00Z',author:'十二军团官方',updatedBy:'admin',revision:1,kind,sortOrder:index})
 const newsArticles=Array.from({length:6},(_,i)=>article('news-'+i,'news',i+1))
 platform.articleApi.list=async({kind}={})=>kind==='news'?newsArticles:Array.from({length:3},(_,i)=>article(kind+'-'+i,kind,i+1))
+platform.articleApi.summaries=async query=>(await platform.articleApi.list(query)).map(({body,bodyMedia,...row})=>({...row,bodyPreview:body}))
+platform.articleApi.get=async id=>newsArticles.find(row=>row.id===id)
 platform.siteContentApi.categories=async()=>['公告','活动','攻略']
 platform.siteContentApi.home=async()=>({composition:JSON.stringify({version:1,heroSlides:[],notices:[{id:'n1',enabled:true,text:'《十二军团》第一弹现已发售，移动端体验持续优化中',link:''}],newsEyebrow:'NEWS',newsTitle:'资讯一览',newsDescription:'',videoEyebrow:'VIDEO',videoTitle:'最新视频',videoDescription:'',productEyebrow:'PRODUCTS',productTitle:'产品上新',productDescription:''}),legal:'{}',news:newsArticles.slice(0,4),videos:[],products:[],media:[]})
 

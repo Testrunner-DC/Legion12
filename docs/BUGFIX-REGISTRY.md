@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261028-ARTICLE-SUMMARY-READ｜资讯列表不再携带全文
+
+- 人类按已报告顺序批准推进，P2/P4不改权威事实、历史和发布状态。原NewsPage从200条完整Article中选单篇，列表额外带正文/BodyMedia；新具名Summary DTO省去两字段，仅无手写摘要时生成260字符预览。沿原PublicArticlesCore选择同一Published版本/正文搜索/排序/上限，原完整API默认不变，管理员与主页另排，不把本片冒全站读取优化完成。
+- 单篇`/api/articles/by-key/{id}`沿PublicArticle公开news规则，保草稿/未来/撤回拒绝、正文素材完整，不从摘要拼回正文；前端9实际SFC覆盖列表/直接详情、迟到详情与搜索、清搜索/换kind/分类、错误及卸载。250ms仅有输入时防抖，无周期刷新。列表摘要不能保存为正文，类型Omit明确区分；3旧浏览器mock适配新方法，原场景不删。
+- 具名独审两阻断：合法旧JSON的format非字符串会让共享PlainText.GetString抛异常，补类型守卫而非吞整页；合法slug=summaries会与字面集合路径相撞，改by-key而不禁旧slug。`redreview.trx`真实2失败/6通过，中文角括号原未红不冒RED；结构纯文本改仅归整空白并补ASCII标签字面保真。首轮2个fixture缺分类/下一轮缺必需封面保留，后补合成有效媒体，非削弱产品发布保护。
+- 最终67关联专项、9实际SFC、完整UI/两类型/双610构建及完整平台2783/2783零失败跳过全部通过。中间full因独审返修在1103项通过时主动取消，只停核验的D盘testhost并留监督失败/临时资料，不冒完整通过。最终资格/同步以`article-summary-read-20261028/main-acceptance.json`/`synchronization.json`实件为准；主验收实际重读17源、两DLL、TRX与前端阶段，未纳后到未接入公告两叶。回退可恢复旧完整列表消费者，正文/快照不迁移；无线上写/部署/性能压测新通过。
+
+## PERF-20261028-CATALOG-INFLIGHT-REUSE｜图鉴同轮目录只读一次
+
+- 冷图鉴的构筑loader与展示loader原各取lookup，重复一份254935字节源文件。内部仅在途promise复用fetch与JSON解析，成功/失败settle按同promise身份清空；构筑成功缓存原样，archive后来访问仍no-store拉新展示数据，不缓存整个图鉴结果、不混构筑/展示身份或正式共享源。
+- 来源仅`decks.ts`+2QA，Main独读差异并纳最终前端资格。14真实函数场景核并发/顺序、延迟JSON单解析、网络/HTTP/JSON失败重试、两部署前缀、全324/360卡池身份/顺序/效果/神力。旧部署QA的>=6原始fetch计数本身锁重复读取，保失败后迁AST精确5唯一源/原策略与六损坏反例；不只降阈值、不降其他断言。
+- `catalog-read-reuse-20261028`原RED/green/旧base-path失败保留。冷静态4→3、lookup2→1，整个图鉴含2原API仍5路；627540→372605为本地未压缩源字节，不冒线上节省或FPS。最终前端完整UI/类型/双610已过，无后端行为改变；同一最终主验收引用，不重跑不变Rules/30＋10或线上采样。回滚只恢复原两fetch位置，不删目录/缓存或卡图。
+
 ## FEATURE-20261028-TOURNAMENT-REGISTRATION-WINDOW｜报名开放／截止完整链
 
 - 来源人类turn01a180c1明确“123478执行 56用公告就行了”，Main核过八项对比，按最小片先落实报名时间，不把公告/提醒、候补、赛程、审核及信誉混进本候选。P2/P3扩展原赛事row/DTO/Mutate/管理命令，P0/P1不变；两可空时间兼容旧资料，存UTC、输入显示本地，开放含边界/截止不含，与原status/手动开关/自动关闭约束取交集，不在边界tick另写数据库或加第二套调度。

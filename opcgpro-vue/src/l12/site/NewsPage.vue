@@ -2,19 +2,21 @@
 import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { articleApi, siteContentApi, type Article, type SiteCategory, type SiteContentKind } from '@/l12/platform'
+import { articleApi, siteContentApi, type Article, type ArticleSummary, type SiteCategory, type SiteContentKind } from '@/l12/platform'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
-import { articleBodyText } from './articleBlocks'
 
 const route = useRoute()
 const categories = ref<SiteCategory[]>([])
-const entries = ref<Article[]>([])
+const entries = ref<ArticleSummary[]>([])
+const countEntries = ref<ArticleSummary[]>([])
+const selectedArticle = ref<Article | null>(null)
+const loadError = ref('')
+let categoriesKind: SiteContentKind | '' = ''
 const category = ref('')
 const search = ref('')
 const loading = ref(true)
 const kind = computed<SiteContentKind>(() => route.name === 'products' ? 'product' : route.name === 'videos' ? 'video' : 'news')
 const selectedId = computed(() => String(route.params.articleId || route.hash.match(/^#article-(.+)$/)?.[1] || ''))
-const selectedArticle = computed(() => kind.value === 'news' && selectedId.value ? entries.value.find(item => item.id === selectedId.value) : undefined)
 const showingNewsDetail = computed(() => kind.value === 'news' && Boolean(selectedId.value))
 const pageCopy = computed(() => ({
   news: { eyebrow: 'NEWS', title: '资讯一览', description: '官方资讯与站点更新的统一入口。', search: '搜索资讯', all: '全部资讯', empty: '当前筛选下暂无资讯' },
@@ -23,16 +25,37 @@ const pageCopy = computed(() => ({
 }[kind.value]))
 const visible = computed(() => entries.value.filter(item => {
   const categoryMatch = !category.value || item.categoryId === category.value
-  const query = search.value.trim().toLocaleLowerCase()
-  return categoryMatch && (!query || `${item.title} ${item.summary} ${item.body} ${item.videoAuthorName || ''}`.toLocaleLowerCase().includes(query))
+  return categoryMatch
 }))
-const categoryCounts = computed(() => Object.fromEntries(categories.value.map(item => [item.id, entries.value.filter(entry => entry.categoryId === item.id).length])))
+const categoryCounts = computed(() => Object.fromEntries(categories.value.map(item => [item.id, countEntries.value.filter(entry => entry.categoryId === item.id).length])))
 
-watch(kind, async value => {
-  loading.value = true; category.value = ''; search.value = ''
-  try { [entries.value, categories.value] = await Promise.all([articleApi.list({ kind: value, limit: 200 }), siteContentApi.categories(value)]) }
-  catch { entries.value = []; categories.value = [] }
-  finally { loading.value = false }
+watch(kind, () => { category.value = ''; search.value = ''; entries.value = []; countEntries.value = []; categories.value = []; categoriesKind = '' })
+watch([kind, selectedId, search], async ([value, id, query], _previous, onCleanup) => {
+  let active = true
+  let timer: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => { active = false; if (timer) clearTimeout(timer) })
+  loading.value = true; loadError.value = ''; selectedArticle.value = null
+  const read = async () => {
+    try {
+      if (value === 'news' && id) {
+        const detail = await articleApi.get(id)
+        if (active) selectedArticle.value = detail
+      } else {
+        const [items, nextCategories] = await Promise.all([
+          articleApi.summaries({ kind: value, limit: 200, search: query.trim() }),
+          categoriesKind === value ? Promise.resolve(categories.value) : siteContentApi.categories(value),
+        ])
+        if (active) {
+          entries.value = items; categories.value = nextCategories; categoriesKind = value
+          if (!query.trim()) countEntries.value = items
+        }
+      }
+    } catch (error) {
+      if (active) { entries.value = []; loadError.value = error instanceof Error ? error.message : '内容读取失败，请稍后重试' }
+    } finally { if (active) loading.value = false }
+  }
+  if (query.trim() && !(value === 'news' && id)) timer = setTimeout(() => { void read() }, 250)
+  else await read()
 }, { immediate: true })
 </script>
 
@@ -44,7 +67,7 @@ watch(kind, async value => {
         <img v-if="selectedArticle.coverUrl" class="detail-cover" :src="selectedArticle.coverUrl" :alt="selectedArticle.title">
         <article><header><time>{{ selectedArticle.pinned ? '置顶 · ' : '' }}{{ new Date(selectedArticle.publishedAt || selectedArticle.publishAt || selectedArticle.createdAt).toLocaleDateString() }}</time><span>{{ selectedArticle.category }}</span></header><p v-if="selectedArticle.summary" class="detail-summary">{{ selectedArticle.summary }}</p><ArticleContentRenderer class="detail-body" :body="selectedArticle.body" :media="selectedArticle.bodyMedia || []"/><footer v-if="selectedArticle.link"><a :href="selectedArticle.link" :target="selectedArticle.link.startsWith('http') ? '_blank' : undefined" rel="noopener">相关链接 →</a></footer></article>
       </main>
-      <main v-else-if="!loading" class="missing-detail"><b>没有找到这篇已发布资讯</b><router-link to="/news">返回资讯一览</router-link></main>
+      <main v-else-if="!loading" class="missing-detail"><b>{{ loadError || '没有找到这篇已发布资讯' }}</b><router-link to="/news">返回资讯一览</router-link></main>
     </template>
     <template v-else>
     <header><div><small>{{ pageCopy.eyebrow }}</small><h1>{{ pageCopy.title }}</h1><p>{{ pageCopy.description }}栏目由后台动态维护。</p></div><div class="content-page-actions"><router-link v-if="kind !== 'news'" to="/">← 返回主页</router-link><input v-model="search" :placeholder="pageCopy.search"></div></header>
@@ -56,9 +79,9 @@ watch(kind, async value => {
       </component>
       <component :is="kind === 'news' ? 'router-link' : 'article'" v-for="entry in kind !== 'video' ? visible : []" :id="`article-${entry.id}`" :key="entry.id" :to="kind === 'news' ? `/news/${entry.id}` : undefined" class="list-entry" :class="{ pinned: entry.pinned }">
         <img v-if="entry.coverUrl" :src="entry.coverUrl" :alt="entry.title">
-        <div class="news-copy"><time>{{ entry.pinned ? '置顶 · ' : '' }}{{ new Date(entry.publishedAt || entry.publishAt || entry.createdAt).toLocaleDateString() }}</time><h2>{{ entry.title }}</h2><p class="summary">{{ entry.summary || articleBodyText(entry.body) }}</p><footer><span>{{ entry.category }}</span><b v-if="kind === 'news'">阅读全文 →</b><a v-else-if="entry.link" :href="entry.link" :target="entry.link.startsWith('http') ? '_blank' : undefined" rel="noopener">相关链接 →</a></footer></div>
+        <div class="news-copy"><time>{{ entry.pinned ? '置顶 · ' : '' }}{{ new Date(entry.publishedAt || entry.publishAt || entry.createdAt).toLocaleDateString() }}</time><h2>{{ entry.title }}</h2><p class="summary">{{ entry.summary || entry.bodyPreview }}</p><footer><span>{{ entry.category }}</span><b v-if="kind === 'news'">阅读全文 →</b><a v-else-if="entry.link" :href="entry.link" :target="entry.link.startsWith('http') ? '_blank' : undefined" rel="noopener">相关链接 →</a></footer></div>
       </component>
-      <div v-if="!visible.length" class="empty"><b>{{ loading ? '正在读取已发布内容…' : pageCopy.empty }}</b><span v-if="!loading">管理员可在后台对应内容工作台维护稿件。</span></div>
+      <div v-if="!visible.length" class="empty"><b>{{ loading ? '正在读取已发布内容…' : loadError || pageCopy.empty }}</b><span v-if="!loading && !loadError">管理员可在后台对应内容工作台维护稿件。</span></div>
     </main>
     </template>
   </div>

@@ -442,3 +442,4 @@ assert.equal(staleCard.state.selectedCard, null, '正文切换后旧点击不得
 staleCard.unmount()
 
 console.log('article content embed regression passed')
+await import('./test-article-summary-read.mjs')

@@ -4,8 +4,8 @@ import type { SavedL12Deck } from './decks'
 import type { RecordedCommand } from './replayModel'
 import type { AlternateArt, AlternateArtSearchPage, AlternateArtGrantNotification, AlternateArtProduct, AlternateArtProductMergeResult, AlternateArtRarity, GalleryPresentationCatalog, AlternateArtRankedParticipantDispatchPreview, AlternateArtGrant, AlternateArtGrantSearchPage, AlternateArtAwardRule } from './platformAlternateArtContracts'
 export type { AlternateArt, AlternateArtSearchPage, AlternateArtGrantNotification, AlternateArtProduct, AlternateArtProductMergeResult, AlternateArtRarity, GalleryPresentationCatalog, AlternateArtRankedParticipantDispatchPreview, AlternateArtGrant, AlternateArtGrantSearchPage, AlternateArtAwardRule } from './platformAlternateArtContracts'
-import type { SiteContentKind, SiteMediaKind, SiteMediaPolicy, SiteMedia, SiteMediaSearch, SiteCategory, Article, ArticleRevision, ArticleDraft, ModianImportPreview, ModianImportBatchResult, SiteHomePayload } from './platformSiteContentContracts'
-export type { SiteContentKind, SiteMediaKind, SiteMediaPolicy, SiteMedia, SiteMediaSearch, SiteMediaEmbed, SiteCategory, ArticleStatus, Article, ArticleRevision, ArticleDraft, ModianImportState, ModianImportPreviewItem, ModianImportPreview, ModianImportItemResult, ModianImportBatchResult, SiteHomePayload } from './platformSiteContentContracts'
+import type { SiteContentKind, SiteMediaKind, SiteMediaPolicy, SiteMedia, SiteMediaSearch, SiteCategory, Article, ArticleSummary, ArticleRevision, ArticleDraft, ModianImportPreview, ModianImportBatchResult, SiteHomePayload } from './platformSiteContentContracts'
+export type { SiteContentKind, SiteMediaKind, SiteMediaPolicy, SiteMedia, SiteMediaSearch, SiteMediaEmbed, SiteCategory, ArticleStatus, Article, ArticleSummary, ArticleRevision, ArticleDraft, ModianImportState, ModianImportPreviewItem, ModianImportPreview, ModianImportItemResult, ModianImportBatchResult, SiteHomePayload } from './platformSiteContentContracts'
 import { deploymentStorageKey, endpointHttpBase, usesSharedGallery } from './deploymentBase'
 import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'
 import { chatResource } from './chatResource'
@@ -1763,6 +1763,12 @@ export const seasonSummaryApi = {
 }
 
 export const articleApi = {
+  get: (id: string) => platformRequest<Article>(`/api/articles/by-key/${encodeURIComponent(id)}`),
+  summaries: (query: { category?: string; search?: string; limit?: number; kind?: SiteContentKind } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<ArticleSummary[]>(`/api/articles/summaries${params.size ? `?${params}` : ''}`)
+  },
   list: (query: { category?: string; search?: string; limit?: number; kind?: SiteContentKind } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })

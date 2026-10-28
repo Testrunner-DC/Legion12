@@ -81,6 +81,8 @@ const body=JSON.stringify({format:'l12-blocks',version:1,blocks:[
 const article=(id,index)=>({id,title:'批次A验收资讯 '+index,summary:'摘要',body,index,category:'公告',coverUrl:'',link:'',slug:id,pinned:false,status:'published',hasUnpublishedChanges:false,createdAt:'2026-09-01T08:00:00Z',updatedAt:'2026-09-01T08:00:00Z',publishedAt:'2026-09-02T08:00:00Z',author:'十二军团官方',updatedBy:'admin',revision:1,kind:'news',sortOrder:index,bodyMedia:media})
 const newsArticles=[article('news-a4',1),article('news-b',2)]
 platform.articleApi.list=async()=>newsArticles
+platform.articleApi.summaries=async() => newsArticles.map(({body,bodyMedia,...row})=>({...row,bodyPreview:body}))
+platform.articleApi.get=async id=>newsArticles.find(row=>row.id===id)
 platform.siteContentApi.categories=async()=>['公告']
 platform.siteContentApi.home=async()=>({composition:JSON.stringify({version:1,heroSlides:[],notices:[],newsEyebrow:'NEWS',newsTitle:'资讯一览',newsDescription:'',videoEyebrow:'VIDEO',videoTitle:'最新视频',videoDescription:'',productEyebrow:'PRODUCTS',productTitle:'产品上新',productDescription:''}),legal:'{}',news:[],videos:[],products:[],media:[]})
 

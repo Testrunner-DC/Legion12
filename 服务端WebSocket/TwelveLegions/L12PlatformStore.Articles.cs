@@ -67,6 +67,13 @@ public sealed record L12ArticleRevisionView(
     int SortOrder = 0,
     string VideoAuthorName = "");
 
+// Explicit list contract: never mistake a body preview for editable article content.
+public sealed record L12ArticleSummaryView(string Id, string Title, string Summary, string BodyPreview,
+    string Category, string CoverUrl, string Link, string Slug, bool Pinned, string Status,
+    bool HasUnpublishedChanges, DateTimeOffset? PublishAt, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    DateTimeOffset? PublishedAt, string Author, string UpdatedBy, string? PublishedBy, long Revision,
+    string Kind, string? CategoryId, string? MediaAssetId, int SortOrder, string VideoAuthorName);
+
 public sealed partial class L12PlatformStore
 {
 
@@ -217,6 +224,19 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12ArticleView> PublicArticles(string? category = null, string? search = null,
         int limit = 100, string kind = "news")
+        => PublicArticlesCore(category, search, limit, kind, false);
+
+    public IReadOnlyList<L12ArticleSummaryView> PublicArticleSummaries(string? category = null,
+        string? search = null, int limit = 100, string kind = "news")
+        => PublicArticlesCore(category, search, limit, kind, true).Select(row =>
+            new L12ArticleSummaryView(row.Id, row.Title, row.Summary, row.Body, row.Category,
+                row.CoverUrl, row.Link, row.Slug, row.Pinned, row.Status, row.HasUnpublishedChanges,
+                row.PublishAt, row.CreatedAt, row.UpdatedAt, row.PublishedAt, row.Author, row.UpdatedBy,
+                row.PublishedBy, row.Revision, row.Kind, row.CategoryId, row.MediaAssetId,
+                row.SortOrder, row.VideoAuthorName)).ToArray();
+
+    private IReadOnlyList<L12ArticleView> PublicArticlesCore(string? category, string? search,
+        int limit, string kind, bool previewOnly)
     {
         lock (_gate)
         {
@@ -235,7 +255,7 @@ public sealed partial class L12PlatformStore
                 .ThenBy(row => row.Id)
                 .Take(Math.Clamp(limit, 1, 200)).ToArray();
             var accountNames = ArticleAccountNamesLocked(rows);
-            return rows.Select(row => ToPublicArticleView(row, accountNames)).ToArray();
+            return rows.Select(row => ToPublicArticleView(row, accountNames, previewOnly)).ToArray();
         }
     }
 
@@ -471,16 +491,47 @@ public sealed partial class L12PlatformStore
 
     private L12ArticleView ToPublicArticleView(ArticleRow row) => ToPublicArticleView(row, null);
 
-    private L12ArticleView ToPublicArticleView(ArticleRow row, IReadOnlyDictionary<string, string>? accountNames)
+    private L12ArticleView ToPublicArticleView(ArticleRow row, IReadOnlyDictionary<string, string>? accountNames,
+        bool previewOnly = false)
     {
         var value = row.Published!;
         var coverUrl = string.IsNullOrWhiteSpace(value.MediaAssetId) ? value.CoverUrl : SiteMediaUrl(value.MediaAssetId);
-        return new L12ArticleView(row.Id, value.Title, value.Summary, value.Body, value.Category, coverUrl,
+        return new L12ArticleView(row.Id, value.Title, value.Summary,
+            previewOnly ? (string.IsNullOrWhiteSpace(value.Summary) ? ArticleBodyPreview(value.Body) : "") : value.Body,
+            value.Category, coverUrl,
             value.Link, value.Slug, value.Pinned, "published", false, value.PublishedAt, row.CreatedAt,
             value.PublishedAt, value.PublishedAt, ArticleAccountName(row.CreatedByAccountId, accountNames),
             ArticleAccountName(value.PublishedByAccountId, accountNames),
             ArticleAccountName(value.PublishedByAccountId, accountNames), row.Revision, value.Kind, value.CategoryId,
-            value.MediaAssetId, value.SortOrder, ArticleBodyMedia(value.Body), value.VideoAuthorName);
+            value.MediaAssetId, value.SortOrder, previewOnly ? null : ArticleBodyMedia(value.Body), value.VideoAuthorName);
+    }
+
+    private static string ArticleBodyPreview(string body)
+    {
+        var text = body;
+        var structured = false;
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("format", out var format)
+                && format.ValueKind == JsonValueKind.String && format.GetString() == "l12-blocks"
+                && document.RootElement.TryGetProperty("blocks", out var blocks) && blocks.ValueKind == JsonValueKind.Array)
+            {
+                structured = true;
+                text = string.Join(' ', blocks.EnumerateArray().Select(block =>
+                {
+                    if (block.ValueKind != JsonValueKind.Object || !block.TryGetProperty("type", out var type)
+                        || type.ValueKind != JsonValueKind.String) return "";
+                    var key = type.GetString() is "image" or "card" ? "caption" : "text";
+                    return block.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : "";
+                }));
+            }
+        }
+        catch (JsonException) { }
+        var plain = structured ? string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            : L12SharePage.PlainText(text);
+        return plain.Length > 260 ? plain[..260].TrimEnd() + "…" : plain;
     }
 
     private IReadOnlyDictionary<string, string> ArticleAccountNamesLocked(IEnumerable<ArticleRow> rows)

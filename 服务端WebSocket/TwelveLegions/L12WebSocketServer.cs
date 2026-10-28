@@ -3243,6 +3243,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         });
         _app.MapGet("/api/articles", (string? category, string? search, int? limit, string? kind) =>
             Results.Ok(_platform.PublicArticles(category, search, limit ?? 100, kind ?? "news")));
+        _app.MapGet("/api/articles/summaries", (string? category, string? search, int? limit, string? kind) =>
+            Results.Ok(_platform.PublicArticleSummaries(category, search, limit ?? 100, kind ?? "news")));
+        _app.MapGet("/api/articles/by-key/{id}", (string id) =>
+            _platform.PublicArticle(id) is { } article ? Results.Ok(article) : Results.NotFound());
         _app.MapGet("/api/admin/articles", (HttpRequest request, string? status, string? category,
             string? search, int? limit, string? kind) =>
         {
