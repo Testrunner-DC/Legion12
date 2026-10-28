@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261028-RANKING-REQUEST-LOOKUPS｜历史投影请求内复用权威查找
+
+- 原每席位RankingMasterId重新枚举/排序全可选主宰，账号资格重复线性查找。沿原_gate仅缓存本请求查找结果（含null/false），显式ID/legacy名称独立OrdinalIgnoreCase字典；保无效ID不回退、未知历史账号允许、已禁用删除排除、null账号、DistinctBy首行、日期/惩罚/赢家/源窗口语义。无持久索引或统计schema，方法仍读取原2万源。
+- 20k双同主宰真实RED40000次→每查询2次；两统计API/legacy/namespace冲突/无效和跨请求启停三专项通过。原fixture用户名失败及Interval期望4实际3是测试错误，修fixture且保原件，不作产品RED或合并65绿。
+- 独审无阻断，Main最终完整平台2829/2829零失败跳过、12分40秒，主收据`ranking-history-lookups-20261028/main-full-r1-result.json`含源码/DLL绑定。本片未改UI/Rules，不另重跑同源后台，不称Release包、30＋10或线上速度已达标；同步见同根`synchronization.json`。回滚只撤局部复用，不改历史/数据库。
+
 ## PERF-20261028-HOME-RETRY-BUDGET｜公开主页失败恢复停止无限后台请求
 
 - 原scheduleHomeRefresh用Math.min索引落在20秒后无限重排，且未核hidden/onLine；本地真实编译组件连续503模拟10请求仍续，期望初次＋4次，RED保`home-retry-budget-20261028/red-r1.log`。同类扫描本组件schedule/refresh/manual/visibility/online/mount/unmount与原test-home-revisit，不扩大轮播、鉴权、持久化或其他页面逻辑。

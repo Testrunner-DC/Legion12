@@ -932,22 +932,46 @@ public sealed partial class L12PlatformStore
     private EligibleRankedAnalyticsMatch[] EligibleRankedAnalyticsMatchesLocked(
         IReadOnlyList<L12RankingMatch> source, DateTimeOffset rangeStart, DateTimeOffset rangeEnd,
         DateTimeOffset now)
-        => source.DistinctBy(match => match.MatchId, StringComparer.OrdinalIgnoreCase).Select(match => new
+    {
+        // Reuse only within this locked projection. Explicit IDs and legacy names
+        // are separate namespaces; an invalid explicit ID must never fall back to its name.
+        var mastersById = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var mastersByName = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var accounts = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        return source.DistinctBy(match => match.MatchId, StringComparer.OrdinalIgnoreCase).Select(match => new
             {
                 Match = match,
                 Started = DateTimeOffset.TryParse(match.StartedUtc, out var started) ? started : (DateTimeOffset?)null,
                 Ended = DateTimeOffset.TryParse(match.EndedUtc, out var ended) ? ended : (DateTimeOffset?)null,
-                Master0 = RankingMasterId(match.MasterId0, match.Master0),
-                Master1 = RankingMasterId(match.MasterId1, match.Master1),
+                Master0 = Master(match.MasterId0, match.Master0),
+                Master1 = Master(match.MasterId1, match.Master1),
             })
             .Where(item => !IsRankedMatchExcludedLocked(item.Match.MatchId)
-                && (item.Match.AccountId0 is null || IsActiveAccountLocked(item.Match.AccountId0))
-                && (item.Match.AccountId1 is null || IsActiveAccountLocked(item.Match.AccountId1))
+                && Active(item.Match.AccountId0) && Active(item.Match.AccountId1)
                 && item.Started is not null && item.Started >= rangeStart && item.Started <= rangeEnd
                 && item.Ended is not null && item.Ended >= item.Started && item.Ended <= now
                 && item.Match.Winner is 0 or 1 && item.Master0 is not null && item.Master1 is not null)
             .Select(item => new EligibleRankedAnalyticsMatch(item.Match, item.Started!.Value,
                 item.Ended!.Value, item.Master0!, item.Master1!)).ToArray();
+
+        string? Master(string? id, string? name)
+        {
+            if (id is null && name is null) return null;
+            var cache = id is null ? mastersByName : mastersById;
+            var key = id ?? name!;
+            if (!cache.TryGetValue(key, out var resolved))
+                cache[key] = resolved = RankingMasterId(id, name!);
+            return resolved;
+        }
+
+        bool Active(string? id)
+        {
+            if (id is null) return true;
+            if (!accounts.TryGetValue(id, out var active))
+                accounts[id] = active = IsActiveAccountLocked(id);
+            return active;
+        }
+    }
 
     public IReadOnlyList<L12RankedMasterChampionView> RankedMasterChampions()
     {
@@ -2189,8 +2213,15 @@ public sealed partial class L12PlatformStore
             && SeasonIdsEqual(item.SeasonId, seasonId));
     }
 
-    private string? RankingMasterId(string? id, string name) => id is null ? MasterIdByName(name)
-        : SelectableMasterIds().FirstOrDefault(candidate => candidate.Equals(id, StringComparison.OrdinalIgnoreCase));
+    // Numeric regression observation only; no account/card values or transport output.
+    internal Action<string>? RankedAnalyticsLookupObserver { get; set; }
+
+    private string? RankingMasterId(string? id, string name)
+    {
+        RankedAnalyticsLookupObserver?.Invoke("master");
+        return id is null ? MasterIdByName(name)
+            : SelectableMasterIds().FirstOrDefault(candidate => candidate.Equals(id, StringComparison.OrdinalIgnoreCase));
+    }
 
     private string? MasterIdByName(string name)
     {
@@ -2277,6 +2308,7 @@ public sealed partial class L12PlatformStore
 
     private bool IsActiveAccountLocked(string accountId)
     {
+        RankedAnalyticsLookupObserver?.Invoke("account");
         // 旧导入事实可能只保存了账号标识而没有可关联的账号行；未知历史身份继续保留，
         // 只有平台明确知道已禁用/删除的账号才从统计中排除。
         var account = _data.Accounts.FirstOrDefault(item => item.Id.Equals(accountId,

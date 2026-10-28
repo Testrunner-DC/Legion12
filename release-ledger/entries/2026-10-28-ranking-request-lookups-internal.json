@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-ranking-request-lookups-internal",
+  "date": "2026-10-28",
+  "audience": "internal",
+  "reason": "榜单历史统计在原锁内按请求复用主宰和账号资格查找，源扫描和全部统计口径不变，尚无线上性能收益结论。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs"]
+}
