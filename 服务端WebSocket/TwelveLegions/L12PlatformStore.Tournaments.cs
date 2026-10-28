@@ -594,6 +594,9 @@ public sealed partial class L12PlatformStore
         public TournamentRulesSnapshotRow Rules { get; set; } = new();
         public int RoundMinutes { get; set; } = 50;
         public int CheckInMinutes { get; set; } = 5;
+        public int ReputationRuleVersion { get; set; }
+        public List<TournamentCheckInPlanRow> CheckInPlans { get; set; } = [];
+        public TournamentCheckInStartRow? CheckInStart { get; set; }
         public L12RankedTimeControlConfig? TimeControl { get; set; }
         public bool UsesLegacyRoundClock { get; set; }
         public int SwissRounds { get; set; } = 1;
@@ -714,6 +717,7 @@ public sealed partial class L12PlatformStore
             if (operationMode == "automated")
                 EnsurePermission(actor, L12Permission.TournamentsManage);
             var row = NewTournament(actor, payload with { OperationMode = operationMode });
+            InitializeTournamentReputationPolicy(row, actor.Id, context.CorrelationId);
             if (!apply) return ToView(row, actor);
             _data.Tournaments.Add(row);
             AddAdminAudit(actor, "tournament", "create", row.Id, null, row.Code, row.Name, context);
@@ -782,6 +786,9 @@ public sealed partial class L12PlatformStore
                 throw new L12TournamentScopeException("你已被禁止再次报名本场赛事");
             if (row.Participants.Any(item => item.AccountId == actor.Id && !item.Removed))
                 throw new L12TournamentVersionConflictException("账号已经报名该赛事");
+            if (row.ReputationRuleVersion == TournamentReputationRuleVersion
+                && ProjectTournamentReputation(AccountById(actor.Id)?.TournamentReputation, registrationNow).Score < 60)
+                throw new L12TournamentScopeException("你的赛事信誉暂不满足新报名条件；恢复至60后可报名");
             var waitlisted = row.Participants.Count(item => !item.Dropped && !item.Removed && !item.Waitlisted)
                 >= row.MaxPlayers;
             return Mutate(actor, row, "register", actor.Id, context, apply, working =>
@@ -823,6 +830,8 @@ public sealed partial class L12PlatformStore
             var participant = row.Participants.FirstOrDefault(item => item.AccountId == actor.Id)
                 ?? throw new KeyNotFoundException("尚未报名该赛事");
             if (participant.Removed) throw new L12TournamentScopeException("已被移出赛事，不能修改报名");
+            if (row.ReputationRuleVersion == TournamentReputationRuleVersion && participant.Dropped)
+                throw new L12TournamentScopeException("已退出的报名不能通过修改入口恢复名额");
             if (participant.TournamentCheckedInAt is not null)
                 throw new L12TournamentVersionConflictException("赛前签到已锁牌，不能通过报名入口换牌");
             return Mutate(actor, row, "registration-update", actor.Id, context, apply, working =>
@@ -880,6 +889,8 @@ public sealed partial class L12PlatformStore
             var row = RequireTournament(tournamentId, expectedVersion);
             if (!row.Participants.Any(item => item.AccountId == actor.Id))
                 throw new KeyNotFoundException("尚未报名该赛事");
+            if (row.Participants.First(item => item.AccountId == actor.Id) is { Dropped: true, AutomaticDropMatchId: null })
+                return ToView(row, actor);
             return Mutate(actor, row, "drop", actor.Id, context, apply, working =>
             {
                 var participant = working.Participants.First(item => item.AccountId == actor.Id);
@@ -1070,15 +1081,8 @@ public sealed partial class L12PlatformStore
             if (row.Status != "registration") throw new L12TournamentVersionConflictException("赛事已开始或结束");
             var check = BuildTournamentStartCheck(row);
             if (!check.CanStart) throw new ArgumentException(string.Join("；", check.Blockers));
-            var active = row.Participants.Where(item => !item.Dropped && !item.Removed && !item.Waitlisted
-                && item.TournamentCheckedInAt is not null).ToArray();
-            if (active.Length < 2) throw new ArgumentException("至少需要两名未退赛选手");
-            if (row.Format == "swiss-cut" && (row.CutSize is not { } cutSize || active.Length < cutSize))
-                throw new ArgumentException("未退赛选手数少于 cut 人数");
-            if (active.Any(item => string.IsNullOrWhiteSpace(item.Deck.Hash) || item.Deck.LockedAt is null))
-                throw new ArgumentException("所有有效参赛者必须先完成赛前签到并锁定牌库");
             return Mutate(actor, row, "start", tournamentId, context, apply,
-                working => StartTournamentCore(working, DateTimeOffset.UtcNow));
+                working => StartTournamentCore(working, DateTimeOffset.UtcNow, actor.Id, context.CorrelationId));
         }
     }
 
@@ -1616,17 +1620,21 @@ public sealed partial class L12PlatformStore
     private L12TournamentView Mutate(L12AccountView actor, TournamentRow row, string action, string target,
         L12AdminAuditContext context, bool apply, Action<TournamentRow> mutation)
     {
+        if (apply && _adminTransactionDepth == 0)
+            return ExecuteAdminTransaction(() => Mutate(actor, row, action, target, context, true, mutation));
         using var deployment = apply ? EnterDeploymentMutation(action is
             "start" or "round-create" or "round-start" or "rematch" or "check-in") : null;
         // 先在副本上完成全部校验与编排。配对等操作抛错时，
         // 不得在内存中留下半完成状态，即使 Save 尚未执行也一样。
         var working = CloneTournament(row);
+        CaptureDueTournamentCheckInStart(working, DateTimeOffset.UtcNow);
         mutation(working);
         working.Version++;
         working.UpdatedAt = DateTimeOffset.UtcNow;
         if (!apply) return ToView(working, actor);
         var index = _data.Tournaments.FindIndex(item => item.Id == row.Id);
         if (index < 0) throw new KeyNotFoundException("赛事不存在");
+        ApplyTournamentReputationTransition(actor, row, working, action, target, context, working.UpdatedAt);
         _data.Tournaments[index] = working;
         AddAdminAudit(actor, "tournament", action, target, (working.Version - 1).ToString(),
             working.Version.ToString(), context.Reason, context);

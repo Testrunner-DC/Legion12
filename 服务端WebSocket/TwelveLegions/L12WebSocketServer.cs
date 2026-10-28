@@ -1159,6 +1159,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return result.Success ? Results.Ok(new { result.Message, result.Account })
                 : Results.BadRequest(new { result.Message });
         });
+        _app.MapGet("/api/me/tournament-reputation", (HttpRequest request, int? page, int? pageSize, long? expectedRevision) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            if (!TryAuthenticate(request, L12Permission.TournamentsRead, out _, out var failure)) return failure;
+            return PrivateTournamentReputationReadResponse(request,
+                () => _platform.ReadOwnTournamentReputation(request.Headers.Authorization,
+                    page ?? 1, pageSize ?? 20, expectedRevision));
+        });
         _app.MapGet("/api/me/statistics", async (HttpRequest request, string? range) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -2590,6 +2598,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             catch (ArgumentException)
             { return ApiError(request, "account_query_invalid", "账号搜索最多200个字符", StatusCodes.Status400BadRequest); }
         });
+        _app.MapGet("/api/admin/accounts/{accountId}/tournament-reputation", (HttpRequest request,
+            string accountId, int? page, int? pageSize, long? expectedRevision) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
+            return PrivateTournamentReputationReadResponse(request,
+                () => _platform.ReadAccountTournamentReputation(request.Headers.Authorization, accountId,
+                    page ?? 1, pageSize ?? 20, expectedRevision));
+        });
         _app.MapGet("/api/admin/accounts/{accountId}", (HttpRequest request, string accountId) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
@@ -2598,6 +2615,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 ? ApiError(request, "account_not_found", "账号不存在", StatusCodes.Status404NotFound)
                 : Results.Ok(account);
         });
+        _app.MapPost("/api/admin/accounts/{accountId}/tournament-reputation/{eventId}/revoke/preview",
+            (HttpRequest request, string accountId, string eventId, TournamentReputationRevokeRequest body) =>
+                RevokeTournamentReputationResponse(request, accountId, eventId, body, preview: true));
+        _app.MapPost("/api/admin/accounts/{accountId}/tournament-reputation/{eventId}/revoke",
+            (HttpRequest request, string accountId, string eventId, TournamentReputationRevokeRequest body) =>
+                RevokeTournamentReputationResponse(request, accountId, eventId, body, preview: false));
         _app.MapGet("/api/admin/username-change-requests", (HttpRequest request, string? status) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
@@ -5039,6 +5062,24 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             .Contains(origin, StringComparer.OrdinalIgnoreCase);
     }
 
+    private IResult PrivateTournamentReputationReadResponse(HttpRequest request,
+        Func<L12TournamentReputationPageView> read)
+    {
+        try { return Results.Ok(read()); }
+        catch (UnauthorizedAccessException)
+        { return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized); }
+        catch (L12TournamentScopeException)
+        { return ApiError(request, "permission_denied", "当前账号没有读取目标信誉的权限", StatusCodes.Status403Forbidden); }
+        catch (KeyNotFoundException)
+        { return ApiError(request, "account_not_found", "账号不存在", StatusCodes.Status404NotFound); }
+        catch (L12TournamentVersionConflictException error)
+        { return ApiError(request, "reputation_revision_conflict", error.Message, StatusCodes.Status409Conflict); }
+        catch (ArgumentException error)
+        { return ApiError(request, "invalid_reputation_page", error.Message, StatusCodes.Status400BadRequest); }
+        catch (L12PlatformStorageUnavailableException)
+        { return ApiError(request, "reputation_unavailable", "信誉暂不可用，请稍后重试", StatusCodes.Status503ServiceUnavailable); }
+    }
+
     private bool TryAuthenticate(HttpRequest request, L12Permission permission,
         out L12AuthenticatedSession authenticated, out IResult failure)
     {
@@ -5285,6 +5326,65 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 result.AlreadyRevoked,
             })
             : ApiError(request, "session_not_found", "会话不存在", StatusCodes.Status404NotFound);
+
+    [System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
+    private sealed record TournamentReputationRevokeRequest(string? Reason, long? ExpectedReputationRevision,
+        long? ExpectedVersion = null, long? ExpectedTournamentVersion = null, string? IdempotencyKey = null);
+
+    private IResult RevokeTournamentReputationResponse(HttpRequest request, string accountId, string eventId,
+        TournamentReputationRevokeRequest body, bool preview)
+    {
+        request.HttpContext.Response.Headers.CacheControl = "no-store";
+        const L12Permission permission = L12Permission.AdminAccountStatusWrite;
+        if (!TryAuthorize(request, permission, out _, out var failure)) return failure;
+        if (body.ExpectedReputationRevision is not { } reputationRevision || reputationRevision < 0)
+            return ApiError(request, "reputation_revision_required", "请提供原信誉版本", 428);
+        var reason = body.Reason?.Trim() ?? string.Empty;
+        try
+        {
+            // Unlike generic command DryRun, a successful preview must not
+            // persist command/audit rows or advance any platform generation.
+            if (preview) return Results.Ok(_platform.PreviewAccountTournamentReputationRevoke(
+                request.Headers.Authorization, accountId, eventId, reason, reputationRevision));
+            return _platform.ExecuteAuthorizedTournamentReputationRevoke(request.Headers.Authorization, actor =>
+            {
+                if (!TrySecurityCommandOptions(request, actor, permission, body.IdempotencyKey,
+                        body.ExpectedVersion, out var key, out var expectedVersion, out var rejected)) return rejected;
+                if (body.ExpectedTournamentVersion is not { } tournamentVersion || tournamentVersion < 0)
+                    return ApiError(request, "tournament_version_required", "请提供原赛事版本", 428);
+                var payload = new L12TournamentReputationRevokePayload(accountId, eventId, reason,
+                    tournamentVersion, reputationRevision);
+                // account.* belongs to PermissionVersion in the existing bus.
+                // This dedicated reputation command uses its platform-version fallback.
+                var command = CommandEnvelope(request, actor, permission, "reputation.account-revoke",
+                    $"account:{accountId}", payload, key, expectedVersion, false, reason);
+                L12AdminCommandResult<L12TournamentReputationRevokeResult> Execute()
+                {
+                    try { return L12AdminCommandResult<L12TournamentReputationRevokeResult>.Ok(
+                        _platform.RevokeAccountTournamentReputation(request.Headers.Authorization, payload, command.AuditContext),
+                        "已按有效事实重新核算，原记录保留"); }
+                    catch (L12TournamentVersionConflictException error)
+                    { return L12AdminCommandResult<L12TournamentReputationRevokeResult>.Fail("reputation_version_conflict", error.Message, 409); }
+                    catch (L12TournamentScopeException error)
+                    { return L12AdminCommandResult<L12TournamentReputationRevokeResult>.Fail("reputation_correction_forbidden", error.Message, 403); }
+                    catch (UnauthorizedAccessException error)
+                    { return L12AdminCommandResult<L12TournamentReputationRevokeResult>.Fail("reputation_correction_forbidden", error.Message, 403); }
+                    catch (KeyNotFoundException error)
+                    { return L12AdminCommandResult<L12TournamentReputationRevokeResult>.Fail("reputation_fact_not_found", error.Message, 404); }
+                    catch (ArgumentException error)
+                    { return L12AdminCommandResult<L12TournamentReputationRevokeResult>.Fail("reputation_correction_invalid", error.Message, 400); }
+                }
+                var outcome = _adminCommands.Execute(command, permission, _ => Execute(), risk: L12AdminCommandRisk.High);
+                return AdminCommandResponse(request, command, outcome);
+            });
+        }
+        catch (L12TournamentVersionConflictException error) { return ApiError(request, "reputation_version_conflict", error.Message, 409); }
+        catch (L12TournamentScopeException error) { return ApiError(request, "reputation_correction_forbidden", error.Message, 403); }
+        catch (UnauthorizedAccessException error) { return ApiError(request, "reputation_correction_unauthorized", error.Message, 401); }
+        catch (KeyNotFoundException error) { return ApiError(request, "reputation_fact_not_found", error.Message, 404); }
+        catch (ArgumentException error) { return ApiError(request, "reputation_correction_invalid", error.Message, 400); }
+        catch (L12PlatformStorageUnavailableException) { return ApiError(request, "reputation_storage_unavailable", "信誉存储暂不可用", 503); }
+    }
 
     private L12AdminCommandEnvelope<TPayload> CommandEnvelope<TPayload>(HttpRequest request,
         L12AccountView actor, L12Permission permission, string type, string scope, TPayload payload,

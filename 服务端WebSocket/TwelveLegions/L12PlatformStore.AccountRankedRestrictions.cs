@@ -27,10 +27,12 @@ public sealed partial class L12PlatformStore
     // The platform schema, not the gameplay checkpoint contract, is the minimum
     // reader boundary. Published schema-9 readers reject schema 10 before JSON
     // fallback. A JSON mirror alone is not an old-program recovery format.
+    private const int AccountRankedRestrictionSchemaVersion = 10;
+
     private static void InitializeAccountRankedRestrictionSchema(SqliteConnection connection)
     {
         var version = ReadExistingStorageSchemaVersion(connection);
-        if (version == PlatformStorageSchemaVersion) return;
+        if (version is >= AccountRankedRestrictionSchemaVersion and <= PlatformStorageSchemaVersion) return;
         if (version != RankedBroadcastObjectSchemaVersion)
             throw new L12PlatformStorageIncompatibleException("账号排位限制迁移需要完整 schema 9 数据库");
         using var transaction = connection.BeginTransaction(deferred: false);
@@ -38,7 +40,7 @@ public sealed partial class L12PlatformStore
         if (snapshot is { } stored) DeserializeDataAndValidate(ValidateSnapshot(stored));
         // There is no data rewrite: missing optional state means unrestricted.
         // Both version markers advance atomically; failure leaves schema 9 intact.
-        SetStorageSchemaVersion(connection, transaction, PlatformStorageSchemaVersion);
+        SetStorageSchemaVersion(connection, transaction, AccountRankedRestrictionSchemaVersion);
         transaction.Commit();
     }
 

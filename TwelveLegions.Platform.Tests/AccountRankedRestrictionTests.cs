@@ -257,8 +257,8 @@ public sealed class AccountRankedRestrictionTests
             var migrated = new L12PlatformStore(f.MirrorPath);
             Assert.Null(migrated.RankedEntryBlock(target.Id, DateTimeOffset.UtcNow));
             Assert.NotNull(migrated.AuthenticateTokenSession(f.PlayerToken));
-            Assert.Equal("10", Scalar(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
-            Assert.Equal("10", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+            Assert.Equal("11", Scalar(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+            Assert.Equal("11", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
         }
         Assert.Equal(before, Scalar(connection, "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;"));
         Assert.Equal(beforeHash, Scalar(connection, "SELECT snapshot_sha256 FROM platform_state WHERE singleton_id=1;"));
@@ -389,7 +389,7 @@ public sealed class AccountRankedRestrictionTests
         Assert.Throws<InvalidDataException>(() => L12PlatformStore.RevertRankedBroadcastObjectStorageForRehearsal(
             f.Store.TransactionalStoragePath));
         var recovered = new L12PlatformStore(f.MirrorPath);
-        Assert.Equal(10, recovered.StorageStatus().SchemaVersion);
+        Assert.Equal(11, recovered.StorageStatus().SchemaVersion);
         Assert.NotNull(recovered.RankedEntryBlock(target.Id, DateTimeOffset.UtcNow));
         // This exercises the actual supported SQLite recovery/rehearsal path;
         // it does not claim to run an old binary against a standalone JSON mirror.

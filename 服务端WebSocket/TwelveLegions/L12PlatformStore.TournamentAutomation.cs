@@ -5,17 +5,20 @@ public sealed record L12TournamentAutomationSweepResult(
 
 public sealed partial class L12PlatformStore
 {
+    private sealed record AutomaticTournamentChange(int SourceIndex, TournamentRow Before,
+        TournamentRow After, string Action, string Detail);
+
     public L12TournamentAutomationSweepResult AdvanceAutomaticTournaments(DateTimeOffset utcNow)
     {
         using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
-            var changed = new List<string>();
-            var notices = new List<L12TournamentKeyNotice>();
-            foreach (var current in _data.Tournaments.Where(item => item.OperationMode == "automated"
-                         && item.Status is not ("completed" or "canceled")
-                         && item.AutomationStatus != "attention-required").ToArray())
+            var plans = new List<AutomaticTournamentChange>();
+            for (var index = 0; index < _data.Tournaments.Count; index++)
             {
+                var current = _data.Tournaments[index];
+                if (current.OperationMode != "automated" || current.Status is "completed" or "canceled"
+                    || current.AutomationStatus == "attention-required") continue;
                 var working = CloneTournament(current);
                 string action;
                 string detail;
@@ -32,25 +35,44 @@ public sealed partial class L12PlatformStore
 
                 working.Version++;
                 working.UpdatedAt = utcNow;
-                var index = _data.Tournaments.FindIndex(item => item.Id == current.Id);
-                if (index < 0) continue;
-                _data.Tournaments[index] = working;
-                if (AccountById(working.OrganizerAccountId) is { } organizer)
-                {
-                    AddAdminAudit(ToView(organizer), "tournament", $"automation-{action}", working.Id,
-                        current.Version.ToString(), working.Version.ToString(), detail,
-                        new L12AdminAuditContext($"tournament-automation:{working.Id}:{working.Version}",
-                            L12Authorization.Key(L12Permission.TournamentsManage),
-                            RequestMethod: "SYSTEM", RequestPath: "/internal/tournaments/automation",
-                            Reason: detail));
-                }
-                changed.Add(working.Id);
-                if (CreateKeyNotice(current, working, action) is { } notice) notices.Add(notice);
+                plans.Add(new(index, current, working, action, detail));
             }
-
-            if (changed.Count > 0) Save();
-            return new L12TournamentAutomationSweepResult(changed.Count, changed, notices);
+            // The ordinary idle sweep does not serialize all platform state.
+            // Each candidate was advanced once on a clone under this same gate;
+            // no authority/account/audit write or random pairing rerun precedes
+            // the one complete transaction for a genuinely nonempty plan.
+            if (plans.Count == 0) return new(0, [], []);
+            return _adminTransactionDepth == 0
+                ? ExecuteAdminTransaction(() => CommitAutomaticTournamentChanges(plans, utcNow))
+                : CommitAutomaticTournamentChanges(plans, utcNow);
         }
+    }
+
+    private L12TournamentAutomationSweepResult CommitAutomaticTournamentChanges(
+        IReadOnlyList<AutomaticTournamentChange> plans, DateTimeOffset utcNow)
+    {
+        var changed = new List<string>();
+        var notices = new List<L12TournamentKeyNotice>();
+        foreach (var plan in plans)
+        {
+            var (index, current, working, action, detail) = plan;
+            if (AccountById(working.OrganizerAccountId) is { } reputationActor)
+                ApplyTournamentReputationTransition(ToView(reputationActor), current, working, action,
+                    working.Id, new L12AdminAuditContext($"tournament-automation:{working.Id}:{working.Version}",
+                        L12Authorization.Key(L12Permission.TournamentsManage), RequestMethod: "SYSTEM",
+                        RequestPath: "/internal/tournaments/automation"), utcNow);
+            _data.Tournaments[index] = working;
+            if (AccountById(working.OrganizerAccountId) is { } organizer)
+                AddAdminAudit(ToView(organizer), "tournament", $"automation-{action}", working.Id,
+                    current.Version.ToString(), working.Version.ToString(), detail,
+                    new L12AdminAuditContext($"tournament-automation:{working.Id}:{working.Version}",
+                        L12Authorization.Key(L12Permission.TournamentsManage),
+                        RequestMethod: "SYSTEM", RequestPath: "/internal/tournaments/automation", Reason: detail));
+            changed.Add(working.Id);
+            if (CreateKeyNotice(current, working, action) is { } notice) notices.Add(notice);
+        }
+        Save();
+        return new(changed.Count, changed, notices);
     }
 
     private bool TryAdvanceAutomaticTournament(TournamentRow tournament, DateTimeOffset now,
@@ -154,6 +176,7 @@ public sealed partial class L12PlatformStore
         }
 
         var checkInAt = startAt.AddMinutes(-tournament.CheckInMinutes);
+        CaptureDueTournamentCheckInStart(tournament, now);
         if (tournament.Phase is "registration-open" or "registration-closed")
         {
             if (now < checkInAt) return false;
@@ -284,8 +307,15 @@ public sealed partial class L12PlatformStore
         return false;
     }
 
-    private void StartTournamentCore(TournamentRow working, DateTimeOffset now)
+    private void StartTournamentCore(TournamentRow working, DateTimeOffset now,
+        string? actorId = null, string? correlationId = null)
     {
+        CaptureDueTournamentCheckInStart(working, now);
+        CaptureTournamentCheckInStart(working, now, actorId is null ? "automatic-start" : "manual-start",
+            actorId, correlationId);
+        ApplyTournamentStartingRoster(working, now);
+        var startCheck = BuildTournamentStartCheck(working);
+        if (!startCheck.CanStart) throw new ArgumentException(string.Join("；", startCheck.Blockers));
         working.Status = "running";
         working.Phase = "running";
         working.RegistrationOpen = false;

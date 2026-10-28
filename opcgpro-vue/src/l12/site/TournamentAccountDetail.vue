@@ -15,6 +15,7 @@ import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'
 import RulesCardSummary from './RulesCardSummary.vue'
 import TournamentParticipantCounts from './TournamentParticipantCounts.vue'
 import TournamentAnnouncement from './TournamentAnnouncement.vue'
+import TournamentReputationPanel from './TournamentReputationPanel.vue'
 
 type Tab = 'overview'|'schedule'|'standings'|'participants'|'rules'|'judge'|'manage'
 const route = useRoute(); const router = useRouter(); const tournament = ref<Tournament | null>(null)
@@ -179,6 +180,7 @@ onBeforeUnmount(() => { window.clearTimeout(registrationBoundaryTimer); disposed
       <section v-else-if="tab === 'judge'" class="panel"><TournamentJudgeDesk :tournament="tournament" :can-judge="canJudge" @updated="value => tournament = value" @notice="value => notice = value" /></section>
       <section v-else-if="tab === 'manage'" class="panel"><TournamentManagementPanel :tournament="tournament" :account-id="accountId" :can-organize="canOrganize" @updated="value => tournament = value" @notice="value => notice = value" /></section>
     </template>
+    <TournamentReputationPanel v-if="tournament && tab === 'overview'" />
     <TournamentDisasterSummary v-if="tournament && tab === 'schedule'" :code="tournament.code" :rounds="tournament.rounds" />
     <SavedDeckSelector v-if="tournament" :open="deckSelectorOpen" mode="tournament" :catalog="catalog"
       :current-deck-id="selectedDeck?.id" :current-deck-revision="selectedDeck?.revision"

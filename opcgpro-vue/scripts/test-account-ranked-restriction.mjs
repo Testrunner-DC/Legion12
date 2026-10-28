@@ -101,6 +101,8 @@ async function fixture({ permitted = true, active = false, readFails = false, fa
     'vue-router': { useRoute: () => route, useRouter: () => ({ push: async () => {} }) },
     './useAdminRiskAction': { useAdminRiskAction: () => risk },
     './AdminRiskActionDialog.vue': { __esModule: true, default: { render: () => null } },
+    // This suite owns ranked restrictions; reputation has its own real-SFC regression.
+    './TournamentReputationPanel.vue': { __esModule: true, default: { render: () => null } },
   }).default
   const template = compileTemplate({ source: descriptor.template.content, filename: pagePath, id: 'account-ranked-restriction', compilerOptions: { bindingMetadata: script.bindings } })
   assert.deepEqual(template.errors, [])

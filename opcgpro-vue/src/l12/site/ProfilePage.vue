@@ -11,6 +11,7 @@ import CardImage from '@/l12/CardImage.vue'
 import { useSectionScroll } from './useSectionScroll'
 import UiButton from './UiButton.vue'
 import UiNotice from './UiNotice.vue'
+import TournamentReputationPanel from './TournamentReputationPanel.vue'
 import { optionalLocalStorage as localStorage, optionalSessionStorage as sessionStorage, BrowserLoginStorageError } from '@/l12/browserStorage'
 
 const publicHistory = ref(localStorage.getItem('l12-public-history') === 'true')
@@ -323,6 +324,7 @@ const rankedWinRate = computed(() => {
       </nav>
     </section>
     <UiNotice v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">{{ notice }}</UiNotice>
+    <TournamentReputationPanel v-if="canUseSandbox && section === 'overview'" />
     <div v-if="platformState.account && section === 'overview'" class="ranked-season-panel">
     <section v-if="ranked" class="rank-overview"><header><div><small>RANKED PROFILE</small><h2>本赛季排位</h2></div><div class="rank-links"><router-link to="/battle/rankings">查看排行榜 →</router-link></div></header><div class="rank-body"><article><span>派系</span><b>{{ ranked.profile.faction || '尚未选择' }}</b></article><article><span>段位</span><RankedIdentityBadge variant="tier" :faction="ranked.profile.faction" :label="ranked.profile.rankLabel"/></article><article><span>七曜值</span><b>{{ ranked.profile.sevenValue.toLocaleString() }}</b></article><article><span>排位胜率</span><b>{{ rankedWinRate }}</b></article></div><div v-if="ranked.profile.titles.length" class="profile-titles"><RankedIdentityBadge v-for="title in ranked.profile.titles" :key="title" :variant="profileTitleVariant(title)" :faction="ranked.profile.faction" :label="title"/></div><p v-else>达到称号条件后会在这里展示派系与最强主宰称号。</p><section class="title-manager"><div class="title-manager-heading"><b>最强称号管理</b><button type="button" @click="masterTitleRulesOpen = true">最强称号规则</button></div><span class="title-manager-description">对战中依次显示全服名次、段位、已获得的派系段位称号和1个已选择的最强主宰称号；没有的称号不会显示。</span><div v-if="ranked.profile.masterTitles.length" class="title-manager-controls"><select v-model="selectedMasterTitle"><option v-for="title in ranked.profile.masterTitles" :key="title" :value="title">{{ title }}</option></select><button :disabled="authBusy || selectedMasterTitle === (ranked.profile.selectedMasterTitle || '')" @click="saveRankedTitle">保存称号</button></div><em v-else>近 30 日尚未获得最强主宰称号</em></section></section>
     <section class="statistics-range-panel">

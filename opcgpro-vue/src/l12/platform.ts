@@ -1299,7 +1299,35 @@ export const usernameChangeApi = {
   }),
 }
 
+export type TournamentReputationHistoryItem = {
+  id: string; sequence: number; tournamentId: string; tournamentName: string
+  kind: 'withdrawal' | 'no-show' | 'revoke'; effectiveAt: string; recordedAt: string
+  assessment: 'deducted' | 'no-additional-deduction' | 'revoked' | 'exempt' | 'correction'
+  effectiveScoreChange: number | null; revokesEventId?: string | null; exemption?: string | null
+}
+export type TournamentReputationPage = {
+  ruleVersion: number; score: number; qualification: 'normal' | 'warning' | 'blocked'
+  asOf: string; revision: number; nextRecoveryAt: string | null
+  page: number; pageSize: number; total: number; items: TournamentReputationHistoryItem[]
+}
+export type TournamentReputationQuery = { page?: number; pageSize?: number; expectedRevision?: number }
+export type TournamentReputationRevokePreview = {
+  accountId: string; eventId: string; tournamentId: string; tournamentVersion: number
+  platformVersion: number; reputationRevision: number; alreadyRevoked: boolean
+  before: { score: number; lastViolationAt: string | null; nextRecoveryAt: string | null }
+  after: { score: number; lastViolationAt: string | null; nextRecoveryAt: string | null }
+}
+export type TournamentReputationRevokeCommand = {
+  reason: string; expectedVersion: number; expectedTournamentVersion: number
+  expectedReputationRevision: number; idempotencyKey: string
+}
+
 export const playerApi = {
+  tournamentReputation: (query: TournamentReputationQuery = {}) => {
+    const params = new URLSearchParams({ page: String(query.page ?? 1), pageSize: String(query.pageSize ?? 20) })
+    if (query.expectedRevision !== undefined) params.set('expectedRevision', String(query.expectedRevision))
+    return platformRequest<TournamentReputationPage>(`/api/me/tournament-reputation?${params}`)
+  },
   statistics: (range: PlayerStatisticsRange = 'season') =>
     platformRequest<PlayerStatistics>(`/api/me/statistics?range=${encodeURIComponent(range)}`),
 }
@@ -1416,6 +1444,19 @@ export const adminApi = {
     return platformRequest<AdminAccountPage>(`/api/admin/accounts/query${params.size ? `?${params}` : ''}`)
   },
   account: (id: string) => platformRequest<PlatformAccount>(`/api/admin/accounts/${encodeURIComponent(id)}`),
+  accountTournamentReputation: (id: string, query: TournamentReputationQuery = {}) => {
+    const params = new URLSearchParams({ page: String(query.page ?? 1), pageSize: String(query.pageSize ?? 20) })
+    if (query.expectedRevision !== undefined) params.set('expectedRevision', String(query.expectedRevision))
+    return platformRequest<TournamentReputationPage>(`/api/admin/accounts/${encodeURIComponent(id)}/tournament-reputation?${params}`)
+  },
+  previewAccountTournamentReputationRevoke: (id: string, eventId: string, reason: string, expectedReputationRevision: number) =>
+    platformRequest<TournamentReputationRevokePreview>(`/api/admin/accounts/${encodeURIComponent(id)}/tournament-reputation/${encodeURIComponent(eventId)}/revoke/preview`, {
+      method: 'POST', body: JSON.stringify({ reason, expectedReputationRevision }),
+    }),
+  revokeAccountTournamentReputation: (id: string, eventId: string, command: TournamentReputationRevokeCommand) =>
+    platformRequest<{ applied: boolean; alreadyApplied: boolean; score: number; revision: number }>(`/api/admin/accounts/${encodeURIComponent(id)}/tournament-reputation/${encodeURIComponent(eventId)}/revoke`, {
+      method: 'POST', body: JSON.stringify(command),
+    }),
   accountRankedRestriction: (id: string) => platformRequest<AccountRankedRestriction>(`/api/admin/accounts/${encodeURIComponent(id)}/ranked-restriction`),
   setAccountRankedRestriction: (id: string, restrictionDays: number, command: AccountRankedRestrictionCommand) =>
     platformRequest<AccountRankedRestrictionOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/ranked-restriction`, {

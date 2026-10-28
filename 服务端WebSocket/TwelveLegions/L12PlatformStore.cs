@@ -119,6 +119,7 @@ public sealed partial class L12PlatformStore
         public string? DisabledByAccountId { get; set; }
         public string? DisabledReason { get; set; }
         public AccountRankedRestrictionRow? RankedRestriction { get; set; }
+        public TournamentReputationStateRow? TournamentReputation { get; set; }
         public string? Email { get; set; }
         public string? NormalizedEmail { get; set; }
         public DateTimeOffset? EmailVerifiedAt { get; set; }

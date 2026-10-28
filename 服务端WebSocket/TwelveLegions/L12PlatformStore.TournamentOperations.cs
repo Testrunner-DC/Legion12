@@ -5,7 +5,8 @@ namespace TwelveLegions.Server;
 public sealed record L12TournamentStartCheckView(
     bool CanStart, IReadOnlyList<string> Blockers, IReadOnlyList<string> Warnings,
     int EligiblePlayers, int WaitlistedPlayers, int OpenJudgeCases, long TournamentVersion,
-    int CheckedInWaitlistedPlayers, string Format, int? SwissRounds, int? CutSize);
+    int CheckedInWaitlistedPlayers, string Format, int? SwissRounds, int? CutSize,
+    int? ProjectedEligiblePlayers = null, int? PromotedWaitlistedPlayers = null);
 
 public sealed record L12TournamentSummaryView(
     string Id, string Code, string Name, string OrganizerName, string Status, string Phase,
@@ -119,6 +120,8 @@ public sealed partial class L12PlatformStore
                 tournamentId, context, apply, working =>
                 {
                     working.Phase = target;
+                    if (target == "pre-check-in")
+                        CaptureTournamentCheckInStart(working, DateTimeOffset.UtcNow, "manual", actor.Id, context.CorrelationId);
                     working.RegistrationOpen = target == "registration-open";
                     working.Status = target == "result-confirmation" ? "running" : "registration";
                 });
@@ -180,6 +183,7 @@ public sealed partial class L12PlatformStore
                     ActorId = actor.Id,
                 });
                 working.StartAt = payload.NewStartAt;
+                AppendTournamentCheckInPlan(working, DateTimeOffset.UtcNow, actor.Id, context.CorrelationId);
                 if (working.OperationMode == "automated")
                 {
                     working.AutomationStatus = "scheduled";
@@ -510,10 +514,14 @@ public sealed partial class L12PlatformStore
 
     private L12TournamentStartCheckView BuildTournamentStartCheck(TournamentRow row)
     {
+        var planned = CloneTournament(row);
+        ApplyTournamentStartingRoster(planned, DateTimeOffset.UtcNow);
         var blockers = new List<string>();
         var warnings = new List<string>();
         if (row.Status != "registration") blockers.Add("赛事不在赛前阶段");
-        var eligible = row.Participants.Where(item => !item.Dropped && !item.Removed && !item.Waitlisted
+        var actualEligible = row.Participants.Count(item => !item.Dropped && !item.Removed && !item.Waitlisted
+            && item.TournamentCheckedInAt is not null);
+        var eligible = planned.Participants.Where(item => !item.Dropped && !item.Removed && !item.Waitlisted
             && item.TournamentCheckedInAt is not null).ToArray();
         if (eligible.Length < 2) blockers.Add("至少需要两名已签到并锁牌的正式参赛者");
         if (eligible.Any(item => string.IsNullOrWhiteSpace(item.Deck.Hash) || item.Deck.LockedAt is null))
@@ -523,7 +531,8 @@ public sealed partial class L12PlatformStore
         if (row.TimeControl is null) blockers.Add("赛事计时快照缺失");
         else _ = NormalizeRankedTimeControl(row.TimeControl);
         var waiting = row.Participants.Count(item => item.Waitlisted && !item.Dropped && !item.Removed);
-        if (waiting > 0) warnings.Add($"仍有 {waiting} 名候补未递补，将不会进入首轮配对");
+        var remainingWaiting = planned.Participants.Count(item => item.Waitlisted && !item.Dropped && !item.Removed);
+        if (remainingWaiting > 0) warnings.Add($"仍有 {remainingWaiting} 名候补未递补，将不会进入首轮配对");
         var pendingCheckIn = row.Participants.Count(item => !item.Waitlisted && !item.Dropped && !item.Removed
             && item.TournamentCheckedInAt is null);
         if (pendingCheckIn > 0) warnings.Add($"仍有 {pendingCheckIn} 名正式报名者未完成签到锁牌");
@@ -531,11 +540,39 @@ public sealed partial class L12PlatformStore
         if (openCases > 0) warnings.Add($"仍有 {openCases} 个未关闭裁判案件");
         if (IsRegistrationAvailable(row, DateTimeOffset.UtcNow)) warnings.Add("报名仍开放；开赛时将自动关闭报名");
         return new L12TournamentStartCheckView(blockers.Count == 0, blockers, warnings,
-            eligible.Length, waiting, openCases, row.Version,
+            actualEligible, waiting, openCases, row.Version,
             row.Participants.Count(item => item.Waitlisted && !item.Dropped && !item.Removed
                 && item.TournamentCheckedInAt is not null), row.Format,
             row.Format is "swiss" or "swiss-cut" or "league" ? row.SwissRounds : null,
-            row.Format == "swiss-cut" ? row.CutSize : null);
+            row.Format == "swiss-cut" ? row.CutSize : null, eligible.Length,
+            row.Participants.Count(item => item.Waitlisted && !item.Dropped && !item.Removed
+                && planned.Participants.Any(candidate => candidate.AccountId == item.AccountId && !candidate.Waitlisted)));
+    }
+
+    private void ApplyTournamentStartingRoster(TournamentRow row, DateTimeOffset now)
+    {
+        if (row.ReputationRuleVersion != TournamentReputationRuleVersion) return;
+        foreach (var participant in row.Participants.Where(item => !item.Dropped && !item.Removed
+                     && !item.Waitlisted && item.TournamentCheckedInAt is null))
+        {
+            participant.Dropped = true;
+            participant.AutomaticDropMatchId = null;
+            participant.CheckedIn = false;
+        }
+        var seats = row.MaxPlayers - row.Participants.Count(item => !item.Dropped && !item.Removed && !item.Waitlisted);
+        foreach (var candidate in row.Participants.Where(item => item.Waitlisted && !item.Dropped && !item.Removed
+                     && item.TournamentCheckedInAt is not null && item.Deck.LockedAt is not null
+                     && !string.IsNullOrWhiteSpace(item.Deck.Hash))
+                     .OrderBy(item => item.WaitlistPosition ?? int.MaxValue).ThenBy(item => item.Seed)
+                     .ThenBy(item => item.AccountId, StringComparer.Ordinal))
+        {
+            if (seats <= 0) break;
+            if (AccountById(candidate.AccountId) is not { Disabled: false, Deleted: false }) continue;
+            candidate.Waitlisted = false;
+            candidate.WaitlistPosition = null;
+            candidate.PromotedAt = now;
+            seats--;
+        }
     }
 
     private static int NextWaitlistPosition(TournamentRow row)

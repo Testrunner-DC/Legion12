@@ -41,7 +41,9 @@ public sealed class TournamentStartCheckSnapshotTests
         Assert.Equal("swiss-cut", root.GetProperty("format").GetString());
         Assert.Equal(2, root.GetProperty("swissRounds").GetInt32());
         Assert.Equal(2, root.GetProperty("cutSize").GetInt32());
-        Assert.False(root.GetProperty("canStart").GetBoolean());
+        Assert.True(root.GetProperty("canStart").GetBoolean());
+        Assert.Equal(2, root.GetProperty("projectedEligiblePlayers").GetInt32());
+        Assert.Equal(1, root.GetProperty("promotedWaitlistedPlayers").GetInt32());
         Assert.DoesNotContain(wait.Account!.Id, root.ToString(), StringComparison.Ordinal);
     }
     [Fact]
