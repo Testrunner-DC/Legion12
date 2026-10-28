@@ -509,10 +509,10 @@ public sealed partial class MatchRecorder
                    m.storage_version
             FROM ranked_settlement_outbox o
             JOIN matches m ON m.match_id=o.match_id AND m.mode_id='ranked'
-            LEFT JOIN match_events e ON e.id=(
+            LEFT JOIN match_events e ON e.id=CASE WHEN m.storage_version < 2 THEN (
                 SELECT latest.id FROM match_events latest
                 WHERE latest.match_id=o.match_id ORDER BY latest.sequence DESC LIMIT 1
-            )
+            ) ELSE NULL END
             WHERE o.status='applied' AND julianday(o.created_utc) >= julianday($cutoff)
             ORDER BY o.created_utc,o.match_id;
             """;

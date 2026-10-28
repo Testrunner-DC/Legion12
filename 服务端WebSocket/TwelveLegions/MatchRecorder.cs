@@ -425,10 +425,10 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             FROM matches m
             LEFT JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
             LEFT JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
-            LEFT JOIN match_events e ON e.id=(
+            LEFT JOIN match_events e ON e.id=CASE WHEN m.storage_version < 2 THEN (
                 SELECT latest.id FROM match_events latest
                 WHERE latest.match_id=m.match_id ORDER BY latest.sequence DESC LIMIT 1
-            )
+            ) ELSE NULL END
             WHERE m.ended_utc IS NOT NULL AND m.mode_id='ranked'
               AND m.winner IN (0,1) AND COALESCE(m.error,'')=''
               AND NOT EXISTS (
