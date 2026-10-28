@@ -1,5 +1,20 @@
 # 十二军团简短交接
 
+## 2026-10-29 TEST稳定9ef已部署，原30＋10完整验收通过（当前）
+
+- 继续推进的信誉/达段补发/最近广播/切季预览已本地收束：Main完整平台r1=2916绿/10过期schema夹具，4族60同产品复验绿，逐用例集合2866＋60=2926唯一全覆盖；不是单轮全绿。正常UI入口、信誉17、广播14/45、补发意图4RED→10/10＋旧后台20、最终app types r2及双模式616模块编译已完成。唯一tournament-reputation-foundation-20261029/main-batch-acceptance.json绑定原件；旧Rules8568不重复。源码按功能分族提交，普通同步状态/最终SHA只读该根synchronization.json，未completed/pushed不能冒远端完成。没有新部署/处罚/发奖/关Bug。
+
+- 本批授权已完成，不再部署或重复压测：原F737门槛不变，第二次同应用/同PID温态完整10/20/30房各60秒＋10外围，1709/1709操作accepted、0超时/拒绝，P95 269.61ms/P99 334.88ms/max555.07ms；60终局接收max1598.21ms、超过3秒0，逻辑181176–285610字节；867外围请求0错误。峰值609038336字节、宿主最低1715523584字节可用，无OOM/重启/资源停测；账号与独立恢复会话撤销、全部工具清理均真实通过。唯一release-session-summary.json现completed=true，pressure-r2-result.json指原raw；首失败pressure-result与所有原日志保留。
+- 实际TEST仍9ef/62523/DLL6F571AE4，正式仍d557/33991/DLL118B1BEB、maintenance=false；本次测试部署/负载的正式业务/服务/维护写入0。此前工具3f8dfce8＋f88aa1cc已正常同步，tool-synchronization.json是真实该时点回执，不当作后续应用源码最新SHA。后续正常Bug取证另有登录/读取审计，不混充测试期间零写证明。不能冒真机FPS、全部卡效或高成本G4/全站根治。
+
+- 人类call_af22f798明确批准仅测试服部署已验稳定候选并独占/重置测试对局、回放、对局统计，原30房＋10人/3秒/大载荷复测；正式服、账号库和共享图库不动，资源超界停测。固定候选9efb60319b5b2f11f56d66f0e03ee7bd230a2c3a已实际非强推/远端同SHA，原legacy-events/synchronization.json completed/pushed=true；不是仍待同步，不重做旧d557发布/维护。
+- 精确同SHA标准CI40723119104 actual九阶段/8568规则/2856平台全过；artifact12833413812原ZIP360734097字节及摘要已核，三原件保D、冗余ZIP已清。manifest A1DA1DDC、release553bbefb，原清单未改，干净r28/s固定9ef，Main dirty未混包。真实r2预演成功后TEST于01:22:50前后切换，独验62523/DLL6F571AE4、静态/HTTP/WS/隔离/备份原始证据通过，正式d557/33991/maintenance=false始终保持。唯一representative-load-9ef-20261029/release-session-summary.json；不可因后续压力未过重部署成功9ef或重解维护。
+- 容量准备已完成：最旧70e完整归档与原SHA经E私有逐字节/归档流校验，只移除服务器一份同内容归档1448141648字节，原SHA/最新两组/全部失败证据保留；未造原不存在的历史raw proof。首单元素JSON误判已纠正。测试旧97a程序按具名已验退役工具移除251598522逻辑字节（保d557/8ec/诊断2eda及runtime），标准轮转只移一组3a测试快照。原预演容量失败/通用清理遇旧诊断拒绝均保留，没有放宽程序1.5GiB/数据512MiB/总3GiB及正式8GiB余量。
+- TEST发布入口两叶路径适配已具名RED→Focused-r2通过并冻结：显式本地根＋原manifest SHA，原件不改；可选干净CandidateRepository仍严格HEAD/clean、五远端工具从同候选根。2正例/19拒绝及原tar/capability反例保留，无门槛放宽或新打包器。此属本批工具修正，不要求重新构建9ef应用。source-delivery在artifact-relocation，不冒完整后端/Release新执行。
+- 第一次run9ef扩20准备到15房时拒绝，未测20/30；原NOT_ACCEPTED/28终局及4个118字节error无原文均保留，busy仅相容假说。两叶准备握手6真合成RED/3正控→158/158后，仅精确busy最多3次/原10秒内重试、权威同房本人牌库校验；不改错误计数、游戏动作重试、finalizer或门槛。第二次独占原完整负载实际通过，不重启/重置/重部署；两次为温态先后测试，不能当纯净收益A/B。r5 SFC约01:34重叠首次准备期限制保留。
+- 信誉基础59、生产78、空sweep snapshot2RED→80、私有读取20及UI14已过。管理员撤销闭环四产品＋两QA现冻结，Main真实HTTP3RED后r1=17/21（命令account前缀误用PermissionVersion产品根因＋3夹具），改专用reputation.account-revoke而保platform/赛事/rep三版本，r2真实21/21；UI1RED＋旧14→17进程0。revoke-delivery-r1.json绑定6SHA与全部失败/幂等/回避/封顶0恢复锚/非固定退款，未改任意分值、原事实或赛果。整族完整平台/前端尚未执行，不半部署。自动达段补发83/前端7、广播最终SFC14/45、切季新平台3/3及Shell两视口冻结；未上线发奖或混9ef。旧dual广泛夹具还沿旧全局PUT和缺/config/sections/room/history，非本批当前Shell验证，不为一行文案无限迁夹具；AdminAccount具名子组件stub后Main原后台安全入口21＋密码负5＋API4/SFC6实际通过。Main只改两迁移QA六个最新schema10→11断言，旧输入不动，待整族一次完整平台，不重跑已过Rules。
+- 新回放79f970d3唯一绑定aca5bae911da482c986b0835a9422f3b/ZMYYAA/421命令15检查点；raw跨环境导出REJECTED未执行，私有ACL只前置，无原文转移。后改既有正常管理接口：Main一次正式专用codexops登录→固定SSH远端内存GET首50→正常撤销/独立401，native-admin-first-page-r1-result.json completed；200/117ms/2051544bytes实际7条/hasNext，非421全过，也不冒玩家私密投影通过。正常审计保留、无对局/赛果/统计/维护/服务改动，无root密码读取。admin与player页字节/检查点起点不同，后续只读调用链比较已交；未擅翻页/冒充玩家。harness/clone路线已停止，未知错误不能映射成具体合法原因；raw拒绝和所有静态草案保留，未来不用9ef猜旧d557。圣物未复现、好友页/代表仍队列，941/4 Bug计数不变。
+
 ## 2026-10-29 00点本片完整资格通过，下一信誉实施
 
 - Main一次同源Release配置完整Rules8568/8568、平台2856/2856零失败跳过已实际结束，GrandUMIServer两阶段同ABD205F5。唯一ranking-history-lookups-20261028/legacy-events/main-combined-r1-result.json及两原TRX，不为提交/纯记录重跑或冒标准Release包/部署。

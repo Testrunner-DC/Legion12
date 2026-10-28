@@ -23,6 +23,7 @@ const emit = defineEmits<{
 
 interface ActionIntent { fingerprint: string; key: string }
 const impact = ref<SeasonActivationImpactPreview | null>(null)
+const settlementPreviewNotice = '预约不会提前结算或锁定最终名单；最终人数和成绩以本赛季截止、在途排位全部完成结算后的实际数据为准。'
 const reason = ref('')
 const error = ref('')
 const previewing = ref(false)
@@ -171,7 +172,7 @@ function arm() {
     title: '预约自动切换赛季',
     target: `${transitionLabel(snapshot.currentToHistory)} → ${transitionLabel(snapshot.nextToCurrent)}`,
     targetLabel: '当前 → 下赛季',
-    impact: `将结算 ${snapshot.settlementParticipantCount} 名参与者，生成 ${snapshot.summaryNotificationCount} 份赛季总结；${admissionLabel(snapshot.rankedAdmissionImpact)}。理由：${actionReason}`,
+    impact: `截至本次预览，预计结算 ${snapshot.settlementParticipantCount} 名参与者，生成 ${snapshot.summaryNotificationCount} 份赛季总结；${settlementPreviewNotice}${admissionLabel(snapshot.rankedAdmissionImpact)}。理由：${actionReason}`,
     confirmLabel: '确认预约',
     severity: 'warning',
     run: async () => {
@@ -275,16 +276,17 @@ function disarm() {
     <p v-if="error" class="error" role="alert">{{ error }}。本地双槽编辑未被覆盖。</p>
 
     <section v-if="impact" class="impact-preview" :class="{ blocked: !impact.valid }">
-      <header><b>{{ impact.valid && impactCurrent ? '切季影响已锁定' : '切季当前被阻断' }}</b><small>观测于 {{ formatTime(impact.observedAt) }}</small></header>
+      <header><b>{{ impact.valid && impactCurrent ? '切季影响预览' : '切季当前被阻断' }}</b><small>观测于 {{ formatTime(impact.observedAt) }}</small></header>
       <div class="transition">
         <span><small>当前 → 历史</small><b>{{ transitionLabel(impact.currentToHistory) }}</b></span>
         <span><small>下赛季 → 当前</small><b>{{ transitionLabel(impact.nextToCurrent) }}</b></span>
       </div>
       <div class="impact-counts">
-        <span><b>{{ impact.settlementParticipantCount }}</b><small>结算参与者</small></span>
-        <span><b>{{ impact.historyRecordCount }}</b><small>历史档案</small></span>
-        <span><b>{{ impact.summaryNotificationCount }}</b><small>赛季总结通知</small></span>
+        <span><b>{{ impact.settlementParticipantCount }}</b><small>结算参与者（预估）</small></span>
+        <span><b>{{ impact.historyRecordCount }}</b><small>历史档案（预估）</small></span>
+        <span><b>{{ impact.summaryNotificationCount }}</b><small>赛季总结通知（预估）</small></span>
       </div>
+      <p>{{ settlementPreviewNotice }}</p>
       <p><b>排位准入：</b>{{ admissionLabel(impact.rankedAdmissionImpact) }}；{{ readinessSummary(impact) }}。</p>
       <ul v-if="impact.blockingCodes.length"><li v-for="code in impact.blockingCodes" :key="code">{{ codeLabel(code) }}</li></ul>
       <p v-if="impact.suggestedActionCodes.length"><b>建议动作：</b>{{ impact.suggestedActionCodes.map(codeLabel).join('；') }}</p>

@@ -117,8 +117,8 @@ try{
 
  // 切季影响预览、预约和取消与配置预览完全分离。
  const activationReason=page.getByPlaceholder('预约或取消预约的理由（必填）')
- await page.getByRole('button',{name:'预览切季影响'}).click();await page.getByText('切季影响已锁定').waitFor();assert.match(await page.locator('.impact-preview').textContent(),/128.*结算参与者.*128.*赛季总结通知/s)
- await activationReason.fill('预约赛季自动切换');await page.getByRole('button',{name:'确认预约'}).click();let activationDialog=page.getByRole('dialog');await activationDialog.waitFor();assert.match(await activationDialog.textContent(),/结算 128 名参与者/);await activationDialog.getByRole('button',{name:'确认预约'}).click();await page.getByText('已预约',{exact:true}).waitFor()
+ await page.getByRole('button',{name:'预览切季影响'}).click();await page.getByText('切季影响预览',{exact:true}).waitFor();assert.match(await page.locator('.impact-preview').textContent(),/128.*结算参与者（预估）.*128.*赛季总结通知（预估）.*预约不会提前结算或锁定最终名单.*本赛季截止、在途排位全部完成结算后的实际数据为准/s)
+ await activationReason.fill('预约赛季自动切换');await page.getByRole('button',{name:'确认预约'}).click();let activationDialog=page.getByRole('dialog');await activationDialog.waitFor();assert.match(await activationDialog.textContent(),/截至本次预览，预计结算 128 名参与者.*预约不会提前结算或锁定最终名单.*本赛季截止、在途排位全部完成结算后的实际数据为准/s);await activationDialog.getByRole('button',{name:'确认预约'}).click();await page.getByText('已预约',{exact:true}).waitFor()
  const armedRequest=requests.filter(x=>x.path.endsWith('/arm')).at(-1);assert.equal(armedRequest.body.expectedCurrentRevision,current.revision);assert.equal(armedRequest.body.expectedDraftRevision,next.revision-1);assert.equal(armedRequest.body.expectedVersion,operationsVersion)
  await activationReason.fill('漂移前的取消意图');await page.getByRole('button',{name:'取消预约'}).click();activationDialog=page.getByRole('dialog');await activationDialog.waitFor();assert.match(await activationDialog.textContent(),/g1.*12345678…cdef/s)
  activationGeneration++;next={...next,revision:next.revision+1,activationPlan:{...next.activationPlan,generation:activationGeneration,intentMask:'87654321…fedc',disarmGuardToken:`disarm-guard-${activationGeneration}`}}
