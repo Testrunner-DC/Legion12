@@ -376,6 +376,7 @@ let loginBehavior = async () => {
 }
 let changeUsernameBehavior = async () => ({ message: '用户名已更新', account: platformState.account })
 const profilePlatformModule = {
+  authState,
   alternateArtApi: { mine: async () => [] },
   canAccessAdmin: computed(() => false),
   changePassword: async () => ({ message: '密码已更新' }),
@@ -406,6 +407,7 @@ function tournamentDetailComponent() {
     './RulesCardSummary.vue': componentModule,
     './TournamentParticipantCounts.vue': componentModule,
     './TournamentAnnouncement.vue': componentModule,
+    './TournamentReputationPanel.vue': componentModule,
     '@/l12/SavedDeckSelector.vue': { default: compileComponent('src/l12/SavedDeckSelector.vue', {
       vue, './decks': { ...decks, loadDeckCatalog: deckModule.loadDeckCatalog },
       './platform': platformModule, './mobileViewport': { landscapeTeleportTarget: () => teleportRoot },
@@ -432,6 +434,7 @@ function profileComponent() {
     '@/l12/platform': profilePlatformModule, '@/l12/decks': profileDeckModule,
     '@/l12/RankedIdentityBadge.vue': componentModule,
     './RankedPenaltyHistory.vue': componentModule,
+    './TournamentReputationPanel.vue': componentModule,
     './RankedMasterTitleRulesModal.vue': componentModule, '@/l12/specialAssets': { masterProfileUrl: () => '' },
     '@/l12/CardImage.vue': componentModule, './useSectionScroll': { useSectionScroll() {} },
     './UiButton.vue': componentModule, './UiNotice.vue': componentModule,
