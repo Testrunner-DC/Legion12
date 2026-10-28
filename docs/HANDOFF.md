@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-28 上传隔离已最终验收（最新）
+
+- 上一资讯/图鉴已分族同步`f684858c`/`9c8fb223`并远端同SHA，2783平台/67专项/9SFC/完整前端已验，唯一`article-summary-read-20261028/synchronization.json`；不要重做该批或部署。两服仍d557、维护已解除、Bug3待上线。
+- 最终5叶`source-handoff-r3.json`及原source-handoff/所有失败均保留。Main逐SHA/原TRX核：原barrier真RED1，r1为68过/13HTTP用户名夹具失败，r2真HTTP等14/14；另Save前跨Store、真实Modian外层失败、5000审计裁切三真RED→r3 11绿，B权威审计2续验。不是单次82绿；Main最终Release完整平台2811/2811零失败跳过实际通过，复用dc27热输出，无不变前端/Rules/30＋10重跑。唯一`media-upload-isolation-20261028/main-acceptance.json`已核5源/两DLL/原证据；源码同步见同根`synchronization.json`，非Release包或部署。
+- 独立HTTP沿原AuthenticateSession同_gate准备前后核真实session/当前账号/PermissionVersion/权限；4 payload临时写与hash准备在锁外，发布/Save仍串行，原部署lease全程。Modian deferred Save不冒commit/锁外化。跨Store成功引用可能不在本地_data或一次新快照内，因此失败不删除任何published hash，legacy共享回收hook明确保留；仅清本人登记CreateNew的.upload。postSave durable失败不删，未durable同DataFile恢复完整原audit窗口，CAS刷新新代不覆盖B。
+- 每次Upload最多4独有hash/28MiB payload，不是整多图导入或累计失败的上限；可能有不可公开无引用文件，仅后续既有受控治理回收，无新自动清理/队列/跨进程锁。原三处文件空断言按已批安全语义迁移，DB重开/无失败row/审计/无temp/不可公开守卫保留。公告2新叶8/8仍未接入并精确排除；来源源码/构建位已释放。响应24514780来源又收人类“正式服依然存在”反馈，截图仍00:28/8ec，只关联原项继续只读核当前身份/场景，不当新线上复现或提前关单，不碰本批5叶。
+
 ## 2026-10-28 资讯／图鉴读取优化已验收（最新）
 
 - 人类明确“按你规划的推进”。Main资讯列表改显式摘要合同，单篇走`/api/articles/by-key/{id}`，同一Published查询/权限/搜索/排序不变；旧完整接口、管理员列表及主页未迁移。前端正文搜索250ms防抖，清页/换kind/卸载用原watch清理拒收迟到回复。67关联专项与9实际SFC通过，最终完整UI/类型/双610构建r2及完整平台2783/2783零失败跳过通过。唯一`article-summary-read-20261028/main-acceptance.json`已实际重读原TRX/前端pins/17源/两DLL；源码分族同步结果见同根`synchronization.json`，不是Release或部署。

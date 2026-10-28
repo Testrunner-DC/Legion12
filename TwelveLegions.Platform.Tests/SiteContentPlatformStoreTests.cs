@@ -14,6 +14,393 @@ namespace GrandUMIServer.Tests;
 public sealed class SiteContentPlatformStoreTests
 {
     [Fact]
+    public void FailureBeforeMediaSaveRestoresTheWholeAuditWindowAfterTrimming()
+    {
+        WithUploadStore((store, admin, root) =>
+        {
+            static System.Collections.IList Rows(L12PlatformStore value)
+            {
+                var state = typeof(L12PlatformStore).GetField("_state",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(value)!;
+                return (System.Collections.IList)state.GetType().GetProperty("AdminAudit")!.GetValue(state)!;
+            }
+            static string[] Ids(L12PlatformStore value) => Rows(value).Cast<object>()
+                .Select(item => (string)item.GetType().GetProperty("Id")!.GetValue(item)!).Order().ToArray();
+            var rows = Rows(store);
+            var rowType = rows.GetType().GetGenericArguments()[0];
+            rows.Clear();
+            for (var index = 0; index < 5000; index++)
+            {
+                var row = Activator.CreateInstance(rowType)!;
+                rowType.GetProperty("ActorId")!.SetValue(row, admin.Id);
+                rowType.GetProperty("ActorName")!.SetValue(row, admin.Username);
+                rowType.GetProperty("Category")!.SetValue(row, "upload-audit-window");
+                rowType.GetProperty("Action")!.SetValue(row, "seed");
+                rowType.GetProperty("Target")!.SetValue(row, "original-" + index);
+                rows.Add(row);
+            }
+            store.UpdateAudioPreferences(admin.Id, new());
+            var before = Ids(store);
+            Assert.Equal(5000, before.Length);
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-site-media-save") throw new IOException("abort after audit window trimming");
+            };
+            Assert.Throws<IOException>(() => Upload(store, admin, "hero"));
+            Assert.Equal(before, Ids(store));
+            Assert.Empty(store.AdminSiteMedia());
+            store.StorageFailureInjector = null;
+            store.UpdateAudioPreferences(admin.Id, new());
+            var restarted = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.Equal(before, Ids(restarted));
+            Assert.Empty(restarted.AdminAudit(category: "site-media"));
+            Assert.Empty(restarted.AdminSiteMedia());
+        });
+    }
+
+    [Fact]
+    public void FailureBeforeSaveCannotDeleteAnotherStoresCommittedMediaHashes()
+    {
+        WithUploadStore((store, admin, root) =>
+        {
+            L12SiteMediaView? winner = null;
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage != "before-site-media-save") return;
+                var other = new L12PlatformStore(Path.Combine(root, "platform.json"));
+                winner = Upload(other, admin, "hero");
+                throw new IOException("first publisher fails before reaching Save or CAS refresh");
+            };
+            Assert.Throws<IOException>(() => Upload(store, admin, "hero"));
+            Assert.NotNull(winner);
+            var restarted = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.Equal(winner.Id, Assert.Single(restarted.AdminSiteMedia()).Id);
+            Assert.Equal(winner.Id, Assert.Single(restarted.AdminAudit(category: "site-media")).Target);
+            Assert.NotNull(restarted.ResolveSiteMediaFile(winner.Id, "desktop", winner.DesktopUrl.Split('/').Last()));
+            Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+        });
+    }
+
+    [Fact]
+    public void FailedModianOuterTransactionCannotDeleteAnotherStoresCommittedMediaHashes()
+    {
+        WithUploadStore((store, admin, root) =>
+        {
+            L12SiteMediaView? winner = null;
+            var payload = new L12SiteMediaUpload("article", "body.webp", "image/webp",
+                Webp(997, 331), Webp(997, 331), Webp(421, 777), Webp(137, 59), "正文图", .5, .5);
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage != "after-site-media-save") return;
+                var other = new L12PlatformStore(Path.Combine(root, "platform.json"));
+                winner = other.UploadSiteMedia(admin, payload);
+            };
+            var category = store.AdminSiteCategories("news").First(item => item.Active);
+            var invalid = new L12ModianPreparedDraft("221772", "标题", "摘要", DateTimeOffset.UtcNow,
+                new string('a', 64), [new("import-block-001", "image", SourceImageIndex: 99, Alt: "正文图")],
+                [payload], null, []);
+            Assert.Throws<ArgumentException>(() => store.ApplyModianDraft(admin, category.Id, invalid, false, false));
+            Assert.NotNull(winner);
+            Assert.Empty(store.AdminArticles(kind: "news"));
+            var restarted = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.Empty(restarted.AdminArticles(kind: "news"));
+            Assert.Equal(winner.Id, Assert.Single(restarted.AdminSiteMedia()).Id);
+            Assert.Single(restarted.AdminAudit(category: "site-media"));
+            Assert.NotNull(restarted.ResolveSiteMediaFile(winner.Id, "desktop", winner.DesktopUrl.Split('/').Last()));
+            Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+        });
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void FailedMediaPreparationCleansOnlyItsOwnPrivateFiles(int failAt)
+    {
+        WithUploadStore((store, admin, root) =>
+        {
+            var existing = Upload(store, admin, "hero");
+            var before = Directory.GetFiles(Path.Combine(root, "site-media")).Order().ToArray();
+            var writes = 0;
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "after-site-media-file-write" && ++writes == failAt)
+                    throw new IOException("synthetic interrupted write");
+            };
+            Assert.Throws<IOException>(() => Upload(store, admin, "hero"));
+            Assert.Equal(before, Directory.GetFiles(Path.Combine(root, "site-media")).Order().ToArray());
+            Assert.Equal(existing.Id, Assert.Single(store.AdminSiteMedia()).Id);
+        });
+    }
+
+    [Fact]
+    public void FailedMediaSaveLeavesNoRowOrPrivateTempsButRetainsPublishedHashes()
+    {
+        WithUploadStore((store, admin, root) =>
+        {
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-commit") throw new IOException("synthetic commit failure");
+            };
+            Assert.Throws<L12PlatformStorageUnavailableException>(() => Upload(store, admin, "hero"));
+            Assert.Empty(store.AdminSiteMedia());
+            Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+            Assert.Empty(Directory.GetFiles(Path.Combine(root, "site-media"), "*.upload"));
+            Assert.Empty(new L12PlatformStore(Path.Combine(root, "platform.json")).AdminSiteMedia());
+            Assert.Empty(store.AdminAudit(category: "site-media"));
+            foreach (var file in Directory.GetFiles(Path.Combine(root, "site-media")))
+                Assert.Null(store.ResolveSiteMediaFile("missing-media-row", "desktop", Path.GetFileName(file)));
+        });
+    }
+
+    [Fact]
+    public void MediaMirrorFailureDoesNotRollBackTheCommittedUpload()
+    {
+        WithUploadStore((store, admin, root) =>
+        {
+            var path = Path.Combine(root, "platform.json");
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage != "before-site-media-save") return;
+                File.Delete(path);
+                Directory.CreateDirectory(path);
+            };
+            var media = Upload(store, admin, "hero");
+            Assert.Equal(media.Id, Assert.Single(store.AdminSiteMedia()).Id);
+            Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+            var restarted = new L12PlatformStore(path);
+            Assert.Equal(media.Id, Assert.Single(restarted.AdminSiteMedia()).Id);
+            Assert.NotNull(restarted.ResolveSiteMediaFile(media.Id, "desktop", media.DesktopUrl.Split('/').Last()));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MediaViewFailureDistinguishesDurableSaveFromDeferredTransaction(bool deferred)
+    {
+        WithUploadStore((store, admin, root) =>
+        {
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "after-site-media-save") throw new IOException("synthetic response failure");
+            };
+            Assert.Throws<IOException>(() =>
+            {
+                if (deferred) store.ExecuteAdminTransaction(() => Upload(store, admin, "hero"));
+                else Upload(store, admin, "hero");
+            });
+            var rows = new L12PlatformStore(Path.Combine(root, "platform.json")).AdminSiteMedia();
+            if (deferred)
+            {
+                Assert.Empty(rows);
+                Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+                Assert.Empty(Directory.GetFiles(Path.Combine(root, "site-media"), "*.upload"));
+                Assert.Empty(store.AdminAudit(category: "site-media"));
+                foreach (var file in Directory.GetFiles(Path.Combine(root, "site-media")))
+                    Assert.Null(store.ResolveSiteMediaFile("missing-media-row", "desktop", Path.GetFileName(file)));
+            }
+            else
+            {
+                var row = Assert.Single(rows);
+                Assert.NotNull(store.ResolveSiteMediaFile(row.Id, "desktop", row.DesktopUrl.Split('/').Last()));
+                Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UploadConflictPreservesOtherCommittedHashesEvenWhenRowsAreDeletedOrRefreshFails(bool failRefresh)
+    {
+        WithUploadStore((store, admin, root) =>
+        {
+            L12SiteMediaView? winner = null;
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-site-media-save")
+                {
+                    var other = new L12PlatformStore(Path.Combine(root, "platform.json"));
+                    winner = Upload(other, admin, "hero");
+                    other.DeleteSiteMedia(admin, winner.Id);
+                }
+                if (failRefresh && stage == "before-conflict-refresh")
+                    throw new IOException("synthetic refresh failure");
+            };
+            var error = Record.Exception(() => Upload(store, admin, "hero"));
+            if (failRefresh) Assert.IsType<L12PlatformStorageRefreshException>(error);
+            else Assert.IsType<L12PlatformStorageConflictException>(error);
+            Assert.NotNull(winner);
+            Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+            Assert.Empty(Directory.GetFiles(Path.Combine(root, "site-media"), "*.upload"));
+            Assert.Empty(new L12PlatformStore(Path.Combine(root, "platform.json")).AdminSiteMedia());
+            if (!failRefresh)
+            {
+                var state = typeof(L12PlatformStore).GetField("_state",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(store)!;
+                var audit = (System.Collections.IEnumerable)state.GetType().GetProperty("AdminAudit")!.GetValue(state)!;
+                Assert.Contains(audit.Cast<object>(), item =>
+                    (string)item.GetType().GetProperty("Target")!.GetValue(item)! == winner.Id &&
+                    (string)item.GetType().GetProperty("Action")!.GetValue(item)! == "upload");
+            }
+        });
+    }
+
+    [Fact]
+    public async Task ConcurrentSameHashUploadDoesNotDeleteTheSuccessfulRequestsFiles()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "media-race-" + Guid.NewGuid().ToString("N"));
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        Task<Exception>? first = null;
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var blocked = 0;
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage != "before-site-media-file-write" || Interlocked.CompareExchange(ref blocked, 1, 0) != 0) return;
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+            };
+            first = Task.Run(() => Record.Exception(() => Upload(store, admin, "hero")));
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            var winner = Upload(store, admin, "hero");
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-commit") throw new IOException("loser save failure");
+            };
+            release.Set();
+            Assert.IsType<L12PlatformStorageUnavailableException>(await first);
+            Assert.Equal(winner.Id, Assert.Single(store.AdminSiteMedia()).Id);
+            Assert.NotNull(store.ResolveSiteMediaFile(winner.Id, "desktop", winner.DesktopUrl.Split('/').Last()));
+            Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+            store.StorageFailureInjector = null;
+            var repeated = Upload(store, admin, "hero");
+            Assert.NotEqual(winner.Id, repeated.Id);
+            Assert.Equal(winner.DesktopUrl.Split('/').Last(), repeated.DesktopUrl.Split('/').Last());
+            Assert.Equal(2, store.AdminSiteMedia().Count);
+            Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+        }
+        finally
+        {
+            release.Set();
+            if (first is not null) await first;
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void WithUploadStore(Action<L12PlatformStore, L12AccountView, string> run)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "media-atomic-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            run(store, store.Login("Admin", "L12master").Account!, root);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task PreparedPayloadSurvivesAnotherRequestsRollbackOfTheSameHash()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "media-reuse-" + Guid.NewGuid().ToString("N"));
+        using var published = new ManualResetEventSlim();
+        using var secondPrepared = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        Task<Exception>? first = null;
+        Task<L12SiteMediaView>? second = null;
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var firstThread = 0;
+            var secondWrites = 0;
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "after-site-media-file-write" && published.IsSet &&
+                    Interlocked.Increment(ref secondWrites) == 3) secondPrepared.Set();
+                if (stage == "before-site-media-save" && Interlocked.CompareExchange(ref firstThread,
+                    Environment.CurrentManagedThreadId, 0) == 0)
+                {
+                    published.Set();
+                    if (!release.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+                }
+                if (stage == "before-commit" && Environment.CurrentManagedThreadId == firstThread)
+                    throw new IOException("first request rolls back its published hashes");
+            };
+            first = Task.Run(() => Record.Exception(() => Upload(store, admin, "hero")));
+            Assert.True(await Task.Run(() => published.Wait(TimeSpan.FromSeconds(10))));
+            second = Task.Run(() => Upload(store, admin, "hero"));
+            Assert.True(await Task.Run(() => secondPrepared.Wait(TimeSpan.FromSeconds(5))));
+            release.Set();
+            Assert.IsType<L12PlatformStorageUnavailableException>(await first);
+            var winner = await second;
+            Assert.Equal(winner.Id, Assert.Single(store.AdminSiteMedia()).Id);
+            Assert.NotNull(store.ResolveSiteMediaFile(winner.Id, "desktop", winner.DesktopUrl.Split('/').Last()));
+            Assert.Equal(3, Directory.GetFiles(Path.Combine(root, "site-media")).Length);
+        }
+        finally
+        {
+            release.Set();
+            if (first is not null) await first;
+            if (second is not null) await second;
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task SlowMediaPreparationDoesNotBlockUnrelatedReadersOrPublishPartialRows()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "media-lock-" + Guid.NewGuid().ToString("N"));
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        Task<L12SiteMediaView>? upload = null;
+        Task<IReadOnlyList<L12SiteMediaView>>? read = null;
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var drain = new L12DeploymentDrainCoordinator(Guid.NewGuid().ToString("N"), new string('a', 40),
+                new L12DeploymentFileFenceStore(root));
+            store.AttachDeploymentDrain(drain);
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage != "before-site-media-file-write") return;
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Media barrier expired");
+            };
+            upload = Task.Run(() => Upload(store, admin, "article"));
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            Assert.True(drain.Snapshot().ActivityLeases > 0);
+            read = Task.Run(() => store.AdminSiteMedia());
+            Assert.Same(read, await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(2))));
+            Assert.Empty(await read);
+            Assert.False(upload.IsCompleted);
+            release.Set();
+            Assert.NotNull(await upload);
+            Assert.Single(store.AdminSiteMedia());
+            Assert.Equal(0, drain.Snapshot().ActivityLeases);
+        }
+        finally
+        {
+            release.Set();
+            if (upload is not null) await upload;
+            if (read is not null) await read;
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void GalleryProductManagementKeepsIdentityAndOrderAcrossRenameDisableAndReload()
     {
         var root = Path.Combine(Path.GetTempPath(), "gp-" + Guid.NewGuid().ToString("N"));

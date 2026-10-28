@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-media-upload-isolation-internal",
+  "date": "2026-10-28",
+  "audience": "internal",
+  "reason": "后台素材上传私有文件准备移出平台锁，提交前后复验原会话权限；保留并发已提交图片与失败事务审计，未测线上收益，不进入玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}

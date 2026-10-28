@@ -649,8 +649,31 @@ public sealed partial class L12PlatformStore
 
     public L12SiteMediaView UploadSiteMedia(L12AccountView actor, L12SiteMediaUpload upload,
         L12AdminAuditContext? context = null)
+        => UploadSiteMediaCore(actor, upload, context, null);
+
+    internal L12SiteMediaView UploadSiteMedia(L12AuthenticatedSession authenticated, string authorization,
+        L12SiteMediaUpload upload, L12AdminAuditContext? context = null)
+        => UploadSiteMediaCore(authenticated.Account, upload, context, () =>
+        {
+            // Called only while holding _gate, so authentication reads the same staged
+            // session/account generation as the media mutation, rather than its read cache.
+            var current = AuthenticateSession(authorization);
+            if (current is null || current.SessionId != authenticated.SessionId ||
+                current.Account.Id != authenticated.Account.Id)
+                throw new L12SecurityPolicyException("authentication_required", "登录已失效，请重新登录");
+            if (current.Account.PermissionVersion != authenticated.Account.PermissionVersion ||
+                !L12Authorization.HasPermission(current.Account, L12Permission.AdminContentDraft))
+                throw new L12SecurityPolicyException("permission_denied", "账号权限已更新，请刷新后重试");
+            return current.Account;
+        });
+
+    private L12SiteMediaView UploadSiteMediaCore(L12AccountView actor, L12SiteMediaUpload upload,
+        L12AdminAuditContext? context, Func<L12AccountView>? authorize)
     {
         using var deployment = EnterDeploymentMutation();
+        StorageFailureInjector?.Invoke("before-site-media-authorization");
+        if (authorize is not null)
+            lock (_gate) actor = authorize();
         var kind = NormalizeMediaKind(upload.Kind);
         var policy = MediaPolicies[kind];
         ValidateUploadBytes(upload.Original, "原图", SiteMediaOriginalMaxBytes);
@@ -697,13 +720,18 @@ public sealed partial class L12PlatformStore
             "image/jpeg" => ".jpg", "image/png" => ".png", "image/avif" => ".avif", _ => ".webp",
         };
 
+        var prepared = PrepareImmutableMediaGroup(
+            new PendingMediaFile(upload.Original, originalHash, originalExtension),
+            new PendingMediaFile(desktopWebp, desktopHash, ".webp"),
+            new PendingMediaFile(mobileWebp, mobileHash, ".webp"),
+            new PendingMediaFile(thumbnailWebp, thumbnailHash, ".webp"));
+        try
+        {
         lock (_gate)
         {
-            var stored = StoreImmutableMediaGroup(
-                new PendingMediaFile(upload.Original, originalHash, originalExtension),
-                new PendingMediaFile(desktopWebp, desktopHash, ".webp"),
-                new PendingMediaFile(mobileWebp, mobileHash, ".webp"),
-                new PendingMediaFile(thumbnailWebp, thumbnailHash, ".webp"));
+            if (authorize is not null) actor = authorize();
+            var stagedState = _data;
+            var auditBefore = stagedState.AdminAudit.ToList();
             var row = new SiteMediaRow
             {
                 Kind = kind,
@@ -716,14 +744,14 @@ public sealed partial class L12PlatformStore
                 FocalY = upload.FocalY,
                 OriginalFileName = LimitSiteText(Path.GetFileName(upload.OriginalFileName), 180),
                 OriginalFormat = originalFormat,
-                OriginalFile = stored.Files[0],
+                OriginalFile = prepared.Files[0],
                 OriginalHash = originalHash,
                 ContentHash = groupHash,
-                DesktopFile = stored.Files[1],
+                DesktopFile = prepared.Files[1],
                 DesktopHash = desktopHash,
-                MobileFile = stored.Files[2],
+                MobileFile = prepared.Files[2],
                 MobileHash = mobileHash,
-                ThumbnailFile = stored.Files[3],
+                ThumbnailFile = prepared.Files[3],
                 ThumbnailHash = thumbnailHash,
                 DesktopWidth = desktopDimensions.Width,
                 DesktopHeight = desktopDimensions.Height,
@@ -735,22 +763,36 @@ public sealed partial class L12PlatformStore
                 DeliveryBytes = desktopWebp.LongLength + mobileWebp.LongLength + thumbnailWebp.LongLength,
                 CreatedByAccountId = actor.Id,
             };
+            var durable = false;
             try
             {
+                PublishImmutableMediaGroup(prepared);
                 _data.SiteMedia.Add(row);
                 AddAdminAudit(actor, "site-media", "upload", row.Id, null,
                     $"{row.Kind}:{row.ContentHash}",
                     $"desktop={desktopHash};mobile={mobileHash};thumb={thumbnailHash};independent={row.IndependentVariants}", context);
+                StorageFailureInjector?.Invoke("before-site-media-save");
                 Save();
+                // Nested administrative imports defer Save to their outer transaction.
+                durable = _adminTransactionDepth == 0;
+                StorageFailureInjector?.Invoke("after-site-media-save");
                 return ToSiteMediaView(row);
             }
             catch
             {
-                _data.SiteMedia.Remove(row);
-                RollBackNewMediaFiles(stored.CreatedFiles);
+                if (!durable)
+                {
+                    _data.SiteMedia.Remove(row);
+                    // AddAdminAudit can trim the entire audit window before Save runs.
+                    // Restore that complete window only on our original staged object;
+                    // Save/conflict recovery may have replaced it with another writer's facts.
+                    if (ReferenceEquals(_data, stagedState)) _data.AdminAudit = auditBefore;
+                }
                 throw;
             }
         }
+        }
+        finally { DeletePreparedMediaFiles(prepared); }
     }
 
     public IReadOnlyList<L12SiteMediaView> AdminSiteMedia(string? kind = null, int limit = 500)
@@ -1498,14 +1540,15 @@ public sealed partial class L12PlatformStore
     }
 
     private sealed record PendingMediaFile(byte[] Bytes, string Hash, string Extension);
-    private sealed record StoredMediaGroup(IReadOnlyList<string> Files, IReadOnlyList<string> CreatedFiles);
+    private sealed record PreparedMediaFile(string Temp, string Destination, string FileName);
+    private sealed record PreparedMediaGroup(IReadOnlyList<string> Files, IReadOnlyList<PreparedMediaFile> Pending);
 
-    private StoredMediaGroup StoreImmutableMediaGroup(params PendingMediaFile[] inputs)
+    private PreparedMediaGroup PrepareImmutableMediaGroup(params PendingMediaFile[] inputs)
     {
         Directory.CreateDirectory(SiteMediaRoot);
         var fileNames = inputs.Select(item => item.Hash + item.Extension).ToArray();
-        var pending = new List<(string Temp, string Destination, string FileName)>();
-        var created = new List<string>();
+        var pending = new List<PreparedMediaFile>();
+        var prepared = new PreparedMediaGroup(fileNames, pending);
         try
         {
             foreach (var item in inputs.GroupBy(item => item.Hash + item.Extension, StringComparer.Ordinal)
@@ -1513,45 +1556,53 @@ public sealed partial class L12PlatformStore
             {
                 var fileName = item.Hash + item.Extension;
                 var destination = Path.Combine(SiteMediaRoot, fileName);
-                if (File.Exists(destination)) continue;
                 var temp = Path.Combine(SiteMediaRoot, $".{Guid.NewGuid():N}.upload");
-                File.WriteAllBytes(temp, item.Bytes);
-                pending.Add((temp, destination, fileName));
+                // Register before CreateNew: even a partially failed write is ours to clean.
+                // Always stage our payload; another request may roll back an existing hash.
+                pending.Add(new(temp, destination, fileName));
+                StorageFailureInjector?.Invoke("before-site-media-file-write");
+                using var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                stream.Write(item.Bytes);
+                StorageFailureInjector?.Invoke("after-site-media-file-write");
             }
-            foreach (var item in pending)
-            {
-                try
-                {
-                    File.Move(item.Temp, item.Destination, false);
-                    created.Add(item.FileName);
-                }
-                catch (IOException) when (File.Exists(item.Destination))
-                {
-                    File.Delete(item.Temp);
-                }
-            }
-            return new StoredMediaGroup(fileNames, created);
+            return prepared;
         }
         catch
         {
-            foreach (var item in pending)
-                if (File.Exists(item.Temp)) File.Delete(item.Temp);
-            RollBackNewMediaFiles(created);
+            DeletePreparedMediaFiles(prepared);
             throw;
         }
     }
 
-    private void RollBackNewMediaFiles(IEnumerable<string> fileNames)
+    private static void PublishImmutableMediaGroup(PreparedMediaGroup prepared)
     {
-        foreach (var fileName in fileNames.Distinct(StringComparer.Ordinal))
+        foreach (var item in prepared.Pending)
         {
-            var referenced = _data.SiteMedia.Any(row => row.OriginalFile == fileName || row.DesktopFile == fileName ||
-                row.MobileFile == fileName || row.ThumbnailFile == fileName);
-            if (referenced) continue;
-            var path = Path.GetFullPath(Path.Combine(SiteMediaRoot, fileName));
-            var root = Path.GetFullPath(SiteMediaRoot) + Path.DirectorySeparatorChar;
-            if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(path)) File.Delete(path);
+            try
+            {
+                File.Move(item.Temp, item.Destination, false);
+            }
+            catch (IOException) when (File.Exists(item.Destination))
+            {
+                File.Delete(item.Temp);
+            }
         }
+    }
+
+    private static void DeletePreparedMediaFiles(PreparedMediaGroup prepared)
+    {
+        foreach (var item in prepared.Pending)
+            if (File.Exists(item.Temp)) File.Delete(item.Temp);
+    }
+
+    private static void RollBackNewMediaFiles(IEnumerable<string> publishedSharedFiles)
+    {
+        // Legacy Modian rollback hook: deliberately RETAINS all published hash files.
+        // Neither _gate nor a fresh reference snapshot proves cross-Store ownership:
+        // another writer may already reference the hash or commit immediately afterward.
+        // Only request-private .upload files are safe to delete in DeletePreparedMediaFiles.
+        // Published leftovers require the existing controlled storage-maintenance boundary.
+        _ = publishedSharedFiles;
     }
 
     private static string ContentHash(byte[] bytes)

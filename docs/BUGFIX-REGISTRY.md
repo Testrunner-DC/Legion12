@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261028-MEDIA-UPLOAD-PREPARATION｜上传准备锁隔离与失败引用保护
+
+- 人类批准按性能规划推进，P2/P3沿原上传/事务/鉴权体系。旧StoreImmutableMediaGroup在平台_gate内写4份最多28MiB payload；真实屏障RED暂停写入时，无关AdminSiteMedia不能返回。新Prepare仅在原SiteMediaRoot登记私有随机.upload再CreateNew写，同hash仅在请求内去重；不依据锁外Exists跳过自己的完整准备。原部署变更lease覆盖授权、准备、发布、提交和清退；锁内原hash不可覆盖Move与Save保留，独立上传以外的Modian外层事务仍持锁，不宣传导入锁外化或线上延迟收益。
+- HTTP把原authenticated/Authorization仅以内存参数送入原AuthenticateSession，准备前后在同_gate核真实sessionId、账号、启用/删除、PermissionVersion及AdminContentDraft，401/403沿原ApiError；不伪造内部fixture会话、不保存token或新增身份流程。原格式/尺寸/字节上限、原ETag/immutable路径及重复POST独立row语义不变。真实12种准备前/后revoke/disable/delete/demote/version/expire与成功HTTP均有回归。
+- 独审实际再现跨Store缺口：A发布hash但Save前失败，B已独立提交引用，A旧_data或一次权威快照都不能证明安全删除；CAS后刷新守卫不足。另真实Modian外层回滚也会误删B图。最终所有published hash在失败时保守保留，Modian私有legacy回收hook明确无物理删除；仅清本人登记的.upload，不建新锁/队列/清理器。每次Upload最多4独有文件/28MiB，累计失败/多图导入不受此总量上界，可能残留不可公开无引用hash，后续按既有受控存储治理处理。
+- Save返回后仅depth=0才durable，提交后view异常/镜像降级不删文件或业务行；deferred失败沿原外层事务。Main核AddAdminAudit会裁切5000窗口，单删新Target不够，新增真实裁切RED后以同_gate捕获原DataFile+完整audit；!durable且ReferenceEquals同代时还原，Save/CAS刷新换代不覆盖B。独立审查确认引用保护与审计代际边界无剩余具体阻断。
+- 最终5叶/3真RED/r3 11/权威B审计2具名见`media-upload-isolation-20261028/source-handoff-r3.json`；原barrier RED/r1 68过13用户名夹具失败/r2 14绿保留，不冒单次82绿。Main一次Release完整平台2811/2811零失败跳过，实际核5源/两DLL/原TRX于`main-acceptance.json`，同步见同根`synchronization.json`。原三处“已发布文件必须空”按已批准安全语义迁移，DB重开/无失败row/审计不漏/无temp/不可公开与B引用断言不减。未改前端/卡池，未重跑不变Rules/30＋10，无线上/维护/Bug写，不冒完整Release包、实际浏览器图像解码或正式改善。
+- 回滚只可恢复准备调度，不能恢复基于旧_data删除共享hash的已证缺陷；不回写旧DB或清历史图片。后到未接入公告2新叶不纳本批，保留下一集成。
+
 ## PERF-20261028-ARTICLE-SUMMARY-READ｜资讯列表不再携带全文
 
 - 人类按已报告顺序批准推进，P2/P4不改权威事实、历史和发布状态。原NewsPage从200条完整Article中选单篇，列表额外带正文/BodyMedia；新具名Summary DTO省去两字段，仅无手写摘要时生成260字符预览。沿原PublicArticlesCore选择同一Published版本/正文搜索/排序/上限，原完整API默认不变，管理员与主页另排，不把本片冒全站读取优化完成。

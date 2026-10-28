@@ -3379,7 +3379,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     request.HttpContext.RequestAborted);
                 var focalX = ParseFiniteDouble(form["focalX"], .5);
                 var focalY = ParseFiniteDouble(form["focalY"], .5);
-                var result = _platform.UploadSiteMedia(authenticated.Account, new L12SiteMediaUpload(
+                var result = _platform.UploadSiteMedia(authenticated, request.Headers.Authorization.ToString(), new L12SiteMediaUpload(
                     form["kind"].ToString(), original.FileName, original.ContentType, original.Bytes,
                     desktop.Bytes, mobile.Bytes, thumbnail.Bytes, form["altText"].ToString(), focalX, focalY,
                     form["desktopAltText"].ToString(), form["mobileAltText"].ToString(),
@@ -3388,6 +3388,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     independentVariants),
                     RequestAuditContext(request, permission));
                 return Results.Ok(result);
+            }
+            catch (L12SecurityPolicyException error)
+            {
+                return ApiError(request, error.Code, error.Message, error.Code == "authentication_required"
+                    ? StatusCodes.Status401Unauthorized : StatusCodes.Status403Forbidden);
             }
             catch (ArgumentException error)
             {

@@ -222,7 +222,7 @@ public sealed class ControlPlaneModianImportTests
     }
 
     [Fact]
-    public void TransactionFailureRestoresMediaRowsAndRemovesOnlyNewFiles()
+    public void TransactionFailureRestoresMediaRowsAndRetainsPublishedHashesWithoutPrivateTemps()
     {
         var root = TempRoot();
         try
@@ -243,7 +243,15 @@ public sealed class ControlPlaneModianImportTests
             Assert.Empty(store.AdminArticles(kind: "news"));
             Assert.Empty(store.AdminSiteMedia());
             var mediaRoot = Path.Combine(root, "site-media");
-            Assert.True(!Directory.Exists(mediaRoot) || !Directory.EnumerateFiles(mediaRoot).Any());
+            Assert.True(Directory.Exists(mediaRoot));
+            Assert.NotEmpty(Directory.GetFiles(mediaRoot));
+            Assert.Empty(Directory.GetFiles(mediaRoot, "*.upload"));
+            Assert.Empty(store.AdminAudit(category: "site-media"));
+            var restarted = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.Empty(restarted.AdminArticles(kind: "news"));
+            Assert.Empty(restarted.AdminSiteMedia());
+            foreach (var file in Directory.GetFiles(mediaRoot))
+                Assert.Null(restarted.ResolveSiteMediaFile("missing-media-row", "desktop", Path.GetFileName(file)));
         }
         finally { Directory.Delete(root, true); }
     }
