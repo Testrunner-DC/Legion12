@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261028-RANKING-WINDOW-COUNT｜完整性检查达到阈值即停止计数
+
+- 原两分支全量COUNT相加，只为判定count<clamp(1..20000)。改原两SELECT 1的UNION ALL在整个复合查询末尾LIMIT，再COUNT；无排序/去重/窗口改写，全部WHERE/日期julianday、outbox及participant联接、隔离/错误条件保留。legacy无outbox与applied有outbox分支互斥，坏payload/hash仍算原始候选；实际SQL scalar数值observer只测试，不进HTTP。
+- 原7场4真实RED（实际4而期望cap1/2/3）/3正控保留，最终关联20/20零失败跳过，含21001 raw行/default/20001上夹限、边界含时区/无效日期/空error/缺参与者/隔离/坏payload与原failclosed保护。独审逐谓词无产品阻断，SQLcount=min(原count,cap)，所以布尔结论相同。
+- 原生同内存SQLite60000合成候选、cap20000实际旧3045000步→新590000步，计数60000→20000、false不变；零候选两者1575100步相同。不是最多访问20k底表行，稀疏/无命中仍可能整表扫，不增索引或冒总接口/线上收益。原始对照与两叶SHA见`ranking-history-lookups-20261028/window-count/{green-r1-result.json,native-sql-comparison.json}`。
+- Main最终组合完整平台2839/2839零失败跳过、12分54秒，直接`window-count/main-full-r1-result.json`及原TRX绑定5个当前C#源/两DLL；未复用修改前2829冒最终通过。完整UI/私人消费者/两类型/双613同步合格，未变Rules/性能链不重跑。回滚只撤SQL提前停止，不改变窗口完整性许可或数据。最终同步以本片同根`synchronization.json`真实结果为准，非Release包/部署。
+
+## FEAT-20261028-TOURNAMENT-WAITLIST-CHECKIN｜候补提前签到锁牌首片
+
+- 沿原本人PreCheckIn/ResolveTournamentDeckSnapshot/Mutate/版本/幂等/事务与审计，删除“候补必须先转正才能锁牌”的额外拒绝；不抢正式席位、不改候补顺序，合法本人牌库才可签到。重复同牌无新版本，已锁不能换牌，匿名/他人牌库/退出移出资格保留。原普通退赛递补携已锁快照，旧真实FullFlow取消旧拒绝断言但保后续开赛/牌库锁断言，不重新锁一次掩盖丢失。
+- 后端原用户名/权限fixture失败不冒RED，修正后真实候补锁牌拒绝RED保留；最终关联7/7含真实HTTP401/保存失败回滚/重放/他人看不到私有牌库。页面仅两可见性与说明变更，真实SiteShell+AccountDetail、模拟接口在390/844两方向4/4，Main目视退出后截图及逐步触摸记录，非真机/真实WS。Main原私人消费30场保留并增已锁候补分支，通过；最终UI/私人链/类型/双613均过。
+- 本片不含开赛前自动替补、原未签到者身份迁移或信誉处罚；人类尚未裁定，单独挂起，不把已签到候补自动计入首轮。Main与榜单共享一次最终完整平台2839/2839及前端`window-count/frontend-main-r1/result.json`通过，不另复制完整资格。来源`tournament-waitlist-20261028/source-checkin-delivery.json`，原失败不覆盖；分族提交后统一实际同步见`window-count/synchronization.json`，无部署或维护写。
+
 ## FEAT-20261028-TOURNAMENT-KEY-NOTICE｜沿现有WS的在线关键提醒
 
 - 原赛事row/Mutate/自动Save沿用，内部JsonIgnore sidecar仅在真实公告变更/延期/取消/生成对阵后生成，CommandBus外层事务成功才送。有效参赛/主办/裁判定向原socket映射，无公告正文/QQ/名单，预演/重放/no-op/Save失败不发送。无新持久通知或队列系统。

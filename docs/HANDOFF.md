@@ -1,5 +1,16 @@
 # 十二军团简短交接
 
+## 2026-10-28 21:28 榜单阈值与候补签到最终已验
+
+- 最终完整平台2839/2839零失败跳过/12分54秒，主资格`ranking-history-lookups-20261028/window-count/main-full-r1-result.json`及TRX，最终完整前端`window-count/frontend-main-r1/result.json`UI/私人链/两类型/双613全部过。当前5个C#源/2DLL与前端pins绑定，不复用此前2829当最终、不跑不变Rules/30＋10。按族提交、统一实际非强推见同根`synchronization.json`；无部署/维护/线上关单，两服最后d557不回流。
+- 阈值SQL原4真RED/3正控→20关联绿及独审，cap不是底表访问上限；原生60000候选3045000→590000步，零命中无减少。候补2产品/3Source QA及Main旧消费者迁移接受，原7后台/4真实页面合成/Main目视证据保留；仅本人提前锁牌，不实现开赛替补或未签到者身份迁移，仍等人类决策。cebc6c9c独立规则待答，原取证84/503不冒原局。
+- 当前来源均冻结、无测试/浏览器服务遗留。下一明确就绪：MatchRecorder.ListRankingMatches显式CASE只为legacy查latest-event，原生2万/20旧行对照20k→20且结果相同；普通ON AND无收益已否定，尚未改产品或C#验收。赛事②预检实际人数/当前轮数/Cut展示缺口已只读准备，下一租约另发；不自动改赛制/越过替补裁定。G4高成本容量与G7真机仍未通过，不重复同配置采样。
+
+## 2026-10-28 21点后接续：新计数片专项通过，赛事仍在验
+
+- 三族已真正非强推远端同e8620a0b，实际回执ranking-history-lookups-20261028/synchronization.json，不能因后续dirty变动重推或重部署旧包。Main后续仅MatchRecorder.Rankings.cs/RankedAnalyticsRangeTests.cs：完整性候选达到cap即停止SQL计数；原7真RED4失败、绿关联20/20、独审及原生SQLite对照通过，源码CF7B4EA2/QA B123A990冻结。cap并非底表访问上限，零命中同原步数，不冒固定性能或已完整Release。等待赛事最终C#交回后Main统一一次完整平台。
+- 来源01a0cf3a获新4产品租约做候补签到/锁牌与开赛预演，当前Focused槽已明确交回来源；Main不并行.NET构建。被替补未签到者状态人类待裁定，不能先把人转候补/退赛或写测试期望；仅先无争议本人签到链。来源手机横竖4本地实际页面合成场景通过，后台还在RED/绿，不冒最终接受。G4不能靠重复同配置压测求过；G7仍无人类真机。cebc6c9c规则独立待答，原取证84/503边界不变。
+
 ## 2026-10-28 本批三族已验收，赛事在线提醒与新Bug边界
 
 - 榜单请求查找、主页摘要、赛事提醒均已最终验收，分族提交后同一次同步见`ranking-history-lookups-20261028/synchronization.json`。后台完整2829一次全绿直接复用，最终前端主页frontend-main-r3续验/两类型/双613通过，原r1旧守卫及r2漏fixture失败保留；不是完整Release包、线上压测或已部署。两服最后d557/维护已解除，不重开发布/维护。

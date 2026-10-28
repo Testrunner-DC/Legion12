@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-ranking-window-count-internal",
+  "date": "2026-10-28",
+  "audience": "internal",
+  "reason": "榜单完整性SQL只计到原有阈值；保持全部候选条件及不完整窗口拒绝，未消除稀疏或无命中底表扫描，不宣称线上性能改善。",
+  "paths": ["服务端WebSocket/TwelveLegions/MatchRecorder.Rankings.cs"]
+}

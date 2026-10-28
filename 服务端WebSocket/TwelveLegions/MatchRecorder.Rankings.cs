@@ -5,8 +5,10 @@ namespace TwelveLegions.Server;
 
 public sealed partial class MatchRecorder
 {
-    // Count raw candidate rows before payload validation removes damaged records. A filtered
-    // result shorter than the page limit is not proof that the rolling window was complete.
+    // Numeric-only test observation of the actual SQL scalar; never sent to clients.
+    internal Action<long>? RankedWindowCandidateCountObserver { get; set; }
+    // Count raw candidates only up to the threshold, before payload validation removes
+    // damaged records. Reaching the limit is already enough to fail closed.
     public async Task<bool> IsRankedAnalyticsWindowCompleteAsync(DateTimeOffset windowStart,
         int limit = 20_000)
     {
@@ -15,24 +17,27 @@ public sealed partial class MatchRecorder
         await connection.OpenAsync();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT
-              (SELECT COUNT(*) FROM matches m
+            SELECT COUNT(*) FROM (
+               SELECT 1 FROM matches m
                WHERE m.ended_utc IS NOT NULL AND m.mode_id='ranked'
                  AND m.winner IN (0,1) AND COALESCE(m.error,'')=''
                  AND NOT EXISTS (SELECT 1 FROM ranked_settlement_outbox o WHERE o.match_id=m.match_id)
-                 AND julianday(m.started_utc) >= julianday($window_start))
-              +
-              (SELECT COUNT(*) FROM matches m
+                 AND julianday(m.started_utc) >= julianday($window_start)
+               UNION ALL
+               SELECT 1 FROM matches m
                JOIN ranked_settlement_outbox o ON o.match_id=m.match_id
                JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
                JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
                WHERE m.mode_id='ranked' AND m.ended_utc IS NOT NULL AND m.winner IN (0,1)
                  AND COALESCE(m.error,'')='' AND o.status='applied' AND COALESCE(o.last_error,'')=''
                  AND NOT EXISTS (SELECT 1 FROM ranked_recovery_quarantine q WHERE q.match_id=m.match_id)
-                 AND julianday(m.started_utc) >= julianday($window_start));
+                 AND julianday(m.started_utc) >= julianday($window_start)
+               LIMIT $limit);
             """;
         command.Parameters.AddWithValue("$window_start", windowStart.ToUniversalTime().ToString("O"));
+        command.Parameters.AddWithValue("$limit", limit);
         var count = (long)(await command.ExecuteScalarAsync() ?? long.MaxValue);
+        RankedWindowCandidateCountObserver?.Invoke(count);
         return count < limit;
     }
 

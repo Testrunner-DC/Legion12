@@ -8,6 +8,116 @@ namespace TwelveLegions.Platform.Tests;
 public sealed class RankedAnalyticsRangeTests
 {
     [Fact]
+    public async Task RawWindowDefaultAndUpperClampStopAtTwentyThousandRawCandidates()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "l12-window-large-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var database = Path.Combine(root, "matches.db");
+            await using var recorder = new MatchRecorder(database);
+            await recorder.InitializeAsync();
+            var now = new DateTimeOffset(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
+            await using (var connection = new SqliteConnection($"Data Source={database}"))
+            {
+                await connection.OpenAsync();
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    WITH RECURSIVE rows(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM rows WHERE n<21001)
+                    INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
+                      started_utc,ended_utc,winner,mode_id)
+                    SELECT 'raw-'||n,'QA',1,'A','B','[]','[]',$now,$now,0,'ranked' FROM rows;
+                    """;
+                command.Parameters.AddWithValue("$now", now.ToString("O"));
+                Assert.Equal(21_001, await command.ExecuteNonQueryAsync());
+            }
+            var observed = new List<long>();
+            recorder.RankedWindowCandidateCountObserver = observed.Add;
+            Assert.False(await recorder.IsRankedAnalyticsWindowCompleteAsync(now.AddDays(-1)));
+            Assert.False(await recorder.IsRankedAnalyticsWindowCompleteAsync(now.AddDays(-1), 20_001));
+            Assert.Equal([20_000L, 20_000L], observed);
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(20_001)]
+    public async Task RawWindowStopsAtClampedLimitWithoutChangingCandidateEligibility(int requestedLimit)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "l12-window-cap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var database = Path.Combine(root, "matches.db");
+            await using var recorder = new MatchRecorder(database);
+            await recorder.InitializeAsync();
+            var now = new DateTimeOffset(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
+            await using (var connection = new SqliteConnection($"Data Source={database}"))
+            {
+                await connection.OpenAsync();
+                foreach (var id in new[] { "legacy", "applied", "offset-boundary", "empty-error", "pending", "failed",
+                    "outbox-error", "quarantine", "missing-participant", "invalid-winner", "match-error", "bad-date",
+                    "older", "casual", "unfinished" })
+                {
+                    using var command = connection.CreateCommand();
+                    command.CommandText = """
+                        INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
+                          started_utc,ended_utc,winner,mode_id,error)
+                        VALUES($id,'QA',1,'A','B','[]','[]',$start,$end,$winner,$mode,$error);
+                        INSERT INTO match_participants(match_id,player_index,display_name,deck_name)
+                          VALUES($id,0,'A','QA');
+                        """;
+                    command.Parameters.AddWithValue("$id", id);
+                    command.Parameters.AddWithValue("$start", id switch {
+                        "bad-date" => "not-a-date", "older" => now.AddDays(-2).ToString("O"),
+                        "offset-boundary" => now.AddDays(-1).ToOffset(TimeSpan.FromHours(8)).ToString("O"),
+                        _ => now.AddHours(-1).ToString("O") });
+                    command.Parameters.AddWithValue("$end", id == "unfinished" ? DBNull.Value : now.ToString("O"));
+                    command.Parameters.AddWithValue("$winner", id == "invalid-winner" ? 2 : 0);
+                    command.Parameters.AddWithValue("$mode", id == "casual" ? "casual" : "ranked");
+                    command.Parameters.AddWithValue("$error", id == "match-error" ? "broken" : "");
+                    await command.ExecuteNonQueryAsync();
+                    command.Parameters.Clear();
+                    command.Parameters.AddWithValue("$id", id);
+                    if (id != "missing-participant")
+                    {
+                        command.CommandText = "INSERT INTO match_participants(match_id,player_index,display_name,deck_name) VALUES($id,1,'B','QA')";
+                        await command.ExecuteNonQueryAsync();
+                    }
+                    if (id is "applied" or "pending" or "failed" or "outbox-error" or "quarantine" or "missing-participant")
+                    {
+                        command.CommandText = "INSERT INTO ranked_settlement_outbox(match_id,payload_json,payload_hash,status,last_error,created_utc) VALUES($id,'{}','bad',$status,$error,$now)";
+                        command.Parameters.AddWithValue("$status", id is "pending" or "failed" ? id : "applied");
+                        command.Parameters.AddWithValue("$error", id == "outbox-error" ? "broken" : "");
+                        command.Parameters.AddWithValue("$now", now.ToString("O"));
+                        await command.ExecuteNonQueryAsync();
+                    }
+                    if (id == "quarantine")
+                    {
+                        command.CommandText = "INSERT INTO ranked_recovery_quarantine(match_id,reason,created_utc) VALUES($id,'QA',$now)";
+                        await command.ExecuteNonQueryAsync();
+                    }
+                }
+            }
+            var observed = new List<long>();
+            recorder.RankedWindowCandidateCountObserver = observed.Add;
+            var complete = await recorder.IsRankedAnalyticsWindowCompleteAsync(now.AddDays(-1), requestedLimit);
+            var limit = Math.Clamp(requestedLimit, 1, 20_000);
+            Assert.Equal(4 < limit, complete);
+            Assert.Equal([Math.Min(4L, limit)], observed);
+            // Raw completeness includes the applied row even though its payload cannot validate.
+            Assert.DoesNotContain(await recorder.ListRankedAnalyticsMatchesAsync(20), row => row.MatchId == "applied");
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }
+    }
+
+    [Fact]
     public async Task RawWindowLimitFailsClosedEvenWhenDamagedPayloadShrinksVisibleRows()
     {
         var root = Path.Combine(Path.GetTempPath(), "l12-ranking-source-" + Guid.NewGuid().ToString("N"));
