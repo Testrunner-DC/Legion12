@@ -916,11 +916,13 @@ for (const status of ['dropped', 'removed']) await check(`historical ${status} s
   mounted.unmount()
 })
 
-await check('unregistered organizer joins explicitly while active waitlisted and checked-in states keep original actions', async () => {
-  for (const status of ['unregistered', 'waitlisted', 'checked-in']) {
+await check('unregistered organizer joins explicitly; unchecked waitlist can select while locked waitlist and seated states cannot', async () => {
+  for (const status of ['unregistered', 'waitlisted', 'waitlisted-checked-in', 'checked-in']) {
     resetIdentity()
     const participants = status === 'unregistered' ? [] : [participantFixture(status === 'waitlisted'
-      ? { waitlisted: true, waitlistPosition: 2 } : { deck: { name: '锁定牌库' }, tournamentCheckedInAt: '2026-10-28T01:00:00Z' })]
+      ? { waitlisted: true, waitlistPosition: 2 } : {
+        ...(status === 'waitlisted-checked-in' ? { waitlisted: true, waitlistPosition: 2 } : {}),
+        deck: { name: '锁定牌库' }, tournamentCheckedInAt: '2026-10-28T01:00:00Z' })]
     tournamentList = [tournamentFixture({ organizerAccountId: 'account-A', registrationOpen: true, participants })]
     const requests = captureRequests(requestPath => { throw new Error(`unexpected ${requestPath}`) })
     const mounted = mount(tournamentDetailComponent()); await flush()
@@ -929,8 +931,9 @@ await check('unregistered organizer joins explicitly while active waitlisted and
       assert.deepEqual(registrationActions, [['register', 'tournament-A', 5]])
       assert.equal(mounted.state.me.accountId, 'account-A')
     } else {
-      assert.match(nodeText(mounted.rootNode), status === 'waitlisted' ? /当前候补第 2 位/ : /赛前签到已完成/)
-      assert.equal(hostNodes(mounted.rootNode).some(node => node.type === 'button' && nodeText(node) === '选择本人牌库'), false)
+      assert.match(nodeText(mounted.rootNode), status.startsWith('waitlisted') ? /当前候补第 2 位/ : /赛前签到已完成/)
+      assert.equal(hostNodes(mounted.rootNode).some(node => node.type === 'button' && nodeText(node) === '选择本人牌库'), status === 'waitlisted')
+      if (status === 'waitlisted-checked-in') assert.match(nodeText(mounted.rootNode), /已完成签到并锁定牌库/)
       clickButton(mounted, '退出赛事'); await flush(); clickButton(mounted, '确认退出赛事'); await flush()
       assert.deepEqual(registrationActions, [['drop', 'tournament-A', 5]])
     }

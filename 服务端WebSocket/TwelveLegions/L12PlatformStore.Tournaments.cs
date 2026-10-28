@@ -846,8 +846,7 @@ public sealed partial class L12PlatformStore
                 ?? throw new KeyNotFoundException("尚未报名该赛事");
             if (participant.Removed || participant.Dropped)
                 throw new L12TournamentScopeException("当前报名资格不可签到");
-            if (participant.Waitlisted)
-                throw new L12TournamentScopeException("候补递补为正式席位后才能签到锁牌");
+
             if (participant.TournamentCheckedInAt is not null)
             {
                 var requestedDeckId = OptionalText(payload.DeckId, 128);

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-tournament-waitlist-checkin",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "候补参赛准备",
+  "changes": [{
+    "category": "tournaments",
+    "text": "候补玩家可提前选择本人的合法牌库并完成赛前签到锁定；正式席位释放、按原顺序递补后，保留已锁定的牌库，无需重复签到。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs", "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue"]
+  }]
+}

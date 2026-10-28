@@ -1111,9 +1111,11 @@ public sealed class TournamentFullFlowTests
             Assert.True(waiting.Waitlisted);
             Assert.Equal(1, waiting.WaitlistPosition);
             Assert.Equal(1, tournament.Counts.Waitlisted);
-            Assert.Throws<L12TournamentScopeException>(() => store.PreCheckInTournament(players[1],
-                tournament.Id, new L12TournamentPreCheckInPayload("deck", "legacy"), tournament.Version,
-                Context("waitlist-cannot-lock"), true));
+            var waitingDeck = store.Decks(players[1].Id)[0];
+            tournament = store.PreCheckInTournament(players[1], tournament.Id,
+                new L12TournamentPreCheckInPayload(waitingDeck.Name, string.Empty, waitingDeck.Id), tournament.Version,
+                Context("waitlist-lock"), true);
+            Assert.NotNull(tournament.Participants.Single(item => item.AccountId == players[1].Id).TournamentCheckedInAt);
 
             tournament = store.DropTournament(players[0], tournament.Id, tournament.Version,
                 Context("release-seat"), true);
@@ -1121,7 +1123,7 @@ public sealed class TournamentFullFlowTests
             Assert.False(promoted.Waitlisted);
             Assert.NotNull(promoted.PromotedAt);
             tournament = SelectDeck(store, organizer, tournament, update: true);
-            tournament = SelectDeck(store, players[1], tournament, update: true);
+            Assert.NotNull(tournament.Participants.Single(item => item.AccountId == players[1].Id).Deck?.LockedAt);
             var check = store.TournamentStartCheck(organizer, tournament.Id);
             Assert.True(check.CanStart);
             Assert.Empty(check.Blockers);
