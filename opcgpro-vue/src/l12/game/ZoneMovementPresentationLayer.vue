@@ -7,7 +7,7 @@ import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
 import { acquireAuthoritativeCardVisibility, resolveAuthoritativeCardVisibilitySurface } from './authoritativeCardVisibility'
 import { snapshotDecodedAuthoritativeCardVisual } from './authoritativeCardVisualSnapshot'
 import { battlefieldImpactStrengthFromTroops, startBattlefieldImpact, type BattlefieldImpactRun } from './battlefieldImpactPresentation'
-import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, movementTerminalTapped, resetMovementClaimState, resolveMovementSourceZone, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
+import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, movementTerminalTapped, persistentMasterMovementAnchorId, resetMovementClaimState, resolveMovementSourceZone, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
 import type { PreparedVisualOwner, PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Zone = VisualZone
@@ -21,6 +21,7 @@ type Movement = {
   from: Zone
   to: Zone
   sourceEvidence: MovementSourceEvidence
+  masterAnchorInstanceId?: string
   card?: Card
   publicPlacement?: ActionEvent['playerPublicPlacement']
   authoritativeFace: boolean
@@ -401,6 +402,7 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
     from,
     to,
     sourceEvidence,
+    masterAnchorInstanceId: persistentMasterMovementAnchorId(event, card, from, to, props.players) ?? undefined,
     card,
     publicPlacement: event.playerPublicPlacement,
     authoritativeFace,
@@ -421,6 +423,10 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
 }
 
 function elementRect(element: Element | null): AnchorRect | null {
+  // Persistent master metadata stays upright; its contained art can be smaller
+  // and rotated. Land on that art's layout box rather than rotating the frame.
+  if (element?.matches('[data-l12-persistent-card-zone]'))
+    element = element.querySelector('.master-art') ?? element
   if (!(element instanceof HTMLElement)) return null
   const rect = viewportLayoutRect(element)
   if (rect.width <= 0 || rect.height <= 0) return null
@@ -431,10 +437,11 @@ function elementRect(element: Element | null): AnchorRect | null {
     height: rect.height,
   }
 }
-function cardElementInZone(instanceId: string | undefined, zone: Zone) {
+function cardElementInZone(instanceId: string | undefined, zone: Zone, masterAnchorInstanceId?: string) {
   if (!instanceId) return null
   const root = document.querySelector('[data-l12-game-stage]')
-  const boardMatches = [...(root?.querySelectorAll(`[data-card-instance-id="${CSS.escape(instanceId)}"]`) ?? [])]
+  const anchorId = zone === 'master' && masterAnchorInstanceId ? masterAnchorInstanceId : instanceId
+  const boardMatches = [...(root?.querySelectorAll(`[data-card-instance-id="${CSS.escape(anchorId)}"]`) ?? [])]
   const publicOverlayMatches = zone === 'graveyard'
     ? [...document.querySelectorAll(`.graveyard-overlay [data-card-instance-id="${CSS.escape(instanceId)}"]`)]
     : []
@@ -456,7 +463,16 @@ function disasterDestinationElement() {
 function destinationElement(movement: Movement) {
   return movement.disasterReveal ? disasterDestinationElement()
     : movement.attachment ? attachmentElement(movement.card?.instanceId)
-    : cardElementInZone(movement.card?.instanceId, movement.to)
+    : cardElementInZone(movement.card?.instanceId, movement.to, movement.masterAnchorInstanceId)
+}
+function authorityVisibilityElement(movement: Movement) {
+  // The latest snapshot can already contain a later migration of this same
+  // entity. Own its current physical pixels while flying through an interim
+  // zone; destination geometry still follows this event's original endpoint.
+  const instanceId = movement.card?.instanceId
+  const current = instanceId ? document.querySelector<HTMLElement>(
+    `[data-l12-game-stage] [data-card-instance-id="${CSS.escape(instanceId)}"]`) : null
+  return current ?? destinationElement(movement)
 }
 function elementRotation(element: Element | null) {
   return element?.classList.contains('tapped') ? 90 : 0
@@ -702,7 +718,7 @@ function observeDestination(movement: Movement) {
   movement.destinationObserver?.disconnect()
   movement.destinationObserver = undefined
   const coverCurrent = () => {
-    const destination = destinationElement(movement)
+    const destination = authorityVisibilityElement(movement)
     if (destination instanceof HTMLElement) coverTarget(movement, destination)
   }
   coverCurrent()
@@ -867,7 +883,7 @@ function createMovementHolder(movement: Movement, sourceGhost: HTMLElement) {
   const visualKey = movement.card?.instanceId ?? movement.key
   const owner: PreparedVisualOwner = {
     show: () => {
-      const destination = destinationElement(movement)
+      const destination = authorityVisibilityElement(movement)
       if (destination instanceof HTMLElement) coverTarget(movement, destination)
       observeDestination(movement)
       wrapper.style.clipPath = 'none'
@@ -924,7 +940,7 @@ function showNext() {
   notifyBusy()
   const coverDestination = () => {
     if (!ownsActivePresentation()) return false
-    const destination = destinationElement(movement)
+    const destination = authorityVisibilityElement(movement)
     if (!(destination instanceof HTMLElement)) return true
     coverTarget(movement, destination)
     // The flight owns the visible transform. If a preceding state change left
@@ -1176,19 +1192,30 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     // that post-update DOM in reverse; start from the real zone anchor instead.
     const source = draft.disasterReveal || draft.authoritativeFace ? null
       : draft.from === 'attached' ? attachmentElement(draft.card?.instanceId)
-      : cardElementInZone(draft.card?.instanceId, draft.from)
+      : cardElementInZone(draft.card?.instanceId, draft.from, draft.masterAnchorInstanceId)
     const publicHolder = draft.disasterReveal ? disasterDestinationElement()
       : source instanceof HTMLElement ? source : publicSourceHolder(draft.from, draft.playerIndex)
     const usesGraveyardAnchor = !(source instanceof HTMLElement) && draft.from === 'graveyard'
       && publicHolder instanceof HTMLElement
     // A closed graveyard only exposes its current pile top, which may be a
     // different instance. Borrow that node's public geometry, never its face.
-    const sourceGhost = draft.disasterReveal ? disasterPublicSourceGhost()
+    const pixelSource = publicHolder instanceof HTMLElement && publicHolder.matches('[data-l12-persistent-card-zone]')
+      ? resolveAuthoritativeCardVisibilitySurface(publicHolder) : publicHolder
+    let sourceGhost = draft.disasterReveal ? disasterPublicSourceGhost()
       : publicHolder instanceof HTMLElement
-      ? usesGraveyardAnchor ? genericPublicSourceGhost(draft.from) : publicHolder.cloneNode(true) as HTMLElement
+      ? usesGraveyardAnchor ? genericPublicSourceGhost(draft.from) : pixelSource?.cloneNode(true) as HTMLElement | undefined
       : undefined
-    if (sourceGhost && publicHolder instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal)
-      snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)
+    if (sourceGhost && pixelSource instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal) {
+      snapshotDecodedAuthoritativeCardVisual(pixelSource, sourceGhost)
+      if (pixelSource !== publicHolder) {
+        // The flight applies rotation once. Do not retain the master art's
+        // internal containment/rotation or clone its name and health metadata.
+        for (const face of sourceGhost.querySelectorAll<HTMLElement>('img,canvas'))
+          Object.assign(face.style, { width:'100%', height:'100%', maxWidth:'none', maxHeight:'none', transform:'none' })
+      }
+    }
+    if (sourceGhost && pixelSource !== publicHolder && !sourceGhost.querySelector('img,canvas'))
+      sourceGhost = undefined
     const start = {
       rect: elementRect(publicHolder) ?? resolveRect(draft.from, draft.playerIndex,
         draft.disasterReveal || draft.authoritativeFace ? undefined : draft.card?.instanceId),
@@ -1302,6 +1329,30 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
             continue
           }
           movement.preparedFaceGhost = preparedFace
+        } else if (!movement.sourceGhost && movement.masterAnchorInstanceId) {
+          // A persistent master surface can already be empty after the next
+          // snapshot reconciles. Prepare a real public face as the same visual
+          // owner, rather than granting an empty clone or a second unowned
+          // template flight alongside a predecessor retained by the coordinator.
+          const preparedFace = document.createElement('div')
+          const image = document.createElement('img')
+          image.src = movement.preparedImageUrl
+          image.alt = movement.card.name ?? ''
+          Object.assign(image.style, { width:'100%', height:'100%', objectFit:'contain' })
+          preparedFace.appendChild(image)
+          const decoded = await waitForDecodedMovementFace(preparedFace)
+          if (generation !== viewportGeneration || preparation.controller.signal.aborted) {
+            reservations[index]?.cancel()
+            if (reservations[index]) pendingReservations.delete(reservations[index]!)
+            return
+          }
+          if (!decoded || !createMovementHolder(movement, preparedFace)) {
+            reservations[index]?.cancel()
+            if (reservations[index]) pendingReservations.delete(reservations[index]!)
+            continue
+          }
+          movement.sourceGhost = preparedFace
+          stampMovementLandingGeometry(movement)
         }
       }
       if (generation !== viewportGeneration || preparation?.controller.signal.aborted) {

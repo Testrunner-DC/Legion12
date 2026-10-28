@@ -10,14 +10,15 @@ const impactSource = readFileSync(new URL('../src/l12/game/battlefieldImpactPres
 export function hasScopedZoneMovementMotion(source, troopSource = impactSource) {
   try {
     source = source.replace(/\r\n?/g, '\n')
-    for (const required of ['publicHolder.cloneNode(true)',
-      'snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)',
+    for (const required of ['pixelSource?.cloneNode(true)',
+      '? resolveAuthoritativeCardVisibilitySurface(publicHolder) : publicHolder',
+      'snapshotDecodedAuthoritativeCardVisual(pixelSource, sourceGhost)',
       'genericPublicSourceGhost(draft.from)', 'activeGhostAnimation = wrapper.animate(frames,',
       'disasterPublicSourceGhost()', 'disasterRevealFrames(movement)',
       "back.src = '/assets/l12/card-back-disaster.png'",
       "document.querySelector('[data-l12-battle-layout]')",
       'button.current-disaster-card[data-l12-zone="disaster"]',
-      'publicHolder instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal'])
+      'pixelSource instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal'])
       assert(source.includes(required), required)
     assert(!source.includes('--move-mid-x') && !source.includes('l12-zone-card-pulse'))
     assert(source.includes("playedCard: event.type === 'play' && !concealed && Boolean(card?.instanceId)"))
@@ -137,8 +138,9 @@ const mutations = [
   ['field-to-field entries', "&& from !== 'field'", ''],
   ['non-field destination', "&& to === 'field'", ''],
   ['other event entries', "event.type === 'enter')", "event.type === 'enter' || event.type === 'move')"],
-  ['source identity', 'publicHolder.cloneNode(true)', 'publicHolder.cloneNode(false)'],
-  ['decoded source pixels', 'snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)', 'unverifiedSourcePixels(publicHolder, sourceGhost)'],
+  ['source identity', 'pixelSource?.cloneNode(true)', 'pixelSource?.cloneNode(false)'],
+  ['persistent master metadata is not the physical face', '? resolveAuthoritativeCardVisibilitySurface(publicHolder) : publicHolder', '? publicHolder : publicHolder'],
+  ['decoded source pixels', 'snapshotDecodedAuthoritativeCardVisual(pixelSource, sourceGhost)', 'unverifiedSourcePixels(pixelSource, sourceGhost)'],
   ['unknown-zone card back', 'genericPublicSourceGhost(draft.from)', 'guessedSourceFace(draft.from)'],
   ['single WAAPI path', 'activeGhostAnimation = wrapper.animate(frames,', 'activeGhostAnimation = wrapper.animate([],'],
   ['unscoped staged animation', 'const frames = movement.disasterReveal', 'const frames = true'],

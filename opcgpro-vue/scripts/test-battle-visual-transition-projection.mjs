@@ -331,4 +331,67 @@ assert.deepEqual([...interleavedBatch.cursor.entries()].sort(), [['other-unit', 
 model.finalizeMovementTransactionBatch(interleavedClaims, interleavedBatch, new Map([['returning-unit', 'field'], ['other-unit', 'field']]))
 assert.equal(interleavedClaims.zoneRevision, 81, 'finalization commits the batch revision only after ordered claims finish')
 
-console.log('Battle visual transition projection passed: 107/107 assertions')
+const transformSource = { ...card('transform-real', 'S02-01M1', true), cardType:'master', isMasterLegion:true }
+const transformPlayer = { ...player([[transformSource,null,null],[null,null,null]]),
+  master:{ masterId:'S02-01M1', masterName:'public master', hp:8, maxHp:8, tapped:false, deployedAsLegion:true } }
+let transformAssertions = 0
+const transformEqual = (...args) => { assert.deepEqual(...args); transformAssertions++ }
+transformEqual(model.persistentMasterMovementAnchorId({playerIndex:0}, transformSource,'master','field',[transformPlayer]),
+  'master-0', 'a proven public master entity uses its own persistent source anchor without exposing its stored ID')
+transformEqual(model.persistentMasterMovementAnchorId({playerIndex:0}, transformSource,'field','master',[transformPlayer]),
+  'master-0', 'the same public identity binds the return destination')
+for (const [event,source,from,to] of [
+  [{},transformSource,'field','master'],
+  [{playerIndex:1},transformSource,'field','master'],
+  [{playerIndex:0},{...transformSource,hidden:true},'field','master'],
+  [{playerIndex:0},{...transformSource,cardType:'legion'},'field','master'],
+  [{playerIndex:0},{...transformSource,isMasterLegion:false},'field','master'],
+  [{playerIndex:0},{...transformSource,cardId:'different-master'},'field','master'],
+  [{playerIndex:0},transformSource,'field','graveyard'],
+  [{playerIndex:0},{...transformSource,instanceId:''},'field','master'],
+  [{playerIndex:0},undefined,'field','master'],
+  [{playerIndex:0},{...transformSource,cardId:''},'field','master'],
+]) transformEqual(model.persistentMasterMovementAnchorId(event,source,from,to,[transformPlayer]),null,
+  'an unrelated, hidden, unowned or unproven entity must never borrow the master anchor')
+transformEqual(model.collectVisualFieldState([transformPlayer]).has('master-0'),false,
+  'a deployed master has one physical field entity; the empty metadata frame is not a state-animation entity')
+const returnedPlayer={...transformPlayer,field:[[null,null,null],[null,null,null]],
+  master:{...transformPlayer.master,deployedAsLegion:false,tapped:true}}
+transformEqual(model.collectVisualFieldState([returnedPlayer]).get('master-0'),{instanceId:'master-0',tapped:true,zone:'master'},
+  'a returned master resumes its ordinary public state identity')
+const transformState=model.createCardStateClaimState()
+const priorTransform=new Map([[transformSource.instanceId,{instanceId:transformSource.instanceId,tapped:true}]])
+const nextTransform=new Map([[transformSource.instanceId,{instanceId:transformSource.instanceId,tapped:false}]])
+const transformEvent={sequence:21,type:'put',playerIndex:0,originZone:'master',cards:[{...transformSource,tapped:false}]}
+model.resetCardStateClaimState(transformState,20,priorTransform,20)
+transformEqual(model.claimCardStateTransitions(transformState,21,nextTransform,[transformEvent]),[],
+  'same-snapshot return/redeploy applies its orientation in the migration, without a second inferred state animation')
+model.resetCardStateClaimState(transformState,20,priorTransform,20)
+transformEqual(model.claimCardStateTransitions(transformState,21,nextTransform,[{...transformEvent,
+  playerCardStateTransition:{instanceId:transformSource.instanceId,fromTapped:true,toTapped:false}}]).length,1,
+  'a real explicit state fact is never suppressed by a form-change movement')
+model.resetCardStateClaimState(transformState,20,priorTransform,20)
+transformEqual(model.claimCardStateTransitions(transformState,21,nextTransform,[{...transformEvent,originZone:undefined}]).length,1,
+  'an unknown origin retains the conservative ordinary state fallback')
+model.resetCardStateClaimState(transformState,20,priorTransform,20)
+transformEqual(model.claimCardStateTransitions(transformState,21,nextTransform,[{...transformEvent,originZone:'relic',
+  cards:[{...transformSource,cardType:'artifact',tapped:false}]}]),[],
+  'a proven relic-to-field form change uses the same orientation handoff')
+model.resetCardStateClaimState(transformState,20,priorTransform,20)
+transformEqual(model.claimCardStateTransitions(transformState,21,nextTransform,[]).length,1,
+  'ordinary rest/ready still animates without a migration')
+model.resetCardStateClaimState(transformState,20,priorTransform,20)
+transformEqual(model.claimCardStateTransitions(transformState,22,nextTransform,[{...transformEvent,originZone:undefined,sequence:22},
+  {sequence:21,type:'return',cards:[transformSource]}]),[],
+  'legacy return/redeploy is proven by the ordered same-entity public return even without originZone')
+model.resetCardStateClaimState(transformState,20,priorTransform,20)
+transformEqual(model.claimCardStateTransitions(transformState,23,nextTransform,[transformEvent,
+  {sequence:23,type:'state',cards:[{...transformSource,tapped:false}]}]).length,1,
+  'a later independent state event must not be swallowed by an earlier migration with the same final orientation')
+model.resetCardStateClaimState(transformState,20,new Map([[transformSource.instanceId,
+  {instanceId:transformSource.instanceId,tapped:true,zone:'relic'}]]),20)
+transformEqual(model.claimCardStateTransitions(transformState,21,new Map([[transformSource.instanceId,
+  {instanceId:transformSource.instanceId,tapped:false,zone:'field'}]]),[]),[],
+  'a known relic-to-field boundary is not an inferred standalone state turn, including legacy event shapes')
+
+console.log(`Battle visual transition projection passed: ${107+transformAssertions}/${107+transformAssertions} assertions`)

@@ -77,6 +77,17 @@ export function movementOriginZone(value: unknown): VisualZone | null {
     ? value as VisualZone : null
 }
 
+/** The public master anchor deliberately has no stored entity ID. Bind it only
+ * for an identified public master entity crossing its own seat's master zone. */
+export function persistentMasterMovementAnchorId(event: Pick<ActionEvent, 'playerIndex'>,
+  card: Card | undefined, from: VisualZone, to: VisualZone, players: PlayerView[]) {
+  if ((from !== 'master' && to !== 'master') || event.playerIndex === undefined
+    || !card?.instanceId || card.cardType !== 'master' || card.isMasterLegion !== true
+    || card.hidden || !card.cardId) return null
+  const player = players.find(player => player.playerIndex === event.playerIndex)
+  return player?.master.masterId === card.cardId ? `master-${player.playerIndex}` : null
+}
+
 export function resolveMovementSourceZone(originZone: unknown, instanceId: string | undefined,
   fallback: VisualZone, cursorZone?: VisualZone, hintedZone?: VisualZone):
   { zone: VisualZone; evidence: MovementSourceEvidence } {
@@ -338,7 +349,7 @@ export function collectPromptSourceZoneHints(prompts: Prompt[]) {
   return result
 }
 
-export type VisualFieldState = { instanceId: string; tapped: boolean }
+export type VisualFieldState = { instanceId: string; tapped: boolean; zone?: 'field' | 'relic' | 'master' }
 
 export type CardStateTransitionClaim = {
   instanceId: string
@@ -424,7 +435,29 @@ export function claimCardStateTransitions(state: CardStateClaimState, revision: 
     if (attack || change.fromTapped || !change.toTapped) pendingAttacks.delete(change.instanceId)
     cursor.set(fact.instanceId, { instanceId: fact.instanceId, tapped: fact.toTapped })
   }
-  const fallbackChanges = changedTappedStates(cursor, states).map(change => {
+  const fallbackChanges = changedTappedStates(cursor, states).filter(change => {
+    const priorZone = cursor.get(change.instanceId)?.zone
+    const nextZone = states.get(change.instanceId)?.zone
+    // A zone migration carries its terminal orientation. The metadata frame
+    // and a relic becoming a legion are not independent rest/ready actions.
+    if (priorZone && nextZone && priorZone !== nextZone) return false
+    const lastEvent = [...freshEvents].reverse().find(event =>
+      event.cards?.some(card => card.instanceId === change.instanceId))
+    if (!lastEvent || (lastEvent.type !== 'put' && lastEvent.type !== 'enter')) return true
+    const card = lastEvent.cards?.find(card => card.instanceId === change.instanceId)
+    if (!card || card.hidden || card.tapped !== change.toTapped) return true
+    // Legacy master snapshots do not expose the stored identity or originZone.
+    // An earlier return of this exact public master entity proves the boundary
+    // within a return -> redeploy batch; a later real state fact is never lost.
+    const returnedMaster = card.cardType === 'master' && card.isMasterLegion === true
+      && freshEvents.some(event => event.sequence < lastEvent.sequence && event.type === 'return'
+        && event.cards?.some(previous => previous.instanceId === card.instanceId
+          && !previous.hidden && previous.isMasterLegion === true && previous.cardId === card.cardId))
+    const explicitBoundary = lastEvent.originZone === 'master'
+      ? card.cardType === 'master' && card.isMasterLegion === true
+      : lastEvent.originZone === 'relic' && card.cardType === 'artifact'
+    return !returnedMaster && !explicitBoundary
+  }).map(change => {
     const orderingSequence = freshEvents.at(-1)?.sequence ?? state.lastEventSequence
     return {
       ...change,
@@ -441,10 +474,11 @@ export function claimCardStateTransitions(state: CardStateClaimState, revision: 
 export function collectVisualFieldState(players: PlayerView[]) {
   const result = new Map<string, VisualFieldState>()
   for (const player of players) {
-    for (const card of player.field.flat()) if (card) result.set(card.instanceId, { instanceId: card.instanceId, tapped: card.tapped })
+    for (const card of player.field.flat()) if (card) result.set(card.instanceId, { instanceId: card.instanceId, tapped: card.tapped, zone:'field' })
     for (const relic of [player.relic, ...(player.extraRelics ?? [])])
-      if (relic) result.set(relic.instanceId, { instanceId: relic.instanceId, tapped: relic.tapped })
-    result.set(`master-${player.playerIndex}`, { instanceId: `master-${player.playerIndex}`, tapped: Boolean(player.master.tapped) })
+      if (relic) result.set(relic.instanceId, { instanceId: relic.instanceId, tapped: relic.tapped, zone:'relic' })
+    if (!player.master.deployedAsLegion)
+      result.set(`master-${player.playerIndex}`, { instanceId: `master-${player.playerIndex}`, tapped: Boolean(player.master.tapped), zone:'master' })
   }
   return result
 }

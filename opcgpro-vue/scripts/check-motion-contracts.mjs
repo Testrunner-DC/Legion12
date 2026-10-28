@@ -40,6 +40,33 @@ const zonePreparation = between(movement, 'function createMovementHolder(', '\nf
 const zoneTargetCover = between(movement, 'function coverTarget(', '\nfunction disposeMovementHolder(')
 const stateTargetCover = between(stateTransition, 'function coverTransitionTarget(', '\nlet wrapper:')
 const cloneStyleIsVisible = source => /Object\.assign\(sourceGhost\.style,\s*\{[^}]*visibility:\s*'visible'/.test(source)
+const hasZoneCloneOwnership = source => {
+  const preparation = between(source, 'function createMovementHolder(', '\nfunction showNext(')
+  const capture = source.indexOf('snapshotDecodedAuthoritativeCardVisual(pixelSource, sourceGhost)')
+  const holder = source.indexOf('if (start.ghost && !draft.disasterReveal) createMovementHolder(draft, start.ghost)')
+  return cloneStyleIsVisible(preparation)
+    && preparation.includes("sourceGhost.classList.remove('tapped', 'selected')")
+    && preparation.indexOf("visibility: 'visible'") < preparation.indexOf('wrapper.appendChild(sourceGhost)')
+    && preparation.includes("visibility: 'hidden'")
+    && source.includes('let sourceGhost = draft.disasterReveal ? disasterPublicSourceGhost()')
+    && source.includes(': publicHolder instanceof HTMLElement')
+    && source.includes("? resolveAuthoritativeCardVisibilitySurface(publicHolder) : publicHolder")
+    && source.includes('usesGraveyardAnchor ? genericPublicSourceGhost(draft.from) : pixelSource?.cloneNode(true)')
+    && source.includes('pixelSource instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal')
+    && capture >= 0 && holder > capture
+    && source.includes('if (movement?.disasterReveal && movement.sourceGhost && !movement.holderWrapper)')
+    && source.includes('|| !createMovementHolder(movement, movement.sourceGhost)')
+}
+const hasSemanticZoneGeometry = source => source.includes('function cardElementInZone(instanceId: string | undefined, zone: Zone, masterAnchorInstanceId?: string)')
+  && source.includes("const anchorId = zone === 'master' && masterAnchorInstanceId ? masterAnchorInstanceId : instanceId")
+  && source.includes("element.closest('[data-l12-zone]')?.getAttribute('data-l12-zone') === zone")
+  && source.includes('cardElementInZone(movement.card?.instanceId, movement.to, movement.masterAnchorInstanceId)')
+  && source.includes('cardElementInZone(draft.card?.instanceId, draft.from, draft.masterAnchorInstanceId)')
+const hasCurrentAuthorityOwnership = source => source.includes('function authorityVisibilityElement(movement: Movement)')
+  && source.includes('const instanceId = movement.card?.instanceId')
+  && source.includes('[data-l12-game-stage] [data-card-instance-id="${CSS.escape(instanceId)}"]')
+  && source.includes('return current ?? destinationElement(movement)')
+  && source.split('const destination = authorityVisibilityElement(movement)').length === 4
 const stateLayerMarkup = board.slice(board.indexOf('<CardStateTransitionLayer'),
   board.indexOf('/>', board.indexOf('<CardStateTransitionLayer')) + 2)
 const zoneLayerMarkup = board.slice(board.indexOf('<ZoneMovementPresentationLayer'),
@@ -125,20 +152,7 @@ const checks = [
   ['ready and rest snapshot handoff', board.includes('<CardStateTransitionLayer') && stateTransition.includes("flush: 'pre', immediate: true")
     && stateTransition.includes('const sourceGhost = source.cloneNode(true)') && stateTransition.includes('sourceGhost.style.visibility = \'visible\'')
     && stateTransition.includes('sourceRect: { left: sourceRect.left') && stateTransition.includes('acquireAuthoritativeCardVisibility(target)')],
-  ['zone movement clones never inherit a temporary hidden authority lease',
-    cloneStyleIsVisible(zonePreparation)
-    && zonePreparation.includes("sourceGhost.classList.remove('tapped', 'selected')")
-    && zonePreparation.indexOf("visibility: 'visible'") < zonePreparation.indexOf('wrapper.appendChild(sourceGhost)')
-    && zonePreparation.includes("visibility: 'hidden'")
-    && movement.includes('const sourceGhost = draft.disasterReveal ? disasterPublicSourceGhost()')
-    && movement.includes(': publicHolder instanceof HTMLElement')
-    && movement.includes('usesGraveyardAnchor ? genericPublicSourceGhost(draft.from) : publicHolder.cloneNode(true)')
-    && movement.includes('publicHolder instanceof HTMLElement && !usesGraveyardAnchor && !draft.disasterReveal')
-    && movement.includes('snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)')
-    && movement.indexOf('snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)')
-      < movement.indexOf('if (start.ghost && !draft.disasterReveal) createMovementHolder(draft, start.ghost)')
-    && movement.includes('if (movement?.disasterReveal && movement.sourceGhost && !movement.holderWrapper)')
-    && movement.includes('|| !createMovementHolder(movement, movement.sourceGhost)')],
+  ['zone movement clones never inherit a temporary hidden authority lease', hasZoneCloneOwnership(movement)],
   ['disaster reveal owns an official back before decoded face and releases the exact current slot',
     movement.includes("back.src = '/assets/l12/card-back-disaster.png'")
     && movement.includes("document.querySelector('[data-l12-battle-layout]')")
@@ -173,10 +187,8 @@ const checks = [
     && visualProjection.includes('cursor: new Map(state.zones)')
     && visualProjection.includes('`${revision}:${fact.instanceId}:${fact.from}>${fact.to}`')
     && visualProjection.includes('current !== undefined && current !== fact.from')],
-  ['movement geometry only reuses a card in its semantic zone', movement.includes('function cardElementInZone(instanceId: string | undefined, zone: Zone)')
-    && movement.includes("element.closest('[data-l12-zone]')?.getAttribute('data-l12-zone') === zone")
-    && movement.includes('cardElementInZone(movement.card?.instanceId, movement.to)')
-    && movement.includes('cardElementInZone(draft.card?.instanceId, draft.from)')],
+  ['movement geometry only reuses a card in its semantic zone', hasSemanticZoneGeometry(movement)],
+  ['interim movement owns current same-instance pixels without changing destination geometry', hasCurrentAuthorityOwnership(movement)],
   ['imperative motion shares the logical mobile canvas', mobileViewport.includes('export function landscapeTeleportElement()')
     && statePreparation.includes('const host = landscapeTeleportElement()')
     && statePreparation.includes('host.appendChild(holderWrapper)')
@@ -346,6 +358,12 @@ const checks = [
 ]
 
 const replacementCounterexamples = [
+  ['hidden zone clone reintroduced', movement.replace(zonePreparation, zonePreparation.replace("visibility: 'visible'", "visibility: 'hidden'")), hasZoneCloneOwnership],
+  ['master metadata cloned instead of its card surface', movement.replace('? resolveAuthoritativeCardVisibilitySurface(publicHolder) : publicHolder', '? publicHolder : publicHolder'), hasZoneCloneOwnership],
+  ['decoded source capture removed', movement.replace('snapshotDecodedAuthoritativeCardVisual(pixelSource, sourceGhost)', 'void pixelSource'), hasZoneCloneOwnership],
+  ['master alias applied outside the master zone', movement.replace("zone === 'master' && masterAnchorInstanceId", 'masterAnchorInstanceId'), hasSemanticZoneGeometry],
+  ['semantic destination check removed', movement.replace("element.closest('[data-l12-zone]')?.getAttribute('data-l12-zone') === zone", 'true'), hasSemanticZoneGeometry],
+  ['interim geometry mistaken for current authority owner', movement.replace('const destination = authorityVisibilityElement(movement)', 'const destination = destinationElement(movement)'), hasCurrentAuthorityOwnership],
   ['zone lift arc removed', movement.replace('Math.hypot(dx, dy) * .08', '0'), hasZoneFlightArcAndSettle],
   ['zone .88 contact removed', movement.replace('opacity: 1, offset: .88', 'opacity: 1, offset: .87'), hasZoneFlightArcAndSettle],
   ...['.18', '.42', '.56', '.82'].map(offset => [
