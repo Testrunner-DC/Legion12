@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-ranking-request-dependencies",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "榜单按需读取",
+  "changes": [{
+    "category": "ranking",
+    "text": "减少玩家榜、主宰榜和对阵页不需要的历史荣誉读取；切换榜单项目或手动刷新仍会读取最新数据，历史荣誉页保持正常刷新。",
+    "paths": ["opcgpro-vue/src/l12/site/RankingsPage.vue"]
+  }]
+}

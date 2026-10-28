@@ -10,7 +10,8 @@ let nextTimer = 0
 const timers = new Map()
 const document = { hidden: false }
 const requests = []
-const rankedApi = { leaderboard(faction, range) { return new Promise((resolve, reject) => requests.push({ faction, range, resolve, reject })) }, history: async () => ({ honors: [], factionTotals: [] }) }
+const historyRequests = []
+const rankedApi = { leaderboard(faction, range) { return new Promise((resolve, reject) => requests.push({ faction, range, resolve, reject })) }, history: async () => { historyRequests.push({}); return { honors: [], factionTotals: [] } } }
 const state = Object.fromEntries(['faction','range','tab','loading','error','players','analytics','history','rangeLimited','hasAnalytics'].map(k => [k, { value: k === 'range' ? 'season' : k === 'tab' ? 'players' : ['loading','rangeLimited','hasAnalytics'].includes(k) ? false : k === 'history' ? { honors: [], factionTotals: [] } : '' }]))
 const api = new Function(...Object.keys(state), 'rankedApi', 'document', 'setTimeout', 'clearTimeout', `${code}; return {load,dispose(){disposed=true}}`)(
   ...Object.values(state), rankedApi, document, (fn, delay) => { const id = ++nextTimer; timers.set(id, {fn,delay}); return id }, id => timers.delete(id))
@@ -18,6 +19,7 @@ const response = label => ({ players: [label], analytics: { label } })
 const flush = async () => { for (let i=0;i<8;i++) await Promise.resolve() }
 void api.load()
 assert.equal(requests.length, 1)
+assert.equal(historyRequests.length, 0, 'players mount does not read hidden history')
 state.range.value = '7d'
 void api.load()
 assert.equal(requests.length, 1, 'no overlapping requests')
@@ -53,6 +55,7 @@ assert.deepEqual(state.players.value, [])
 state.tab.value = 'history'
 void api.load()
 assert.equal(requests.length, 5, 'switching ranking item explicitly refreshes')
+assert.equal(historyRequests.length, 1, 'entering history reads its required data freshly')
 requests[4].resolve(response('history-selected'))
 await flush()
 assert.deepEqual(state.players.value, ['history-selected'])
@@ -125,3 +128,4 @@ const seasonEditor = readFileSync(new URL('../src/l12/site/SeasonConfigurationEd
 assert.match(seasonEditor, /:max="placementMaximumLimit"/)
 assert.match(seasonEditor, /tiers\[2\]\?\.minimum/)
 console.log('Ranking refresh: explicit mount/item/manual reads, no polling or visibility fetch, serial latest-selection/ABA guard, manual retry, disposal and existing ranking-scope checks passed')
+await import('./test-ranking-request-dependencies.mjs')

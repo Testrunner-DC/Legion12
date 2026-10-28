@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-28 榜单冗余读取已验收（最新）
+
+- 来源榜单3叶仅按捕获的requestedTab决定是否取history；所有真实tab/阵营/range/手动仍fresh leaderboard，history进页/手动仍两API。9次实际Vue内存host操作计数leaderboard9/history2，原为9/9；13正反例/旧刷新ABA守卫保留，不冒HTTP字节/线上收益或真机。Source纯load体RED与真实SFC RED分别保存，原host输入模拟失败只修QA不改产品。
+- Main独验完整前端r1在此前上传重构的旧StoreImmutableMediaGroup字面名守卫失败，原失败保留。该守卫迁到实际4变体准备、原锁内发布/加row/Save顺序，并加5真实源码损坏反例，原元数据/RIFF/替代文案/哈希/软删断言不减。复用已过前缀，从失败点续尾，类型/双610构建全过；直接复用`ranking-request-plan-20261028/frontend-main-r2/result.json`为主资格，不再复制一份主验收。同步见同根`synchronization.json`，该片未改后台/统计/模板样式，不重跑2811/Rules/30＋10。
+- 上传5叶与记录已实际非强推并远端同`8bf691fa`，主验收2811及同步回执已落；下方“已验/同步见同根”不是待重做。公告2叶仍8/8但未接入并排除；来源已读榜单交回且停止写/构建。
+- 响应24514780来源17:06:56一次实际公网health200为d557，同引擎；当前版本GameBoard blob与104父版本同59a153b6。104648a3/4EB73本地修复仍未上线，旧8ec报告不能当原局唯一成因或线上WS/真机新复现。维持原项verify-live，不新建重复单/关单/部署；来源只读已冻结，其他任务继续。
+
 ## 2026-10-28 上传隔离已最终验收（最新）
 
 - 上一资讯/图鉴已分族同步`f684858c`/`9c8fb223`并远端同SHA，2783平台/67专项/9SFC/完整前端已验，唯一`article-summary-read-20261028/synchronization.json`；不要重做该批或部署。两服仍d557、维护已解除、Bug3待上线。

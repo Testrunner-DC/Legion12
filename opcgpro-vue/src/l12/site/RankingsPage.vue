@@ -58,16 +58,20 @@ async function load() {
   if (loading.value) { reloadPending = true; return }
   const requestedFaction = faction.value
   const requestedRange = range.value
+  const requestedTab = tab.value
   loading.value = true
   error.value = ''
   try {
-    const [response, historyResponse] = await Promise.all([rankedApi.leaderboard(requestedFaction, requestedRange), rankedApi.history()])
+    const [response, historyResponse] = await Promise.all([
+      rankedApi.leaderboard(requestedFaction, requestedRange),
+      requestedTab === 'history' ? rankedApi.history() : Promise.resolve(null),
+    ])
     if (disposed || generation !== loadGeneration || requestedFaction !== faction.value || requestedRange !== range.value) return
     players.value = response.players as PlayerLeaderboardEntry[]
     analytics.value = response.analytics
     rangeLimited.value = Boolean(response.rangeLimited)
     hasAnalytics.value = true
-    history.value = historyResponse
+    if (historyResponse) history.value = historyResponse
   } catch (cause) {
     if (!disposed && generation === loadGeneration && requestedFaction === faction.value && requestedRange === range.value)
       error.value = cause instanceof Error ? cause.message : '排行榜加载失败'

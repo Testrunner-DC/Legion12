@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-28 榜单最小依赖片已验收
+
+- 3来源叶仅非history跳过无用history请求，保所有实际切tab/阵营/range/手动的leaderboard新鲜读取；history仍保summary-strip所需leaderboard与历史两API，不做settled缓存/假版本。实际Vue SFC9正+4反例13过，9操作API模拟计数9/2而非9/9；旧刷新/ABA/单飞/卸载/失败快照守卫与原RED/QA host输入失败保留。非线上性能或全站流量比例。
+- Main组合前端首次暴露旧上传函数名UI守卫；精确迁到4变体准备及原锁内publish/add/save顺序，补5损坏反例，原全部媒体约束保留。原成功前缀复用，失败点续尾/类型/双610全部通过；主资格直接用`ranking-request-plan-20261028/frontend-main-r2/result.json`，同步见同根`synchronization.json`。当前4代码/QA叶与3记录/1玩家条目待精确同步，不纳公告2叶，不重跑不变后台/Rules/30＋10，无部署/维护/关单。
+- 上传已2811 Release全平台并非强推远端同8bf691fa，原收据保留；已知响应缺口的104修复仍待上线，来源17:06公网health实际d557，只维持24514780的verify-live，不把旧截图当新原局复现。下一素材引用批量计数/主页失败重试等按既有性能队列接续，赛事公告未接入不冒已完成。
+
 ## 2026-10-28 上传隔离最终验收与后续
 
 - 上传最终5叶已独审接受，Main实际一次Release完整平台2811/2811零失败跳过，主收据`media-upload-isolation-20261028/main-acceptance.json`重读5源/两DLL/原TRX，源码同步见同根`synchronization.json`。原barrier RED、68过/13夹具失败、HTTP14、r3三真RED→11过及B审计2续验都保留，不冒单次82全绿。复用D盘dc27，不重跑不变前端/Rules/30＋10；不是Release包/部署，无线上写。

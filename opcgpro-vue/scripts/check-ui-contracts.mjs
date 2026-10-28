@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import assert from 'node:assert/strict'
 import { publicMasterSortingVerified } from './check-statistics-credibility.mjs'
 import { normalizeArticleBlockIds, serializeArticleBody } from '../src/l12/site/articleBlocks.ts'
 import { maintenanceCountdown } from '../src/l12/site/maintenanceCountdown.ts'
@@ -185,6 +186,32 @@ const tournamentCenter = read('../src/l12/site/AdminTournamentWorkbench.vue')
 const wsSmoke = read('../../scripts/ws-smoke.mjs')
 const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const siteContentStore = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs')
+function hasAtomicMediaPreparation(source) {
+  const start = source.indexOf('private L12SiteMediaView UploadSiteMediaCore(')
+  const end = source.indexOf('public IReadOnlyList<L12SiteMediaView> AdminSiteMedia(', start)
+  if (start < 0 || end <= start) return false
+  const body = source.slice(start, end)
+  const prepare = body.indexOf('var prepared = PrepareImmutableMediaGroup(')
+  const commitGate = body.indexOf('lock (_gate)', prepare)
+  const publish = body.indexOf('PublishImmutableMediaGroup(prepared);')
+  const add = body.indexOf('_data.SiteMedia.Add(row);')
+  const save = body.indexOf('Save();')
+  return prepare >= 0 && commitGate > prepare && publish > commitGate && add > publish && save > add
+    && ['upload.Original', 'desktopWebp', 'mobileWebp', 'thumbnailWebp'].every(input =>
+      body.slice(prepare, commitGate).includes(`new PendingMediaFile(${input},`))
+}
+assert(hasAtomicMediaPreparation(siteContentStore), 'actual upload must prepare all variants then publish/save under the original gate')
+for (const mutate of [
+  source => source.replace('var prepared = PrepareImmutableMediaGroup(', 'var prepared = MissingPreparation('),
+  source => source.replace('PublishImmutableMediaGroup(prepared);', '/* missing publication */'),
+  source => source.replace('PublishImmutableMediaGroup(prepared);', '_data.SiteMedia.Add(row); PublishImmutableMediaGroup(prepared);'),
+  source => source.replace('PublishImmutableMediaGroup(prepared);', 'Save(); PublishImmutableMediaGroup(prepared);'),
+  source => source.replace('new PendingMediaFile(mobileWebp,', 'new PendingMediaFile(thumbnailWebp,'),
+]) {
+  const changed = mutate(siteContentStore)
+  assert.notEqual(changed, siteContentStore, 'media mutation must alter the actual implementation')
+  assert.equal(hasAtomicMediaPreparation(changed), false, 'missing/reordered media group work must be rejected')
+}
 const alternateArtStore = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs')
 const articleStore = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Articles.cs')
 const l12PromptModel = read('../../服务端WebSocket/TwelveLegions/Models.cs')
@@ -1357,7 +1384,7 @@ const contracts = [
     && siteContentContracts.includes('desktopAltText: string; mobileAltText: string; thumbnailAltText: string; independentVariants: boolean')
     && siteContentStore.includes('SanitizeDeliveryWebp') && siteContentStore.includes('StripWebpMetadata')
     && siteContentStore.includes('chunk is not ("EXIF" or "XMP " or "ICCP")')
-    && siteContentStore.includes('payload[0] &= 0x10') && siteContentStore.includes('StoreImmutableMediaGroup')
+    && siteContentStore.includes('payload[0] &= 0x10') && hasAtomicMediaPreparation(siteContentStore)
     && siteContentStore.includes('new PendingMediaFile(desktopWebp')
     && siteContentStore.includes('row.ContentHash = string.IsNullOrWhiteSpace(row.ContentHash) ? row.OriginalHash')
     && adminSiteContent.includes('独立三版本') && adminSiteContent.includes('三个版本统一保护、统一软删除'), '轮播素材必须以桌面、移动、缩略三个独立构图文件和各自替代文字一次原子提交；原图按方向解码，服务端按RIFF区块净化交付WebP并按单一素材组哈希、引用与软删除，旧素材仍可读'],

@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261028-RANKING-REQUEST-DEPENDENCIES｜榜单只读当前项目所需历史
+
+- 人类批准按规划推进，P2/P4不改统计口径/后端索引/权限。原RankingsPage每次mount/tab/阵营/range/manual都并行leaderboard+history，前三项目并不消费history。仅捕获requestedTab并对非history用空响应，真实history响应才赋值；history页仍展示排行summary和称号口径，故不删它的leaderboard刷新。无settled缓存、轮询或新增认证流程，所有人类明确的切项目/手动刷新仍读最新值。
+- 旧纯load体RED与实际Vue编译setup/template、内存host按钮计数RED分别保留；最终9正场景/4反例13过，9触发rankings9/history2。保当前单飞/只追最新/ABA/卸载/失败保快照，未展示history失败不拖其他页；反例拒恢复无条件历史、漏tab刷新、漏history与settled缓存。原绿首轮host未同步input.value造成的模拟错误只修QA，原日志保留；旧test-ranking-refresh await导入新QA，核心原断言不减。
+- Main独验标准UI r1失败在此前上传重构的旧StoreImmutableMediaGroup名字，而非数据逻辑；保原失败，迁实际4变体Prepare在前、原_gate内Publish→Add→Save顺序，并以5缺失/重排源码反例保护，RIFF净化/替代文字/哈希/引用/软删等旧约束原样。已过前缀按原源pins复用，失败点续完UI后段/两类型/双610；直接用`ranking-request-plan-20261028/frontend-main-r2/result.json`作主资格，原r1/Source handoff均在，避免又复制一份验收。同步见同根`synchronization.json`。
+- 4代码/QA叶含Main对应校验器迁移，公告2新叶不纳；未改后台/模板样式，不重测不变2811/Rules/30＋10。计数只是实际Vue内存host的模拟API调用，非真实HTTP字节、线上延迟、真机或当前全站降幅。回滚不得恢复无意义轮询/visibility刷新或改排行与历史口径；源码同步不代表已部署/关Bug。
+
 ## PERF-20261028-MEDIA-UPLOAD-PREPARATION｜上传准备锁隔离与失败引用保护
 
 - 人类批准按性能规划推进，P2/P3沿原上传/事务/鉴权体系。旧StoreImmutableMediaGroup在平台_gate内写4份最多28MiB payload；真实屏障RED暂停写入时，无关AdminSiteMedia不能返回。新Prepare仅在原SiteMediaRoot登记私有随机.upload再CreateNew写，同hash仅在请求内去重；不依据锁外Exists跳过自己的完整准备。原部署变更lease覆盖授权、准备、发布、提交和清退；锁内原hash不可覆盖Move与Save保留，独立上传以外的Modian外层事务仍持锁，不宣传导入锁外化或线上延迟收益。
