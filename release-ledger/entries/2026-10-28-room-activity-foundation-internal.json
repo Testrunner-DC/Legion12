@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-room-activity-foundation-internal",
+  "date": "2026-10-28",
+  "audience": "internal",
+  "reason": "建立已提交有效操作的活动时标及只读候选分类，排除空操作、重复请求和持久化失败；尚未接入自动关房或部署退场，不宣称玩家房间行为已经改变。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.Inactivity.cs"
+  ]
+}

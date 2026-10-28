@@ -93,6 +93,7 @@ public sealed partial class L12RoomManager
         public long RankedCheckpointGeneration { get; set; }
         public RankedClockState? RankedClock { get; set; }
         public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
+        public long LastGameplayActivityUtcTicks;
         public int MeaningfulCommandCount { get; set; }
         public bool Closed { get; set; }
         public int? LastMaintenanceWarningMinutes { get; set; }
@@ -624,6 +625,7 @@ public sealed partial class L12RoomManager
             acquiredObservationRooms.Clear();
             // Persistence/await stays outside the platform admission gate.
             await StartRecordedGameAsync(room, [other, session], [opponent.Deck, entry.Deck]);
+            RecordRoomGameplayActivity(room);
         }
         catch
         {
@@ -1015,6 +1017,7 @@ public sealed partial class L12RoomManager
         TryDefaultPresetIndexes(policy!, out var hostDeckIndex, out var recipientDeckIndex);
         host.SelectedDeckIndex = hostDeckIndex;
         recipient.SelectedDeckIndex = recipientDeckIndex;
+        RecordRoomGameplayActivity(room);
         var created = room.Sessions.Select(memberId => new OutgoingMessage(memberId, new
         {
             type = "friendRoomCreated", invitationId = id, roomCode = room.Code, hostAccountId = host.AccountId,
@@ -1191,6 +1194,7 @@ public sealed partial class L12RoomManager
         session.RoomCode = room.Code;
         session.PlayerIndex = 0;
         session.SelectedDeckIndex = hostDeckIndex;
+        RecordRoomGameplayActivity(room);
         return BroadcastRoom(room);
     }
 
@@ -1214,9 +1218,11 @@ public sealed partial class L12RoomManager
         if (!TryDefaultPresetIndexes(scopedPolicy, out _, out _))
             return OperationsBlocked(sessionId, "no_legal_default_preset", "当前规则下没有可用于房间的合法官方预组");
 
+        var gameplayChanged = !SameGameplayRoomOptions(room.Options, normalized) || room.Ready.Any(value => value);
         room.Options = normalized;
         room.OperationsPolicy = scopedPolicy;
         for (var index = 0; index < room.Ready.Length; index++) room.Ready[index] = false;
+        if (gameplayChanged) RecordRoomGameplayActivity(room);
         return BroadcastRoom(room);
     }
 
@@ -1341,6 +1347,7 @@ public sealed partial class L12RoomManager
             Console.Error.WriteLine($"Sandbox recording start ({room.Code}): {persistenceError.Message}");
             return Error(sessionId, "沙盒录像暂时不可用，未建立未记录的沙盒", "sandboxRejected");
         }
+        RecordRoomGameplayActivity(room);
         return BroadcastRoom(room).Concat(BroadcastGame(room, forceCritical: true)).ToArray();
     }
 
@@ -1441,6 +1448,7 @@ public sealed partial class L12RoomManager
             session.RoomCode = room.Code;
             session.PlayerIndex = 1;
             session.SelectedDeckIndex = joiningDeckIndex;
+            RecordRoomGameplayActivity(room);
         }
         return BroadcastRoom(room);
     }
@@ -1693,9 +1701,12 @@ public sealed partial class L12RoomManager
         if (deckIndex < 0 || deckIndex >= _catalog.PresetDecks.Count) return Error(sessionId, "无效的预组");
         if (!IsPresetAllowed(room.OperationsPolicy, deckIndex, out error))
             return Error(sessionId, error, "deckRejected");
+        var gameplayChanged = !SameGameplayDeck(SelectedDeck(session), _catalog.DeckAt(deckIndex))
+                              || room.Ready[session.PlayerIndex!.Value];
         session.SelectedDeckIndex = deckIndex;
         session.CustomDeck = null;
         room.Ready[session.PlayerIndex!.Value] = false;
+        if (gameplayChanged) RecordRoomGameplayActivity(room);
         return BroadcastRoom(room);
     }
 
@@ -1709,8 +1720,11 @@ public sealed partial class L12RoomManager
         if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out error,
                 room.OperationsPolicy.CardRestrictions))
             return Error(sessionId, error, "deckRejected");
+        var gameplayChanged = !SameGameplayDeck(SelectedDeck(session), deck)
+                              || room.Ready[session.PlayerIndex!.Value];
         session.CustomDeck = deck;
         room.Ready[session.PlayerIndex!.Value] = false;
+        if (gameplayChanged) RecordRoomGameplayActivity(room);
         return BroadcastRoom(room);
     }
 
@@ -1744,6 +1758,7 @@ public sealed partial class L12RoomManager
                             "deckRejected");
                 }
             }
+            var gameplayChanged = room.Ready[session.PlayerIndex!.Value] != ready;
             room.Ready[session.PlayerIndex!.Value] = ready;
             if (room.Sessions.Count == 2 && room.Ready.All(value => value))
             {
@@ -1773,6 +1788,7 @@ public sealed partial class L12RoomManager
                     return Error(sessionId, seasonError.Message, "roomSeasonExpired");
                 }
             }
+            if (gameplayChanged) RecordRoomGameplayActivity(room);
             return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room, forceCritical: true);
         }
         finally { room.Gate.Release(); }
@@ -1871,6 +1887,7 @@ public sealed partial class L12RoomManager
                 return Error(sessionId, tutorialError, "actionRejected", requestId);
             var meaningful = IsMeaningfulRankedCommand(room.Game, command);
             var revisionBefore = room.Game.State.Revision;
+            var activityBefore = CaptureGameplayCommandActivity(room.Game);
             var engineStartedAt = L12PerformanceMetrics.Start();
             var result = room.Game.Handle(session.PlayerIndex!.Value, command);
             L12PerformanceMetrics.Duration("action.engine", engineStartedAt);
@@ -1926,6 +1943,7 @@ public sealed partial class L12RoomManager
             }
             room.RememberProcessedActionRequest(actorIndex, requestId, true, null,
                 room.Game.State.Revision);
+            if (CaptureGameplayCommandActivity(room.Game) != activityBefore) RecordRoomGameplayActivity(room);
             if (!timed)
             {
                 if (meaningful) room.MeaningfulCommandCount++;
@@ -2001,6 +2019,7 @@ public sealed partial class L12RoomManager
             if (command is null || string.IsNullOrWhiteSpace(command.Type))
                 return Error(sessionId, "缺少 GM 操作类型", "actionRejected", requestId);
             var revisionBefore = room.Game.State.Revision;
+            var activityBefore = CaptureGmGameplayActivity(room.Game, command);
             var result = room.Game.HandleGm(command);
             room.CommandSequence++;
             try
@@ -2029,6 +2048,7 @@ public sealed partial class L12RoomManager
                         requestSessionId: sessionId, requestId: requestId));
                 return rejected;
             }
+            if (CaptureGmGameplayActivity(room.Game, command) != activityBefore) RecordRoomGameplayActivity(room);
             var messages = BroadcastGame(room, requestSessionId: sessionId, requestId: requestId).ToList();
             if (room.Game.State.Phase == L12Phase.GameOver)
             {
@@ -2080,6 +2100,7 @@ public sealed partial class L12RoomManager
                 return Error(sessionId, "缺少沙盒操作类型", "actionRejected", requestId);
 
             var revisionBefore = room.Game.State.Revision;
+            var activityBefore = CaptureGameplayCommandActivity(room.Game);
             var result = room.Game.Handle(actingPlayerIndex, command);
             room.CommandSequence++;
             try
@@ -2108,6 +2129,7 @@ public sealed partial class L12RoomManager
                         requestSessionId: sessionId, requestId: requestId));
                 return rejected;
             }
+            if (CaptureGameplayCommandActivity(room.Game) != activityBefore) RecordRoomGameplayActivity(room);
             if (room.Game.State.Phase != L12Phase.GameOver)
                 return BroadcastGame(room, requestSessionId: sessionId, requestId: requestId);
             var errorMessage = await CompleteTournamentRoomGameAsync(room);
