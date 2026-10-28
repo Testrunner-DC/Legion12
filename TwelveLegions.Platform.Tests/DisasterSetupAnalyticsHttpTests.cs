@@ -121,7 +121,7 @@ public sealed class DisasterSetupAnalyticsHttpTests
                 Assert.True(login.Success);
                 fixture.Admin = login.Account!;
                 fixture.AdminToken = login.Token!;
-                fixture._server = new L12WebSocketServer(new L12RoomManager(facts.Catalog, facts.Recorder, fixture.Platform),
+                fixture._server = new L12WebSocketServer(new L12RoomManager(facts.Catalog, facts.Recorder, fixture.Platform, utcNow: () => facts.Now),
                     facts.Recorder, fixture.Platform, facts.Catalog);
                 Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
                 await fixture._server.StartAsync(0);
