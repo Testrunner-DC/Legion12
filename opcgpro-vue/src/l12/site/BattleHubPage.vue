@@ -7,8 +7,7 @@ import { deckCountSummary, ensureOfficialPrebuiltDecks, L12_DECK_SELECTION_SCOPE
   validateDeck, type DeckCard, type L12DeckSelectionScope, type PrivateDeckSummary, type SavedL12Deck } from '@/l12/decks'
 import DeckCover from '@/l12/DeckCover.vue'
 import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'
-import CardImage from '@/l12/CardImage.vue'
-import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
+import RulesCardSummary from './RulesCardSummary.vue'
 import { getEffectiveOperationsPolicy, normalizeRankedConfig, platformState, rankedApi, type EffectiveOperationsPolicy, type RankedOverview } from '@/l12/platform'
 import RankedBroadcastTicker from './RankedBroadcastTicker.vue'
 import TutorialPage from './TutorialPage.vue'
@@ -58,12 +57,6 @@ function visibleDecks(): Record<string, SavedL12Deck> {
 const cachedDecks = ref(visibleDecks())
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
-const detailCard = ref<DeckCard | null>(null)
-const seasonDisasterCards = computed(() => (operationsPolicy.value?.disasterCardIds || [])
-  .map(cardId => byId.value.get(cardId)).filter((card): card is DeckCard => Boolean(card)))
-const seasonRestrictionCards = computed(() => (operationsPolicy.value?.cardRestrictions || [])
-  .map(rule => ({ rule, card: byId.value.get(rule.cardId), master: rule.masterId ? byId.value.get(rule.masterId) : undefined }))
-  .filter((item): item is typeof item & { card: DeckCard } => Boolean(item.card)))
 const seasonTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', hour12: false,
@@ -672,14 +665,12 @@ async function copyRoomCode() {
             <article v-if="ranked"><h3>排位用时</h3><p>每位玩家总操作时间 {{ formatRankedDuration(ranked.config.timeControl.totalTimeSeconds) }}，单次操作 {{ formatRankedDuration(ranked.config.timeControl.operationTimeSeconds) }}，断线重连宽限 {{ formatRankedDuration(ranked.config.timeControl.reconnectGraceSeconds) }}。天灾禁选／选择每一步 {{ formatRankedDuration(ranked.config.timeControl.disasterDecisionSeconds) }}，超时由服务器从合法候选中自动选择；手牌调度 {{ formatRankedDuration(ranked.config.timeControl.mulliganDecisionSeconds) }}，超时保留原手牌。</p></article>
             <article><h3>段位与派系称号</h3><div v-for="faction in ranked?.config.factions || []" :key="faction.id" class="rules-faction"><b>{{ faction.name }}</b><span>{{ faction.tiers.map(tier => `${tier.name}（${tier.minimum.toLocaleString()}）`).join(' → ') }}</span><small>仅最高段位可获得：第1名「{{ faction.firstTitle }}」；第2至5名「{{ faction.topFiveTitle }}」。</small></div></article>
             <article><h3>最强主宰规则</h3><p>每位主宰在赛季结算时按排位成绩确定最强玩家并授予对应专属称号；当前赛季成绩不会提前进入历史荣誉。</p></article>
-            <article v-if="seasonDisasterCards.length"><h3>本赛季天灾</h3><p>{{ seasonDisasterCards.length }} 张（含固定湮灭）。排位强制使用赛季天灾池；好友房仅在房主选择“赛季天灾”时使用开房时的赛季快照；休闲与沙盒不继承此限制。</p><div class="season-card-grid"><button v-for="card in seasonDisasterCards" :key="card.id" type="button" :aria-label="`查看${card.nameZh}卡牌详情`" @click="detailCard = card"><CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="contain"/><b>{{ card.nameZh }}</b><small>{{ card.number || card.id }}</small></button></div></article>
-            <article v-if="seasonRestrictionCards.length"><h3>本赛季禁限卡</h3><div class="season-card-grid season-card-grid--restrictions"><button v-for="item in seasonRestrictionCards" :key="`${item.rule.masterId || '*'}:${item.card.id}`" type="button" :aria-label="`查看${item.card.nameZh}卡牌详情`" @click="detailCard = item.card"><CardImage :card-id="item.card.id" :legacy-url="item.card.imageUrl" :alt="item.card.nameZh" intent="thumb" fit="contain"/><b>{{ item.card.nameZh }}</b><small>{{ item.card.number || item.card.id }}</small><span>{{ item.rule.masterId ? `仅限${item.master?.nameZh || item.rule.masterId}` : '全部主宰' }} · 上限 {{ item.rule.maxCopies }} 张</span></button></div></article>
+            <article v-if="operationsPolicy"><p>排位使用当前赛季天灾池与禁限规则；好友房仅在启用对应规则时使用开房时的规则快照。</p><RulesCardSummary :cards="catalog" :disaster-card-ids="operationsPolicy.disasterCardIds" :card-restrictions="operationsPolicy.cardRestrictions" disaster-mode="season" disaster-title="本赛季天灾" restriction-title="本赛季禁限卡"/></article>
           </div>
           <footer><button type="button" @click="rankedRulesOpen = false">我知道了</button></footer>
         </section>
       </div>
     </Teleport>
-    <CatalogCardDetails v-if="detailCard" :card="detailCard" :show-catalog-only="false" @close="detailCard = null"/>
     <p v-if="l12State.notice" class="battle-notice">{{ l12State.notice }}</p>
   </div>
 </template>

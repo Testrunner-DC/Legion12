@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import CardImage from '@/l12/CardImage.vue'
+import RulesCardSummary from './RulesCardSummary.vue'
 import type { DeckCard } from '@/l12/decks'
 
 const props = withDefaults(defineProps<{ cards: DeckCard[]; modelValue: string[]; lockedId?: string; minimum?: number }>(), { minimum: 9 })
@@ -34,11 +35,16 @@ function toggle(id: string) {
         </span>
       </button>
     </div>
+    <details class="selected-pool-summary"><summary>查看已选天灾池规则（{{ modelValue.length }} 张）</summary><RulesCardSummary :cards="cards" :disaster-card-ids="modelValue" :show-restrictions="false" disaster-mode="all"/></details>
   </div>
 </template>
 
 <style scoped>
 .pool-picker{display:grid;gap:10px}.pool-picker>header{display:flex;align-items:center;gap:9px}.pool-picker input{flex:1}.pool-picker header span{white-space:nowrap}.pool-picker header span.invalid{color:#ff9aa1}.pool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px;max-height:520px;overflow:auto;padding:2px}.pool-grid button{display:grid;align-content:start;gap:7px;min-width:0;padding:7px;overflow:hidden;border:1px solid #354249;background:#091016;color:#d5dcde;text-align:left}.pool-grid button.selected{border-color:#d2ad4e;background:#29210f;box-shadow:inset 0 0 0 1px #8e742f}.pool-grid button.locked{border-style:double}.pool-card-art{display:block;width:100%;aspect-ratio:8/5;overflow:hidden;background:#090d0e}.pool-card-copy{display:grid;gap:2px;min-width:0;line-height:1.35}.pool-card-copy b,.pool-card-copy small{position:static;overflow-wrap:anywhere}.pool-card-copy b{font-weight:900}.pool-card-copy small{color:#8b979c;font-size:14px}
+</style>
+
+<style scoped>
+.selected-pool-summary{min-width:0}.selected-pool-summary>summary{min-height:44px;display:flex;align-items:center;padding:8px;color:var(--l12-ui-accent,#e7ce72);cursor:pointer}.selected-pool-summary[open]>summary{margin-bottom:10px}
 </style>
 
 <style scoped>

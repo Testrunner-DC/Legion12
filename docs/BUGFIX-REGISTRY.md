@@ -1,5 +1,21 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261028-PASSIVE-WAIT-GRAVEYARD｜等待对手不阻挡公共墓地查看
+
+- 新反馈c25df143的“等待时不能看墓地”已用实际SFC两入口证实：旧hasBlockingPrompt把被动waiting也视为本人阻断，而被动等待本来无最小化按钮，形成不可查看。人类call_a9b2546b6eb741df9b5790d586990073批准限定共享修复；同反馈动画未完不能继续自由动作保既有UI-20261024规则，不混改队列/动画/计时。
+- GameBoard两PlayerMat入口统一用graveyardInspectionAllowed：没有本人prompts或本人已最小化即可查看。原:inspection-only=hasBlockingPrompt完整保留，被动等待仍只能看不能发动能力；新本人prompt身份沿原watcher关闭查看层，同身份时钟/版本更新不清本人选牌或小化。无前端结算副本、无新增网络/存储/API。
+- 原20用例14绿6RED，修后20/20；双墓地、等待转本人提示、详情只读不发指令、同身份保持、正常墓地能力阳性均覆盖。原响应30、inline等待22、动作58及高亮守卫Main实际续验通过，全部原始失败在`response-prompt-visibility-20261028/graveyard-passive-wait`。
+- Main原生400×770点击另复现24514780同族缺口：新提示已清focusCard但mobileInspectorOpen仍true，空抽屉遮住按钮，实际中心点击sent=[]；原证据`defense-native-main-20261028/mobile-empty-inspector-failure.json`保留，不冒原历史局唯一成因。沿原人类call_036b21e10ad545ad92ca021001f3afac的新提示清理范围，在同一clearOrdinaryInteractionState清抽屉；同identity仅revision/clock更新仍保查看/选牌。双方新2RED→32/32及墓地20/20，inline22/动作58均绿，源4EB73BF8；实际400×770四场（双方×有无场上移动）中心点击均唯一正确prompt253指令，首场另验小化/同版/时钟/展开。证据`mobile-inspector-followup`与`defense-native-main-green-20261028/native-observation.json`；合成公开场面与发送sink，不冒真实引擎、WS确认、原局回放或手机真机。
+- 新Rules13/响应32/墓地20接npm原UI标准链的独立Node进程，避免QA只手跑以及内存DOM全局互相污染。旧test-response-target-highlights只迁移墓地入口字面断言并保两入口/只读/高亮隐私守卫，不删除反例。Main最终frontend-main-r4完整UI、两类型、双610模块构建均通过，绑定4EB73BF8；前轮PATH/旧QA夹具失败原样保留。当前未部署/线上关单；回滚新computed、两handler与抽屉清理一行即可，原墓地能力授权/提示身份清理/动画门禁不动。
+
+## FEAT-20261028-EXPLICIT-REGISTRATION-RULES｜主动报名、真实人数与唯一规则展示
+
+- 人类在赛事来源明确创建不自动参赛、全项目天灾/禁限用同一组件、清楚对应主宰，可热修部分上线。Main实际读回原人类三条消息，非仅采用子任务转述。`NewTournament`不加actor，新legacy导入只保显式名单；旧赛事/参赛/历史不迁移不删除。登录与公共Registered同为未移除/未退赛/非候补；原DTO、报名/锁牌/签到/权限/版本/CAS/审计体系不改。
+- 原生4RED覆盖普通/管理员创建、退赛留记录不计席位、legacy不补管理员；修后4/4。原48个直接Create测试调用在16文件改为明确命名的测试组合helper，真实Create→Register，不恢复产品自动入席；原配对/容量/隐私断言保留。首次关联224中222过，2个HTTP旧夹具仍隐式主办参赛；改为真实POST报名全员后224/224，四人完整HTTP单淘汰及自裁回避继续全链过，不拿store调用冒HTTP。首次夹具Message误名编译失败不计RED，全部TRX/日志保留。
+- 前端`RulesCardSummary`唯一只读展示，复用CardImage/CatalogCardDetails，通用与主宰分组、实际张数/禁用/备注，unknown与天灾none/顺序不丢；七消费页及两编辑器的已设摘要共用，编辑/删除/选择原行为保持。`TournamentParticipantCounts`统一聚合，不从受限名单长度推总数。本人me保历史记录，独立activeRegistration限制签到/选牌/重复退出，退赛/移除显示真实状态，管理身份不随参赛状态消失，不增加重新报名或改禁报名规则。
+- 共享实际SFC13、light30、mode46、创建16、赛事50/公开22/UI361等具名通过；本人状态先真实2RED后同族4场通过。最终两类型、双610模块、4消费者×3尺寸12浏览器过，Main已目视390实际截图；采用合成API/图片映射，只证布局/详情/动作，不冒线上报名、实际卡图版本或真机。长名两轮均绿，无产品CSS返修，目录名label-red不冒真实RED。完整平台固定DLL r5实际2740/2740零失败跳过，TRX SHA2E39F23156751EDF1EFFA2BEAB03E8B999FCCCE680F103F1D49C3A51D1FBA523；唯一后续测试变动是一行尾空格，精确加回该空格即恢复原全量源SHA，非语义改动，不重复全量。Main后续UI链旧ruling夹具按真实activeRegistration抽取迁移，新增退赛/移除阴性，15/15及最终完整UI链过。原失败保留，不冒Release或已上线。
+- P2/P3/P4原边界不变；回滚共享只读组件/原展示消费者与创建/聚合两处即可，既有记录、权威规则/权限和报名接口保留。完整服务端报名修复不能仅以静态热更新冒已交付；发布须绑定最终实际合格包。
+
 ## FEAT-20261028-ROOM-ACTIVITY-FOUNDATION｜有效活动时标与只读分类（不含自动退场）
 
 - 用户已要求40分钟好友/休闲无活动关闭，另已明确1小时好友/沙盒部署规则；本片仅P2活动基础，不实际结束房间或授发停服许可。原22个RoomManager挂点保已上线沙盒权限逻辑，成功Recorder提交后才记有效命令；心跳/同步、拒绝、重复请求、同值GM和持久化失败不刷新，不新增每命令写库、全状态hash/clone或平台共用锁。

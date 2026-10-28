@@ -260,7 +260,7 @@ public sealed class PlatformRollbackMemoryTests
         {
             var owner = store.Accounts().Single(account => account.Id == ownerId);
             var saved = Assert.Single(store.Decks(ownerId));
-            var tournament = store.CreateTournament(owner,
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, owner,
                 new L12TournamentCreatePayload("完整回退赛", "swiss", "public", 8,
                     DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "fallback", "after", "season",
                     string.Empty, 50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),

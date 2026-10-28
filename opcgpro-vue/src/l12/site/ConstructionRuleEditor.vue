@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
+import RulesCardSummary from './RulesCardSummary.vue'
 import type { DeckCard } from '@/l12/decks'
 import type { OperationsCardRestriction } from '@/l12/platform'
 
@@ -43,10 +44,9 @@ function remove(rule: OperationsCardRestriction) {
       </div>
     </div>
     <SingleCardPicker v-if="pickerOpen" title="选择要设置构筑规则的卡牌" :items="pickerItems" @select="choose" @close="pickerOpen = false"/>
-    <div class="rule-list">
-      <article v-for="rule in modelValue" :key="`${rule.masterId || '*'}-${rule.cardId}`"><span><b>{{ byId.get(rule.cardId)?.nameZh || rule.cardId }}</b><small>{{ rule.cardId }} · {{ rule.masterId ? `${byId.get(rule.masterId)?.nameZh || rule.masterId} 专属` : '所有主宰' }}</small></span><strong>上限 {{ rule.maxCopies }}</strong><em>{{ rule.reason || '无备注' }}</em><button type="button" @click="remove(rule)">删除</button></article>
-      <p v-if="!modelValue.length">尚未设置构筑规则。</p>
-    </div>
+    <RulesCardSummary :cards="cards" :card-restrictions="modelValue" :show-disasters="false">
+      <template #restriction-actions="{ rule }"><button type="button" @click="remove(rule)">删除此项规则</button></template>
+    </RulesCardSummary>
   </div>
 </template>
 

@@ -161,7 +161,7 @@ public sealed class DeploymentPlatformGuardTests
         {
             Store = new(PlatformPath);
             Admin = Store.Login("Admin", "L12master").Account!;
-            TournamentId = Store.CreateTournament(Admin, new("synthetic", "swiss", "public", 16,
+            TournamentId = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(Store, Admin, new("synthetic", "swiss", "public", 16,
                 null, "现行规则", "synthetic", "after", "season", "", 50, 5),
                 new("synthetic", "tournaments.manage"), true).Id;
             Assert.True(L12DeploymentDrainOwner.TryCreate("22222222222222222222222222222222",

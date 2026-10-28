@@ -76,7 +76,7 @@ public sealed class DisasterPhase34HttpTests
         await using var facts = await DisasterFactFixture.Create("tournament");
         await facts.Prepare(); await facts.End();
         await using var f = await HttpFixture.Create(facts);
-        var tournament = f.Platform.CreateTournament(f.Owner, new("Synthetic DSC", "swiss", "public", 16,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(f.Platform, f.Owner, new("Synthetic DSC", "swiss", "public", 16,
             DateTimeOffset.UtcNow.AddHours(2), "S01/S02", "", "after", "all", "", 50, 5), C("create"), true);
         tournament = f.Platform.RegisterTournament(f.Other, tournament.Id, new(), tournament.Version, C("register"), true);
         foreach (var player in new[] { f.Owner, f.Other }) tournament = f.Platform.PreCheckInTournament(player, tournament.Id,

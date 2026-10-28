@@ -54,10 +54,11 @@ public sealed class TournamentHttpLifecycleTests
             new TournamentCreateRequest(payload, "th-create", list.PlatformVersion, false, "synthetic create"), ct);
         var path = $"/api/tournaments/{tournament.Id}";
         Assert.Equal(organizer.Account.Id, tournament.OrganizerAccountId);
-        Assert.Single(tournament.Participants); // Creator is enrolled by the actual product.
+        Assert.Empty(tournament.Participants);
+        Assert.Equal(0, tournament.Counts.Registered);
         Assert.Equal(referee.Account.Id, Assert.Single(tournament.Referees).AccountId);
 
-        foreach (var player in players.Skip(1))
+        foreach (var player in players)
             tournament = await Write(f.Client, player, path + "/registrations",
                 new TournamentRegistrationRequest(null, null, "th-register-" + player.Account.Username,
                     tournament.Version, false, "synthetic registration"), ct);

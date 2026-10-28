@@ -18,11 +18,11 @@ public sealed class TournamentAutomaticLifecycleTests
             var now = DateTimeOffset.UtcNow;
             var automatic = Payload(now.AddMinutes(10), "single") with { OperationMode = operationMode };
             var versionBeforeUnauthorizedCreate = fixture.Store.Version;
-            Assert.Throws<L12TournamentScopeException>(() => fixture.Store.CreateTournament(
+            Assert.Throws<L12TournamentScopeException>(() => global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store,
                 fixture.Players[0], automatic, Context("player-forged-auto"), true));
             Assert.Equal(versionBeforeUnauthorizedCreate, fixture.Store.Version);
 
-            var created = fixture.Store.CreateTournament(fixture.Admin, automatic,
+            var created = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Admin, automatic,
                 Context("admin-auto"), true);
             Assert.Equal("automated", created.OperationMode);
             Assert.Equal(3, created.IntermissionMinutes);
@@ -31,7 +31,7 @@ public sealed class TournamentAutomaticLifecycleTests
             Assert.Equal(now.AddMinutes(5).UtcDateTime, created.NextAutomaticActionAt!.Value.UtcDateTime,
                 TimeSpan.FromSeconds(1));
 
-            var managed = fixture.Store.CreateTournament(fixture.Players[0],
+            var managed = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Players[0],
                 Payload(now.AddMinutes(20), "swiss") with { OperationMode = "managed" },
                 Context("ordinary-managed"), true);
             Assert.Equal("managed", managed.OperationMode);
@@ -390,7 +390,7 @@ public sealed class TournamentAutomaticLifecycleTests
 
     private static L12TournamentView RegisterAndLock(Fixture fixture, L12TournamentCreatePayload payload)
     {
-        var tournament = fixture.Store.CreateTournament(fixture.Admin,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Admin,
             payload with { RefereeAccountIds = [fixture.Judge.Id] }, Context("create-auto"), true);
         tournament = SelectDeck(fixture.Store, fixture.Admin, tournament, true);
         foreach (var player in fixture.Players)

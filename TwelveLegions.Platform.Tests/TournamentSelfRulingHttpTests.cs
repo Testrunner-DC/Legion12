@@ -49,7 +49,8 @@ public sealed class TournamentSelfRulingHttpTests
         var path = $"/api/tournaments/{created.Id}";
 
         var tournament = created;
-        foreach (var player in players.Skip(1))
+        Assert.Empty(created.Participants);
+        foreach (var player in players)
         {
             tournament = await Write(f.Client, player, path + "/registrations",
                 new TournamentRegistrationRequest(null, null, "sr-register-" + player.Account.Username,

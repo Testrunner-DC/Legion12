@@ -2,23 +2,43 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { execFileSync } from 'node:child_process'
 import { createServer } from 'vite'
 
 const root = path.resolve(import.meta.dirname, '..')
-const output = process.env.L12_QA_OUT || path.resolve(root, '../artifacts/ranked-season-rules')
+const output = process.env.L12_QA_OUT
+const cacheDir = process.env.L12_QA_CACHE
+assert.ok(output && cacheDir && process.env.L12_PWSH, 'explicit governed output/cache and initialized PowerShell are required')
+execFileSync(process.env.L12_PWSH, ['-NoProfile', '-NonInteractive', '-Command',
+  '. $env:L12_STORAGE_GUARD; @($env:L12_QA_OUT,$env:L12_QA_CACHE,$env:TEMP,$env:TMP,$env:TMPDIR) | ForEach-Object {Assert-L12GeneratedPath -Path $_ -Purpose "shared ranked rule cards acceptance" | Out-Null}',
+], { env: { ...process.env, L12_STORAGE_GUARD: path.resolve(root, '../ops/windows/L12GeneratedStorage.ps1') }, windowsHide: true, stdio: 'pipe' })
 const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT
   || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
+assert.ok(!fs.existsSync(output) || !fs.readdirSync(output).length, 'do not overwrite previous acceptance evidence')
 fs.mkdirSync(output, { recursive: true })
 
 const entry = `
 import {createApp,h} from 'vue'
 import {createMemoryHistory,createRouter} from 'vue-router'
 import BattleHubPage from '/src/l12/site/BattleHubPage.vue'
+import TournamentAccountDetail from '/src/l12/site/TournamentAccountDetail.vue'
+import TournamentPublicDetail from '/src/l12/site/TournamentPublicDetail.vue'
+import RuleCenterPage from '/src/l12/site/RuleCenterPage.vue'
 import {authState,platformState} from '/src/l12/platform.ts'
+import {loadDeckCatalog} from '/src/l12/decks.ts'
 import '/src/style.css'
+import '/src/l12/site/uiSystem.css'
 authState.initialized=true;authState.verified=true;platformState.account=null;platformState.token=''
-const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMatch(.*)*',component:BattleHubPage}]})
-router.push('/battle');await router.isReady();createApp({render:()=>h(BattleHubPage)}).use(router).mount('#app')
+const surface=new URLSearchParams(location.search).get('surface')||'ranked'
+if(new URLSearchParams(location.search).get('long')==='1'){
+  const catalog=await loadDeckCatalog();const master=catalog.find(card=>card.id==='S01-01M1')
+  if(!master)throw new Error('fixture master missing')
+  master.nameZh='阿尔托莉雅·潘德拉贡（主宰专属规则完整名称）'
+}
+const Component=({account:TournamentAccountDetail,public:TournamentPublicDetail,construction:RuleCenterPage})[surface]||BattleHubPage
+if(surface==='account'){platformState.account={id:'rule-owner',username:'主办者',permissions:[]};platformState.token='synthetic-rule-session'}
+const router=createRouter({history:createMemoryHistory(),routes:[{path:'/battle/tournaments/:code',component:Component},{path:'/:pathMatch(.*)*',component:Component}]})
+router.push(surface==='construction'?'/rules?tab=construction':surface==='ranked'?'/battle':'/battle/tournaments/RULE-QA');await router.isReady();createApp({render:()=>h(Component)}).use(router).mount('#app')
 `
 
 const tier = (name, minimum) => ({ name, minimum, baseDelta: 100, winStreakCap: 50,
@@ -51,8 +71,20 @@ const populatedPolicy = { version: 12, season: { id: 'S01', name: '跨年验收�
   maintenance: { enabled: false, message: '', advanceBroadcastHours: 0, expectedDurationHours: 0,
     effectiveState: 'open', entryBlocked: false }, announcements: [] }
 
+const initialTournament = () => ({ id: 'rule-tournament', code: 'RULE-QA', version: 1, name: '共享规则验收赛事',
+  organizerAccountId: 'rule-owner', organizerName: '主办者', status: 'registration', phase: 'registration-open',
+  registrationOpen: true, registrationVisibility: 'public', format: 'swiss', maxPlayers: 16,
+  operationMode: 'managed', referees: [], rounds: [], participants: [], finalStandings: [], finalSwissStandings: [],
+  postponements: [], rules: { ruleset: '现行规则', disasterMode: 'season', deckVisibility: 'after',
+    disasterCardIds: populatedPolicy.disasterCardIds, cardRestrictions: populatedPolicy.cardRestrictions,
+    timeControl: ranked.config.timeControl, lateGraceMinutes: 5, banList: '' },
+  checkInMinutes: 5, lateGraceMinutes: 5, timeControl: ranked.config.timeControl,
+  counts: { registered: 0, pendingCheckIn: 0, checkedIn: 0, active: 0, waitlisted: 0, removed: 0 } })
+let tournament = initialTournament()
+const privateRequests = []
+
 const server = await createServer({ root, configLoader: 'runner',
-  cacheDir: path.join(root, '.tmp', 'vite-ranked-season-rules'), server: { host: '127.0.0.1', port: 0 },
+  cacheDir, server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'ranked-season-rules-fixture',
     resolveId(id) { if (id === '/__ranked_season_rules__.js') return id },
@@ -103,13 +135,22 @@ try {
     if (pathname === '/api/ranked/me') return route.fulfill({ json: ranked })
     if (pathname === '/api/ranked/broadcasts/settings') return route.fulfill({ json: ranked.config.broadcast })
     if (pathname === '/api/ranked/broadcasts') return route.fulfill({ json: [] })
+    if (pathname.startsWith('/api/tournaments/code/') || pathname.startsWith('/api/public/tournaments/code/')) return route.fulfill({ json: tournament })
+    if (pathname === '/api/tournaments/rule-tournament/registrations') {
+      tournament = { ...tournament, version: 2, participants: [{ accountId: 'rule-owner', username: '主办者', seed: 1,
+        waitlisted: false, removed: false, dropped: false, deck: null }],
+      counts: { ...tournament.counts, registered: 1, pendingCheckIn: 1 } }
+      return route.fulfill({ json: tournament })
+    }
+    if (pathname.startsWith('/api/decks')) privateRequests.push(pathname)
+    if (pathname === '/api/content') return route.fulfill({ json: { values: {} } })
     return route.fulfill({ status: 404, json: { message: `unexpected ${pathname}` } })
   })
 
   const results = []
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
     await page.setViewportSize(viewport)
-    await page.goto(`http://127.0.0.1:${port}/__ranked_season_rules__`)
+    await page.goto(`http://127.0.0.1:${port}/__ranked_season_rules__?long=1`)
     await page.getByRole('button', { name: '排位规则' }).click()
     const dialog = page.getByRole('dialog', { name: '排位规则' })
     await dialog.getByText('赛季持续周期').waitFor()
@@ -117,22 +158,33 @@ try {
     await dialog.getByRole('button', { name: '查看黯陨晨星卡牌详情' }).click()
     await page.getByRole('dialog', { name: '黯陨晨星' }).waitFor()
     await page.getByRole('button', { name: '关闭卡牌详情' }).click()
+    const scoped = dialog.locator('.restriction-group').filter({ has: page.locator('.scope-master') })
+    assert.equal(await scoped.count(), 1)
+    assert.match(await scoped.innerText(), /S01-01M1[\s\S]*S01-0010[\s\S]*禁止携带（0 张）/)
+    assert.equal(await scoped.getByText('S01-0001', { exact: true }).count(), 0)
+    const masterButton = scoped.getByRole('button', { name: /主宰详情$/ })
+    const masterName = (await masterButton.locator('b').innerText()).replace(/^主宰：/, '')
+    await masterButton.click()
+    await page.getByRole('dialog', { name: masterName, exact: true }).waitFor()
+    await page.getByRole('button', { name: '关闭卡牌详情' }).click()
     await dialog.getByRole('button', { name: '查看黑胡子蒂奇卡牌详情' }).click()
     await page.getByRole('dialog', { name: '黑胡子蒂奇' }).waitFor()
     await page.getByRole('button', { name: '关闭卡牌详情' }).click()
     const metrics = await page.evaluate(() => {
       const ruleDialog = document.querySelector('.ranked-rules-modal').getBoundingClientRect()
-      const cards = [...document.querySelectorAll('.season-card-grid button')].map(item => item.getBoundingClientRect())
+      const cards = [...document.querySelectorAll('.rules-card-grid button')].map(item => item.getBoundingClientRect())
       return { documentOverflow: document.documentElement.scrollWidth > innerWidth + 1,
         bodyOverflow: document.body.scrollWidth > innerWidth + 1,
         dialogInBounds: ruleDialog.left >= -1 && ruleDialog.right <= innerWidth + 1,
-        cardWidths: cards.map(card => card.width), cardHeights: cards.map(card => card.height) }
+        cardWidths: cards.map(card => card.width), cardHeights: cards.map(card => card.height),
+        masterLabels: [...document.querySelectorAll('.scope-master b')].map(node => ({ text: node.textContent, client: node.clientWidth, scroll: node.scrollWidth })) }
     })
     assert.equal(metrics.documentOverflow, false)
     assert.equal(metrics.bodyOverflow, false)
     assert.equal(metrics.dialogInBounds, true)
-    assert.ok(metrics.cardWidths.every(width => width >= 80))
+    assert.ok(metrics.cardWidths.length >= 4 && metrics.cardWidths.every(width => width >= 80))
     assert.ok(metrics.cardHeights.every(height => height >= 44))
+    assert.ok(metrics.masterLabels.every(label => label.scroll <= label.client + 1), `master label must wrap: ${JSON.stringify(metrics.masterLabels)}`)
     await page.screenshot({ path: path.join(output, `ranked-season-rules-${viewport.width}x${viewport.height}.png`), fullPage: true })
     results.push({ ...viewport, ...metrics })
   }
@@ -140,11 +192,48 @@ try {
   await page.goto(`http://127.0.0.1:${port}/__ranked_season_rules__?empty=1`)
   await page.getByRole('button', { name: '排位规则' }).click()
   const emptyDialog = page.getByRole('dialog', { name: '排位规则' })
-  assert.equal(await emptyDialog.getByText('本赛季天灾', { exact: true }).count(), 0)
-  assert.equal(await emptyDialog.getByText('本赛季禁限卡', { exact: true }).count(), 0)
+  await emptyDialog.getByText('尚未提供天灾卡池，请以已发布的规则为准。', { exact: true }).waitFor()
+  await emptyDialog.getByText('无额外禁限卡规则，仍须遵守基础构筑规则。', { exact: true }).waitFor()
+  assert.equal(await emptyDialog.locator('.rules-card-grid button').count(), 0)
+  for (const surface of ['account', 'public', 'construction']) {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+      tournament = initialTournament(); await page.setViewportSize(viewport)
+      await page.goto(`http://127.0.0.1:${port}/__ranked_season_rules__?surface=${surface}&long=1`)
+      if (surface === 'account') {
+        const join = page.getByRole('button', { name: '报名（暂不提交牌库）', exact: true })
+        await join.waitFor(); assert.equal(await page.getByRole('button', { name: '退出赛事', exact: true }).count(), 0)
+        await join.click(); await page.getByRole('button', { name: '退出赛事', exact: true }).waitFor()
+        assert.match(await page.locator('.tournament-participant-counts').innerText(), /已报名 1 \/ 16[\s\S]*待签到 1[\s\S]*已签到 0/)
+      }
+      if (surface !== 'construction') await page.getByRole('button', { name: '规则', exact: true }).click()
+      const summary = page.locator('[data-ui-contract="rules-card-summary"]')
+      await summary.getByRole('button', { name: '查看黯陨晨星卡牌详情' }).waitFor()
+      const scoped = summary.locator('.restriction-group').filter({ has: page.locator('.scope-master') })
+      assert.match(await scoped.innerText(), /S01-01M1[\s\S]*S01-0010[\s\S]*禁止携带（0 张）/)
+      await summary.getByRole('button', { name: '查看黯陨晨星卡牌详情' }).click()
+      await page.getByRole('dialog', { name: '黯陨晨星' }).waitFor()
+      await page.getByRole('button', { name: '关闭卡牌详情' }).click()
+      const geometry = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth > innerWidth + 1,
+        masterLabels: [...document.querySelectorAll('.scope-master b')].map(node => ({ text: node.textContent, client: node.clientWidth, scroll: node.scrollWidth })),
+        controls: [...document.querySelectorAll('.rules-card-grid button,.scope-master')].map(node => {
+          const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width, height: r.height }
+        }),
+      }))
+      assert.equal(geometry.overflow, false)
+      assert.ok(geometry.masterLabels.every(label => label.scroll <= label.client + 1), `master label must wrap: ${JSON.stringify(geometry.masterLabels)}`)
+      assert.ok(geometry.controls.length >= 5 && geometry.controls.every(r => r.left >= -1 && r.right <= viewport.width + 1 && r.width >= 44 && r.height >= 44))
+      await page.screenshot({ path: path.join(output, `shared-rules-${surface}-${viewport.width}x${viewport.height}.png`), fullPage: true })
+      results.push({ surface, ...viewport, ...geometry })
+    }
+  }
+  assert.deepEqual(privateRequests, [], 'rule views and registration must not expand private decks or read the directory')
   assert.deepEqual(pageErrors, [])
   assert.deepEqual(consoleErrors, [], `failed responses: ${failedResponses.join(', ')}`)
-  console.log(JSON.stringify({ passed: true, results }, null, 2))
+  const report = { passed: true, results, pageErrors, consoleErrors,
+    scope: 'actual ranked dialog, authenticated/public tournament detail and rule-center construction tab over shared RulesCardSummary and CatalogCardDetails; synthetic APIs; local browser, not physical-device or live-service acceptance' }
+  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2))
+  console.log(JSON.stringify(report, null, 2))
 } finally {
   if (browser) await browser.close()
   await server.close()

@@ -290,7 +290,7 @@ public sealed class TournamentRefereeControlTests
             f.Viewer = Register("rfviewer");
             f.Store.SendFriendRequest(f.Host.Id, f.Judge.Id);
             f.Store.ResolveFriendRequest(f.Judge.Id, f.Host.Id, true);
-            f.Tournament = f.Store.CreateTournament(f.Host, new L12TournamentCreatePayload(
+            f.Tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(f.Store, f.Host, new L12TournamentCreatePayload(
                 "GM synthetic", "single", "public", 8, DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "synthetic",
                 "private", "season", string.Empty, 50, 5, [f.Judge.Id],
                 TimeControl: new L12RankedTimeControlConfig(900, 90, 120, 30, 45)), Context("create"), true);

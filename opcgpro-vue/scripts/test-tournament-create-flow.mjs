@@ -37,6 +37,7 @@ function fixture(options = {}) {
     '@/l12/decks': { loadDeckCatalog: async () => [] },
     './ConstructionRuleEditor.vue': { default: {} },
     './DisasterPoolPicker.vue': { default: {} },
+    './RulesCardSummary.vue': { default: {} },
   }
   const modules = new Map()
   const require = id => {

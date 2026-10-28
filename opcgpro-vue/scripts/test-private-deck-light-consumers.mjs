@@ -314,6 +314,7 @@ let permissions = new Set()
 let tournamentList = []
 let tournamentReads = []
 let preCheckIns = []
+let registrationActions = []
 let creationContexts = 0
 let creationRequests = []
 let creationContextBehavior = async () => ({ platformVersion: 20 })
@@ -321,6 +322,9 @@ let creationBehavior = async (input, expectedVersion) => tournamentFixture({ id:
 let tournamentListBehavior = async () => ({ platformVersion: 1, items: tournamentList })
 let preCheckInBehavior = async args => tournamentFixture({ id: args[0], version: args[1] + 1 })
 const tournamentApi = {
+  register: async (...args) => { registrationActions.push(['register', ...args]); return tournamentFixture({ participants: [participantFixture()] }) },
+  drop: async (...args) => { registrationActions.push(['drop', ...args]); return tournamentFixture() },
+  checkIn: async (...args) => { registrationActions.push(['checkIn', ...args]); return tournamentFixture() },
   createContext: async () => { creationContexts++; return creationContextBehavior() },
   create: async (...args) => { creationRequests.push(args); return creationBehavior(...args) },
   getByCode: async code => { tournamentReads.push(code); return tournamentList.find(item => item.code === code) ?? tournamentFixture({ code }) },
@@ -399,6 +403,8 @@ function tournamentDetailComponent() {
     '@/l12/tournamentTime': timeModule, './TournamentJudgeDesk.vue': componentModule,
     './TournamentManagementPanel.vue': componentModule,
     './TournamentDisasterSummary.vue': componentModule,
+    './RulesCardSummary.vue': componentModule,
+    './TournamentParticipantCounts.vue': componentModule,
     '@/l12/SavedDeckSelector.vue': { default: compileComponent('src/l12/SavedDeckSelector.vue', {
       vue, './decks': { ...decks, loadDeckCatalog: deckModule.loadDeckCatalog },
       './platform': platformModule, './mobileViewport': { landscapeTeleportTarget: () => teleportRoot },
@@ -411,6 +417,7 @@ function tournamentWorkbenchComponent() {
     '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     vue, 'vue-router': routeModule, '@/l12/decks': deckModule, '@/l12/net': netModule,
     './ConstructionRuleEditor.vue': componentModule, './DisasterPoolPicker.vue': componentModule,
+    './RulesCardSummary.vue': componentModule, './TournamentParticipantCounts.vue': componentModule,
     '@/l12/useActionGate': actionGateModule, '@/l12/tournamentSnapshotMerge': { mergeTournamentSnapshot: items => items },
     '@/l12/tournamentTime': timeModule, '@/l12/platform': platformModule,
     '@/l12/tournamentRulingPolicy': tournamentRulingPolicy,
@@ -444,7 +451,7 @@ function resetIdentity(account = { id: 'account-A', username: 'Account A', permi
   platformState.token = token
   authState.verified = verified
   localStorage.clear(); sessionStorage.clear(); permissions = new Set(); routerCalls.length = 0
-  tournamentReads = []; preCheckIns = []; tournamentList = []
+  tournamentReads = []; preCheckIns = []; registrationActions = []; tournamentList = []
   creationContexts = 0; creationRequests = []
   creationContextBehavior = async () => ({ platformVersion: 20 })
   creationBehavior = async (input, expectedVersion) => {
@@ -880,6 +887,69 @@ await check('consumer sources contain no legacy full-sync or cache-latest fallba
   assert.equal(sources['src/l12/SavedDeckSelector.vue'].includes('syncSavedDecksFromAccount'), false)
   assert.equal(sources['src/l12/SavedDeckSelector.vue'].includes('loadPrivateDeckBody'), false)
   assert.equal(sources['src/l12/SavedDeckSelector.vue'].includes('expectedRevision'), false)
+})
+
+for (const status of ['dropped', 'removed']) await check(`historical ${status} self-row remains visible without registration actions or loss of organizer authority`, async () => {
+  resetIdentity()
+  const person = participantFixture({ [status]: true })
+  tournamentList = [tournamentFixture({ organizerAccountId: 'account-A', participants: [person],
+    rounds: [{ id: 'round-A', number: 1, status: 'checkin', matches: [{ id: 'match-A', table: 1,
+      playerAAccountId: 'account-A', playerBAccountId: 'account-B', playerAName: 'A', playerBName: 'B',
+      status: 'waiting', readyA: false, readyB: false }] }],
+    counts: { registered: 0, pendingCheckIn: 0, checkedIn: 0, active: 0, waitlisted: 0 } })]
+  const requests = captureRequests(requestPath => { throw new Error(`unexpected ${requestPath}`) })
+  const mounted = mount(tournamentDetailComponent()); await flush()
+  const text = nodeText(mounted.rootNode)
+  assert.match(text, status === 'dropped' ? /已退出赛事/ : /已被移出/)
+  assert.equal(text.includes('开赛前请完成签到并锁定牌组'), false)
+  for (const label of ['退出赛事', '选择本人牌库', '签到并锁定牌库', '报名（暂不提交牌库）'])
+    assert.equal(hostNodes(mounted.rootNode).some(node => node.type === 'button' && nodeText(node) === label), false)
+  assert.equal(mounted.state.me.accountId, 'account-A'); assert.equal(mounted.state.me[status], true)
+  assert.equal(mounted.state.canOrganize, true); assert.equal(mounted.state.canViewManage, true)
+  mounted.state.tab = 'schedule'; await flush()
+  assert.equal(hostNodes(mounted.rootNode).some(node => node.type === 'button' && nodeText(node) === '本轮签到'), false)
+  mounted.state.confirmDeckSelection(summary()); mounted.state.preCheckIn(); mounted.state.roundCheckIn(1, true)
+  mounted.state.drop(); mounted.state.drop(); await flush()
+  assert.equal(mounted.state.selectedDeck, null)
+  assert.deepEqual(registrationActions, []); assert.deepEqual(preCheckIns, []); assert.deepEqual(requests, [])
+  mounted.unmount()
+})
+
+await check('unregistered organizer joins explicitly while active waitlisted and checked-in states keep original actions', async () => {
+  for (const status of ['unregistered', 'waitlisted', 'checked-in']) {
+    resetIdentity()
+    const participants = status === 'unregistered' ? [] : [participantFixture(status === 'waitlisted'
+      ? { waitlisted: true, waitlistPosition: 2 } : { deck: { name: '锁定牌库' }, tournamentCheckedInAt: '2026-10-28T01:00:00Z' })]
+    tournamentList = [tournamentFixture({ organizerAccountId: 'account-A', registrationOpen: true, participants })]
+    const requests = captureRequests(requestPath => { throw new Error(`unexpected ${requestPath}`) })
+    const mounted = mount(tournamentDetailComponent()); await flush()
+    if (status === 'unregistered') {
+      clickButton(mounted, '报名（暂不提交牌库）'); await flush()
+      assert.deepEqual(registrationActions, [['register', 'tournament-A', 5]])
+      assert.equal(mounted.state.me.accountId, 'account-A')
+    } else {
+      assert.match(nodeText(mounted.rootNode), status === 'waitlisted' ? /当前候补第 2 位/ : /赛前签到已完成/)
+      assert.equal(hostNodes(mounted.rootNode).some(node => node.type === 'button' && nodeText(node) === '选择本人牌库'), false)
+      clickButton(mounted, '退出赛事'); await flush(); clickButton(mounted, '确认退出赛事'); await flush()
+      assert.deepEqual(registrationActions, [['drop', 'tournament-A', 5]])
+    }
+    assert.deepEqual(requests, []); mounted.unmount()
+  }
+})
+
+await check('withdrawal while the shared selector is open closes drafts but retains the historical self-row', async () => {
+  resetIdentity(); tournamentList = [tournamentFixture({ organizerAccountId: 'account-A', participants: [participantFixture()] })]
+  const requests = captureRequests(requestPath => summaryPage(requestPath))
+  const mounted = mount(tournamentDetailComponent()); await flush()
+  await selectDeck(mounted, 'deck-A'); await openSelector(mounted)
+  mounted.state.tournament = { ...mounted.state.tournament, participants: [participantFixture({ dropped: true })] }
+  await flush()
+  assert.equal(mounted.state.deckSelectorOpen, false); assert.equal(mounted.state.selectedDeck, null)
+  assert.equal(mounted.state.deckId, ''); assert.equal(mounted.state.me.dropped, true)
+  selectorInstance(mounted).emit('confirm', summary()); await flush()
+  assert.equal(mounted.state.selectedDeck, null); assert.equal(mounted.state.canOrganize, true)
+  assert.equal(requests.length, 2); assert.deepEqual(preCheckIns, [])
+  mounted.unmount()
 })
 
 const report = {

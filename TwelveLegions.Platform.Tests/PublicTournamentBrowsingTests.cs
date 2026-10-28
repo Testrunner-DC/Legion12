@@ -16,9 +16,9 @@ public sealed class PublicTournamentBrowsingTests
     public async Task AnonymousBrowseShowsOnlyPublicAllowlistedTournamentAndNeverDependsOnIdentity()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var publicTournament = fixture.Store.CreateTournament(fixture.Organizer,
+        var publicTournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("公开赛事", "public"), Context("public-create"), true);
-        var privateTournament = fixture.Store.CreateTournament(fixture.Organizer,
+        var privateTournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("分享码赛事", "code"), Context("code-create"), true);
         var playerViewer = fixture.Store.Register("c3publicv01", "password-123");
         var refereeViewer = fixture.Store.Register("c3publicf01", "password-123");
@@ -98,7 +98,7 @@ public sealed class PublicTournamentBrowsingTests
         await using var fixture = await Fixture.CreateAsync();
         var playerLogin = fixture.Store.Register("c3publicp01", "password-123");
         var player = playerLogin.Account!;
-        var tournament = fixture.Store.CreateTournament(fixture.Organizer,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("名单隐藏赛事", "public") with { RegistrationVisibility = "staff" },
             Context("staff-create"), true);
         tournament = fixture.Store.RegisterTournament(player, tournament.Id,
@@ -152,7 +152,7 @@ public sealed class PublicTournamentBrowsingTests
     {
         await using var fixture = await Fixture.CreateAsync();
         var player = fixture.Store.Register("c3publicr01", "password-123").Account!;
-        var tournament = fixture.Store.CreateTournament(fixture.Organizer,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("公开赛果赛事", "public"), Context("results-create"), true);
         tournament = fixture.Store.RegisterTournament(player, tournament.Id,
             new L12TournamentRegistrationPayload(), tournament.Version, Context("results-register"), true);
@@ -195,18 +195,18 @@ public sealed class PublicTournamentBrowsingTests
     {
         await using var fixture = await Fixture.CreateAsync();
         var start = DateTimeOffset.UtcNow.AddDays(1);
-        var first = fixture.Store.CreateTournament(fixture.Organizer,
+        var first = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("Alpha Open", "public") with { Format = "single", StartAt = start },
             Context("filter-first"), true);
-        var second = fixture.Store.CreateTournament(fixture.Organizer,
+        var second = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("Beta Open", "public") with { Format = "single", StartAt = start.AddHours(1) },
             Context("filter-second"), true);
-        var history = fixture.Store.CreateTournament(fixture.Organizer,
+        var history = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("Alpha Archive", "public") with { Format = "single", StartAt = start.AddHours(-1) },
             Context("filter-history"), true);
         history = fixture.Store.CancelTournament(fixture.Organizer, history.Id,
             new L12TournamentCancelPayload("fixture history"), history.Version, Context("filter-cancel"), true);
-        var hidden = fixture.Store.CreateTournament(fixture.Organizer,
+        var hidden = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("Alpha Hidden", "code") with { Format = "single", StartAt = start },
             Context("filter-hidden"), true);
 
@@ -262,7 +262,7 @@ public sealed class PublicTournamentBrowsingTests
     public async Task OrganizerCanRevokePublicVisibilityWithCasAndPublicReadsStopImmediately()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var tournament = fixture.Store.CreateTournament(fixture.Organizer,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("待撤回赛事", "public"), Context("revoke-create"), true);
         using var before = await fixture.Client.GetAsync($"/api/public/tournaments/code/{tournament.Code}");
         Assert.Equal(HttpStatusCode.OK, before.StatusCode);
@@ -277,7 +277,7 @@ public sealed class PublicTournamentBrowsingTests
         var outsiderLogin = fixture.Store.Register("c3publicx01", "password-123");
         Assert.True(fixture.Store.SendFriendRequest(fixture.Organizer.Id, outsiderLogin.Account!.Id).Success);
         Assert.True(fixture.Store.ResolveFriendRequest(outsiderLogin.Account.Id, fixture.Organizer.Id, true).Success);
-        var otherTournament = fixture.Store.CreateTournament(fixture.Organizer,
+        var otherTournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("他场赛事", "code"), Context("other-event-create"), true);
         _ = fixture.Store.SetTournamentStaff(fixture.Organizer, otherTournament.Id,
             new L12TournamentStaffPayload([outsiderLogin.Account.Id]), otherTournament.Version,
@@ -321,7 +321,7 @@ public sealed class PublicTournamentBrowsingTests
     public async Task AnonymousPublicSurfaceDoesNotGrantPrivateActionsAndFeatureFailuresAreNotCacheable()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var tournament = fixture.Store.CreateTournament(fixture.Organizer,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("匿名边界赛事", "public"), Context("anonymous-boundary-create"), true);
 
         var requests = new[]
@@ -465,7 +465,7 @@ public sealed class PublicTournamentBrowsingTests
             AssertNoUnrelatedIdentities(canceledOutsider.RootElement, accounts);
         }
 
-        var publicRoster = fixture.Store.CreateTournament(fixture.Organizer,
+        var publicRoster = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload("公开名单控制分支", "public") with { RegistrationVisibility = "public" },
             Context("public-roster-create"), true);
         foreach (var player in accounts)
@@ -480,7 +480,7 @@ public sealed class PublicTournamentBrowsingTests
     private static L12TournamentView CreateStartedStaffTournament(Fixture fixture, string name, string format,
         IReadOnlyList<L12AccountView> players)
     {
-        var tournament = fixture.Store.CreateTournament(fixture.Organizer,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(fixture.Store, fixture.Organizer,
             Payload(name, "public") with { Format = format, RegistrationVisibility = "staff" },
             Context($"{format}-create"), true);
         tournament = PreCheckIn(fixture.Store, fixture.Organizer, tournament, $"{format}-host-deck");

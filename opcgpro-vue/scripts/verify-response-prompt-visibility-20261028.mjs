@@ -24,7 +24,7 @@ const boardSource = boardRef ? execFileSync('git', ['--no-lazy-fetch', '-c', `sa
 const art = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420"><rect width="300" height="420" rx="14" fill="#164b50"/><rect x="10" y="10" width="280" height="400" rx="10" fill="none" stroke="#d7c483" stroke-width="3"/><text x="150" y="210" text-anchor="middle" fill="white" font-size="25">SYNTHETIC QA</text></svg>')).png().toBuffer()
 const manifest = JSON.stringify({ schemaVersion: 3, catalogVersion: 'synthetic-response-visibility',
   assetVersion: 'synthetic-response-visibility', basePath: '/', cards: Object.fromEntries(
-    ['S02-0604', 'S02-0609', 'S02-06M2', 'ST06-M1'].map(cardId => [cardId, { cardId,
+    ['S02-0604', 'S02-0609', 'S02-0618', 'S02-06M2', 'ST06-M1'].map(cardId => [cardId, { cardId,
       contentHash: 'synthetic-' + cardId, width: 300, height: 420, orientation: 'portrait',
       variants: { thumbWebp: '/__response-art.png', boardWebp: '/__response-art.png', detailWebp: '/__response-art.png' } }])) })
 const entry = `
@@ -36,8 +36,8 @@ import '/src/style.css'
 import '/src/l12/mobileViewport.css'
 import '/src/l12/motion.css'
 const owner=Number(new URLSearchParams(location.search).get('owner')||0)
+const attackMovement=new URLSearchParams(location.search).get('movement')==='1'
 const mobile=ref(new URLSearchParams(location.search).get('mobile')==='1')
-useLandscapeViewport(mobile)
 const mountKey=ref(0), sent=ref([]), stage=ref('empty'), errors=ref([])
 window.addEventListener('error',event=>errors.value.push(event.message))
 window.addEventListener('unhandledrejection',event=>errors.value.push(String(event.reason)))
@@ -46,6 +46,7 @@ const card=(id,name,cardId='S02-0609')=>({instanceId:id,cardId,name,cardType:'le
  imageUrl:'/__response-art.png',effectText:'合成公开卡牌，仅测试提示呈现，不接卡效结算。'})
 const oldCard=card('old-detail','上一提示的军团详情')
 const entrant=card('entry-card','响应来源登场军团','S02-0604')
+const publicAttacker={...card('public-attacker','合成公开攻击来源','S02-0618'),baseTroops:4000,troops:4000}
 const player=i=>({playerIndex:i,name:i===owner?'合成我方':'合成对手',deckName:'合成验收',faction:'otherworld',
  master:{masterId:i?'ST06-M1':'S02-06M2',masterName:'合成主宰',masterImageUrl:'/__response-art.png',hp:8,maxHp:8,abilities:[]},
  libraryCount:20,hand:i===owner?[oldCard,entrant]:[],handCount:i===owner?2:0,morale:[],graveyard:[],
@@ -78,12 +79,45 @@ function remount(){mountKey.value++;l12State.pendingAction=false;stage.value='sa
 function stable(){const game=initial();game.revision=4;game.prompts=[{...prompt('stable-selection','old-detail','card',['old-detail','entry-card']),
  minChoose:1,maxChoose:2,data:{sourceInstanceId:'old-detail'}}];publish(game);stage.value='stable'}
 function revision(){const game=JSON.parse(JSON.stringify(l12State.game));game.revision++;publish(game);stage.value='clock-only-update'}
-window.__responseQa={previous,next,same,remount,stable,revision,read:()=>({stage:stage.value,revision:l12State.game.revision,
- prompts:JSON.parse(JSON.stringify(l12State.game.prompts)),sent:sent.value,errors:errors.value})}
-createApp({setup(){return()=>h('div',[
+// Attack fixtures begin with an already public field card. Only the opt-in
+// movement case changes its field slot; neither path creates an entry event.
+function prepareAttack(){
+ const game=initial();game.revision=250;game.round=18;game.turnSerial=17;
+ game.players[1-owner].field[0][0]=publicAttacker;
+ game.recentEvents=[{sequence:250,type:'phase',playerIndex:1-owner,text:'合成攻击前状态',cards:[]}];
+ game.prompts=attackMovement?[{...prompt('previous-choice','old-detail','card',['old-detail']),createdRevision:250}]:[];
+ publish(game);stage.value=attackMovement?'attack-ready-old-detail':'attack-ready';
+}
+function attackResponse(){
+ const game=JSON.parse(JSON.stringify(l12State.game));
+ if(game.revision!==250)throw Error('先点击“进攻前状态”，再进入本次合成进攻响应');
+ const attacker=game.players[1-owner].field[0][0];
+ if(attacker?.instanceId!=='public-attacker')throw Error('合成公开攻击来源必须已在战场，不能从手牌制造登场');
+ if(attackMovement){
+  game.players[1-owner].field[0][0]=null;game.players[1-owner].field[0][1]=attacker;
+  game.recentEvents.push({sequence:251,type:'move',originZone:'field',playerIndex:1-owner,
+   text:'合成公开军团在战场内位移',cards:[attacker]});
+ }
+ game.revision=253;game.phase='Defense';
+ game.pendingDefense={attackerPlayer:1-owner,attackerInstanceId:attacker.instanceId,
+  target:{type:'master'},stage:'DefenderAttackTiming',attackValue:4000};
+ game.effectStack=[{stackItemId:'synthetic-attack-stack',controller:1-owner,sourceInstanceId:attacker.instanceId,
+  sourceCardId:attacker.cardId,sourceName:attacker.name,trigger:'opponent-attack',text:'合成对方进攻时机',negated:false}];
+ game.recentEvents.push({sequence:252,type:'attack',playerIndex:1-owner,text:'合成公开军团进攻主宰',cards:[attacker]},
+  {sequence:253,type:'prompt',playerIndex:owner,text:'合成进攻响应机会',cards:[]});
+ game.prompts=[{...prompt('defense-attack-response',attacker.instanceId),sourceCardId:attacker.cardId,createdRevision:253}];
+ if(game.recentEvents.some(event=>['play','put','enter'].includes(event.type)))throw Error('进攻夹具不得携带登场事件');
+ publish(game);stage.value=attackMovement?'attack-response-field-move':'attack-response';
+}
+function read(){return{stage:stage.value,owner,attackMovement,mountKey:mountKey.value,phase:l12State.game.phase,
+ revision:l12State.game.revision,pendingDefense:JSON.parse(JSON.stringify(l12State.game.pendingDefense||null)),
+ publicEvents:l12State.game.recentEvents.map(event=>({sequence:event.sequence,type:event.type,originZone:event.originZone})),
+ prompts:JSON.parse(JSON.stringify(l12State.game.prompts)),sent:sent.value,errors:errors.value}}
+window.__responseQa={previous,next,same,remount,stable,revision,prepareAttack,attackResponse,read}
+createApp({setup(){useLandscapeViewport(mobile);return()=>h('div',[
  h('nav',{class:'response-qa-controls'},[
-  ...[['上一个选择',previous],['下一响应',next],['同版重收',same],['同态重挂',remount],['保选测试',stable],['仅更新时钟',revision]].map(([label,action])=>h('button',{onClick:action},label)),
-  h('output',{id:'response-qa-state'},JSON.stringify({stage:stage.value,revision:l12State.game.revision,sent:sent.value,errors:errors.value})),
+  ...[['上一个选择',previous],['下一响应',next],['同版重收',same],['同态重挂',remount],['保选测试',stable],['仅更新时钟',revision],['进攻前状态',prepareAttack],['进攻响应',attackResponse]].map(([label,action])=>h('button',{onClick:action},label)),
+  h('output',{id:'response-qa-state'},JSON.stringify(read())),
  ]),h(GameBoard,{key:mountKey.value,game:l12State.game,readOnly:false})])}}).mount('#app')
 window.__responseQa.ready=true
 `

@@ -33,7 +33,7 @@ public sealed class B2TournamentDeckIdentityTests
                 Deck(originalPreset, "已改名"));
             Assert.True(renamed.Success);
             Assert.True(store.CreateDeck(actor.Id, Deck(replacementPreset, "旧名称")).Success);
-            var tournament = store.CreateTournament(actor, TournamentPayload(), Context("create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, actor, TournamentPayload(), Context("create"), true);
 
             recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
@@ -80,7 +80,7 @@ public sealed class B2TournamentDeckIdentityTests
             var replacement = store.CreateDeck(actor.Id,
                 Deck(catalog.PresetDecks[Math.Min(1, catalog.PresetDecks.Count - 1)], "重用名称"));
             Assert.True(replacement.Success);
-            var tournament = store.CreateTournament(actor, TournamentPayload(), Context("create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, actor, TournamentPayload(), Context("create"), true);
 
             Assert.Throws<KeyNotFoundException>(() => store.PreCheckInTournament(actor, tournament.Id,
                 new L12TournamentPreCheckInPayload("重用名称", string.Empty, original.Deck.Id),
@@ -108,7 +108,7 @@ public sealed class B2TournamentDeckIdentityTests
             Assert.True(store.CreateDeck(actor.Id, Deck(catalog.PresetDecks[0], "同名牌库")).Success);
             var foreign = store.CreateDeck(other.Id,
                 Deck(catalog.PresetDecks[Math.Min(1, catalog.PresetDecks.Count - 1)], "同名牌库"));
-            var tournament = store.CreateTournament(actor, TournamentPayload(), Context("create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, actor, TournamentPayload(), Context("create"), true);
 
             Assert.Throws<KeyNotFoundException>(() => store.PreCheckInTournament(actor, tournament.Id,
                 new L12TournamentPreCheckInPayload("同名牌库", string.Empty, foreign.Deck!.Id),
@@ -132,7 +132,7 @@ public sealed class B2TournamentDeckIdentityTests
             var actor = store.Register("b2tours01", "password-123").Account!;
             var preset = catalog.PresetDecks[0];
             var personal = store.CreateDeck(actor.Id, Deck(preset, "锁定前"));
-            var tournament = store.CreateTournament(actor, TournamentPayload(), Context("create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, actor, TournamentPayload(), Context("create"), true);
             tournament = store.PreCheckInTournament(actor, tournament.Id,
                 new L12TournamentPreCheckInPayload("故意不同的名称", string.Empty, personal.Deck!.Id),
                 tournament.Version, Context("lock"), true);

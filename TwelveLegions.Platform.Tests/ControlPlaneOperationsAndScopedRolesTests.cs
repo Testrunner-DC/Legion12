@@ -64,7 +64,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
 
             Assert.True(store.SendFriendRequest(organizer.Id, referee.Id).Success);
             Assert.True(store.ResolveFriendRequest(referee.Id, organizer.Id, true).Success);
-            var tournament = store.CreateTournament(organizer, CreateTournamentPayload([referee.Id]),
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, CreateTournamentPayload([referee.Id]),
                 Context("scoped-create"), true);
 
             Assert.Equal(organizer.Id, tournament.OrganizerAccountId);
@@ -77,7 +77,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
                 Context("outsider-staff"), true));
 
             var otherOrganizer = store.Register("tother83f5c", "password-123").Account!;
-            Assert.Throws<ArgumentException>(() => store.CreateTournament(otherOrganizer,
+            Assert.Throws<ArgumentException>(() => global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, otherOrganizer,
                 CreateTournamentPayload([referee.Id]), Context("not-friends"), true));
         }
         finally

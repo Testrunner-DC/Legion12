@@ -525,7 +525,7 @@ public sealed class CommittedTournamentReadsTests
         internal L12TournamentView CreateRunningTournament(L12AccountView organizer,
             L12AccountView player, string name, IReadOnlyList<string> referees)
         {
-            var tournament = Store.CreateTournament(organizer,
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(Store, organizer,
                 new L12TournamentCreatePayload(name, "single", "code", 8,
                     DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "committed projection",
                     "private", "season", string.Empty, 50, 5, referees,

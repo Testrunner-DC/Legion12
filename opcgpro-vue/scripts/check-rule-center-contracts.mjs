@@ -27,6 +27,8 @@ for (const token of ['compareCardNumbers', 'numeric: true', 'rulingCardSortKey',
 
 const player = readFrontend('src/l12/site/RuleCenterPage.vue')
 const admin = readFrontend('src/l12/site/AdminRuleRulingsPanel.vue')
+assert(player.includes('<RulesCardSummary') && player.includes(':disaster-card-ids="policy.disasterCardIds"')
+  && player.includes(':card-restrictions="policy.cardRestrictions"'), 'construction restrictions must use the same card-scope component as ranked and tournaments')
 const templateContract = ruleCenterTemplateContract({ player, admin })
 for (const [name, predicates] of ruleCenterGroups(templateContract))
   assert(predicates.every(Boolean), `template family missing ${name}`)

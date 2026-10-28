@@ -34,7 +34,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
                 CardRestrictions = restrictions,
             };
 
-            var tournament = store.CreateTournament(organizer, payload, Context("rules-snapshot"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, payload, Context("rules-snapshot"), true);
 
             Assert.Equal(policy.DisasterCardIds, tournament.Rules.DisasterCardIds);
             Assert.Equal(restrictions, tournament.Rules.CardRestrictions);
@@ -71,7 +71,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
             Assert.Equal("player", organizer.Role);
             Assert.Equal("player", referee.Role);
 
-            var tournament = store.CreateTournament(organizer, CreatePayload([referee.Id]),
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, CreatePayload([referee.Id]),
                 Context("scope-create"), true);
             Assert.Throws<L12TournamentScopeException>(() => store.SetTournamentStaff(outsider, tournament.Id,
                 new L12TournamentStaffPayload([outsider.Id]), tournament.Version, Context("scope-denied"), true));
@@ -90,7 +90,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             var admin = store.Login("Admin", "L12master").Account!;
             var organizer = Promote(store, admin, "VersionOrg", "organizer");
-            var tournament = store.CreateTournament(organizer, CreatePayload(), Context("version-create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, CreatePayload(), Context("version-create"), true);
             var tournamentVersion = tournament.Version;
             store.Register("tunrela63e4", "password-123");
 
@@ -140,7 +140,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var outsider = Promote(store, admin, "ApproveOut", "referee");
             var player = store.Register("tappro73608", "password-123").Account!;
             MakeFriends(store, organizer, reviewer);
-            var tournament = store.CreateTournament(organizer, CreatePayload([reviewer.Id]),
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, CreatePayload([reviewer.Id]),
                 Context("approval-create"), true);
             tournament = store.PreCheckInTournament(organizer, tournament.Id,
                 new L12TournamentPreCheckInPayload("Organizer Deck", OrganizerDeckCode), tournament.Version,
@@ -188,7 +188,7 @@ public sealed class ControlPlanePhaseFourTournamentTests
             var admin = store.Login("Admin", "L12master").Account!;
             var organizer = Promote(store, admin, "FlowOrg", "organizer");
             var player = store.Register("FlowPlayer", "password-123").Account!;
-            var tournament = store.CreateTournament(organizer, CreatePayload(deckVisibility: "after"),
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, CreatePayload(deckVisibility: "after"),
                 Context("flow-create"), true);
             tournament = store.PreCheckInTournament(organizer, tournament.Id,
                 new L12TournamentPreCheckInPayload("Secret A", SecretADeckCode), tournament.Version,

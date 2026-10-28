@@ -267,7 +267,7 @@ public sealed class CompactDeckPayloadMigrationTests
         }
         var refreshed = new L12PlatformStore(path) { PrivateDeckObjectPersistenceEnabled = true };
         var refreshedOwner = refreshed.Account(owner.Id)!;
-        var tournament = refreshed.CreateTournament(refreshedOwner,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(refreshed, refreshedOwner,
             new L12TournamentCreatePayload("schema8-rich-tournament", "swiss", "public", 8,
                 DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "schema8-rich", "after", "season",
                 string.Empty, 50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),

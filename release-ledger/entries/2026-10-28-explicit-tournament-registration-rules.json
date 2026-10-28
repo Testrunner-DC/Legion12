@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-explicit-tournament-registration-rules",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "赛事报名与规则展示",
+  "changes": [
+    {
+      "category": "tournaments",
+      "text": "创建赛事不再自动参赛，主办者和管理员需要主动报名；报名人数区分待签到、已签到和候补，已退赛或移除的记录不再占用报名人数。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicBrowsing.cs", "opcgpro-vue/src/l12/site/TournamentParticipantCounts.vue", "opcgpro-vue/src/l12/site/TournamentSummaryList.vue", "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue"]
+    },
+    {
+      "category": "rules",
+      "text": "赛事、排位与规则中心统一展示天灾卡池和禁限卡：可查看卡图、卡号、卡名与详情，并区分通用限制及各位主宰的专属限制。",
+      "paths": ["opcgpro-vue/src/l12/site/RulesCardSummary.vue", "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue", "opcgpro-vue/src/l12/site/TournamentCreateWizard.vue", "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue", "opcgpro-vue/src/l12/site/BattleHubPage.vue", "opcgpro-vue/src/l12/site/RuleCenterPage.vue", "opcgpro-vue/src/l12/site/ConstructionRuleEditor.vue", "opcgpro-vue/src/l12/site/DisasterPoolPicker.vue"]
+    }
+  ]
+}

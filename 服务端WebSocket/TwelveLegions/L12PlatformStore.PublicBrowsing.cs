@@ -206,7 +206,7 @@ public sealed partial class L12PlatformStore
             row.Losses, row.Draws, row.Byes, row.OpponentScore, row.OpponentsOpponentScore);
 
     private static L12PublicTournamentCountsView PublicTournamentCounts(TournamentRow row)
-        => new(row.Participants.Count(item => !item.Removed && !item.Waitlisted),
+        => new(row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted),
             row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted
                 && item.TournamentCheckedInAt is not null),
             row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted

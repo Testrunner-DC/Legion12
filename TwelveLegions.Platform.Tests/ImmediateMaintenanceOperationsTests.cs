@@ -357,7 +357,7 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
                 officialCards: catalog.Cards);
             var organizer = store.Register("MaintTOrg", "password-123").Account!;
             var player = store.Register("MaintTP2", "password-123").Account!;
-            var tournament = store.CreateTournament(organizer,
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer,
                 new L12TournamentCreatePayload("维护赛事", "single", "public", 8,
                     DateTimeOffset.UtcNow.AddHours(1), "现行规则", "maintenance gate", "after", "season",
                     string.Empty, 50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),

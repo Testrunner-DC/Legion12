@@ -85,8 +85,10 @@ assert.match(mat, /'response-target': responseTargetIds\?\.includes\(morale\.ins
   'morale response highlight must require the exact selected public instance')
 assert.equal((board.match(/:response-target-ids="responseTargetIds"/g) ?? []).length, 2,
   'both battlefield halves must keep response targets while the prompt is expanded or minimized')
-assert.equal((board.match(/@graveyard="\(!hasBlockingPrompt \|\| inspectionLayerMinimized\) && \(graveyardPlayer = \$event\)"/g) ?? []).length, 2,
-  'both public graveyards must remain inspectable while a blocking prompt is minimized')
+assert.equal((board.match(/@graveyard="graveyardInspectionAllowed && \(graveyardPlayer = \$event\)"/g) ?? []).length, 2,
+  'both public graveyards must share the read-only inspection gate')
+assert.match(board, /graveyardInspectionAllowed = computed\(\(\) => !\(props\.game\.prompts\?\.length \?\? 0\) \|\| inspectionLayerMinimized\.value\)/,
+  'passive opponent waiting must not block inspection; an owned prompt still requires minimization')
 assert.match(board, /:inspection-only="hasBlockingPrompt"/,
   'graveyard opened during a prompt must expose information without enabling grave abilities')
 assert.match(board, /graveyardPlayer\.value !== null \|\| !promptMinimized\.value/,

@@ -32,7 +32,12 @@ function functions(key, names) {
     const node = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)
     assert.ok(node, `actual ${key}.${name}`); return node.getText(ast)
   })
-  return transpile(nodes.join('\n') + `\nglobalThis.handlers = {${names.join(',')}}`)
+  const derived = key === 'detail' ? ast.statements.filter(ts.isVariableStatement)
+    .flatMap(node => node.declarationList.declarations)
+    .filter(node => ts.isIdentifier(node.name) && ['me', 'activeRegistration'].includes(node.name.text))
+    .map(node => 'const ' + node.getText(ast)) : []
+  if (key === 'detail') assert.equal(derived.length, 2, 'actual participant-state guards must be present')
+  return transpile([...derived, ...nodes].join('\n') + `\nglobalThis.handlers = {${names.join(',')}}`)
 }
 const names = {
   workbench: ['errorText', 'actorIsCurrent', 'runAction', 'ruleMatch', 'noShowLoss', 'removeParticipant', 'addTime', 'requestRematch', 'dropRegistration', 'join', 'unbanParticipant'],
@@ -40,12 +45,12 @@ const names = {
 }
 const methodCode = Object.fromEntries(Object.keys(names).map(key => [key, functions(key, names[key])]))
 const match = (overrides = {}) => ({ id: 'synthetic-match', playerAAccountId: 'actor-A', playerBAccountId: 'actor-B', status: 'running', readyA: false, readyB: true, paused: false, ...overrides })
-const tournament = (matches = [match()], overrides = {}) => ({ id: 'synthetic-tournament', version: 19, organizerAccountId: 'actor-A', participants: [], referees: [], rounds: [{ number: 1, status: 'running', matches }], ...overrides })
+const tournament = (matches = [match()], overrides = {}) => ({ id: 'synthetic-tournament', version: 19, organizerAccountId: 'actor-A', participants: ['actor-A', 'actor-B'].map(accountId => ({ accountId, dropped: false, removed: false })), referees: [], rounds: [{ number: 1, status: 'running', matches }], ...overrides })
 function fixture(key, actor = 'actor-A', item = tournament()) {
   const calls = [], pending = [], notice = { value: '' }, busy = { value: false }
   const platformState = { account: actor ? { id: actor } : null, token: 'synthetic-token' }
   const api = new Proxy({}, { get: (_, name) => async (...args) => { calls.push({ name, args }); return item } })
-  const scope = { ...policy, Error, console, componentAlive: true, disposed: false, actorEpoch: 0, platformState,
+  const scope = { ...policy, Error, console, computed: work => ({ get value() { return work() } }), componentAlive: true, disposed: false, actorEpoch: 0, platformState,
     route: { fullPath: '/synthetic/tournament' }, tournament: { value: item }, busy, notice, dropArmed: { value: true },
     accountId: { get value() { return platformState.account?.id ?? '' } },
     rulingReasons: { 'synthetic-match': ' synthetic reason ' }, participantReasons: { 'actor-A': ' synthetic reason ', 'actor-B': ' synthetic reason ', 'actor-C': ' synthetic reason ' },
@@ -165,6 +170,18 @@ await test('actual add-time/rematch/drop/pause/check-in/register/unban handlers 
     ['detail', 'register', [], 'register'], ['detail', 'drop', [], 'drop'], ['detail', 'unban', [{ accountId: 'actor-B' }], 'setRegistrationBan'],
   ]) { const f = fixture(key); await f.invoke(name, ...args); assert.equal(f.calls.length, 1, `${key}.${name}`); assert.equal(f.calls[0].name, api) }
   for (const button of templateButtons('workbench', ['addTime', 'requestRematch'])) assert.equal(disabled(button, { busy: false, accountId: 'actor-A', match: match() }), false)
+})
+await test('actual participant-state guards reject withdrawn and removed check-in/drop without changing staff identity', async () => {
+  for (const flags of [{ dropped: true }, { removed: true }]) {
+    const item = tournament(undefined, { participants: [{ accountId: 'actor-A', ...flags }] })
+    for (const [name, args] of [['drop', []], ['roundCheckIn', [1, true]]]) {
+      const f = fixture('detail', 'actor-A', item)
+      await f.invoke(name, ...args)
+      assert.equal(f.calls.length, 0)
+      assert.match(f.notice.value, /报名/)
+      assert.equal(f.scope.tournament.value.organizerAccountId, 'actor-A')
+    }
+  }
 })
 await test('existing reason validation and version are retained without policy granting permission', async () => {
   for (const key of ['workbench', 'detail']) {

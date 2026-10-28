@@ -112,7 +112,7 @@ public sealed class DeckDomainStorageTests
             store.UpsertDeck(player.Id, second);
             var published = store.PublishDeck(organizer.Id, first, null)!;
 
-            var tournament = store.CreateTournament(organizer,
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer,
                 new L12TournamentCreatePayload("存储验收赛", "swiss", "public", 8,
                     DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "storage", "after", "season", string.Empty,
                     50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),

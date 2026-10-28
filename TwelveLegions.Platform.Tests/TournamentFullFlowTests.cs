@@ -881,7 +881,7 @@ public sealed class TournamentFullFlowTests
         try
         {
             var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "PreCheckIn");
-            var tournament = store.CreateTournament(organizer, Payload("single"), Context("create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, Payload("single"), Context("create"), true);
             var player = players[0];
             tournament = store.RegisterTournament(player, tournament.Id, new L12TournamentRegistrationPayload(),
                 tournament.Version, Context("register-without-deck"), true);
@@ -940,7 +940,7 @@ public sealed class TournamentFullFlowTests
             var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "Transfer");
             var successor = players[0];
             MakeFriends(store, organizer, successor);
-            var tournament = store.CreateTournament(organizer, Payload("single"), Context("create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, Payload("single"), Context("create"), true);
             tournament = store.RequestTournamentOrganizerTransfer(organizer, tournament.Id,
                 new L12TournamentOrganizerTransferRequestPayload(successor.Id, "由接任者继续控场"),
                 tournament.Version, Context("request-transfer"), true);
@@ -968,7 +968,7 @@ public sealed class TournamentFullFlowTests
             var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "TransferEligibility");
             var successor = players[0];
             MakeFriends(store, organizer, successor);
-            var tournament = store.CreateTournament(organizer, Payload("single"), Context("create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, Payload("single"), Context("create"), true);
             tournament = store.RequestTournamentOrganizerTransfer(organizer, tournament.Id,
                 new L12TournamentOrganizerTransferRequestPayload(successor.Id, "由接任者继续控场"),
                 tournament.Version, Context("request-transfer"), true);
@@ -997,7 +997,7 @@ public sealed class TournamentFullFlowTests
             var successor = players[1];
             var outsider = players[2];
             MakeFriends(store, organizer, successor);
-            var tournament = store.CreateTournament(organizer, Payload("single"), Context("create"), true);
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, Payload("single"), Context("create"), true);
             tournament = store.RegisterTournament(removed, tournament.Id,
                 new L12TournamentRegistrationPayload(), tournament.Version, Context("register"), true);
             tournament = store.RequestTournamentOrganizerTransfer(organizer, tournament.Id,
@@ -1101,7 +1101,7 @@ public sealed class TournamentFullFlowTests
         try
         {
             var (store, organizer, players) = CreateStoreAndPlayers(root, 4, "Waitlist");
-            var tournament = store.CreateTournament(organizer,
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer,
                 Payload("single") with { MaxPlayers = 2 }, Context("create-waitlist"), true);
             tournament = store.RegisterTournament(players[0], tournament.Id,
                 new L12TournamentRegistrationPayload(), tournament.Version, Context("register-formal"), true);
@@ -1208,7 +1208,7 @@ public sealed class TournamentFullFlowTests
         {
             var (store, organizer, _) = CreateStoreAndPlayers(root, 1, "Summary");
             for (var index = 0; index < 31; index++)
-                store.CreateTournament(organizer, Payload("single") with { Name = $"分页赛事 {index:00}" },
+                global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, Payload("single") with { Name = $"分页赛事 {index:00}" },
                     Context($"create-{index}"), true);
             var first = store.TournamentSummaries(organizer, "host", null, null, 1, 12);
             var third = store.TournamentSummaries(organizer, "host", null, null, 3, 12);
@@ -1234,7 +1234,7 @@ public sealed class TournamentFullFlowTests
         try
         {
             var (store, organizer, players) = CreateStoreAndPlayers(root, 256, "Capacity");
-            var tournament = store.CreateTournament(organizer,
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer,
                 Payload("swiss") with { Name = "256 人规模赛事", MaxPlayers = 256, SwissRounds = 8 },
                 Context("create-capacity"), true);
             foreach (var player in players)
@@ -1274,7 +1274,7 @@ public sealed class TournamentFullFlowTests
     private static L12TournamentView CreateAndRegister(L12PlatformStore store, L12AccountView organizer,
         IReadOnlyList<L12AccountView> players, L12TournamentCreatePayload payload)
     {
-        var tournament = store.CreateTournament(organizer, payload, Context("create"), true);
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, organizer, payload, Context("create"), true);
         tournament = SelectDeck(store, organizer, tournament, update: true);
         foreach (var player in players)
             tournament = SelectDeck(store, player, tournament, update: false);

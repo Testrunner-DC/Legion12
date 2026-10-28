@@ -19,6 +19,8 @@ const router = read('src/router/index.ts')
 const admin = read('src/l12/site/AdminTournamentWorkbench.vue')
 const time = read('src/l12/tournamentTime.ts')
 const createPolicy = read('src/l12/tournamentCreatePolicy.ts')
+const sharedRules = read('src/l12/site/RulesCardSummary.vue')
+const participantCounts = read('src/l12/site/TournamentParticipantCounts.vue')
 await import('./test-tournament-create-flow.mjs')
 const gamePage = read('src/l12/GamePage.vue')
 const roomLoadingState = read('src/l12/tournamentRoomLoadingState.ts')
@@ -199,6 +201,8 @@ const checks = [
   ['templates manual changes and restored drafts share format normalization', wizard.includes('normalizeTournamentFormatInPlace(form)') && wizard.includes('watch(() => form.format') && wizard.indexOf('Object.assign(form, saved)') < wizard.lastIndexOf('normalizeTournamentFormatInPlace(form)')],
   ['player and admin creation bind the current-context flow; real script setup locks frozen input and preview version', hasBoundCreateFlow(wizard, 'create') && hasBoundCreateFlow(admin, 'createTournament')],
   ['player creation reuses shared disaster and construction-rule components', wizard.includes("import DisasterPoolPicker from './DisasterPoolPicker.vue'") && wizard.includes("import ConstructionRuleEditor from './ConstructionRuleEditor.vue'") && wizard.includes('<DisasterPoolPicker v-model="form.disasterCardIds"') && wizard.includes('<ConstructionRuleEditor v-model="form.cardRestrictions"')],
+  ['all tournament rule snapshots use one shared card and master-scope renderer', [detail, publicDetail, wizard, admin].every(source => source.includes('<RulesCardSummary') && source.includes(':disaster-card-ids=') && source.includes(':card-restrictions=')) && sharedRules.includes('rule.masterId') && sharedRules.includes('<CatalogCardDetails')],
+  ['all tournament headcounts use one explicit registration and check-in renderer', [detail, publicDetail, summary, admin].every(source => source.includes('<TournamentParticipantCounts') && !source.includes('counts.active }}/')) && participantCounts.includes('counts.pendingCheckIn') && participantCounts.includes('counts.checkedIn')],
   ['disaster modes freeze the organizer selection and none stays empty', createPolicy.includes("if (mode === 'none') return []") && createPolicy.includes('source.disasterCardIds') && createPolicy.includes('tournamentDisasterSnapshot(normalized.disasterMode, normalized)') && createPolicy.includes('cardIds.length < 9 || cardIds.length > 64') && createPolicy.includes('TOURNAMENT_ANNIHILATION_CARD_ID') && wizard.includes('getEffectiveOperationsPolicy()')],
   ['empty or invalid tournament disaster selection fails readably', createPolicy.includes('本场尚未选择天灾卡') && createPolicy.includes('本场天灾池必须为 9–64 张') && wizard.includes('policyError')],
   ['server keeps strict disaster pool count and annihilation-last authority', tournamentServer.includes('normalizedDisasters.Length is < 9 or > 64') && tournamentServer.includes('normalizedDisasters[^1], L12ActiveDisasterRules.AnnihilationCardId') && tournamentServer.includes('天灾池须为 9–64 张（含湮灭），且湮灭固定在最后一张')],

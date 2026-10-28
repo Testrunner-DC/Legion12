@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
+import RulesCardSummary from './RulesCardSummary.vue'
 import { cardArchiveProducts, cardProductsForIds, displayCardNumber, loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import { getEffectiveOperationsPolicy, getPublicContentBatch, type EffectiveOperationsPolicy } from '@/l12/platform'
 import { mergedRulings, parsePublishedRuleCenter, parsePublishedRulings, RULE_TOPIC_DEFINITIONS, type RuleCenterDocument, type RuleCenterEntry, type RuleRuling, type RuleTopicId } from '@/l12/data/ruleCenterData'
@@ -332,7 +333,7 @@ function onVisibility() {
 watch(() => route.query, applyRoute, { immediate: true })
 watch([tab, faqMode, query, selectedTopics, selectedCategory, selectedProduct, openIds], syncQuery, { deep: true })
 watch([tab, faqMode], () => {
-  if (tab.value === 'faq' && faqMode.value === 'card') void ensureCardCatalog()
+  if (tab.value === 'construction' || (tab.value === 'faq' && faqMode.value === 'card')) void ensureCardCatalog()
 }, { immediate: true })
 onMounted(() => {
   void loadDynamicContent()
@@ -395,7 +396,7 @@ onBeforeUnmount(() => {
 
     <template v-else-if="tab === 'construction'">
       <section class="section-lead"><small>DECK CONSTRUCTION</small><h2>构筑与限制</h2><p>查看当前生效的构筑规则与卡牌限制。</p></section>
-      <section v-if="policy" class="policy-grid"><article><small>规则版本</small><h3>运营规则 #{{ policy.version }}</h3><p>{{ policy.season.name }} · {{ policy.season.status }}</p></article><article><small>默认对局</small><h3>{{ policy.defaultRoomConfig.matchModeId }}</h3><p>天灾模式：{{ policy.defaultRoomConfig.disasterMode }}</p></article><article class="policy-restrictions"><small>当前卡牌限制</small><h3>{{ policy.cardRestrictions.length ? `${policy.cardRestrictions.length} 项` : '无额外限制' }}</h3><ul v-if="policy.cardRestrictions.length"><li v-for="restriction in policy.cardRestrictions" :key="`${restriction.cardId}-${restriction.masterId || ''}`"><b>{{ restriction.cardId }}</b><span>最多 {{ restriction.maxCopies }} 张</span><em v-if="restriction.reason">{{ restriction.reason }}</em></li></ul><p v-else>仍须遵守核心规则与卡牌自身的构筑文字。</p></article></section><div v-else class="empty compact">{{ policyError || '正在读取当前运营限制…' }}</div>
+      <section v-if="policy" class="policy-grid"><article><small>规则版本</small><h3>运营规则 #{{ policy.version }}</h3><p>{{ policy.season.name }} · {{ policy.season.status }}</p></article><article><small>默认对局</small><h3>{{ policy.defaultRoomConfig.matchModeId }}</h3><p>天灾模式：{{ policy.defaultRoomConfig.disasterMode }}</p></article><article class="policy-restrictions"><RulesCardSummary :cards="cardCatalog" :disaster-card-ids="policy.disasterCardIds" :card-restrictions="policy.cardRestrictions" disaster-mode="season" disaster-title="当前赛季天灾" restriction-title="当前卡牌限制"/></article></section><div v-else class="empty compact">{{ policyError || '正在读取当前运营限制…' }}</div>
       <section v-if="constructionRulings.length" class="supplemental-qa"><div class="faq-result-bar"><b>构筑裁定 · {{ constructionRulings.length }} 条</b><div><UiButton @click="setAllExpanded(constructionRulings, false)">全部收起</UiButton><UiButton @click="setAllExpanded(constructionRulings, true)">全部展开</UiButton></div></div><div class="faq-list"><article v-for="item in constructionRulings" :id="`rule-entry-${item.id}`" :key="item.id" :class="{ open: openIds.has(item.id) }"><button class="faq-question" :aria-expanded="openIds.has(item.id)" @click="toggleEntry(item)"><span class="faq-number">问</span><span class="faq-title"><small>{{ item.category }}</small><b>{{ item.question }}</b></span><span class="faq-toggle" aria-hidden="true">{{ openIds.has(item.id) ? '−' : '+' }}</span></button><div v-if="openIds.has(item.id)" class="faq-answer"><strong>答</strong><div><p>{{ item.answer }}</p></div></div></article></div></section>
     </template>
 

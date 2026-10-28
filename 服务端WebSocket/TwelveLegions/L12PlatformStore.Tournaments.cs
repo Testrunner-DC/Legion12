@@ -1676,10 +1676,7 @@ public sealed partial class L12PlatformStore
             AutomationStatus = operationMode == "automated" ? "scheduled" : "disabled",
             NextAutomaticActionAt = operationMode == "automated"
                 ? payload.StartAt!.Value.AddMinutes(-payload.CheckInMinutes) : null,
-            Participants =
-            [
-                new TournamentParticipantRow { AccountId = actor.Id, Seed = 1, Deck = new TournamentDeckSnapshotRow() },
-            ],
+            Participants = [],
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -1717,8 +1714,6 @@ public sealed partial class L12PlatformStore
                 Deck = DeckSnapshot(person.DeckName ?? string.Empty, person.DeckCode ?? string.Empty),
             });
         }
-        if (!row.Participants.Any(item => item.AccountId == actor.Id))
-            row.Participants.Insert(0, new TournamentParticipantRow { AccountId = actor.Id });
         if (row.Participants.Count > row.MaxPlayers) row.Participants = row.Participants.Take(row.MaxPlayers).ToList();
         row.Rounds = ConvertLegacyRounds(actor, row, input.Rounds ?? []);
         if (row.Status != "registration")
@@ -2151,7 +2146,7 @@ public sealed partial class L12PlatformStore
                         b is null ? "轮空" : PublicUsername(b), match.Result, match.SourceMatchIds.ToArray());
                 }).ToArray())).ToArray();
         var counts = new L12TournamentCountsView(
-            row.Participants.Count(item => !item.Removed && !item.Waitlisted),
+            row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted),
             row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted
                 && item.TournamentCheckedInAt is null),
             row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted

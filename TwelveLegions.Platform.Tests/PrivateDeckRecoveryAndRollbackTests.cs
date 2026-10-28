@@ -210,7 +210,7 @@ public sealed class PrivateDeckRecoveryAndRollbackTests
         var first = catalog.PresetDecks[0];
         var published = store.PublishDeck(owner.Id, CopyDeck(first, "published"), null)!;
         var saved = store.CreateDeck(owner.Id, CopyDeck(first, "before rename", published.Id, 1)).Deck!;
-        var tournament = store.CreateTournament(owner,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, owner,
             new L12TournamentCreatePayload("F2恢复赛", "swiss", "public", 8, DateTimeOffset.UtcNow.AddHours(1),
                 "S01/S02", "storage", "after", "season", string.Empty, 50, 5,
                 RegistrationVisibility: "public", LateGraceMinutes: 5), Context("create"), true);

@@ -182,7 +182,7 @@ public sealed class DeckLazyRuntimeTests
                 Name = "locked", MasterId = preset.MasterId, CardIds = [.. preset.CardIds],
                 MoraleIds = [.. preset.MoraleIds], SpecialIds = [.. preset.SpecialIds],
             }).Deck!;
-            var tournament = store.CreateTournament(owner,
+            var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, owner,
                 new L12TournamentCreatePayload("惰性锁牌验收", "swiss", "public", 8,
                     DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "storage", "after", "season",
                     string.Empty, 50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),
@@ -529,7 +529,7 @@ public sealed class DeckLazyRuntimeTests
         {
             var owner = store.Account(ownerId)!;
             const string code = "L12D2-B2N7M-ZM2AW-YRPWG-MNDZS-23KMT-KP73X-24KMZ-E6PWG-F8B33-38MT7-ERQFT-V";
-            var tournament = preCheckIn ? store.CreateTournament(owner,
+            var tournament = preCheckIn ? global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, owner,
                 new L12TournamentCreatePayload("legacy preview", "swiss", "public", 8,
                     DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "preview", "after", "season",
                     string.Empty, 50, 5), new L12AdminAuditContext("legacy-preview-create"), true) : null;
@@ -709,7 +709,7 @@ public sealed class DeckLazyRuntimeTests
     private static L12TournamentView LockedTournament(L12PlatformStore store, L12AccountView owner,
         L12AccountView player, string name, string visibility)
     {
-        var tournament = store.CreateTournament(owner,
+        var tournament = global::TwelveLegions.Platform.Tests.TournamentTestSetup.CreateWithRegisteredOrganizer(store, owner,
             new L12TournamentCreatePayload(name, "single", "public", 8, DateTimeOffset.UtcNow.AddHours(1),
                 "S01/S02", "synthetic", visibility, "season", string.Empty, 50, 5,
                 RegistrationVisibility: "public", LateGraceMinutes: 5),

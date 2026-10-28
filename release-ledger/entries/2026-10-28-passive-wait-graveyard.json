@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-passive-wait-graveyard",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "等待时查看墓地与响应窗口",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "等待对手选择时可以查看双方墓地，不会因此发动墓地能力；新的本人选择到来时仍优先处理选择，并关闭上一选择遗留的卡牌详情抽屉，避免遮住响应按钮。",
+      "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue"]
+    }
+  ]
+}

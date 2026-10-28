@@ -202,6 +202,7 @@ async function closeCombatDecisionInfo() {
   combatInfoTrigger.value?.focus()
 }
 const inspectionLayerMinimized = computed(() => promptMinimized.value || boardControlMinimized.value || mobileMoralePickerMinimized.value || combatDecisionMinimized.value)
+const graveyardInspectionAllowed = computed(() => !(props.game.prompts?.length ?? 0) || inspectionLayerMinimized.value)
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
 type PublicRevealPresentation = {
@@ -955,6 +956,7 @@ function clearOrdinaryInteractionState() {
   graveyardPlayer.value = null
   masterPlayerIndex.value = null
   focusCard.value = null
+  mobileInspectorOpen.value = false
   customDisasterSlot.value = null
   closeMobileTrialAbility()
 }
@@ -1776,7 +1778,7 @@ function statusTexts(card: Card) {
               :mobile-morale-picker="mobileMoralePickerEnabled"
               :master-targetable="!isControlledPlayer(viewEnemy.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewEnemy.playerIndex, row, slot, card)" @master="masterFor(viewEnemy.playerIndex)"
-              @focus="focusCard = $event" @inspect="inspectDialogCard" @graveyard="(!hasBlockingPrompt || inspectionLayerMinimized) && (graveyardPlayer = $event)"
+              @focus="focusCard = $event" @inspect="inspectDialogCard" @graveyard="graveyardInspectionAllowed && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewEnemy.playerIndex, action, card)"
               @ability="(card, ability) => activateAbilityFor(viewEnemy.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewEnemy.playerIndex, ability)"
@@ -1878,7 +1880,7 @@ function statusTexts(card: Card) {
               :combat-target-master="combat?.targetOwner.playerIndex === viewMe.playerIndex && !combat.target"
               :master-targetable="!isControlledPlayer(viewMe.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewMe.playerIndex, row, slot, card)" @master="masterFor(viewMe.playerIndex)"
-              @focus="focusCard = $event" @inspect="inspectDialogCard" @graveyard="(!hasBlockingPrompt || inspectionLayerMinimized) && (graveyardPlayer = $event)"
+              @focus="focusCard = $event" @inspect="inspectDialogCard" @graveyard="graveyardInspectionAllowed && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewMe.playerIndex, action, card)"
               @select-card="card => selectPublicCardFor(viewMe.playerIndex, card)"
               @ability="(card, ability) => activateAbilityFor(viewMe.playerIndex, card, ability)"
