@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-29 OPS-CI-ARTIFACT-RELOCATION（已实际TEST发布验证）
+
+- 标准CI原清单含Linux绝对生成路径，Windows原入口无法消费；只加显式ArtifactDirectory＋原manifest SHA成对映射，按固定两个leaf选择，根/祖先/leaf链接、缺失/错SHA和原tar/capability都拒绝。原三件字节与清单不改，不另造打包器。
+- CandidateRepository可选指定同候选干净Git根，实际clean/HEAD及五远端受管工具来源仍强核；避免Main其他在途源码混入固定候选，不放宽dirty或包绑定。
+- 原入口具名RED、2正/19拒绝及原受影响归档/能力标记反例实际通过；source-delivery在representative-load-9ef-20261029/artifact-relocation。Main同9ef包真实r2预演/切换及独立62523/DLL6F571AE4/静态/HTTP/WS/备份已通过，正式d557/33991保持。回退仅两叶工具，不改运行数据或原manifest。工具同步不是新应用部署，不重跑已成功切换。
+
 ## 2026-10-29 CEBC减兵力共享修复完整本地接受（待上线）
 
 - 原324张卡池扫描25显式负兵力文本、73含定义/包装的限时调用行，唯一AddTimedModifier入口，不顺手改变木马持续负光环。按已裁定本次真实进攻正加成→最近实际到期限时→持续来源抵消；设值基值差不可消费。负层保完整额、历史吸收Amount及同代仍存活Restorable，真实伤害独立；来源失效不复活，被取消只撤该负层及仍有效份额，保独立费用/其他层。

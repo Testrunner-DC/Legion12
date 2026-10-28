@@ -4,6 +4,9 @@ param(
     [string]$KnownHostsFile = "",
     [string]$IdentityFile = "",
     [string]$ArtifactManifest = "",
+    [string]$ArtifactDirectory = "",
+    [string]$ArtifactManifestSha256 = "",
+    [string]$CandidateRepository = "",
     [switch]$DryRun,
     [switch]$ValidateArtifactOnly
 )
@@ -227,12 +230,61 @@ function Get-NormalizedTarMembers {
     return $normalized.ToArray()
 }
 
+function Resolve-PlainArtifactPath {
+    param([Parameter(Mandatory = $true)][string]$Path, [switch]$Directory)
+    if (-not [IO.Path]::IsPathFullyQualified($Path) -or $Path.StartsWith('\\')) {
+        throw "Artifact relocation requires a fully qualified local path."
+    }
+    $full = [IO.Path]::GetFullPath($Path)
+    $item = Get-Item -LiteralPath $full -Force -ErrorAction Stop
+    if ($item.PSIsContainer -ne [bool]$Directory) { throw "Artifact relocation path has the wrong file type: $full" }
+    while ($null -ne $item) {
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.LinkType) { throw "Artifact relocation path contains a link: $($item.FullName)" }
+        $parent = Split-Path -Parent $item.FullName
+        if ([string]::IsNullOrEmpty($parent) -or $parent -eq $item.FullName) { break }
+        $item = Get-Item -LiteralPath $parent -Force -ErrorAction Stop
+    }
+    return $full
+}
+
+function Resolve-ValidatedCandidateRepository {
+    param([Parameter(Mandatory = $true)][string]$Repository, [Parameter(Mandatory = $true)][string]$Commit)
+    Require-Command git
+    $root = Resolve-PlainArtifactPath -Path $Repository -Directory
+    $top = @(& git -C $root rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $top.Count -ne 1 -or [IO.Path]::GetFullPath($top[0]) -ne $root) {
+        throw "CandidateRepository must be the actual Git worktree root."
+    }
+    $dirty = @(& git -C $root status --porcelain)
+    if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) { throw "The worktree is dirty; testrun archives must come from a clean commit." }
+    $head = @(& git -C $root rev-parse HEAD)
+    if ($LASTEXITCODE -ne 0 -or $head.Count -ne 1 -or $head[0] -cne $Commit) { throw "Artifact commit does not match the clean worktree HEAD." }
+    foreach ($relative in @('ops/server/deploy-l12-testrun-release.sh', 'ops/server/verify-l12-health.mjs',
+        'ops/server/activate-l12-testrun-path.sh', 'ops/server/legion12-testrun-path.nginx', 'ops/server/legion12-testrun.service')) {
+        $null = Resolve-PlainArtifactPath -Path (Join-Path $root $relative)
+        $null = & git -C $root ls-files --error-unmatch -- $relative 2>$null
+        if ($LASTEXITCODE -ne 0) { throw "CandidateRepository deployment tool is not tracked: $relative" }
+    }
+    return $root
+}
+
 function Read-ValidatedArtifact {
     param([Parameter(Mandatory = $true)][string]$ManifestPath)
     if ([string]::IsNullOrWhiteSpace($ManifestPath) -or -not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
         throw "A verified artifact manifest is required."
     }
+    $relocate = -not [string]::IsNullOrWhiteSpace($ArtifactDirectory)
+    if ($relocate -ne (-not [string]::IsNullOrWhiteSpace($ArtifactManifestSha256))) {
+        throw "ArtifactDirectory and ArtifactManifestSha256 must be supplied together."
+    }
     $manifestPathResolved = (Resolve-Path -LiteralPath $ManifestPath).Path
+    if ($relocate) {
+        $manifestPathResolved = Resolve-PlainArtifactPath -Path ([IO.Path]::GetFullPath($ManifestPath))
+        if ($ArtifactManifestSha256 -cnotmatch '^[a-fA-F0-9]{64}$' -or
+            (Get-FileHash -LiteralPath $manifestPathResolved -Algorithm SHA256).Hash -ine $ArtifactManifestSha256) {
+            throw "Original artifact manifest SHA256 differs."
+        }
+    }
     $manifestDirectory = Split-Path -Parent $manifestPathResolved
     $manifest = Get-Content -LiteralPath $manifestPathResolved -Raw | ConvertFrom-Json
     $commit = [string]$manifest.commit
@@ -242,12 +294,19 @@ function Read-ValidatedArtifact {
     if (-not (Test-DeploymentManifestContract -Manifest $manifest) -or $commit -cnotmatch '^[0-9a-f]{40}$' -or
         $releaseHash -notmatch '^[0-9a-f]{64}$' -or $assetHash -notmatch '^[0-9a-f]{64}$' -or
         $assetArchiveHash -notmatch '^[0-9a-f]{64}$') { throw "Artifact manifest identity fields are invalid." }
+    if ($relocate) {
+        $archiveRoot = Resolve-PlainArtifactPath -Path $ArtifactDirectory -Directory
+        $releaseArchive = Resolve-PlainArtifactPath -Path (Join-Path $archiveRoot "l12-release-$commit.tar.gz")
+        $assetArchive = Resolve-PlainArtifactPath -Path (Join-Path $archiveRoot "l12-card-assets-$assetHash.tar.gz")
+    }
+    else {
     $releaseArchive = if ([IO.Path]::IsPathRooted([string]$manifest.releaseArchive)) {
         [string]$manifest.releaseArchive
     } else { Join-Path $manifestDirectory ([string]$manifest.releaseArchive) }
     $assetArchive = if ([IO.Path]::IsPathRooted([string]$manifest.cardAssetsArchive)) {
         [string]$manifest.cardAssetsArchive
     } else { Join-Path $manifestDirectory ([string]$manifest.cardAssetsArchive) }
+    }
     foreach ($path in @($releaseArchive, $assetArchive)) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Artifact archive is missing: $path" }
     }
@@ -312,17 +371,21 @@ function Read-ValidatedArtifact {
 $endpoint = Resolve-TestrunEndpoint -RemoteServer $Server
 foreach ($command in @("tar", "ssh-keygen")) { Require-Command $command }
 $artifact = Read-ValidatedArtifact -ManifestPath $ArtifactManifest
+$candidateRoot = if (-not [string]::IsNullOrWhiteSpace($CandidateRepository)) {
+    Resolve-ValidatedCandidateRepository -Repository $CandidateRepository -Commit $artifact.Commit
+} else { "" }
 if ($ValidateArtifactOnly) {
     Write-Host "[L12 testrun deploy] Target and artifact validation passed; no remote connection was made."
     exit 0
 }
 
 foreach ($command in @("git", "ssh", "scp")) { Require-Command $command }
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$repoRoot = if ($candidateRoot) { $candidateRoot } else { (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 $originalLocation = Get-Location
 try {
     Set-Location $repoRoot
-    if (& git status --porcelain) { throw "The worktree is dirty; testrun archives must come from a clean commit." }
+    $dirty = @(& git status --porcelain)
+    if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) { throw "The worktree is dirty; testrun archives must come from a clean commit." }
     $head = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $head -ne $artifact.Commit) { throw "Artifact commit does not match the clean worktree HEAD." }
     $sshOptions = @(Resolve-TestrunSshOptions -Endpoint $endpoint -KnownHosts $KnownHostsFile -Identity $IdentityFile)

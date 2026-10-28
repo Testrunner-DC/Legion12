@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$FixtureBase = "")
+param([string]$FixtureBase = "", [switch]$ArtifactRelocationOnly)
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -226,6 +226,7 @@ $script:OwnedFixtureRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $fi
 $suitePassed = $false
 
 try {
+    if (-not $ArtifactRelocationOnly) {
     $logicalProbe = Join-Path $fixture "logical-hardlink-probe"
     New-Item -ItemType Directory -Path $logicalProbe -Force | Out-Null
     $logicalSource = Join-Path $logicalProbe "source.bin"
@@ -561,6 +562,7 @@ runtime_dir=synthetic-runtime; backup_dir=synthetic-backups; failure_dir=synthet
     Assert-True ($envSource.Contains('L12_EMAIL_FEATURE_ENABLED=false') -and $envSource.Contains('L12_PUBLIC_BASE_URL=https://legion-12.com/testrun') -and $envSource.Contains('L12_TESTRUN_MATCH_STORAGE=ephemeral')) "Environment example is not fail-closed."
     Assert-True ($windowsSource.Contains('StrictHostKeyChecking=yes') -and $windowsSource.Contains('HostName=$($Endpoint.Address)') -and $windowsSource.Contains('HostKeyAlias=$($Endpoint.HostKeyAlias)')) "Windows entry does not pin strict SSH trust."
 
+    }
     $invalidTarget = Invoke-NativeCapture $powerShell.Source @("-NoProfile", "-File", $windowsDeploy, "-Server", "root@example.com", "-ArtifactManifest", (Join-Path $fixture "missing.json"), "-ValidateArtifactOnly")
     Assert-True ($invalidTarget.ExitCode -ne 0 -and $invalidTarget.Output.Contains('Refusing non-testrun target')) "Windows entry accepted an arbitrary host."
 
@@ -679,6 +681,110 @@ runtime_dir=synthetic-runtime; backup_dir=synthetic-backups; failure_dir=synthet
     Copy-Item -LiteralPath $validReleaseArchive -Destination $releaseArchive -Force
     $manifest.releaseSha256 = (Get-FileHash $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Utf8NoBom $manifestPath ($manifest | ConvertTo-Json)
+    # The original CI manifest is an immutable input: only the explicit local
+    # archive selection changes; all ordinary archive gates above still run.
+    $mappedRoot = Join-Path $fixture "mapped"
+    New-Item -ItemType Directory -Path $mappedRoot | Out-Null
+    Copy-Item -LiteralPath $releaseArchive, $assetArchive -Destination $mappedRoot
+    $ciManifestPath = Join-Path $artifactRoot "ci-original.json"
+    $ciManifest = $manifest | ConvertTo-Json | ConvertFrom-Json
+    $ciManifest.releaseArchive = "/home/runner/canonical/$commitB/l12-release-$commitB.tar.gz"
+    $ciManifest.cardAssetsArchive = "/home/runner/canonical/l12-card-assets-$assetHash.tar.gz"
+    Write-Utf8NoBom $ciManifestPath ($ciManifest | ConvertTo-Json)
+    $ciManifestHash = (Get-FileHash -LiteralPath $ciManifestPath).Hash
+    $ciManifestBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($ciManifestPath))
+    $ciManifestTime = (Get-Item -LiteralPath $ciManifestPath).LastWriteTimeUtc.Ticks
+    $relocationArguments = @("-NoProfile", "-File", $windowsDeploy, "-ArtifactManifest", $ciManifestPath,
+        "-ArtifactDirectory", $mappedRoot, "-ArtifactManifestSha256", $ciManifestHash, "-ValidateArtifactOnly")
+    $relocated = Invoke-NativeCapture $powerShell.Source $relocationArguments
+    Assert-True ($relocated.ExitCode -eq 0 -and $relocated.Output.Contains('no remote connection was made')) "CI original manifest explicit relocation failed: $($relocated.Output)"
+    Assert-True ([Convert]::ToBase64String([IO.File]::ReadAllBytes($ciManifestPath)) -ceq $ciManifestBytes -and
+        (Get-Item -LiteralPath $ciManifestPath).LastWriteTimeUtc.Ticks -eq $ciManifestTime) "Relocation modified original manifest bytes or timestamp."
+    $relocationCases = 1
+    function Assert-RelocationRejected {
+        param([string]$Name, [string[]]$Arguments, [string]$Expected)
+        $result = Invoke-NativeCapture $powerShell.Source (@('-NoProfile', '-File', $windowsDeploy, '-ArtifactManifest', $ciManifestPath, '-ValidateArtifactOnly') + $Arguments)
+        Assert-True ($result.ExitCode -ne 0 -and $result.Output.Contains($Expected)) "Relocation case '$Name' failed for an unrelated reason: $($result.Output)"
+        Write-Host "[L12 testrun artifact relocation] rejected $Name"
+    }
+    $mappingOptions = @('-ArtifactDirectory', $mappedRoot, '-ArtifactManifestSha256', $ciManifestHash)
+    Assert-RelocationRejected 'directory-without-hash' @('-ArtifactDirectory', $mappedRoot) 'must be supplied together'
+    Assert-RelocationRejected 'hash-without-directory' @('-ArtifactManifestSha256', $ciManifestHash) 'must be supplied together'
+    Assert-RelocationRejected 'wrong-original-hash' @('-ArtifactDirectory', $mappedRoot, '-ArtifactManifestSha256', ('0' * 64)) 'Original artifact manifest SHA256 differs'
+    Assert-RelocationRejected 'malformed-original-hash' @('-ArtifactDirectory', $mappedRoot, '-ArtifactManifestSha256', '../escape') 'Original artifact manifest SHA256 differs'
+    Assert-RelocationRejected 'relative-directory' @('-ArtifactDirectory', 'relative', '-ArtifactManifestSha256', $ciManifestHash) 'fully qualified local path'
+    Assert-RelocationRejected 'missing-directory' @('-ArtifactDirectory', (Join-Path $fixture 'absent'), '-ArtifactManifestSha256', $ciManifestHash) 'does not exist'
+    Assert-RelocationRejected 'file-directory' @('-ArtifactDirectory', $releaseArchive, '-ArtifactManifestSha256', $ciManifestHash) 'wrong file type'
+    $rootAlias = Join-Path $fixture 'mapped-alias'
+    New-Item -ItemType Junction -Path $rootAlias -Target $mappedRoot | Out-Null
+    try { Assert-RelocationRejected 'root-link' @('-ArtifactDirectory', $rootAlias, '-ArtifactManifestSha256', $ciManifestHash) 'contains a link' }
+    finally { [IO.Directory]::Delete($rootAlias) }
+    $ancestorAlias = Join-Path $fixture 'ancestor-alias'
+    New-Item -ItemType Junction -Path $ancestorAlias -Target $artifactRoot | Out-Null
+    try { Assert-RelocationRejected 'ancestor-link' @('-ArtifactDirectory', (Join-Path $ancestorAlias 'release'), '-ArtifactManifestSha256', $ciManifestHash) 'contains a link' }
+    finally { [IO.Directory]::Delete($ancestorAlias) }
+    foreach ($leaf in @((Split-Path $releaseArchive -Leaf), (Split-Path $assetArchive -Leaf))) {
+        $target = Join-Path $mappedRoot $leaf
+        $held = "$target.held"
+        Move-Item -LiteralPath $target -Destination $held
+        try {
+            Assert-RelocationRejected "missing-$leaf" $mappingOptions 'does not exist'
+            New-Item -ItemType HardLink -Path $target -Target $held | Out-Null
+            Assert-RelocationRejected "linked-$leaf" $mappingOptions 'contains a link'
+            Remove-Item -LiteralPath $target -Force
+            Write-Utf8NoBom $target 'wrong archive bytes'
+            Assert-RelocationRejected "wrong-bytes-$leaf" $mappingOptions 'archive SHA256 differs'
+            Remove-Item -LiteralPath $target -Force
+        }
+        finally {
+            if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
+            Move-Item -LiteralPath $held -Destination $target
+        }
+    }
+    Assert-RelocationRejected 'missing-candidate-root' ($mappingOptions + @('-CandidateRepository', (Join-Path $fixture 'missing-repo'))) 'does not exist'
+    Assert-RelocationRejected 'non-git-candidate-root' ($mappingOptions + @('-CandidateRepository', $mappedRoot)) 'actual Git worktree root'
+    $candidateRoot = Join-Path $fixture 'candidate'
+    New-Item -ItemType Directory -Path (Join-Path $candidateRoot 'ops/server') -Force | Out-Null
+    foreach ($leaf in @('deploy-l12-testrun-release.sh', 'verify-l12-health.mjs', 'activate-l12-testrun-path.sh', 'legion12-testrun-path.nginx', 'legion12-testrun.service')) {
+        Write-Utf8NoBom (Join-Path $candidateRoot "ops/server/$leaf") 'synthetic tracked tool, never executed'
+    }
+    $gitInit = Invoke-NativeCapture $git.Source @('-C', $candidateRoot, 'init', '--initial-branch=main')
+    Assert-True ($gitInit.ExitCode -eq 0) "Synthetic candidate Git initialization failed: $($gitInit.Output)"
+    $gitAdd = Invoke-NativeCapture $git.Source @('-C', $candidateRoot, 'add', '.')
+    Assert-True ($gitAdd.ExitCode -eq 0) 'Synthetic candidate Git add failed.'
+    $gitCommit = Invoke-NativeCapture $git.Source @('-C', $candidateRoot, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'synthetic candidate')
+    Assert-True ($gitCommit.ExitCode -eq 0) "Synthetic candidate commit failed: $($gitCommit.Output)"
+    Assert-RelocationRejected 'candidate-head-mismatch' ($mappingOptions + @('-CandidateRepository', $candidateRoot)) 'does not match the clean worktree HEAD'
+    Write-Utf8NoBom (Join-Path $candidateRoot 'untracked.txt') 'unaccepted work'
+    Assert-RelocationRejected 'dirty-candidate' ($mappingOptions + @('-CandidateRepository', $candidateRoot)) 'worktree is dirty'
+    Remove-Item -LiteralPath (Join-Path $candidateRoot 'untracked.txt')
+    $candidateCommit = (Invoke-NativeCapture $git.Source @('-C', $candidateRoot, 'rev-parse', 'HEAD')).Output.Trim()
+    Write-Utf8NoBom (Join-Path $releaseRoot '.deployment-commit') $candidateCommit
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $candidateCommit -RuntimeSourceCompatibility $runtimeSourceCompatibility
+    $candidateArchive = Join-Path $mappedRoot "l12-release-$candidateCommit.tar.gz"
+    & $tar -czf $candidateArchive -C $releaseRoot .
+    Assert-True ($LASTEXITCODE -eq 0) 'Synthetic candidate archive failed.'
+    $candidateManifest = $ciManifest | ConvertTo-Json | ConvertFrom-Json
+    $candidateManifest.commit = $candidateCommit
+    $candidateManifest.releaseArchive = "/home/runner/canonical/l12-release-$candidateCommit.tar.gz"
+    $candidateManifest.releaseSha256 = (Get-FileHash -LiteralPath $candidateArchive).Hash.ToLowerInvariant()
+    $candidateManifestPath = Join-Path $artifactRoot 'candidate-original.json'
+    Write-Utf8NoBom $candidateManifestPath ($candidateManifest | ConvertTo-Json)
+    $candidateValid = Invoke-NativeCapture $powerShell.Source @('-NoProfile', '-File', $windowsDeploy, '-ArtifactManifest', $candidateManifestPath,
+        '-ArtifactDirectory', $mappedRoot, '-ArtifactManifestSha256', (Get-FileHash -LiteralPath $candidateManifestPath).Hash,
+        '-CandidateRepository', $candidateRoot, '-ValidateArtifactOnly')
+    Assert-True ($candidateValid.ExitCode -eq 0 -and $candidateValid.Output.Contains('no remote connection was made')) "Clean explicit candidate root rejected: $($candidateValid.Output)"
+    Write-Utf8NoBom (Join-Path $releaseRoot '.deployment-commit') $commitB
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitB -RuntimeSourceCompatibility $runtimeSourceCompatibility
+    Assert-True ((Get-FileHash -LiteralPath $ciManifestPath).Hash -ceq $ciManifestHash -and
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($ciManifestPath)) -ceq $ciManifestBytes -and
+        (Get-Item -LiteralPath $ciManifestPath).LastWriteTimeUtc.Ticks -eq $ciManifestTime) 'Original CI manifest was modified by rejection paths.'
+    Write-Host '[L12 testrun artifact relocation] explicit mapping and clean candidate repository boundaries passed; original manifest untouched.'
+    if ($ArtifactRelocationOnly) {
+        Write-Host "[L12 testrun artifact relocation] original artifact/tar/capability gates and CI relocation passed."
+        $suitePassed = $true
+        return
+    }
     $root = Join-Path $fixture "server"
     $rootPosix = ConvertTo-MsysPath $root
     $oldRelease = Join-Path $root "opt\legion12-testrun-releases\$commitA-old"
