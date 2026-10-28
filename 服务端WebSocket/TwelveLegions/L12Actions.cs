@@ -890,6 +890,7 @@ public sealed partial class L12GameEngine
             || attacker.NextAttackNoLossUses > 0;
         if (attacker.NextAttackNoLossUses > 0) attacker.NextAttackNoLossUses--;
         var temporaryAttackerTroopsBonus = 0;
+        var actualAttackerTroopsBonus = 0;
         if (combatProfile.AttackTroopsSetValue is { } setAttackTroops)
         {
             // Set the attack base, retaining only the already materialized, unconsumed
@@ -913,11 +914,14 @@ public sealed partial class L12GameEngine
                 new("触发 进攻时效果", outcomeLabel,
                     attacker.InstanceId, attacker.Name, attacker.InstanceId, attacker.Name), attacker);
         }
-        temporaryAttackerTroopsBonus += ApplyS1FactionAttackPassives(playerIndex, attacker, row);
+        var factionAttackBonus = ApplyS1FactionAttackPassives(playerIndex, attacker, row);
+        temporaryAttackerTroopsBonus += factionAttackBonus;
+        actualAttackerTroopsBonus += Math.Max(0, factionAttackBonus);
         if (row == 0 && L12StructuredCardRules.HasFaction(State.Players[playerIndex], attacker, "gaotianyuan")
             && State.Players[playerIndex].UsedAbilities.Contains($"s2-tenka-front-attack:{State.TurnSerial}"))
         {
             temporaryAttackerTroopsBonus += 1000;
+            actualAttackerTroopsBonus += 1000;
             attacker.Troops += 1000;
             AddAttackBuffPlayerLog(playerIndex, attacker,
                 $"天下布武使{attacker.Name}本次前排进攻兵力+1000", "天下布武",
@@ -926,6 +930,7 @@ public sealed partial class L12GameEngine
         if (row == 0 && State.Players[playerIndex].UsedAbilities.Contains($"susano-buff:{attacker.InstanceId}"))
         {
             temporaryAttackerTroopsBonus += 2000;
+            actualAttackerTroopsBonus += 2000;
             attacker.Troops += 2000;
             var susanoo = State.AttackBuffLogProtocolEnabled
                 ? CreateActiveMasterSource(State.Players[playerIndex], $"master-{playerIndex}")
@@ -939,6 +944,7 @@ public sealed partial class L12GameEngine
         {
             var tsukuyomiBonus = attacker.TsukuyomiFrontMoveBonusCount * 1000;
             temporaryAttackerTroopsBonus += tsukuyomiBonus;
+            actualAttackerTroopsBonus += tsukuyomiBonus;
             attacker.Troops += tsukuyomiBonus;
             var tsukuyomi = State.AttackBuffLogProtocolEnabled
                 ? CreateActiveMasterSource(State.Players[playerIndex], $"master-{playerIndex}")
@@ -950,6 +956,7 @@ public sealed partial class L12GameEngine
         if (attacker.AttackOnlyTroopsBonusUntilTurn == State.TurnSerial && attacker.AttackOnlyTroopsBonus != 0)
         {
             temporaryAttackerTroopsBonus += attacker.AttackOnlyTroopsBonus;
+            actualAttackerTroopsBonus += Math.Max(0, attacker.AttackOnlyTroopsBonus);
             attacker.Troops += attacker.AttackOnlyTroopsBonus;
             var signedBonus = attacker.AttackOnlyTroopsBonus > 0
                 ? $"+{attacker.AttackOnlyTroopsBonus}"
@@ -980,6 +987,8 @@ public sealed partial class L12GameEngine
             MasterDamage = masterDamage.Total,
             DeclaredDisasterMasterDamageBonus = masterDamage.DisasterBonus,
             TemporaryAttackerTroopsBonus = temporaryAttackerTroopsBonus,
+            ActualAttackerTroopsBonus = State.TimedTroopsReductionAbsorptionProtocolEnabled ? actualAttackerTroopsBonus : null,
+            GrantedAttackerTroopsBonus = State.TimedTroopsReductionAbsorptionProtocolEnabled ? actualAttackerTroopsBonus : null,
         };
         State.Phase = L12Phase.Defense;
         if (attackTarget is null)
@@ -1450,8 +1459,16 @@ public sealed partial class L12GameEngine
         }
         if (!targetReplaced) L12DerivedStats.ApplyTroopsDamage(target, defenderDamage);
         if (attackerTakesDamage && !attackerReplaced)
-            pending.TemporaryAttackerTroopsBonus = L12DerivedStats.ApplyTroopsDamage(attacker, targetTroops,
+        {
+            if (pending.ActualAttackerTroopsBonus is { } actualBonus)
+            {
+                var remaining = L12DerivedStats.ApplyTroopsDamage(attacker, targetTroops, actualBonus);
+                pending.TemporaryAttackerTroopsBonus -= actualBonus - remaining;
+                pending.ActualAttackerTroopsBonus = remaining;
+            }
+            else pending.TemporaryAttackerTroopsBonus = L12DerivedStats.ApplyTroopsDamage(attacker, targetTroops,
                 pending.TemporaryAttackerTroopsBonus);
+        }
 
         var defenderDefeated = target.Troops <= 0 && RemoveFromFieldWithCause(defender, target, true, "阵亡（等待触发完成后进入墓地）",
             queueDeathTrigger: false, bypassLethalReplacement: true, deferGraveyard: true,
@@ -1581,6 +1598,8 @@ public sealed partial class L12GameEngine
             SureHit = attacker.HasSureHit,
             MasterDamage = masterDamage.Total,
             DeclaredDisasterMasterDamageBonus = masterDamage.DisasterBonus,
+            ActualAttackerTroopsBonus = State.TimedTroopsReductionAbsorptionProtocolEnabled ? 0 : null,
+            GrantedAttackerTroopsBonus = State.TimedTroopsReductionAbsorptionProtocolEnabled ? 0 : null,
             // 贯穿卡文只排除本次【进攻时】效果；防守方响应、抵挡、伤害和【进攻后】时间线仍照常推进。
             SuppressAttackTriggers = true,
         };
@@ -1663,9 +1682,11 @@ public sealed partial class L12GameEngine
 
     private void RevertPendingCombatTroopsModifiers(L12PendingDefense pending, L12CardInstance? attacker)
     {
+        RetireCombatTroopsAbsorptions(pending, attacker);
         if (attacker is not null && pending.TemporaryAttackerTroopsBonus != 0)
             attacker.Troops -= pending.TemporaryAttackerTroopsBonus;
         pending.TemporaryAttackerTroopsBonus = 0;
+        if (pending.ActualAttackerTroopsBonus is not null) pending.ActualAttackerTroopsBonus = 0;
     }
 
     private CommandResult FlipHidden(int playerIndex, string? instanceId)

@@ -235,6 +235,26 @@ internal static class L12RecipientVisibility
         L12ActionEvent actionEvent, int viewer, bool revealAllDisasters,
         bool revealAllHands = false)
     {
+        var projected = ProjectActionEventCore(state, actionEvent, viewer, revealAllDisasters, revealAllHands);
+        // Event cards are already isolated snapshots. Preserve the original
+        // visibility result and its array unless a card actually carries a ledger.
+        if (!projected.Cards.Any(L12DerivedStats.HasTroopsReductionState)) return projected;
+        return projected with
+        {
+            Cards = projected.Cards.Select(card =>
+            {
+                if (!L12DerivedStats.HasTroopsReductionState(card)) return card;
+                var copy = card.Clone();
+                L12DerivedStats.ClearTroopsReductionState(copy);
+                return copy;
+            }).ToArray(),
+        };
+    }
+
+    private static L12ActionEvent ProjectActionEventCore(L12GameState state,
+        L12ActionEvent actionEvent, int viewer, bool revealAllDisasters,
+        bool revealAllHands)
+    {
         if (actionEvent.Type.StartsWith("private-trigger-", StringComparison.Ordinal))
             return CanSeeActionEvent(actionEvent, viewer, revealAllHands)
                 ? actionEvent with { Type = actionEvent.Type["private-trigger-".Length..] }

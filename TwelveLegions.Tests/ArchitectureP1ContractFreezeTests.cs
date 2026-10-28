@@ -84,12 +84,13 @@ public sealed class ArchitectureP1ContractFreezeTests
         nameof(L12GameState.AttackBuffLogProtocolEnabled),
         nameof(L12GameState.SourceVacatedEntrySlotProtocolEnabled),
         nameof(L12GameState.LibraryReturnFactsProtocolEnabled),
+        nameof(L12GameState.TimedTroopsReductionAbsorptionProtocolEnabled),
     ];
 
     [Fact]
     public void LibraryReturnAddsOnlyItsOptionalEventPropertyAndExplicitNewV2Capability()
     {
-        var current = CreateEngine();
+        var current = CreateBeforeTroopsAbsorptionEngine();
         Assert.True(current.State.LibraryReturnFactsProtocolEnabled);
         var legacy = CreateBeforeLibraryReturnEngine();
         Assert.False(legacy.State.LibraryReturnFactsProtocolEnabled);
@@ -114,11 +115,48 @@ public sealed class ArchitectureP1ContractFreezeTests
 
     private static L12GameEngine CreateBeforeLibraryReturnEngine()
     {
-        var current = CreateEngine();
+        var current = CreateBeforeTroopsAbsorptionEngine();
         var checkpoint = JsonNode.Parse(current.SerializeFullState())!.AsObject();
         Assert.True(checkpoint.Remove(nameof(L12GameState.LibraryReturnFactsProtocolEnabled)));
         return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint.ToJsonString(), current.RandomState!.Value,
             current.CardFactSignalSequence, current.AutoPassEmptyResponses, current.ConcealHiddenResponseAvailability);
+    }
+
+    private static L12GameEngine CreateBeforeTroopsAbsorptionEngine()
+    {
+        var current = CreateEngine();
+        var checkpoint = JsonNode.Parse(current.SerializeFullState())!.AsObject();
+        checkpoint.Remove(nameof(L12GameState.TimedTroopsReductionAbsorptionProtocolEnabled));
+        return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint.ToJsonString(), current.RandomState!.Value,
+            current.CardFactSignalSequence, current.AutoPassEmptyResponses, current.ConcealHiddenResponseAvailability);
+    }
+
+    [Fact]
+    public void TroopsAbsorptionIsAnExplicitOptionalFlagAndDoesNotReinterpretLegacyV2()
+    {
+        var legacy = CreateBeforeTroopsAbsorptionEngine();
+        Assert.False(legacy.State.TimedTroopsReductionAbsorptionProtocolEnabled);
+        Assert.DoesNotContain(nameof(L12GameState.TimedTroopsReductionAbsorptionProtocolEnabled), legacy.SerializeFullState());
+        var property = typeof(L12GameState).GetProperty(nameof(L12GameState.TimedTroopsReductionAbsorptionProtocolEnabled))!;
+        Assert.Equal(typeof(bool), property.PropertyType);
+        Assert.Equal(System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault,
+            property.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>()!.Condition);
+        var optedIn = JsonNode.Parse(legacy.SerializeFullState())!.AsObject();
+        optedIn[nameof(L12GameState.TimedTroopsReductionAbsorptionProtocolEnabled)] = true;
+        var current = L12GameEngine.RestoreCheckpoint(Catalog, optedIn.ToJsonString(), legacy.RandomState!.Value,
+            legacy.CardFactSignalSequence, legacy.AutoPassEmptyResponses, legacy.ConcealHiddenResponseAvailability);
+        Assert.True(current.State.TimedTroopsReductionAbsorptionProtocolEnabled);
+        var actual = JsonNode.Parse(current.SerializeFullState())!.AsObject();
+        Assert.True(actual.Remove(nameof(L12GameState.TimedTroopsReductionAbsorptionProtocolEnabled)));
+        Assert.Equal(legacy.SerializeFullState(), actual.ToJsonString());
+        var currentViews = new[] { current.SnapshotFor(0), current.SnapshotFor(1), current.SnapshotForSpectator(), current.SnapshotForReferee() };
+        var legacyViews = new[] { legacy.SnapshotFor(0), legacy.SnapshotFor(1), legacy.SnapshotForSpectator(), legacy.SnapshotForReferee() };
+        for (var index = 0; index < currentViews.Length; index++)
+            Assert.Equal(JsonSerializer.Serialize(legacyViews[index], WireJson),
+                JsonSerializer.Serialize(currentViews[index] with { StateHash = legacyViews[index].StateHash }, WireJson));
+        Assert.NotEqual(legacy.ComputeStateHash(), current.ComputeStateHash());
+        Assert.False(L12GameEngine.RestoreCheckpoint(Catalog, legacy.SerializeFullState(), legacy.RandomState!.Value,
+            legacy.CardFactSignalSequence).State.TimedTroopsReductionAbsorptionProtocolEnabled);
     }
 
     private static L12GameEngine CreatePriorProtocolEngine()

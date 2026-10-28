@@ -2688,7 +2688,8 @@ public sealed partial class L12GameEngine
                 if (masterAura?.TargetCardId == card.CardId)
                     card.ContinuousCostModifier += masterAura.CostAdjustment;
                 var bonus = GetTurnAndPositionContinuousTroops(player, card, row, slot);
-                L12DerivedStats.ApplyContinuousModifiers(card, bonus, globalModifier, State.TurnSerial);
+                L12DerivedStats.ApplyContinuousModifiers(card, bonus, globalModifier, State.TurnSerial,
+                    State.TimedTroopsReductionAbsorptionProtocolEnabled);
             }
         }
     }

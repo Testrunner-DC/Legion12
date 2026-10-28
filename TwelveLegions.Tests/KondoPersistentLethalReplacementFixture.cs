@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json.Nodes;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -16,9 +17,10 @@ internal static class KondoPersistentLethalReplacementFixture
     private static L12Catalog Catalog { get; } =
         L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    internal static KondoLethalScenario BeginMerlinLethal(bool splitLayersForOrderProbe = false)
+    internal static KondoLethalScenario BeginMerlinLethal(bool splitLayersForOrderProbe = false,
+        bool legacyProtocol = false)
     {
-        var game = Create(202610087);
+        var game = Create(202610087, legacyProtocol || splitLayersForOrderProbe);
         var merlin = Card("S02-0603", "lethal-merlin", 0);
         var probeAttacker = Card("S01-0001", "post-replacement-probe-attacker", 0);
         var independentAttacker = Card("S01-0002", "later-independent-attacker", 0, troops: 4000);
@@ -41,7 +43,7 @@ internal static class KondoPersistentLethalReplacementFixture
         Assert.Equal("effect-lethal-replacement", replacement.Continuation);
         Assert.Contains(kondo.InstanceId, replacement.ValidChoices);
         Assert.Equal(0, okita.Troops);
-        Assert.Equal("1", replacement.Data["lethalTroopsCancellation:version"]);
+        Assert.Equal(legacyProtocol || splitLayersForOrderProbe ? "1" : "2", replacement.Data["lethalTroopsCancellation:version"]);
         Assert.Equal(okita.InstanceId, replacement.Data["cardInstanceId"]);
 
         // The default keeps the real Merlin effect untouched.  A separate
@@ -143,7 +145,7 @@ internal static class KondoPersistentLethalReplacementFixture
             .OrderBy(key => key, StringComparer.Ordinal)
             .ToArray();
 
-    private static L12GameEngine Create(int seed)
+    private static L12GameEngine Create(int seed, bool legacyProtocol)
     {
         var basis = Catalog.DeckAt(0);
         L12PresetDeckDefinition Deck(string name, string master) => new()
@@ -176,7 +178,11 @@ internal static class KondoPersistentLethalReplacementFixture
             player.SpecialZones.Runes = 0;
             player.SpecialZones.Trials.Clear();
         }
-        return game;
+        if (!legacyProtocol) return game;
+        var checkpoint = JsonNode.Parse(game.SerializeFullState())!.AsObject();
+        checkpoint.Remove(nameof(L12GameState.TimedTroopsReductionAbsorptionProtocolEnabled));
+        return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint.ToJsonString(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
     }
 
     private static L12CardInstance Card(string cardId, string instanceId, int owner, int? troops = null)

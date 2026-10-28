@@ -111,6 +111,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PresentationFactProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MovementOriginProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             OwnerTurnEndModifierProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
+            // Human's latest local scope: deployment drains all live games, so
+            // every newly created V2 game uses the qualified reduction ledger.
+            // No old-game migration, worker or resident legacy engine is added.
+            // Existing checkpoint restore still reads its persisted flag verbatim.
+            TimedTroopsReductionAbsorptionProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             AttackBuffLogProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             SourceVacatedEntrySlotProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             LibraryReturnFactsProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
@@ -190,9 +195,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private static void ValidateCheckpointCardInstances(L12GameState state)
     {
+        ValidateTroopsReductionCombats(state);
         var locations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         void Add(L12CardInstance card, string zone)
         {
+            ValidateTroopsReductionCard(state, card);
             foreach (var modifier in card.TimedModifiers)
                 if (modifier.OwnerTurnEndExpiry is { } expiry
                     && (!state.OwnerTurnEndModifierProtocolEnabled || expiry.Controller is < 0 or > 1
@@ -365,7 +372,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
                 hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck,
                 morale = SnapshotMorale(player),
-                field = SnapshotField(player, viewer, visibility.CoveredBattlefieldIdentity), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, visibility.AllDisasters),
+                field = SnapshotField(player, viewer, visibility.CoveredBattlefieldIdentity), Relic = ProjectTroopsCard(player.Relic), ExtraRelics = player.ExtraRelics.Select(card => ProjectTroopsCard(card)).ToArray(), Resolving = player.Resolving.Select(card => ProjectTroopsCard(card)).ToArray(), Graveyard = SnapshotGraveyard(player), Removed = player.Removed.Select(card => ProjectTroopsCard(card)).ToArray(), specialZones = SpecialZonesSnapshot(player, index, viewer, visibility.AllDisasters),
                 player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }
             : visibility.BothHands ? (object)new
@@ -392,7 +399,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
                 handCount = player.Hand.Count,
                 moraleDeckCount = player.MoraleDeck.Count, morale = SnapshotMorale(player),
-                field = SnapshotField(player, viewer, visibility.CoveredBattlefieldIdentity), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
+                field = SnapshotField(player, viewer, visibility.CoveredBattlefieldIdentity), Relic = ProjectTroopsCard(player.Relic), ExtraRelics = player.ExtraRelics.Select(card => ProjectTroopsCard(card)).ToArray(), Resolving = player.Resolving.Select(card => ProjectTroopsCard(card)).ToArray(), Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
                 removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, visibility.AllDisasters), player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
@@ -470,7 +477,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             BuildChosenDisasterSnapshot(viewer, visibility.AllDisasters, displayOnlyCards),
             BuildSessionDisasterSnapshot(viewer, visibility.AllDisasters, displayOnlyCards),
             State.DisasterPreparationStep,
-            waitingPrompt, prompts, stack, State.PendingDefense, State.Winner, State.WinnerReason, players, lastAction,
+            waitingPrompt, prompts, stack, State.PendingDefense?.WithoutTroopsLedger(), State.Winner, State.WinnerReason, players, lastAction,
             recentEvents, spectator || !visibility.LegalActions ? [] : BuildLegalAttackTargets(visibility.DeckOrder ? State.ActivePlayer : viewer), ComputeStateHash())
         {
             LegionPlacementRows = L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId)
@@ -534,8 +541,15 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private L12ActionEvent FilterDisasterEvent(L12ActionEvent actionEvent, int viewer, bool revealAll,
         bool revealAllHands = false)
-        => L12RecipientVisibility.ProjectActionEvent(State, actionEvent, viewer, revealAll,
-            revealAllHands);
+        => L12RecipientVisibility.ProjectActionEvent(State, actionEvent, viewer, revealAll, revealAllHands);
+
+    private static L12CardInstance? ProjectTroopsCard(L12CardInstance? card)
+    {
+        if (card is null) return null;
+        var copy = card.Clone();
+        L12DerivedStats.ClearTroopsReductionState(copy);
+        return copy;
+    }
 
     private Dictionary<string, string[]> BuildLegalAttackTargets(int viewer)
     {
@@ -654,7 +668,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         {
             if (revealAll || viewer == ownerIndex || card.TrialCompleted)
             {
-                var snapshot = includeActions ? card.Clone() : SnapshotDisplayOnlyCard(card);
+                var snapshot = includeActions ? ProjectTroopsCard(card)! : SnapshotDisplayOnlyCard(card);
                 if (includeActions) snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
                 return (object)snapshot;
             }
@@ -916,7 +930,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private L12CardInstance[] SnapshotGraveyardCore(L12PlayerState player, bool includeActions)
         => player.Graveyard.Select(card =>
         {
-            var snapshot = includeActions ? card.Clone() : SnapshotDisplayOnlyCard(card);
+            var snapshot = includeActions ? ProjectTroopsCard(card)! : SnapshotDisplayOnlyCard(card);
             snapshot.Troops = snapshot.CurrentTroops;
             if (includeActions) snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
             return snapshot;
@@ -934,7 +948,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             var identityKnown = !card.Hidden || revealAllHidden || viewer >= 0 && owner == viewer;
             if (identityKnown)
             {
-                var snapshot = card.Clone();
+                var snapshot = ProjectTroopsCard(card)!;
                 snapshot.IdentityKnown = card.Hidden;
                 // Battlefield abilities must be rebuilt for every viewer snapshot.  The
                 // enabled state can depend on live trial/resource state and therefore
@@ -1421,6 +1435,13 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         State.Round++;
         State.TurnSerial++;
         RecalculateContinuousTroops();
+        // Allocate the full surviving negative amounts only after the new
+        // turn's continuous conditions are known. The protocol remains gated.
+        if (State.TimedTroopsReductionAbsorptionProtocolEnabled)
+            foreach (var player in State.Players)
+            foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null)
+                         .Cast<L12CardInstance>().Concat(player.MasterLegionState is null ? [] : [player.MasterLegionState]))
+                RebuildTimedTroopsAbsorptions(card);
         RunAutomaticTurnStart();
     }
 
@@ -2193,6 +2214,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private static void ResetCardAfterLeavingField(L12CardInstance card)
     {
+        L12DerivedStats.ClearTroopsReductionState(card);
         card.CostModifier = 0;
         card.ContinuousCostModifier = 0;
         card.PlayCost = null;
@@ -2293,7 +2315,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private static L12CardInstance SnapshotDisplayOnlyCard(L12CardInstance card)
     {
-        var snapshot = card.Clone();
+        var snapshot = ProjectTroopsCard(card)!;
         StripDisplayOnlyActions(snapshot);
         return snapshot;
     }
@@ -2320,7 +2342,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private L12CardInstance[] SnapshotHand(int playerIndex)
         => State.Players[playerIndex].Hand.Select(card =>
         {
-            var snapshot = card.Clone();
+            var snapshot = ProjectTroopsCard(card)!;
             snapshot.Troops = snapshot.CurrentTroops;
             var selfDamageRule = SelfDamageEntryDiscount(card);
             var selfDamageDiscount = selfDamageRule is not null

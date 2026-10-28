@@ -156,6 +156,9 @@ public sealed class L12CardInstance
     public int ContinuousTroopsPenalty { get; set; }
     /// <summary>按实际持续效果来源保存正兵力层；不同来源失效时只移除自己的未消耗部分。</summary>
     public Dictionary<string, L12TroopsBonusLayer> ContinuousTroopsBonusLayers { get; set; } = new(StringComparer.Ordinal);
+    /// <summary>本实例可恢复的兵力层身份序列；旧局不分配身份。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long TroopsLayerSequence { get; set; }
     public int? SetTroopsValue { get; set; }
     public int SetTroopsUntilTurn { get; set; } = -1;
     public int DisasterLevel { get; init; }
@@ -269,7 +272,7 @@ public sealed class L12CardInstance
         var snapshot = (L12CardInstance)MemberwiseClone();
         snapshot.ContinuousTroopsBonusLayers = ContinuousTroopsBonusLayers.ToDictionary(
             pair => pair.Key,
-            pair => new L12TroopsBonusLayer { Granted = pair.Value.Granted, Consumed = pair.Value.Consumed },
+            pair => pair.Value.Clone(),
             StringComparer.Ordinal);
         snapshot.Traits = [.. Traits];
         snapshot.LastKnownAttachedCardIds = [.. LastKnownAttachedCardIds];
@@ -285,6 +288,9 @@ public sealed class L12CardInstance
         {
             TroopsDelta = modifier.TroopsDelta,
             ConsumedTroopsBonus = modifier.ConsumedTroopsBonus,
+            TroopsLayerId = modifier.TroopsLayerId,
+            ReductionConsumedTroopsBonus = modifier.ReductionConsumedTroopsBonus,
+            TroopsReduction = modifier.TroopsReduction?.Clone(),
             CostDelta = modifier.CostDelta,
             ExpiresAfterTurn = modifier.ExpiresAfterTurn,
             OwnerTurnEndExpiry = modifier.OwnerTurnEndExpiry,
@@ -319,6 +325,13 @@ public sealed class L12TimedModifier
     public int TroopsDelta { get; init; }
     /// <summary>正兵力加成在当前回合已经吸收的伤害；回合结束清伤时与仍有效层一并归零。</summary>
     public int ConsumedTroopsBonus { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? TroopsLayerId { get; set; }
+    /// <summary>可撤销负层占用的正加成，与真正伤害分开。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int ReductionConsumedTroopsBonus { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12TroopsReduction? TroopsReduction { get; set; }
     public int CostDelta { get; init; }
     public required int ExpiresAfterTurn { get; init; }
     /// <summary>新局显式所属回合期限；旧检查点缺省为null，继续原数字期限。</summary>
@@ -462,6 +475,19 @@ public sealed class L12PendingDefense
     /// <summary>理查的独立抵挡费用段成功结算后，才对本次进攻生效。</summary>
     public bool RichardDefenseTaxActive { get; set; }
     public int TemporaryAttackerTroopsBonus { get; set; }
+    /// <summary>本次进攻实际正加成余额；不含兵力视为产生的有符号基值差。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ActualAttackerTroopsBonus { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? GrantedAttackerTroopsBonus { get; set; }
+
+    internal L12PendingDefense WithoutTroopsLedger()
+    {
+        var copy = (L12PendingDefense)MemberwiseClone();
+        copy.ActualAttackerTroopsBonus = null;
+        copy.GrantedAttackerTroopsBonus = null;
+        return copy;
+    }
     /// <summary>贯穿等规则生成的进攻仍进入通常响应/抵挡流程，但不会建立【进攻时】卡效。</summary>
     public bool SuppressAttackTriggers { get; set; }
     /// <summary>同一次交战内“即将阵亡”替代效果的决定；true=代替，false=不代替。</summary>
@@ -494,6 +520,36 @@ public sealed class L12TroopsBonusLayer
 {
     public int Granted { get; set; }
     public int Consumed { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? GrantId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int ReductionConsumed { get; set; }
+
+    public L12TroopsBonusLayer Clone() => (L12TroopsBonusLayer)MemberwiseClone();
+}
+
+/// <summary>负限时层的因果账；Amount保留历史吸收，RestorableAmount只代表仍存活的同代来源。</summary>
+public sealed class L12TroopsReduction
+{
+    public required string TargetInstanceId { get; set; }
+    public List<L12TroopsAbsorption> Absorptions { get; set; } = [];
+    public L12TroopsReduction Clone() => new()
+    {
+        TargetInstanceId = TargetInstanceId,
+        Absorptions = Absorptions.Select(entry => entry.Clone()).ToList(),
+    };
+}
+
+public sealed class L12TroopsAbsorption
+{
+    public required string Kind { get; init; }
+    public long? LayerId { get; init; }
+    public string? SourceKey { get; init; }
+    public string? CombatId { get; init; }
+    public string? AttackerInstanceId { get; init; }
+    public required int Amount { get; init; }
+    public required int RestorableAmount { get; set; }
+    public L12TroopsAbsorption Clone() => (L12TroopsAbsorption)MemberwiseClone();
 }
 
 public sealed class L12Prompt
@@ -952,6 +1008,9 @@ public sealed class L12GameState
     /// <summary>仅新V2局启用所属玩家回合结束期限；旧局重放保留原规则。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool OwnerTurnEndModifierProtocolEnabled { get; init; }
+    /// <summary>仅新V2局启用负限时层抵消正加成；旧局缺省关闭，保持历史Journal尾。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool TimedTroopsReductionAbsorptionProtocolEnabled { get; init; }
     /// <summary>仅新V2局记录明确进攻加值日志，旧Journal尾保持原事件字节。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool AttackBuffLogProtocolEnabled { get; init; }

@@ -43,12 +43,17 @@ public sealed partial class L12GameEngine
                      .ThenBy(entry => entry.TroopsDelta)
                      .ThenBy(entry => entry.ConsumedTroopsBonus)
                      .ThenBy(entry => entry.OwnerTurnEndExpiry?.Controller)
-                     .ThenBy(entry => entry.OwnerTurnEndExpiry?.GrantedTurnSerial))
+                     .ThenBy(entry => entry.OwnerTurnEndExpiry?.GrantedTurnSerial)
+                     .ThenBy(entry => entry.TroopsLayerId))
         {
             Append(raw, "timedSource", modifier.Source);
             Append(raw, "timedUntil", modifier.ExpiresAfterTurn.ToString(System.Globalization.CultureInfo.InvariantCulture));
             Append(raw, "timedTroops", modifier.TroopsDelta.ToString(System.Globalization.CultureInfo.InvariantCulture));
             Append(raw, "timedConsumed", modifier.ConsumedTroopsBonus.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (modifier.TroopsReduction is not null)
+                Append(raw, "timedReduction", TroopsReductionFingerprintData(modifier));
+            if (modifier.ReductionConsumedTroopsBonus != 0)
+                Append(raw, "timedReductionConsumed", modifier.ReductionConsumedTroopsBonus.ToString(System.Globalization.CultureInfo.InvariantCulture));
             if (modifier.OwnerTurnEndExpiry is { } expiry)
             {
                 Append(raw, "timedOwner", expiry.Controller.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -60,6 +65,8 @@ public sealed partial class L12GameEngine
             Append(raw, "layerSource", layer.Key);
             Append(raw, "layerGranted", layer.Value.Granted.ToString(System.Globalization.CultureInfo.InvariantCulture));
             Append(raw, "layerConsumed", layer.Value.Consumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (layer.Value.ReductionConsumed != 0)
+                Append(raw, "layerReductionConsumed", layer.Value.ReductionConsumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
         // Negative continuous layers keep an aggregate amount in the existing
         // card model. Reuse the authoritative source query as well, so replacing
@@ -175,13 +182,15 @@ public sealed partial class L12GameEngine
         controller.UsedAbilities.Remove(PendingCardLethalSubstitutionKey(protectedCard));
         if (choice == DeclineLethalSubstitution) return false;
         var kind = prompt.Data.GetValueOrDefault("replacementKind");
+        var cancellation = HasAnyLethalTroopsCancellationRecipeData(prompt)
+            ? ReadValidatedLethalTroopsEffectCancellation(prompt, protectedCard) : null;
         if (!TryApplyCardLethalSubstitution(controller, protectedCard, kind, choice,
                 prompt.Data.GetValueOrDefault("reason", "阵亡"), deferFieldDeath: false, out var defeatedInstanceId,
                 defeatCause: defeatCause))
             return false;
         if (defeatedInstanceId is not null)
             ResolveAttachedCardLethalKillSources(prompt, defeatedInstanceId);
-        _ = TryApplyEffectLethalTroopsCancellation(protectedCard, prompt);
+        if (cancellation is not null) ApplyLethalTroopsEffectCancellation(protectedCard, cancellation);
         controller.UsedAbilities.Add(CardLethalSubstitutionKey(protectedCard));
         // TryApplyCardLethalSubstitution has already removed the substitute and
         // recalculated continuous layers.  Bind protection to that authoritative

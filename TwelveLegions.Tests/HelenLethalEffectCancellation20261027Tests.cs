@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -187,7 +188,7 @@ public sealed class HelenLethalEffectCancellation20261027Tests
     [Trait("Bug", "BUG-20261026-209394c1:legacy-prompt")]
     public void LegacyPromptWithoutRecipeKeepsExistingConsumedLethalStateProtection()
     {
-        var pending = BeginHelenReplacement(egilController: 0, "legacy-prompt");
+        var pending = BeginHelenReplacement(egilController: 0, "legacy-prompt", legacyProtocol: true);
         foreach (var key in pending.Prompt.Data.Keys
                      .Where(key => key.StartsWith("lethalTroopsCancellation:", StringComparison.Ordinal))
                      .ToArray())
@@ -268,7 +269,7 @@ public sealed class HelenLethalEffectCancellation20261027Tests
     [Trait("Bug", "BUG-20261008-CONSUMED-LETHAL-STATE:new-negative-layer")]
     public void ProtectedLegacyRawZeroCanCancelANewNegativeLayerWithoutGuessingTheOldLayer()
     {
-        var first = BeginHelenReplacement(egilController: 0, "legacy-raw-zero");
+        var first = BeginHelenReplacement(egilController: 0, "legacy-raw-zero", legacyProtocol: true);
         foreach (var key in first.Prompt.Data.Keys
                      .Where(key => key.StartsWith("lethalTroopsCancellation:", StringComparison.Ordinal))
                      .ToArray())
@@ -449,7 +450,7 @@ public sealed class HelenLethalEffectCancellation20261027Tests
             prompts.Select(prompt => prompt.Data["cardInstanceId"]).ToArray());
         Assert.All(prompts, prompt =>
         {
-            Assert.Equal("1", prompt.Data["lethalTroopsCancellation:version"]);
+            Assert.Equal("2", prompt.Data["lethalTroopsCancellation:version"]);
             Assert.Equal("0", prompt.Data["lethalTroopsCancellation:modifierIndex"]);
             Assert.Equal(64, prompt.Data["lethalTroopsCancellation:fingerprint"].Length);
         });
@@ -681,7 +682,7 @@ public sealed class HelenLethalEffectCancellation20261027Tests
             candidate => candidate.Continuation == "effect-lethal-replacement"
                 && candidate.Data.GetValueOrDefault("cardInstanceId") == protectedId);
         if (expectRecipe)
-            Assert.Equal("1", prompt.Data["lethalTroopsCancellation:version"]);
+            Assert.Equal("2", prompt.Data["lethalTroopsCancellation:version"]);
         else
             Assert.DoesNotContain(prompt.Data.Keys,
                 key => key.StartsWith("lethalTroopsCancellation:", StringComparison.Ordinal));
@@ -691,13 +692,13 @@ public sealed class HelenLethalEffectCancellation20261027Tests
     }
 
     private static PendingHelenReplacement BeginHelenReplacement(int egilController, string suffix,
-        Action<L12CardInstance>? configureHelen = null)
+        Action<L12CardInstance>? configureHelen = null, bool legacyProtocol = false)
     {
         var helenController = 1 - egilController;
         var egilId = $"helen-cancellation-egil-{suffix}";
         var helenId = $"helen-cancellation-target-{suffix}";
         var substituteId = $"helen-cancellation-substitute-{suffix}";
-        var game = Create(egilController);
+        var game = Create(egilController, legacyProtocol);
         var egilPlayer = game.State.Players[egilController];
         var helenPlayer = game.State.Players[helenController];
         var egil = Card("S01-0316", egilId, egilController);
@@ -728,7 +729,7 @@ public sealed class HelenLethalEffectCancellation20261027Tests
         game = PassResponseWindows(game);
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("effect-lethal-replacement", prompt.Continuation);
-        Assert.Equal("1", prompt.Data["lethalTroopsCancellation:version"]);
+        Assert.Equal(legacyProtocol ? "1" : "2", prompt.Data["lethalTroopsCancellation:version"]);
         Assert.Equal(0, FindFieldCard(game, helenController, helenId).CurrentTroops);
         return new(game, egilController, helenController, helenId, substituteId, prompt);
     }
@@ -739,7 +740,7 @@ public sealed class HelenLethalEffectCancellation20261027Tests
             SourceCardId: prompt.SourceCardId, Step: prompt.Step,
             CreatedRevision: prompt.CreatedRevision, Controller: prompt.Controller);
 
-    private static L12GameEngine Create(int egilController)
+    private static L12GameEngine Create(int egilController, bool legacyProtocol = false)
     {
         var deck = Catalog.DeckAt(0);
         var game = new L12GameEngine(Catalog, "helen-lethal-effect-cancellation-20261027",
@@ -782,6 +783,13 @@ public sealed class HelenLethalEffectCancellation20261027Tests
         game.State.PendingDefense = null;
         game.State.ActiveDisaster = null;
         game.State.Revision++;
+        if (!legacyProtocol) return game;
+        // Only the explicitly named historical recipe scenarios freeze v1.
+        var checkpoint = JsonNode.Parse(game.SerializeFullState())!.AsObject();
+        checkpoint.Remove(nameof(L12GameState.TimedTroopsReductionAbsorptionProtocolEnabled));
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint.ToJsonString(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+            utcNow: () => DateTimeOffset.Parse("2026-10-27T10:00:00+08:00"));
         return game;
     }
 

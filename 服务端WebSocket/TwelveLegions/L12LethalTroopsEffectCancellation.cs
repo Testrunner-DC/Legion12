@@ -52,7 +52,8 @@ public sealed partial class L12GameEngine
                 StringComparison.OrdinalIgnoreCase));
         if (pending is null) return;
 
-        prompt.Data[$"{LethalTroopsCancellationPrefix}version"] = LethalTroopsCancellationVersion;
+        prompt.Data[$"{LethalTroopsCancellationPrefix}version"] =
+            protectedCard.TimedModifiers[pending.ModifierIndex].TroopsReduction is null ? LethalTroopsCancellationVersion : "2";
         prompt.Data[$"{LethalTroopsCancellationPrefix}modifierIndex"] =
             pending.ModifierIndex.ToString(CultureInfo.InvariantCulture);
         prompt.Data[$"{LethalTroopsCancellationPrefix}fingerprint"] = pending.Fingerprint;
@@ -95,7 +96,9 @@ public sealed partial class L12GameEngine
         var versionKey = $"{LethalTroopsCancellationPrefix}version";
         var indexKey = $"{LethalTroopsCancellationPrefix}modifierIndex";
         var fingerprintKey = $"{LethalTroopsCancellationPrefix}fingerprint";
-        if (prompt.Data.GetValueOrDefault(versionKey) != LethalTroopsCancellationVersion
+        var version = prompt.Data.GetValueOrDefault(versionKey);
+        if ((version != LethalTroopsCancellationVersion && version != "2")
+            || version == "2" && !State.TimedTroopsReductionAbsorptionProtocolEnabled
             || !int.TryParse(prompt.Data.GetValueOrDefault(indexKey), NumberStyles.None,
                 CultureInfo.InvariantCulture, out var modifierIndex)
             || prompt.Data.GetValueOrDefault(fingerprintKey) is not { Length: > 0 } fingerprint
@@ -116,7 +119,10 @@ public sealed partial class L12GameEngine
             || !string.Equals(protectedCard.InstanceId, cardInstanceId,
                 StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("致命效果抵消对象已失效");
-        return ValidateLethalTroopsEffectContribution(protectedCard, modifierIndex, fingerprint);
+        var validated = ValidateLethalTroopsEffectContribution(protectedCard, modifierIndex, fingerprint);
+        if ((version == "2") != (validated.Modifier.TroopsReduction is not null))
+            throw new InvalidDataException("致命效果抵消配方协议不匹配");
+        return validated;
     }
 
     private static ValidatedLethalTroopsEffectCancellation ValidateLethalTroopsEffectContribution(
@@ -132,11 +138,12 @@ public sealed partial class L12GameEngine
         return new(modifierIndex, modifier);
     }
 
-    private static void ApplyLethalTroopsEffectCancellation(
+    private void ApplyLethalTroopsEffectCancellation(
         L12CardInstance protectedCard, ValidatedLethalTroopsEffectCancellation cancellation)
     {
         var modifier = cancellation.Modifier;
-        protectedCard.Troops -= modifier.TroopsDelta;
+        if (modifier.TroopsReduction is null) protectedCard.Troops -= modifier.TroopsDelta;
+        else CancelTroopsReduction(protectedCard, modifier);
         if (modifier.CostDelta == 0)
         {
             protectedCard.TimedModifiers.RemoveAt(cancellation.ModifierIndex);
@@ -152,6 +159,7 @@ public sealed partial class L12GameEngine
             ExpiresAfterTurn = modifier.ExpiresAfterTurn,
             OwnerTurnEndExpiry = modifier.OwnerTurnEndExpiry,
             Source = modifier.Source,
+            TroopsLayerId = modifier.TroopsLayerId,
         };
     }
 
@@ -179,6 +187,8 @@ public sealed partial class L12GameEngine
         Append(raw, "granted", modifier.OwnerTurnEndExpiry is { } grantedExpiry
             ? grantedExpiry.GrantedTurnSerial.ToString(CultureInfo.InvariantCulture) : null);
         Append(raw, "source", modifier.Source);
+        if (modifier.TroopsReduction is not null)
+            Append(raw, "reduction", TroopsReductionFingerprintData(modifier));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw.ToString())));
     }
 }

@@ -86,7 +86,7 @@ public static class L12LibraryOps
     }
 }
 
-public static class L12DerivedStats
+public static partial class L12DerivedStats
 {
     public static int CurrentTroops(L12CardInstance card, int turnSerial)
     {
@@ -124,7 +124,8 @@ public static class L12DerivedStats
             penalty, turnSerial);
 
     public static void ApplyContinuousModifiers(L12CardInstance card,
-        IReadOnlyDictionary<string, int>? bonuses, int penalty, int turnSerial)
+        IReadOnlyDictionary<string, int>? bonuses, int penalty, int turnSerial,
+        bool reductionProtocol = false)
     {
         bonuses ??= new Dictionary<string, int>(StringComparer.Ordinal);
         if (bonuses.Values.Any(value => value <= 0)) throw new ArgumentOutOfRangeException(nameof(bonuses));
@@ -132,32 +133,47 @@ public static class L12DerivedStats
         RestoreLegacyContinuousLayers(card);
 
         var oldRemaining = card.ContinuousTroopsBonusLayers.Values
-            .Sum(layer => Math.Max(0, layer.Granted - layer.Consumed));
+            .Sum(RemainingTroopsBonus);
         var oldPenalty = card.ContinuousTroopsPenalty;
         foreach (var key in card.ContinuousTroopsBonusLayers.Keys
                      .Concat(bonuses.Keys).Distinct(StringComparer.Ordinal).ToArray())
         {
             card.ContinuousTroopsBonusLayers.TryGetValue(key, out var oldLayer);
             var oldGranted = oldLayer?.Granted ?? 0;
-            var layerRemaining = Math.Max(0, oldGranted - (oldLayer?.Consumed ?? 0));
+            var layerRemaining = oldLayer is null ? 0 : RemainingTroopsBonus(oldLayer);
             var newGranted = bonuses.GetValueOrDefault(key);
             var newRemaining = newGranted >= oldGranted
                 ? layerRemaining + newGranted - oldGranted
                 : Math.Min(layerRemaining, newGranted);
             if (newGranted == 0)
             {
+                if (oldLayer?.GrantId is not null)
+                    RetireTroopsAbsorptions(card, "continuous", oldLayer.GrantId, key);
                 card.ContinuousTroopsBonusLayers.Remove(key);
                 continue;
+            }
+            var reductions = oldLayer?.ReductionConsumed ?? 0;
+            var consumed = oldLayer?.Consumed ?? 0;
+            var consumptionToRetire = Math.Max(0, consumed + reductions - (newGranted - newRemaining));
+            var damageToRetire = Math.Min(consumed, consumptionToRetire);
+            consumed -= damageToRetire;
+            consumptionToRetire -= damageToRetire;
+            if (consumptionToRetire > 0)
+            {
+                RetireTroopsAbsorptions(card, "continuous", oldLayer!.GrantId, key, consumptionToRetire);
+                reductions -= consumptionToRetire;
             }
             card.ContinuousTroopsBonusLayers[key] = new L12TroopsBonusLayer
             {
                 Granted = newGranted,
-                Consumed = newGranted - newRemaining,
+                Consumed = consumed,
+                ReductionConsumed = reductions,
+                GrantId = oldLayer?.GrantId ?? (reductionProtocol ? NextTroopsLayerId(card) : null),
             };
         }
 
         var totalGranted = card.ContinuousTroopsBonusLayers.Values.Sum(layer => layer.Granted);
-        var totalConsumed = card.ContinuousTroopsBonusLayers.Values.Sum(layer => layer.Consumed);
+        var totalConsumed = card.ContinuousTroopsBonusLayers.Values.Sum(layer => layer.Consumed + layer.ReductionConsumed);
         var totalRemaining = totalGranted - totalConsumed;
         card.Troops += totalRemaining + penalty - oldRemaining - oldPenalty;
         card.ContinuousTroopsBonusGranted = totalGranted;
@@ -205,11 +221,11 @@ public static class L12DerivedStats
         }
 
         foreach (var modifier in card.TimedModifiers
-                     .Where(modifier => modifier.TroopsDelta > modifier.ConsumedTroopsBonus)
+                     .Where(modifier => modifier.TroopsDelta > 0 && RemainingTroopsBonus(modifier) > 0)
                      .OrderBy(modifier => modifier.ExpiresAfterTurn))
         {
             if (damageLeft == 0) break;
-            var available = modifier.TroopsDelta - modifier.ConsumedTroopsBonus;
+            var available = RemainingTroopsBonus(modifier);
             var consumed = Math.Min(available, damageLeft);
             modifier.ConsumedTroopsBonus += consumed;
             damageLeft -= consumed;
@@ -221,7 +237,7 @@ public static class L12DerivedStats
                          .Select(entry => entry.Value))
             {
                 if (damageLeft == 0) break;
-                var available = Math.Max(0, layer.Granted - layer.Consumed);
+                var available = RemainingTroopsBonus(layer);
                 var consumed = Math.Min(available, damageLeft);
                 layer.Consumed += consumed;
                 damageLeft -= consumed;
@@ -251,10 +267,17 @@ public static class L12DerivedStats
         }
 
         foreach (var modifier in card.TimedModifiers)
+        {
             modifier.ConsumedTroopsBonus = 0;
+            modifier.ReductionConsumedTroopsBonus = 0;
+            modifier.TroopsReduction = null;
+        }
         RestoreLegacyContinuousLayers(card);
         foreach (var layer in card.ContinuousTroopsBonusLayers.Values)
+        {
             layer.Consumed = 0;
+            layer.ReductionConsumed = 0;
+        }
         card.ContinuousTroopsBonusGranted = card.ContinuousTroopsBonusLayers.Values.Sum(layer => layer.Granted);
         card.ContinuousTroopsBonusConsumed = 0;
         card.ContinuousTroopsModifier = card.ContinuousTroopsBonusGranted + card.ContinuousTroopsPenalty;
@@ -364,7 +387,7 @@ public static class L12S2ZoneOps
     public static void InheritPromotionState(L12CardInstance foundation, L12CardInstance promoted)
     {
         var expectedFoundationTroops = foundation.DisplayBaseTroops
-            + foundation.TimedModifiers.Sum(modifier => modifier.TroopsDelta)
+            + foundation.TimedModifiers.Sum(L12DerivedStats.EffectiveTimedTroopsDelta)
             + foundation.ContinuousTroopsModifier;
         var carriedDamage = Math.Max(0, expectedFoundationTroops - foundation.Troops);
 
@@ -424,10 +447,26 @@ public static class L12S2ZoneOps
                 OwnerTurnEndExpiry = modifier.OwnerTurnEndExpiry,
                 Source = modifier.Source,
                 ConsumedTroopsBonus = modifier.ConsumedTroopsBonus,
+                TroopsLayerId = modifier.TroopsLayerId,
+                ReductionConsumedTroopsBonus = modifier.ReductionConsumedTroopsBonus,
+                TroopsReduction = modifier.TroopsReduction?.Clone(),
             });
+        if (foundation.TroopsLayerSequence > 0)
+        {
+            promoted.TroopsLayerSequence = foundation.TroopsLayerSequence;
+            promoted.ContinuousTroopsBonusLayers = foundation.ContinuousTroopsBonusLayers.ToDictionary(
+                pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal);
+            promoted.ContinuousTroopsBonusGranted = foundation.ContinuousTroopsBonusGranted;
+            promoted.ContinuousTroopsBonusConsumed = foundation.ContinuousTroopsBonusConsumed;
+            promoted.ContinuousTroopsPenalty = foundation.ContinuousTroopsPenalty;
+            promoted.ContinuousTroopsModifier = foundation.ContinuousTroopsModifier;
+            foreach (var modifier in promoted.TimedModifiers)
+                if (modifier.TroopsReduction is { } reduction) reduction.TargetInstanceId = promoted.InstanceId;
+        }
         promoted.CostModifier += foundation.TimedModifiers.Sum(modifier => modifier.CostDelta);
         promoted.Troops = promoted.DisplayBaseTroops
-            + promoted.TimedModifiers.Sum(modifier => modifier.TroopsDelta)
+            + promoted.TimedModifiers.Sum(L12DerivedStats.EffectiveTimedTroopsDelta)
+            + (foundation.TroopsLayerSequence > 0 ? promoted.ContinuousTroopsModifier : 0)
             - carriedDamage;
     }
 }

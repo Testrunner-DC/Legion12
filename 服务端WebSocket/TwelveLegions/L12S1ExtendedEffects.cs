@@ -930,9 +930,13 @@ public sealed partial class L12GameEngine
                 FindOnField(player, card.InstanceId, out _, out _) is not null
                 && HasCurrentLethalEventProtection(player, card));
         var modifierIndex = card.TimedModifiers.Count;
-        card.TimedModifiers.Add(new L12TimedModifier { TroopsDelta = troops, CostDelta = cost,
-            ExpiresAfterTurn = expiry, Source = source, OwnerTurnEndExpiry = ownerTurnEndExpiry });
+        var modifier = new L12TimedModifier { TroopsDelta = troops, CostDelta = cost,
+            ExpiresAfterTurn = expiry, Source = source, OwnerTurnEndExpiry = ownerTurnEndExpiry,
+            TroopsLayerId = State.TimedTroopsReductionAbsorptionProtocolEnabled && troops != 0
+                ? L12DerivedStats.NextTroopsLayerId(card) : null };
+        card.TimedModifiers.Add(modifier);
         card.Troops += troops; card.CostModifier += cost;
+        AbsorbTimedTroopsReduction(card, modifier);
         if (troops < 0 && (troopsBeforeModifier > 0 && card.Troops <= 0
                 || extendsProtectedLethalState))
             RecordPendingLethalTroopsEffectContribution(card, modifierIndex);
