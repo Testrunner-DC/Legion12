@@ -214,8 +214,8 @@ await test('management preserves untouched timestamp precision while editing the
   const source = readFileSync(new URL('../src/l12/site/TournamentManagementPanel.vue', import.meta.url), 'utf8')
   const compiled = compileScript(parse(source).descriptor, { id: 'tournament-registration-management-runtime' })
   const module = { exports: {} }
-  const imports = { vue: Vue, '@/l12/tournamentLabels': { tournamentAutomationStatusText: value => value },
-    '@/l12/platform': { friendApi: { friends: async () => [] }, tournamentApi: { setRegistrationWindow: async (...args) => { calls.push(args); return original } } } }
+  const imports = { vue: Vue, 'vue-router': { useRoute: () => Vue.reactive({ fullPath: '/battle/tournaments/window-event' }) }, './TournamentAnnouncement.vue': { default: {} }, '@/l12/tournamentLabels': { tournamentAutomationStatusText: value => value },
+    '@/l12/platform': { platformState: Vue.reactive({ token: 'session', account: { id: 'owner' } }), friendApi: { friends: async () => [] }, tournamentApi: { setRegistrationWindow: async (...args) => { calls.push(args); return original } } } }
   vm.runInNewContext(ts.transpileModule(compiled.content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
     { module, exports: module.exports, require: id => { assert(id in imports); return imports[id] }, Date, Error, Map, console })
   module.exports.default.render = () => null

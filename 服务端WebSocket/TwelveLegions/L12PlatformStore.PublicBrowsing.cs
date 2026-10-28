@@ -96,7 +96,7 @@ public sealed record L12PublicTournamentDetailView(
     L12PublicTournamentRulesView Rules,
     IReadOnlyList<L12PublicTournamentParticipantView> Participants,
     IReadOnlyList<L12PublicTournamentRoundView> Rounds,
-    IReadOnlyList<L12PublicTournamentStandingView> FinalStandings, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null);
+    IReadOnlyList<L12PublicTournamentStandingView> FinalStandings, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null, string Announcement = "");
 
 public sealed partial class L12PlatformStore
 {
@@ -198,7 +198,7 @@ public sealed partial class L12PlatformStore
             rules, participants, rounds,
             namesVisible
                 ? row.FinalSwissStandings.OrderBy(item => item.Rank).Select(ToPublicTournamentStanding).ToArray()
-                : [], row.RegistrationOpensAt, row.RegistrationClosesAt);
+                : [], row.RegistrationOpensAt, row.RegistrationClosesAt, row.Announcement ?? string.Empty);
     }
 
     private L12PublicTournamentStandingView ToPublicTournamentStanding(TournamentStandingRow row)

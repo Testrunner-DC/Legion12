@@ -166,6 +166,8 @@ public sealed record TournamentTimeExtensionRequest(int Minutes, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentPhaseRequest(string? Phase, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentAnnouncementRequest(string? Announcement, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentRegistrationWindowRequest(DateTimeOffset? RegistrationOpensAt,
     DateTimeOffset? RegistrationClosesAt, string? Reason, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false);

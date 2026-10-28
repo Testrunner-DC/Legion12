@@ -124,6 +124,19 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12TournamentView SetTournamentAnnouncement(L12AccountView actor, string tournamentId,
+        string? announcement, long expectedVersion, L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            RequireOrganizerOrGlobalManager(actor, row);
+            var text = announcement ?? string.Empty;
+            if (text.Length > 2000) throw new ArgumentException("公告不能超过 2000 个字符");
+            return Mutate(actor, row, "announcement", tournamentId, context, apply,
+                working => working.Announcement = text);
+        }
+    }
     public L12TournamentView SetTournamentRegistrationWindow(L12AccountView actor, string tournamentId,
         DateTimeOffset? opensAt, DateTimeOffset? closesAt, long expectedVersion,
         L12AdminAuditContext context, bool apply)

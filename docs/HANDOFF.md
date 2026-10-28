@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-28 赛事公告完整接入已验收
+
+- 来源原2叶组件已接原赛事row、登录/公开详情及管理保存，2000 UTF16上限拒绝不截断、空值清除、原样空白换行。原组织者/全局管理、版本/预演/幂等/Mutate/审计保留，旧资料空默认；原列表显式不带公告正文，公开summary无新字段。真实WS resourceChanged只有type/resource/epoch/revision，审计无公告内QQ标记；不是关键提醒送达。
+- 真HTTP404 RED及Main发现旧完整list带正文的真RED均保留，最终公告/公开9/9；组件/真实父SFC17及原创建20，正常check-tournament-center-contracts末尾已接17场且保50原合同。Main完整UI/类型/双613构建通过，和素材共用一次2818完整平台；证据`tournament-announcement-20261028/source-delivery-r2.json`、`normal-entry.json`、`frontend-main-r1/result.json`与素材主TRX。原生本地独立组件390长文输入/点击保存/只读与宽屏已目视，不冒真实整页网络或真机；截图工具输出可见，直接D盘保存被拒，未回退C。
+- 素材族已本地提交9c6f57d1，公告本片与主页有界重试分开提交，统一同步回执见`media-reference-batch-20261028/synchronization.json`；未部署或维护变更，线上仍d557，Bug3待上线。候补/实际签到赛程/审核/信誉、关键事件提醒仍后续，不当公告实现已全部完成。
+
 ## 2026-10-28 素材引用批量投影已验收（19点）
 
 - Main只改SiteContent与SiteMediaPaginationTests两叶：Admin旧列表与Search所选页在原_gate内共用一次引用源遍历，每JSON字段最多解析一次。保原raw Ordinal Contains的转义边界、字符串出现次数、草稿/发布/全部历史/停用异画来源；空页不扫。无持久缓存，删除、上传及主页单图投影仍原权威单ID路径。独审无具体阻断，仍有“页内ID数×原字符串Contains”的成本，不冒全站O(字节)或线上降幅。

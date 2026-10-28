@@ -842,6 +842,7 @@ export interface TournamentBracketMatch {
 }
 export interface TournamentBracketRound { number: number; matches: TournamentBracketMatch[] }
 export interface Tournament {
+  announcement?: string | null
   registrationOpensAt?: string | null; registrationClosesAt?: string | null
   id: string; code: string; name: string; organizerAccountId: string; organizerName: string; referees: TournamentStaff[]
   status: TournamentStatus; format: 'single' | 'swiss' | 'swiss-cut' | 'league'; visibility: 'public' | 'code'; maxPlayers: number
@@ -890,6 +891,7 @@ export interface PublicTournamentRules {
   cutSize?: number; lateGraceMinutes: number; timeControl: RankedTimeControlConfig
 }
 export interface PublicTournamentDetail extends PublicTournamentSummary {
+  announcement?: string | null
   registrationOpensAt?: string | null; registrationClosesAt?: string | null
   description: string; registrationVisibility: 'public' | 'staff'; registrationOpen: boolean; rules: PublicTournamentRules
   intermissionMinutes: number; automationStatus: TournamentAutomationStatus; nextAutomaticActionAt?: string
@@ -1855,6 +1857,9 @@ export const tournamentApi = {
   }),
   setPhase: (id: string, expectedVersion: number, phase: 'registration-open' | 'registration-closed' | 'pre-check-in' | 'result-confirmation' | 'running', reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/phase`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-phase', { expectedVersion, phase, reason })),
+  }),
+  setAnnouncement: (id: string, expectedVersion: number, announcement: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/announcement`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-announcement', { expectedVersion, announcement, reason: '主办者更新赛事公告' })),
   }),
   setRegistrationWindow: (id: string, expectedVersion: number, registrationOpensAt: string | null, registrationClosesAt: string | null, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration-window`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-registration-window', { expectedVersion, registrationOpensAt, registrationClosesAt, reason })),

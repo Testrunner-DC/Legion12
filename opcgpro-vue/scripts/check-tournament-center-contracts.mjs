@@ -224,3 +224,4 @@ if (failed.length) {
 console.log(`Tournament center contracts passed: ${checks.length}/${checks.length}`)
 await import('./test-a3-tournament-notice-template-contract.mjs')
 await import('./test-public-browsing.mjs')
+await import('./test-tournament-announcement.mjs')

@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FEATURE-20261028-TOURNAMENT-ANNOUNCEMENT｜公告持久化与详情接入
+
+- 人类原turn01a180c1“123478执行56用公告”沿报名窗口接续，本片只实现公告，不冒关键提醒/候补/赛程/审核/信誉。原row新增空默认Announcement，≤2000 UTF16原样文本，空可清；原组织者/全局管理权限、RequireTournament版本、Mutate副本、preview/apply/幂等与审计保持。公开/凭码/ID可见性仍旧边界；公开summary无字段，兼容完整列表通过includeAnnouncement:false回空，不额外传2KB正文。
+- 前端纯插值无v-html，旧null空值兼容，2001拒绝而非截断；管理异步保存绑定赛事、版本、路由、账号、token、当前会话及generation，权限丢失/卸载/ABA不把旧回复写回新页。子组件保未保存草稿并提示冲突，只显式查看最新才覆盖；保存仍沿原命令入口，广播不是个人内容提醒。
+- 首真实HTTP404 RED、Main旧列表带公告正文RED保留，最终公告/公开9关联通过。真实WS hello→发布→resourceChanged精确四metadata字段且无正文，实际通用审计含动作/目标不含QQ公告文字。原17SFC（含父组件ABA）/创建20与50旧合同全保，新QA接入正常赛事守卫。Main完整UI/两类型/双613构建通过，与素材共享一次完整平台2818零失败跳过，证据`source-delivery-r2.json`/`normal-entry.json`/`frontend-main-r1/result.json`及素材main-full-r1，不伪称另一轮full或Release包。
+- 本地真实浏览器独立组件390长文保存/换只读及宽屏已目视，非线上父整页/真机；直接保存D截图受工具写权限拒绝，不改写C或伪称有截图文件。未部署/改维护/关Bug。回滚保原赛事历史，不把公告写进通用内容广播；统一同步见`media-reference-batch-20261028/synchronization.json`。
+
 ## PERF-20261028-MEDIA-REFERENCE-BATCH｜素材列表共用一次引用遍历
 
 - P2/P3沿原_gate和事实来源，仅AdminSiteMedia与SearchSiteMedia筛选/分页后批量建view。页内Ordinal字典只保所选ID和数字，原文章current/Published/全部Revision封面及正文、ContentEntries双字段、所有ContentVersions、含停用AlternateArts和全部metadata原样计数。JSON值每次出现都计，key不计，坏JSON为0；保旧raw Ordinal Contains对转义ID的预筛语义，不借优化改变删除口径。

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-tournament-announcement",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "赛事公告",
+  "changes": [{
+    "category": "tournaments",
+    "text": "主办者可在赛事管理中填写、修改或清空公告，用于说明联系方式、奖励和赛事安排；赛事详情保留公告换行，未保存的草稿不会被其他更新覆盖。",
+    "paths": [
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentOperations.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicBrowsing.cs",
+      "服务端WebSocket/TwelveLegions/L12HttpContracts.cs",
+      "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+      "opcgpro-vue/src/l12/platform.ts",
+      "opcgpro-vue/src/l12/site/TournamentAnnouncement.vue",
+      "opcgpro-vue/src/l12/site/TournamentManagementPanel.vue",
+      "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue",
+      "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue"
+    ]
+  }]
+}

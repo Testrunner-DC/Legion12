@@ -7,6 +7,7 @@ import { tournamentTimeControlLabel } from '@/l12/tournamentTime'
 import TournamentDisasterSummary from './TournamentDisasterSummary.vue'
 import RulesCardSummary from './RulesCardSummary.vue'
 import TournamentParticipantCounts from './TournamentParticipantCounts.vue'
+import TournamentAnnouncement from './TournamentAnnouncement.vue'
 
 const route = useRoute(); const router = useRouter()
 const tournament = ref<PublicTournamentDetail | null>(null)
@@ -58,6 +59,7 @@ onBeforeUnmount(() => { window.clearTimeout(registrationBoundaryTimer); disposed
     <template v-else>
       <header class="page-head"><div><small>{{ tournament.code }} · {{ tournamentStatusText(tournament.status) }}</small><h1>{{ tournament.name }}</h1><p>{{ tournament.description || '暂无赛事简介' }}</p></div><div class="header-actions"><button @click="copyLink">复制链接</button><button class="primary" @click="login">{{ tournament.registrationOpen ? '登录并报名' : '登录查看我的赛事' }}</button></div></header>
       <section v-if="tournament.status === 'registration'" class="panel registration-callout" aria-label="赛事报名"><div><small>REGISTRATION</small><h2>{{ tournament.registrationOpen ? '报名开放中' : '本场报名已关闭' }}</h2><p>{{ tournament.registrationOpen ? '登录后可直接报名；获得正式席位后，再在赛前签到时选择并锁定本人牌库。' : '仍可查看本场赛事信息、规则、赛程和公开参赛状态。' }}</p></div><button class="primary" :disabled="!tournament.registrationOpen" @click="login">{{ tournament.registrationOpen ? '登录后报名' : '报名已关闭' }}</button></section>
+      <TournamentAnnouncement :tournament-id="tournament.code" :version="0" :announcement="tournament.announcement" :can-edit="false" :busy="false" />
       <nav class="tabs" aria-label="赛事详情"><button v-for="item in tabs" :key="item[0]" :class="{ active: tab === item[0] }" :aria-current="tab === item[0] ? 'page' : undefined" @click="tab = item[0]">{{ item[1] }}</button></nav>
       <p v-if="notice" class="notice" role="status">{{ notice }}</p>
       <section v-if="tab === 'overview'" class="panel facts"><p v-if="tournament.registrationOpensAt || tournament.registrationClosesAt"><small>报名时间</small><b>{{ tournament.registrationOpensAt ? new Date(tournament.registrationOpensAt).toLocaleString('zh-CN') : '不限' }} 至 {{ tournament.registrationClosesAt ? new Date(tournament.registrationClosesAt).toLocaleString('zh-CN') : '不限' }}</b></p><p><small>主办者</small><b>{{ tournament.organizerName }}</b></p><p><small>赛制</small><b>{{ tournamentFormatText(tournament.format) }}</b></p><p><small>运行方式</small><b>{{ tournament.operationMode === 'automated' ? '自动运行' : '人工管理' }}</b></p><p><small>参赛人数</small><TournamentParticipantCounts :counts="tournament.counts" :max-players="tournament.maxPlayers"/></p><p><small>计划时间</small><b>{{ tournament.startAt ? new Date(tournament.startAt).toLocaleString('zh-CN') : '待定' }}</b></p><p><small>赛事阶段</small><b>{{ tournamentPhaseText(tournament.phase) }}</b></p><p><small>报名状态</small><b>{{ tournament.registrationOpen ? '报名开放' : '报名关闭' }}</b></p><p v-if="tournament.operationMode === 'automated'"><small>自动计时</small><b>轮间 {{ tournament.intermissionMinutes }} 分钟 · 迟到 {{ tournament.rules.lateGraceMinutes }} 分钟</b></p></section>

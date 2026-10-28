@@ -215,7 +215,7 @@ public sealed record L12TournamentView(
     int IntermissionMinutes,
     string AutomationStatus,
     DateTimeOffset? NextAutomaticActionAt,
-    string? AutomationAttentionReason, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null);
+    string? AutomationAttentionReason, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null, string Announcement = "");
 
 public sealed record L12TournamentListView(long PlatformVersion, IReadOnlyList<L12TournamentView> Items);
 
@@ -583,6 +583,7 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? RegistrationOpensAt { get; set; }
         public DateTimeOffset? RegistrationClosesAt { get; set; }
         public string Description { get; set; } = string.Empty;
+        public string Announcement { get; set; } = string.Empty;
         public TournamentRulesSnapshotRow Rules { get; set; } = new();
         public int RoundMinutes { get; set; } = 50;
         public int CheckInMinutes { get; set; } = 5;
@@ -637,7 +638,7 @@ public sealed partial class L12PlatformStore
                 || row.Participants.Any(item => item.AccountId == viewer.Id));
             var rows = query.OrderByDescending(row => row.UpdatedAt).ToArray();
             PreflightOnlineDeckProjection(rows.SelectMany(row => VisibleTournamentDeckPayloads(row, viewer)));
-            return new L12TournamentListView(Version, rows.Select(row => ToView(row, viewer)).ToArray());
+            return new L12TournamentListView(Version, rows.Select(row => ToView(row, viewer, includeAnnouncement: false)).ToArray());
         }
     }
 
@@ -2112,7 +2113,7 @@ public sealed partial class L12PlatformStore
     private static bool IsRegistrationAvailable(TournamentRow row, DateTimeOffset now)
         => row.Status == "registration" && row.RegistrationOpen
             && IsRegistrationWindowOpen(row.RegistrationOpensAt, row.RegistrationClosesAt, now);
-    private L12TournamentView ToView(TournamentRow row, L12AccountView viewer)
+    private L12TournamentView ToView(TournamentRow row, L12AccountView viewer, bool includeAnnouncement = true)
     {
         var organizer = _data.Accounts.FirstOrDefault(item => item.Id == row.OrganizerAccountId);
         var staff = row.RefereeAccountIds.Select(AccountById).Where(item => item is not null)
@@ -2209,7 +2210,7 @@ public sealed partial class L12PlatformStore
                 .Where(item => configuredStaff || JudgeCaseIncludesViewer(row, item, viewer.Id))
                 .Select(item => ToJudgeCaseView(row, item, viewer, configuredStaff)).ToArray(),
             row.OperationMode, row.IntermissionMinutes, row.AutomationStatus,
-            row.NextAutomaticActionAt, row.AutomationAttentionReason, row.RegistrationOpensAt, row.RegistrationClosesAt);
+            row.NextAutomaticActionAt, row.AutomationAttentionReason, row.RegistrationOpensAt, row.RegistrationClosesAt, includeAnnouncement ? row.Announcement ?? string.Empty : string.Empty);
     }
 
     private L12TournamentOrganizerTransferView ToOrganizerTransferView(TournamentOrganizerTransferRow row)

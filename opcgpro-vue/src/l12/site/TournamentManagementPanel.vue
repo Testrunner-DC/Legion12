@@ -1,10 +1,33 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { friendApi, tournamentApi, type PlatformFriend, type Tournament, type TournamentStartCheck } from '@/l12/platform'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import TournamentAnnouncement from './TournamentAnnouncement.vue'
+import { friendApi, platformState, tournamentApi, type PlatformFriend, type Tournament, type TournamentStartCheck } from '@/l12/platform'
 import { tournamentAutomationStatusText } from '@/l12/tournamentLabels'
 
 const props = defineProps<{ tournament: Tournament; accountId: string; canOrganize: boolean }>()
 const emit = defineEmits<{ updated: [value: Tournament]; notice: [value: string] }>()
+const route = useRoute()
+const announcementBusy = ref(false)
+let announcementEpoch = 0
+watch(() => [props.tournament.id, props.accountId, props.canOrganize, route.fullPath, platformState.token, platformState.account?.id], () => {
+  announcementEpoch++
+  announcementBusy.value = false
+}, { flush: 'sync' })
+onBeforeUnmount(() => { announcementEpoch++ })
+async function saveAnnouncement(input: { tournamentId: string; version: number; text: string }) {
+  if (!props.canOrganize || announcementBusy.value || input.tournamentId !== props.tournament.id || input.version !== props.tournament.version) return
+  const epoch = ++announcementEpoch, account = props.accountId, path = route.fullPath, token = platformState.token, sessionAccount = platformState.account?.id
+  const current = () => epoch === announcementEpoch && props.canOrganize && props.accountId === account
+    && route.fullPath === path && platformState.token === token && platformState.account?.id === sessionAccount && props.tournament.id === input.tournamentId && props.tournament.version === input.version
+  announcementBusy.value = true
+  try {
+    const result = await tournamentApi.setAnnouncement(input.tournamentId, input.version, input.text)
+    if (current() && result.id === input.tournamentId) { emit('updated', result); emit('notice', '赛事公告已保存') }
+  } catch (error) { if (current()) emit('notice', error instanceof Error ? error.message : '公告保存失败') }
+  finally { if (epoch === announcementEpoch) announcementBusy.value = false }
+}
+
 const busy = ref(false)
 const reason = ref('')
 const localDate = (value?: string | null) => {
@@ -92,6 +115,7 @@ onMounted(() => { void friendApi.friends().then(value => { friends.value = value
       <header class="management-head"><div><small>TOURNAMENT OPERATIONS</small><h2>赛事生命周期</h2><p>按顺序管理报名、签到、开赛与成绩确认。</p></div><span>{{ tournament.status }}</span></header>
       <section v-if="tournament.operationMode === 'automated'" class="automation-state" :class="{attention:tournament.automationStatus === 'attention-required'}"><header><b>自动运行赛事</b><span>{{ tournamentAutomationStatusText(tournament.automationStatus) }}</span></header><p>轮间准备 {{ tournament.intermissionMinutes }} 分钟 · 每轮迟到宽限 {{ tournament.lateGraceMinutes }} 分钟</p><p v-if="tournament.nextAutomaticActionAt">下一次自动处理：{{ new Date(tournament.nextAutomaticActionAt).toLocaleString('zh-CN') }}</p><p v-if="tournament.automationAttentionReason"><b>需要处理：</b>{{ tournament.automationAttentionReason }}</p></section>
       <label class="reason-field"><span>本次操作理由</span><input v-model.trim="reason" maxlength="500" placeholder="供工作人员审计与后续复核"></label>
+      <section class="operation-group"><TournamentAnnouncement :tournament-id="tournament.id" :version="tournament.version" :announcement="tournament.announcement" :can-edit="canOrganize && !['completed','canceled'].includes(tournament.status)" :busy="announcementBusy" @save="saveAnnouncement" /></section>
       <section class="operation-group"><header><b>公开范围</b><span>凭码赛事不向游客公开；名单隐藏也会隐藏赛程姓名与排名。</span></header><div class="visibility-form"><label><span>赛事可见性</span><select v-model="visibility"><option value="public">公开浏览</option><option value="code">凭码访问（需登录）</option></select></label><label><span>参赛名单</span><select v-model="registrationVisibility"><option value="public">公开</option><option value="staff">仅工作人员可见</option></select></label><button :disabled="busy || (visibility === tournament.visibility && registrationVisibility === tournament.registrationVisibility)" @click="saveVisibility">保存公开范围</button></div></section>
       <section v-if="tournament.status === 'registration'" class="operation-group"><header><b>报名与签到</b><span>调整当前阶段或发布新的开赛时间</span></header><div class="actions"><button v-if="tournament.phase === 'registration-open'" @click="setPhase('registration-closed','报名已关闭')">关闭报名</button><button v-if="tournament.phase !== 'registration-open'" @click="setPhase('registration-open','报名已开放')">重新开放报名</button><button v-if="tournament.phase !== 'pre-check-in'" class="primary" @click="setPhase('pre-check-in','已进入赛前签到')">进入赛前签到</button><button v-if="tournament.phase === 'pre-check-in'" @click="setPhase('registration-closed','已退出赛前签到')">退出赛前签到</button></div><div class="postpone"><label><span>报名开放时间</span><input v-model="registrationOpensLocal" type="datetime-local"></label><label><span>报名截止时间</span><input v-model="registrationClosesLocal" type="datetime-local"></label><button :disabled="busy" @click="saveRegistrationWindow">保存报名时间</button></div><p>调整计划开赛时间不会自动改变报名时间。</p><div class="postpone"><label><span>新的计划时间</span><input v-model="postponeAt" type="datetime-local"></label><button :disabled="!postponeAt" @click="postpone">发布延期</button></div></section>
       <section class="operation-group"><header><b>开赛与结算</b><span>开赛前必须先完成检查</span></header><div class="actions"><button v-if="tournament.status === 'registration'" @click="checkStart">执行开赛检查</button><button v-if="tournament.status === 'registration'" class="primary" :disabled="!startCheck?.canStart" @click="start">正式开赛</button><button v-if="tournament.status === 'running' && tournament.phase === 'running'" @click="setPhase('result-confirmation','进入成绩确认')">进入成绩确认</button><button v-if="tournament.phase === 'result-confirmation'" @click="setPhase('running','返回赛事进行中')">返回赛事进行中</button><button v-if="tournament.phase === 'result-confirmation'" class="primary" @click="complete">确认成绩并归档</button></div><article v-if="startCheck" class="start-check" :class="{passed:startCheck.canStart}"><b>{{ startCheck.canStart ? '开赛检查通过' : '暂不可开赛' }}</b><p v-for="item in startCheck.blockers" :key="item"><span>阻塞</span>{{ item }}</p><p v-for="item in startCheck.warnings" :key="item"><span>提醒</span>{{ item }}</p></article></section>

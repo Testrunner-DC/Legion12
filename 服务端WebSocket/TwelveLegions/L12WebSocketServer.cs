@@ -2169,6 +2169,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
+        _app.MapPost("/api/tournaments/{id}/announcement", (HttpRequest request, string id,
+            TournamentAnnouncementRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.announcement",
+                $"tournament:{id}", body, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.SetTournamentAnnouncement(current.Actor, id,
+                    current.Payload.Announcement, expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
         _app.MapPost("/api/tournaments/{id}/registration-window", (HttpRequest request, string id,
             TournamentRegistrationWindowRequest body) =>
         {
