@@ -49,7 +49,7 @@ const playwrightRoot = process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/code
 const { chromium } = require(playwrightRoot)
 
 const entry = String.raw`
-import {createApp,h} from 'vue'
+import {createApp,h,ref} from 'vue'
 import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
 import '/src/style.css'
 import '/src/l12/site/uiSystem.css'
@@ -78,6 +78,11 @@ const state={
  requests:[request('incoming-accept','接受玩家','incoming'),request('incoming-reject','拒绝玩家','incoming')],
  blocked:[],
 }
+if(new URLSearchParams(location.search).has('long'))state.friends=[
+ {...friend('offline-first','离线首位'),online:true},
+ ...Array.from({length:40},(_,i)=>({...friend('extra-'+i,'长列表好友 '+String(i+1).padStart(2,'0')),online:i%2===0})),
+ ...state.friends,
+]
 const clone=value=>structuredClone(value)
 const requireFixture=(ok,message)=>{if(!ok)throw new Error('Fixture contract: '+message)}
 const overview=()=>clone(state)
@@ -127,8 +132,9 @@ window.fetch=async(input,init={})=>{
  return originalFetch(input,init)
 }
 
-const [{default:SiteShell},{default:FriendsPage}]=await Promise.all([import('/src/l12/site/SiteShell.vue'),import('/src/l12/site/FriendsPage.vue')])
+const [{default:SiteShell},{default:FriendsPage},{default:SocialPopover}]=await Promise.all([import('/src/l12/site/SiteShell.vue'),import('/src/l12/site/FriendsPage.vue'),import('/src/l12/site/SocialPopover.vue')])
 const friendsNet=await import('/__qa_friends_net__.js')
+friendsNet.l12State.presence.push({accountId:'offline-first',online:false,activity:'offline'})
 const Stub={render:()=>h('main','占位页面')}
 const router=createRouter({history:createMemoryHistory(),routes:[
  {path:'/',component:Stub},{path:'/battle',component:Stub,meta:{section:'battle'}},{path:'/decks',component:Stub},{path:'/battle/rankings',component:Stub,meta:{section:'battle'}},
@@ -137,7 +143,8 @@ const router=createRouter({history:createMemoryHistory(),routes:[
 await router.push('/battle/friends')
 await router.isReady()
 window.__friendsQa={calls,router,snapshot:()=>overview(),setNetOffline:()=>{friendsNet.l12State.status='offline'}}
-createApp({render:()=>h(SiteShell,{},()=>h(RouterView))}).use(router).mount('#app')
+const showSocial=ref(false)
+createApp({render:()=>h(SiteShell,{},()=>[h(RouterView),h('button',{style:'position:fixed;right:14px;top:60px;z-index:4500',onClick:()=>showSocial.value=true},'验收快捷好友'),showSocial.value?h(SocialPopover,{onClose:()=>showSocial.value=false}, {online:()=>h('p','合成在线列表')}):null])}).use(router).mount('#app')
 `
 
 const qaNet = String.raw`
@@ -160,8 +167,9 @@ const server = await createServer({
   plugins: [{
     name: 'friends-mobile-reachability-fixture', enforce: 'pre',
     transform(code, id) {
-      if (id.includes('?') || !id.endsWith('/src/l12/site/FriendsPage.vue')) return
-      const anchor = "from '@/l12/net'"
+      if (id.includes('?') || !(id.endsWith('/src/l12/site/FriendsPage.vue') || id.endsWith('/src/l12/site/SocialPopover.vue'))) return
+      const anchor = id.endsWith('/FriendsPage.vue') ? "from '@/l12/net'" : "from '../net'"
+      if(!code.includes(anchor) && id.endsWith('/SocialPopover.vue'))return
       assert.equal(code.split(anchor).length, 2, 'FriendsPage net import changed')
       return code.replace(anchor, "from '/__qa_friends_net__.js'")
     },
@@ -185,11 +193,23 @@ const server = await createServer({
   }],
 })
 
+if (process.argv.includes('--serve')) {
+  await server.listen()
+  const url=`http://127.0.0.1:${server.httpServer.address().port}/__friends_mobile__?long=1`
+  fs.writeFileSync(path.join(output,'fixture.json'),JSON.stringify({url,sourceSha,commit,mode:'CUA native browser interactions; synthetic data only'},null,2))
+  console.log(url)
+  await new Promise(resolve=>{process.once('SIGINT',resolve);process.once('SIGTERM',resolve)})
+  await server.close()
+  process.exit(0)
+}
+
 const viewports = [
+  { width: 1440, height: 900, label: '1440x900' },
   { width: 390, height: 844, label: '390x844' },
   { width: 844, height: 390, label: '844x390' },
 ]
 const flows = [
+  { id: 'sticky-online', purpose: '长列表在线稳定排序，原滚动祖先和固定头部，快捷好友页签与返回可达' },
   { id: 'requests', purpose: '搜索申请、出站等待以及两条入站申请的接受和拒绝' },
   { id: 'relationship-actions', purpose: '邀请、观战、屏蔽确认、自动进入屏蔽页并取消屏蔽' },
 ]
@@ -324,7 +344,36 @@ async function relationshipActionsFlow(page, port) {
   return { touches, chatLayout, dialogs, focusObservation: { afterInvite: focusAfterInvite, afterNativeConfirmAndTabChange: focusAfterConfirm }, stateReadback: { blockedThenUnblocked: true, removedFromFriends: true, actionOrder: snapshot.calls.map(call => call.action) } }
 }
 
-const handlers = { requests: requestsFlow, 'relationship-actions': relationshipActionsFlow }
+async function stickyOnlineFlow(page, port) {
+  await page.goto(`http://127.0.0.1:${port}/__friends_mobile__?long=1`)
+  const rows = page.locator('.friend-center aside>button')
+  await rows.last().waitFor()
+  assert.equal(await rows.count(), 43)
+  assert.match(await rows.first().innerText(), /长列表好友 01\s+在线/)
+  assert.match(await rows.nth(22).innerText(), /离线首位\s+离线/)
+  await rows.last().click()
+  await page.getByRole('button', { name: '删除好友', exact: true }).scrollIntoViewIfNeeded()
+  const geometry = await page.evaluate(() => {
+    const head = document.querySelector('.friends-page-head').getBoundingClientRect(), summary = document.querySelector('.friend-summary').getBoundingClientRect(), scroller = document.querySelector('.site-content')
+    return { headTop: head.top, headBottom: head.bottom, summaryTop: summary.top, summaryBottom: summary.bottom, scrollTop: scroller.scrollTop, clientWidth: scroller.clientWidth, scrollWidth: scroller.scrollWidth }
+  })
+  assert.ok(geometry.scrollTop > 0, 'Original page scroll ancestor must remain usable')
+  assert.ok(geometry.headTop >= 0 && geometry.headBottom < page.viewportSize().height, 'Fixed page tabs must remain visible')
+  assert.ok(geometry.summaryTop >= geometry.headBottom - 1, 'Selected header must not overlap page tabs')
+  assert.ok(geometry.summaryBottom <= page.viewportSize().height, 'Selected header must remain visible')
+  assert.ok(geometry.scrollWidth <= geometry.clientWidth + 1, 'No horizontal page overflow')
+  await page.getByRole('button', { name: '验收快捷好友', exact: true }).click()
+  const social = page.locator('.social-popover')
+  await social.waitFor()
+  assert.match(await social.locator('.social-friend').first().innerText(), /长列表好友 01\s+在线/)
+  await social.locator('.social-friend').last().click()
+  await social.getByRole('button', { name: '返回好友', exact: true }).click()
+  await social.locator('nav').getByRole('button', { name: '在线', exact: true }).click()
+  await social.getByText('合成在线列表', { exact: true }).waitFor()
+  await social.getByRole('button', { name: '关闭好友与聊天', exact: true }).click()
+  return { geometry, rows: 43, fixedHeader: true, onlineFallback: true, socialNavigation: true }
+}
+const handlers = { requests: requestsFlow, 'relationship-actions': relationshipActionsFlow, 'sticky-online': stickyOnlineFlow }
 
 try {
   report.status = 'running'
@@ -335,7 +384,7 @@ try {
   for (const viewport of viewports) {
     for (const flow of flows) {
       const test = `${flow.id}-${viewport.label}`
-      const context = await browser.newContext({ viewport, deviceScaleFactor: 2, hasTouch: true, isMobile: true })
+      const context = await browser.newContext({ viewport, deviceScaleFactor: 1, hasTouch: true, isMobile: viewport.width < 900 })
       const page = await context.newPage()
       page.setDefaultTimeout(10_000)
       page.on('pageerror', error => report.pageErrors.push({ test, message: error.message }))

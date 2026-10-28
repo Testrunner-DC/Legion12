@@ -1346,6 +1346,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 _rooms.RuntimeStats().OnlineAccountCount, request.HttpContext.RequestAborted);
             return Results.NoContent();
         });
+        MapFriendHistoryPreferenceRoute();
+        MapFriendHistoryReadRoute();
         _app.MapGet("/api/friends", (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);

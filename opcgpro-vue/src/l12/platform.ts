@@ -42,6 +42,13 @@ export interface PlayerStatistics {
   overall: PlayerStatLine; ranked: PlayerStatLine; masters: PlayerMasterStatistics[]; updatedAt?: string
   range: PlayerStatisticsRange; fromUtc?: string; untilUtc: string; seasonId?: string
 }
+export interface FriendHistoryMatch {
+  startedUtc: string; endedUtc: string; opponentName: string; masterName: string; opponentMasterName: string
+  modeId: string; result: 'win' | 'loss' | 'draw'
+}
+export interface FriendHistory {
+  accountId: string; username: string; statistics: PlayerStatistics; recentMatches: FriendHistoryMatch[]; recentLimit: number
+}
 export interface SessionRevocation { sessionId?: string; revokedCount: number; alreadyRevoked: boolean }
 export interface AdminPasswordReset { applied: boolean; account: PlatformAccount; revokedSessions: number; temporaryPassword?: string | null }
 export interface AccountDeletion {
@@ -1323,6 +1330,16 @@ export type TournamentReputationRevokeCommand = {
 }
 
 export const playerApi = {
+  setHistoryPreference: async (publicHistory: boolean) => {
+    const accountId = platformState.account?.id, token = platformState.token
+    const result = await platformRequest<{ accountId: string; publicHistory: boolean }>('/api/me/history-preferences', {
+      method: 'PUT', body: JSON.stringify({ publicHistory }),
+    })
+    const current = platformState.account
+    if (current && result.accountId === accountId && current.id === accountId && platformState.token === token)
+      platformState.account = { ...current, publicHistory: result.publicHistory }
+    return result
+  },
   tournamentReputation: (query: TournamentReputationQuery = {}) => {
     const params = new URLSearchParams({ page: String(query.page ?? 1), pageSize: String(query.pageSize ?? 20) })
     if (query.expectedRevision !== undefined) params.set('expectedRevision', String(query.expectedRevision))
@@ -1958,6 +1975,10 @@ export const tournamentApi = {
 }
 
 export const friendApi = {
+  history: (accountId: string, range: PlayerStatisticsRange = 'season', signal?: AbortSignal) =>
+    platformRequest<FriendHistory>(`/api/friends/${encodeURIComponent(accountId)}/history?range=${encodeURIComponent(range)}`, {
+      signal,
+    }),
   presence: () => platformRequest<PlatformPresence[]>('/api/presence'),
   overview: () => platformRequest<FriendOverview>('/api/friends/overview'),
   players: (search = '') => platformRequest<PlatformFriend[]>(`/api/players${search ? `?search=${encodeURIComponent(search)}` : ''}`),

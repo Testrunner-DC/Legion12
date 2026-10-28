@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261029-friend-history-and-deck-statistics",
+  "date": "2026-10-29",
+  "audience": "players",
+  "title": "好友战绩与牌库统计",
+  "changes": [
+    {
+      "category": "accounts",
+      "text": "好友列表优先显示在线好友，滚动时保留选中好友与操作入口；可查看好友的本赛季、近7天或近30天战绩和对应范围最近10场对局。公开设置跟随本人账号保存，关闭后好友无法查看这些战绩。",
+      "paths": ["opcgpro-vue/src/l12/site/FriendsPage.vue", "opcgpro-vue/src/l12/site/SocialPopover.vue", "opcgpro-vue/src/l12/site/FriendHistoryPanel.vue", "opcgpro-vue/src/l12/site/ProfilePage.vue", "opcgpro-vue/src/l12/friendListPresentation.ts", "opcgpro-vue/src/l12/platform.ts", "服务端WebSocket/TwelveLegions/L12PlatformStore.FriendHistory.cs", "服务端WebSocket/TwelveLegions/MatchRecorder.FriendHistory.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.FriendHistory.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+    },
+    {
+      "category": "decks",
+      "text": "整理牌库编辑器的统计区，分别显示主牌、士气、额外区与备选区数量；费用曲线按主牌实际张数统计，无费用或费用未知的卡单独列出，不再计为0费。",
+      "paths": ["opcgpro-vue/src/l12/L12DeckEditor.vue", "opcgpro-vue/src/l12/deckStatistics.ts"]
+    }
+  ]
+}

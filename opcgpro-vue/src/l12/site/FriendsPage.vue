@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { connect, inviteFriend, l12State, spectateRoom } from '@/l12/net'
 import { friendApi, platformState, type PlatformFriend } from '@/l12/platform'
 import { friendResource, refreshFriendResource, resetFriendResource } from '@/l12/friendResource'
 import { useActionGate } from '@/l12/useActionGate'
+import { isFriendOnline, onlineFirstFriends } from '@/l12/friendListPresentation'
 import ChatPanel from './ChatPanel.vue'
+const FriendHistoryPanel = defineAsyncComponent(() => import('./FriendHistoryPanel.vue'))
+const historyVisible = ref(false)
 
 const tab = ref<'friends' | 'requests' | 'add' | 'blocked'>('friends')
 const query = ref('')
@@ -14,15 +17,21 @@ const results = ref<PlatformFriend[]>([])
 const blocked = computed(() => friendResource.blocked)
 const presence = computed(() => l12State.presence)
 const selectedId = ref('')
+watch(selectedId, () => { historyVisible.value = false })
+const pageHead = ref<HTMLElement>()
+const headHeight = ref(0)
+let headObserver: ResizeObserver | undefined
 const busy = ref(false)
 const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
 const notice = ref('')
 const incoming = computed(() => requests.value.filter(item => item.direction === 'incoming'))
 const outgoing = computed(() => requests.value.filter(item => item.direction === 'outgoing'))
 const presenceById = computed(() => new Map(presence.value.map(item => [item.accountId, item])))
-const onlineFriends = computed(() => friends.value.filter(item => presenceById.value.get(item.accountId)?.online ?? item.online))
+const orderedFriends = computed(() => onlineFirstFriends(friends.value, presenceById.value))
+const onlineFriends = computed(() => friends.value.filter(item => isFriendOnline(item, presenceById.value)))
 const selected = computed(() => friends.value.find(item => item.accountId === selectedId.value) ?? friends.value[0])
 const selectedPresence = computed(() => selected.value ? presenceById.value.get(selected.value.accountId) : undefined)
+const selectedOnline = computed(() => Boolean(selected.value && isFriendOnline(selected.value, presenceById.value)))
 const actionKey = (player: PlatformFriend) => `friend:${player.accountId}`
 
 async function refresh() {
@@ -89,25 +98,34 @@ async function spectate(player: PlatformFriend) {
 function externalChange() { void refresh() }
 watch(() => platformState.account?.id, accountId => { resetFriendResource(accountId); void refresh() })
 onMounted(async () => {
+  if (pageHead.value) {
+    const measureHead = () => { headHeight.value = pageHead.value?.getBoundingClientRect().height ?? 0 }
+    measureHead()
+    headObserver = new ResizeObserver(measureHead)
+    headObserver.observe(pageHead.value)
+  }
   window.addEventListener('l12-friends-changed', externalChange)
   window.addEventListener('l12-resource-friends', externalChange)
   await refresh()
   if (l12State.status === 'offline') void connect().catch(() => undefined)
 })
 onBeforeUnmount(() => {
+  headObserver?.disconnect()
   window.removeEventListener('l12-friends-changed', externalChange)
   window.removeEventListener('l12-resource-friends', externalChange)
 })
 </script>
 
 <template>
-  <div class="friends-page" :aria-busy="actionBusy">
+  <div class="friends-page" :aria-busy="actionBusy" :style="{ '--friends-head-height': `${headHeight}px` }">
+    <div ref="pageHead" class="friends-page-head">
     <header><small>FRIENDS & PRESENCE</small><h1>好友</h1><p>管理好友申请、查看在线状态并直接邀请对战。</p></header>
     <div class="tabs"><button :class="{ active: tab === 'friends' }" @click="tab = 'friends'">好友 ({{ friends.length }})</button><button :class="{ active: tab === 'requests' }" @click="tab = 'requests'">申请 {{ incoming.length }}</button><button :class="{ active: tab === 'add' }" @click="tab = 'add'">添加好友</button><button :class="{ active: tab === 'blocked' }" @click="tab = 'blocked'">屏蔽</button></div>
+    </div>
     <p v-if="notice || l12State.notice" class="notice">{{ notice || l12State.notice }}</p>
     <section v-if="tab === 'friends'" class="panel friend-center">
-      <aside><div class="toolbar"><b>好友消息</b><span>{{ onlineFriends.length }} 位在线</span></div><button v-for="friend in friends" :key="friend.accountId" :class="{ active: selected?.accountId === friend.accountId }" @click="selectedId = friend.accountId"><div class="avatar">{{ friend.username.slice(0, 1) }}</div><span><b>{{ friend.username }}</b><small><i :class="{ online: presenceById.get(friend.accountId)?.online }"/>{{ presenceById.get(friend.accountId)?.activity === 'playing' ? '对局中' : presenceById.get(friend.accountId)?.online ? '在线' : '离线' }}</small></span></button><p v-if="!friends.length">暂无好友</p></aside>
-      <main v-if="selected"><div class="friend-summary"><div class="avatar">{{ selected.username.slice(0, 1) }}</div><h2>{{ selected.username }}</h2><p>{{ selectedPresence?.online ? selectedPresence.activity === 'playing' ? '正在对局' : '当前在线' : '当前离线' }}</p></div><ChatPanel :key="selected.accountId" :peer-account-id="selected.accountId" :peer-name="selected.username"/><div class="friend-actions"><button v-if="selectedPresence?.canInvite" :disabled="actionPending(actionKey(selected))" @click="invite(selected)">邀请对战</button><button v-else-if="selectedPresence?.canSpectate" :disabled="actionPending(actionKey(selected))" @click="spectate(selected)">进入观战</button><button v-else disabled>{{ selectedPresence?.actionReason || '暂不可操作' }}</button><button class="quiet" :disabled="actionPending(actionKey(selected))" @click="remove(selected)">删除好友</button><button class="danger" :disabled="actionPending(actionKey(selected))" @click="blockPlayer(selected)">屏蔽</button></div></main>
+      <aside><div class="toolbar"><b>好友消息</b><span>{{ onlineFriends.length }} 位在线</span></div><button v-for="friend in orderedFriends" :key="friend.accountId" :class="{ active: selected?.accountId === friend.accountId }" @click="selectedId = friend.accountId"><div class="avatar">{{ friend.username.slice(0, 1) }}</div><span><b>{{ friend.username }}</b><small><i :class="{ online: isFriendOnline(friend, presenceById) }"/>{{ isFriendOnline(friend, presenceById) ? presenceById.get(friend.accountId)?.activity === 'playing' ? '对局中' : '在线' : '离线' }}</small></span></button><p v-if="!friends.length">暂无好友</p></aside>
+      <main v-if="selected"><div class="friend-summary"><div class="avatar">{{ selected.username.slice(0, 1) }}</div><h2>{{ selected.username }}</h2><p>{{ selectedOnline ? selectedPresence?.activity === 'playing' ? '正在对局' : '当前在线' : '当前离线' }}</p><button type="button" :aria-pressed="historyVisible" @click="historyVisible = !historyVisible">{{ historyVisible ? '返回聊天' : '查看战绩' }}</button></div><FriendHistoryPanel v-if="historyVisible" :key="selected.accountId" :account-id="selected.accountId" :friend-name="selected.username"/><ChatPanel v-else :key="selected.accountId" :peer-account-id="selected.accountId" :peer-name="selected.username"/><div class="friend-actions"><button v-if="selectedPresence?.canInvite" :disabled="actionPending(actionKey(selected))" @click="invite(selected)">邀请对战</button><button v-else-if="selectedPresence?.canSpectate" :disabled="actionPending(actionKey(selected))" @click="spectate(selected)">进入观战</button><button v-else disabled>{{ selectedPresence?.actionReason || '暂不可操作' }}</button><button class="quiet" :disabled="actionPending(actionKey(selected))" @click="remove(selected)">删除好友</button><button class="danger" :disabled="actionPending(actionKey(selected))" @click="blockPlayer(selected)">屏蔽</button></div></main>
       <div v-else class="empty">选择一位好友<br/>查看状态并发起对战。</div>
     </section>
     <section v-else-if="tab === 'requests'" class="panel request-panel">
@@ -121,6 +139,20 @@ onBeforeUnmount(() => {
     <section v-else class="panel blocked-panel"><header><div><h2>已屏蔽玩家</h2><p>不会再收到该玩家的好友申请，对方不会收到屏蔽通知；取消屏蔽后可重新申请。</p></div><b>{{ blocked.length }}</b></header><article v-for="player in blocked" :key="player.accountId"><div><b>{{ player.username }}</b><span>已屏蔽</span></div><button class="quiet" :disabled="actionPending(actionKey(player))" @click="unblock(player)">取消屏蔽</button></article><div v-if="!blocked.length" class="empty">暂无已屏蔽玩家</div></section>
   </div>
 </template>
+
+<style scoped>
+.friends-page-head{position:sticky;top:0;z-index:4;padding-top:10px;padding-bottom:14px;background:#0b1219}
+.friends-page-head header small{color:#52c3ca;font-size:14px;font-weight:900;letter-spacing:.18em}
+.friends-page-head .tabs{margin-bottom:0}
+.friend-center .toolbar{position:sticky;top:var(--friends-head-height,0px);z-index:2;background:#0c151b}
+.friend-center .friend-summary{position:sticky;top:var(--friends-head-height,0px);z-index:3;min-width:0;padding:10px 0;background:#101821;border-bottom:1px solid #35424b}
+.friend-summary h2{overflow-wrap:anywhere;min-width:0}
+.friend-center .friend-summary>button{width:auto;min-height:38px;margin-left:auto}
+.friend-center aside>button>span{min-width:0;overflow-wrap:anywhere}
+.friends-page button,.friends-page input{scroll-margin-top:calc(var(--friends-head-height,0px) + 80px)}
+@media(max-width:700px){.friends-page-head{padding-top:6px}.friend-center .toolbar{top:0;flex-direction:row;align-items:center;gap:10px}}
+@media(max-height:500px){.friends-page{padding-bottom:calc(var(--friends-head-height,0px) + 100px)}}
+</style>
 
 <style scoped>
 .friends-page{width:min(1050px,calc(100% - 40px));min-height:100%;margin:auto;padding:34px 0 56px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.friends-page>header small{color:#52c3ca;font:900 14px monospace;letter-spacing:.18em}.friends-page h1{margin:5px 0;font-size:30px}.friends-page header p{margin:0;color:#77858c;font-size:14px}.tabs{display:grid;grid-template-columns:repeat(4,1fr);margin:22px 0 14px;border:1px solid #35424b;background:#0a1117}.tabs button{padding:13px;border:0;background:transparent;color:#78868d;font-weight:900}.tabs button.active{background:#0b745b;color:#fff}.panel{border:1px solid #35424b;background:#101821}.friend-center{display:grid;min-height:500px;grid-template-columns:280px 1fr}.friend-center aside{border-right:1px solid #35424b;background:#0c151b}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px;border-bottom:1px solid #35424b}.toolbar span{color:#65737a;font-size:14px}.friend-center aside>button{display:grid;width:100%;grid-template-columns:46px 1fr;align-items:center;gap:10px;padding:11px 14px;border:0;border-bottom:1px solid #26343c;background:transparent;color:#fff;text-align:left}.friend-center aside>button.active,.friend-center aside>button:hover{background:#172932}.friend-center aside>button span,.friend-center aside>button b,.friend-center aside>button small{display:block}.friend-center aside>button small{margin-top:4px;color:#748087;font-size:14px}.friend-center aside>p{padding:16px;color:#748087;font-size:14px}.avatar,.hero-avatar{display:grid;place-items:center;border:1px solid #45caa3;background:#087f66;color:#fff;font-weight:900}.avatar{width:42px;height:42px;border-radius:12px}.hero-avatar{width:76px;height:76px;border-radius:18px;font-size:25px}.friend-center small i{display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%;background:#60696d}.friend-center small i.online{background:#54c69a;box-shadow:0 0 7px #54c69a}.friend-center main{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center}.friend-center main h2{margin:14px 0 4px}.friend-center main>p{margin:0;color:#748087;font-size:14px}.friend-center main>div:last-child{display:flex;gap:8px;margin-top:22px}.friend-center main button,.add-panel button,.request-panel button,.blocked-panel button{padding:9px 12px;border:1px solid #3bc09a;background:#0b755c;color:#fff;font-size:14px;font-weight:900}.friend-center main button:disabled{opacity:.4}.quiet{border-color:#4b565c!important;background:#0b1217!important;color:#8c969a!important}.danger{border-color:#8a3644!important;background:#261218!important;color:#e8a8b2!important}.empty{display:grid;min-height:260px;place-items:center;color:#748188;text-align:center;line-height:1.9}.empty.compact{min-height:90px}.add-panel,.blocked-panel{padding:24px}.add-panel label{display:block;color:#aab1b4;font-size:14px;font-weight:900}.add-panel input{display:block;width:100%;margin-top:8px;padding:11px;border:1px solid #48555e;background:#070d12;color:#fff}.add-panel>button{margin-top:12px}.search-results{margin-top:18px}.search-results article,.request-panel article,.blocked-panel article{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid rgba(235,230,216,.09)}.search-results span,.blocked-panel span{color:#7d8a91;font-size:14px}.request-panel{padding:16px}.request-panel h2{margin:8px 0;padding:10px 0;border-bottom:1px solid #35424b;font-size:14px}.request-panel article div{display:flex;gap:8px}.request-panel article span{color:#758188;font-size:14px}.blocked-panel>header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #35424b}.blocked-panel>header p{color:#748087;font-size:14px}.blocked-panel>header>b{color:#e2c36f;font-size:24px}.blocked-panel article div b,.blocked-panel article div span{display:block}.notice{padding:10px;border-left:3px solid #d2b45f;background:#211b0e;color:#e6cc84;font-size:14px}@media(max-width:700px){.friends-page{width:auto;padding:20px 12px 48px}.tabs{grid-template-columns:1fr 1fr}.friend-center{grid-template-columns:1fr}.friend-center aside{max-height:280px;overflow:auto;border-right:0;border-bottom:1px solid #35424b}.friend-center main{min-height:280px}.friend-center main>div:last-child{width:100%;flex-direction:column}.friend-center main button{width:100%}.toolbar{align-items:stretch;flex-direction:column}.add-panel{padding:18px}}

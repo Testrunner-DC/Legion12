@@ -14,7 +14,25 @@ import UiNotice from './UiNotice.vue'
 import TournamentReputationPanel from './TournamentReputationPanel.vue'
 import { optionalLocalStorage as localStorage, optionalSessionStorage as sessionStorage, BrowserLoginStorageError } from '@/l12/browserStorage'
 
-const publicHistory = ref(localStorage.getItem('l12-public-history') === 'true')
+const publicHistory = computed(() => platformState.account?.publicHistory ?? true)
+const historySaving = ref(false)
+const historyNotice = ref('')
+let historyGeneration = 0
+watch(() => `${platformState.account?.id ?? ''}:${platformState.token}`, () => {
+  historyGeneration++; historySaving.value = false; historyNotice.value = ''
+})
+onBeforeUnmount(() => { historyGeneration++ })
+async function saveHistoryPreference() {
+  if (historySaving.value || !platformState.account) return
+  const generation = historyGeneration
+  historySaving.value = true; historyNotice.value = ''
+  try {
+    await playerApi.setHistoryPreference(!publicHistory.value)
+    if (generation === historyGeneration) historyNotice.value = publicHistory.value ? '战绩已公开' : '战绩已设为不公开'
+  } catch (error) {
+    if (generation === historyGeneration) historyNotice.value = error instanceof Error ? error.message : '公开设置保存失败，请重试'
+  } finally { if (generation === historyGeneration) historySaving.value = false }
+}
 const canUseSandbox = computed(() => authState.verified && !!platformState.token && !!platformState.account?.id
   && !platformState.account.disabled && !platformState.account.deleted
   && !platformState.account.mustChangePassword && !platformState.account.mustChangeUsername)
@@ -156,7 +174,6 @@ watch([section, statisticsRange], ([, range], [, previousRange]) => {
   if (range !== previousRange) playerStatistics.value = statisticsCache.get(range) ?? null
   void loadAccountData()
 })
-watch(publicHistory, value => localStorage.setItem('l12-public-history', String(value)))
 const authSubmitLabel = computed(() => authBusy.value
   ? (authMode.value === 'login' ? '登录中…' : '正在建立账号…')
   : (authMode.value === 'login' ? '登录' : '建立账号'))
@@ -377,7 +394,7 @@ const rankedWinRate = computed(() => {
         </details>
       </template>
     </details>
-    <div v-if="platformState.account && section === 'collection'" class="profile-grid"><section class="panel public-settings"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div></section><section class="panel alternate-art-collection"><header><h2>我的异画</h2><span>{{ ownedAlternateArts.length }} 项使用权</span></header><div v-if="ownedAlternateArts.length" class="alternate-art-grid"><article v-for="art in ownedAlternateArts" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl || art.imageUrl" :alt="art.displayName"><div><b>{{ art.displayName }} · {{ art.artCode }}</b><span>对应原画：{{ art.baseCardName || art.baseCardId }}</span><small>获得时间：{{ art.grantedAt ? new Date(art.grantedAt).toLocaleString() : '历史权益' }}</small></div></article></div><p v-else class="alternate-art-empty">{{ platformState.account ? '尚未获得异画使用权。' : '登录后查看已获得的异画使用权。' }}</p></section></div>
+    <div v-if="platformState.account && section === 'collection'" class="profile-grid"><section class="panel public-settings"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，好友无法查看你的战绩和最近对局。</span></div><button :class="{ on: publicHistory }" :disabled="historySaving" @click="saveHistoryPreference">{{ historySaving ? '保存中…' : publicHistory ? '已公开' : '不公开' }}</button></div><p v-if="historyNotice" role="status">{{ historyNotice }}</p></section><section class="panel alternate-art-collection"><header><h2>我的异画</h2><span>{{ ownedAlternateArts.length }} 项使用权</span></header><div v-if="ownedAlternateArts.length" class="alternate-art-grid"><article v-for="art in ownedAlternateArts" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl || art.imageUrl" :alt="art.displayName"><div><b>{{ art.displayName }} · {{ art.artCode }}</b><span>对应原画：{{ art.baseCardName || art.baseCardId }}</span><small>获得时间：{{ art.grantedAt ? new Date(art.grantedAt).toLocaleString() : '历史权益' }}</small></div></article></div><p v-else class="alternate-art-empty">{{ platformState.account ? '尚未获得异画使用权。' : '登录后查看已获得的异画使用权。' }}</p></section></div>
     <details v-if="platformState.account && section === 'overview'" class="penalty-history-shell" @toggle="showPenaltyHistory"><summary>判罚历史与申诉 · 展开查看</summary><RankedPenaltyHistory v-if="visitedPerformance" /></details>
     <RankedMasterTitleRulesModal v-model="masterTitleRulesOpen"/>
     <div v-if="platformState.account?.mustChangeUsername" class="username-change-gate" role="dialog" aria-modal="true" aria-labelledby="username-change-title">
