@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "20261029-accepted-gameplay-and-reputation",
+  "date": "2026-10-29",
+  "audience": "players",
+  "title": "兵力结算、卡牌显示与赛事信誉",
+  "changes": [
+    {"category":"card-effects","text":"修正汉尼拔等兵力加成与减兵力效果的抵消：已抵消的加成结束后，不会再次扣除同一部分兵力；海伦代替阵亡时会抵消这次致死的伤害或效果，其他已有修正保持。","paths":["服务端WebSocket/TwelveLegions/L12Actions.cs","服务端WebSocket/TwelveLegions/L12GameEngine.cs","服务端WebSocket/TwelveLegions/L12LethalReplacements.cs","服务端WebSocket/TwelveLegions/L12LethalTroopsEffectCancellation.cs","服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs","服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs","服务端WebSocket/TwelveLegions/L12TroopsReductionAbsorption.cs","服务端WebSocket/TwelveLegions/Models.cs","服务端WebSocket/TwelveLegions/RuleKernel.cs"]},
+    {"category":"battle","text":"修正孙悟空等卡牌在主宰区与军团区转换时短暂出现多个场上本体的问题；效果说明卡图仍可与场上卡牌同时显示。","paths":["opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue","opcgpro-vue/src/l12/game/visualTransitionProjection.ts"]},
+    {"category":"tournaments","text":"赛事新增履约信誉，初始100分。签到开始前可免费取消；开始后退赛扣10分、未取消而缺席扣20分，同一赛事最多扣20分。每连续7天没有新增履约扣分恢复5分，低于60分暂不能新报名或候补；仅本人能在“我的”和赛事界面查看自己的信誉。","paths":["opcgpro-vue/src/l12/site/TournamentReputationPanel.vue","服务端WebSocket/TwelveLegions/L12PlatformStore.AccountRankedRestrictions.cs","服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentReputation.cs"]},
+    {"category":"accounts","text":"启用达段异画规则时，会检查本赛季已有排位记录并补齐符合条件的权益，不再只覆盖在线或榜单前列玩家。","paths":["opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue","服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs"]}
+  ]
+}

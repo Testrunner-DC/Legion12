@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261029-accepted-admin-and-runtime-internal",
+  "date": "2026-10-29",
+  "audience": "internal",
+  "reason": "已验收的管理端信誉纠正、切季预估说明与确认意图、事务信誉持久化及私密投影内部记账、排位历史读取成本修正；管理和实现细节不进入玩家更新日志。",
+  "paths": ["opcgpro-vue/src/l12/site/AdminAccountDetailPage.vue", "opcgpro-vue/src/l12/site/SeasonActivationManagement.vue", "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs", "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs", "服务端WebSocket/TwelveLegions/MatchRecorder.RankedPersistence.cs"]
+}
