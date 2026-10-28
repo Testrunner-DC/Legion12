@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-catalog-read-reuse",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "图鉴目录读取",
+  "changes": [{
+    "category": "content",
+    "text": "合并首次打开图鉴时重复的卡牌目录读取；后续重新打开仍会读取最新资料，加载失败后可正常重试。",
+    "paths": ["opcgpro-vue/src/l12/decks.ts"]
+  }]
+}

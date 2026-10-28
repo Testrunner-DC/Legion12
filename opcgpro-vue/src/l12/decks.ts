@@ -279,6 +279,7 @@ function lookupDeckCard(card: LookupCard): DeckCard {
 }
 
 let catalogPromise: Promise<DeckCard[]> | null = null
+let lookupCatalogRequest: Promise<LookupCard[]> | null = null
 
 function accountStorageKey(accountId = platformState.account?.id) {
   return accountId ? `${STORAGE_KEY}:${accountId}` : STORAGE_KEY
@@ -700,16 +701,31 @@ export async function loadPrivatePublicationSource(publicationId: string,
   } catch (error) { throw operationError(error, context) }
 }
 
+function loadLookupCatalog(): Promise<LookupCard[]> {
+  if (lookupCatalogRequest) return lookupCatalogRequest
+  // Share raw lookup only while reading it. A later archive visit still reads
+  // fresh presentation data instead of inheriting the playable catalog cache.
+  const request: Promise<LookupCard[]> = fetch(deploymentPath('/data/l12/cards.lookup.json'), { cache: 'no-store' })
+    .then(async response => {
+      if (!response.ok) throw new Error('卡牌版本数据加载失败')
+      return await response.json() as LookupCard[]
+    })
+    .finally(() => {
+      if (lookupCatalogRequest === request) lookupCatalogRequest = null
+    })
+  lookupCatalogRequest = request
+  return request
+}
+
 export function loadDeckCatalog(): Promise<DeckCard[]> {
   if (catalogPromise) return catalogPromise
   const request = Promise.all([
     fetch(deploymentPath('/data/l12/cards.s1.json'), { cache: 'no-store' }),
-    fetch(deploymentPath('/data/l12/cards.lookup.json'), { cache: 'no-store' }),
+    loadLookupCatalog(),
     fetch(deploymentPath('/data/l12/cards.st.json'), { cache: 'no-store' }),
-  ]).then(async ([s1Response, lookupResponse, stResponse]) => {
-    if (!s1Response.ok || !lookupResponse.ok || !stResponse.ok) throw new Error('卡牌数据加载失败')
+  ]).then(async ([s1Response, lookup, stResponse]) => {
+    if (!s1Response.ok || !stResponse.ok) throw new Error('卡牌数据加载失败')
     const seasonOne: DeckCard[] = await s1Response.json()
-    const lookup: LookupCard[] = await lookupResponse.json()
     const seasonTwo = lookup.filter(card => card.cardNo?.startsWith('S02-')).map(lookupDeckCard)
     const starterProducts: DeckCard[] = await stResponse.json()
     return [...seasonOne, ...seasonTwo, ...starterProducts]
@@ -947,12 +963,10 @@ export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'car
  * or server card identities.
  */
 export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
-  const [catalog, lookupResponse] = await Promise.all([
+  const [catalog, lookup] = await Promise.all([
     loadDeckCatalog(),
-    fetch(deploymentPath('/data/l12/cards.lookup.json'), { cache: 'no-store' }),
+    loadLookupCatalog(),
   ])
-  if (!lookupResponse.ok) throw new Error('卡牌版本数据加载失败')
-  const lookup: LookupCard[] = await lookupResponse.json()
   const catalogById = new Map(catalog.map(card => [card.id, card]))
   const byId = new Map(catalog
     .filter(card => productInclusionsByCardId.has(card.id))
