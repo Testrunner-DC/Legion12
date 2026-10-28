@@ -1,5 +1,30 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-29 CEBC减兵力共享修复完整本地接受（待上线）
+
+- 原324张卡池扫描25显式负兵力文本、73含定义/包装的限时调用行，唯一AddTimedModifier入口，不顺手改变木马持续负光环。按已裁定本次真实进攻正加成→最近实际到期限时→持续来源抵消；设值基值差不可消费。负层保完整额、历史吸收Amount及同代仍存活Restorable，真实伤害独立；来源失效不复活，被取消只撤该负层及仍有效份额，保独立费用/其他层。
+- 连续额外回合改变OwnerTurnEnd实际到期序，以当前权威额外回合和所属期限定序；换边后才按完整未到期负额重建，不沿前一玩家条件光环误算。父/子贯穿按CombatId+真实进攻者记账，支援不夺别卡份额。恶意恢复拒跨目标/层代次/战斗，clone/晋升和私区重置不串账。
+- 新V2本地显式开启已按最新“发布排空、不消耗资源兼容旧局”范围获审实际落地；无迁移/后台队列/常驻旧引擎，不改历史Journal或旧快照。公共L12RecipientVisibility唯一出口覆盖live及Recorder玩家回放；仅有内部账的事件卡clone清理，无账沿原对象/数组，field/hand可变展示仍alwaysclone，不新增缓存。没有宣称原线上曾泄露。
+- 来源14叶最终318/318，普通Helen/Kondo新V2严格配方2，只有具名历史配方保持1，取消/保护/恢复断言未削弱。原2规则RED＋2V0夹具失败分类已纠正、4换边和2额外到期真RED/所有阶段失败均保留；原玩家只至84未到103，不冒原局重放。Main同源完整Rules8568/平台2856零失败跳过及完整实质前端资格过，唯一legacy-events/main-combined-r1-result.json；source-delivery-r1.json/原TRX完整保留。源码同步结果另见该根synchronization.json，不冒Release包/部署/线上关单。
+
+## 2026-10-29 悟空跨主宰/军团单实体交接（本地接受）
+
+- 主宰DOM固定master-seat而事件是真实例，原精确ID落点查找失配；已deployed空surface还被当解码卡面，同snapshot返回再登场又额外推断state。仅公开master边界按seat/cardId/master身份映射固定像素锚，语义区域仅作几何，移区持有同实例当前权威像素；master只clone卡面不带姓名血量，不公开保存实例ID，不按名称/时间去重。
+- 缺origin旧事件按有序同实例/卡名ID/公开return事实证明交接，未知put保守回退；显式独立state/真实后续活跃休整不吞。说明卡与场上实体可并行规则未改。实际SFC24合成场，15基本双向/重传＋同snapshot/起始/草薙主体每帧1实体，Prompt暂停静态holder无WAAPI，恢复0历史迁移，取消/卸载无残留。非原局、非实机，只有两产品和具名QA。
+- Main发现正常链3旧绑定守卫需迁实际pixel surface/master alias；保可见性/解码/语义区域/天灾/普通移区约束，增加6＋1反例，未删旧攻击或隐私检查。最终来源final-r7/纯投影129/coordinator41/CardState14、Main正常UI分段/私人链/类型/双613接受；原失败和未运行包装器错误保留，证据transform-single-owner-20261028。未部署，不冒所有真实卡/观战原680a已全关。
+
+## 2026-10-28 CEBC原RED分类纠正与共享实施边界
+
+- 原red-r1不是4场V2规则复现：实际双方不恢复2场2000期望/1000实际，另2场Restore因夹具构造默认stateFormatVersion=0且RandomState为空失败。原TRX与26A011EE原QA原样保留；此前四真RED描述由本条明确纠正，不篡改旧收据。显式V2并预断HasValue的新attempt另记，不能给旧失败补造成功。
+- 新协议仍在实施/未启用：core-r1 8/8、lifecycle-r2 102/102关联过；新独审四场真正endTurn发现持续条件源换边后重建迟早错误（3000期望/4000实际），turn-boundary-red-r1保留，来源正在仅修顺序再验。未修改线上/关闭原Bug，不能把阶段GREEN当完整协议资格。
+
+## PERF-20261028-LEGACY-EVENT-LOOKUP｜仅旧格式查询最后录像事件（专项通过，待完整整合）
+
+- 两同类入口ListRankingMatchesAsync及ListRankedMasterTitleFactsAsync原对所有行运行相关latest-event子查询，SELECT中的CASE仅避免读JSON，不能阻止该查找。改LEFT JOIN e.id=CASE WHEN storage_version<2 THEN(原子查询) ELSE NULL END；所有权限、统计来源、WHERE、排序/limit、legacy最终sequence、坏JSON拒收及modern checkpoint回退原样，不改schema/索引/历史。
+- 两实际源码SQL原生10组（mixed/modern/legacy/empty/sparse）结果完全相等，6组原工作量RED、4组正控；20k混合只有20旧行时latest20k→20，全新版20k→0。原生VM步数为下界，纯legacy略增CASE成本，不能外推全接口/全站改善；稀疏和零命中并未证明底表扫描有界。
+- 平台新增13场保latest sequence非插入ID、旧V0/V1、坏/缺旧事件、新V2/3占位、称号回合冲突和modern缺checkpoint拒收；同原范围关联共32/32零失败跳过，focused-r2。focused-r1五个失败均夹具违反原V2 trigger(state_json只能{})，只修夹具，产品trigger及断言未削弱；最初native包装CRLF逆变换失败原说明保留，不冒产品RED。
+- 证据ranking-history-lookups-20261028/legacy-events/{native-red-r1.json,native-green-r1.json,focused-r1.trx,focused-r2.trx,focused-r2-result.json}绑定两产品/新QA。当前源码冻结，待Main最终同源完整平台及同步；未部署/维护/关单，不称30＋10或线上根治。回滚只撤只读CASE，不改历史数据库或原统计口径。
+
 ## FEAT-20261028-TOURNAMENT-START-CHECK｜同版本开赛事实展示
 
 - 沿受主办/全局赛事管理保护的既有start-check，在原锁内返回同一row.Version、正式已签到人数原eligiblePlayers、有效候补已签到数、当前赛制/瑞士轮数/Cut；不把候补当正式，不改BuildTournamentStartCheck的原CanStart/阻塞/提醒，不自动改赛制或递补。单败不适用轮数/Cut明确null，不从另一次详情拼数或填0；DTO无报名名单/个人牌库。

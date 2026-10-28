@@ -1,5 +1,38 @@
 # 十二军团简短交接
 
+## 2026-10-29 00点本片完整资格通过，下一信誉实施
+
+- Main一次同源Release配置完整Rules8568/8568、平台2856/2856零失败跳过已实际结束，GrandUMIServer两阶段同ABD205F5。唯一ranking-history-lookups-20261028/legacy-events/main-combined-r1-result.json及两原TRX，不为提交/纯记录重跑或冒标准Release包/部署。
+- 核心14叶/318关联与两SQL17合计C#叶均绑定同资格；新V2实际开启，旧历史只读原事实，不建旧局续玩资源。原red-r1仅2规则RED＋2V0夹具错误已纠正；4换边/2最近到期真RED及所有失败保留。cebc本地verify-live，未上线关单；941/4/647计数不变。
+- 悟空两前端产品＋原/新QA交回，真实SFC合成24场实际缺origin事件形状均errors0，主体迁移逐帧1实体、重复0重放、Prompt只静态持有无WAAPI飞行，来源final-r7及before/after9pins不变。Main两旧写法守卫迁到card surface/持久master锚并保旧约束，补6＋1拒错反例；正常UI r1/r3失败前缀分别复用，r5完成UI尾/两类型/双613，私人链独立r3完成。不是一轮无失败整链；r2空PSScriptRoot/r4导入文件不在命令链/私人r1-r2环境失败保留，不重跑有效前缀。
+- 全部实质前端资格见transform-single-owner-20261028/frontend-main-r5/result.json、private-consumers-r3.json及原前缀。目前已完成源片进入分族提交/非强推，最终是否同步只看legacy-events/synchronization.json实际读回，不重跑已完成d557部署/维护，不冒30＋10/G4高成本容量/真机新通过。
+- 人类已验收信誉v1及仅本人My/赛事与管理员账号管理显示范围；下一最小片先签到事实＋独立信誉账核算，未到完整生产链前不半开启处罚/门槛。read-only tournament_checkin_review已给精确现有版本/事务/隐私契约；源资格/同步结束后才发写租约。自动派发来源人类原答已实际read_thread核“是，按此修改”，仍未给写位/线上派发权限，排在现有片之后；好友/统计代表需求不遗漏。
+
+## 最新人类已批准信誉v1，核心本地开启已资格318
+
+- 人类同意完整信誉方案，并限定分数/记录仅本人“我的”及赛事界面、管理员账号管理可见；普通主办/好友/公开名单/他人不展示。TASK-LEDGER顶部记全值和边界，不再问初始100、退出10/缺席20、单赛事最多20、7天+5、低于60新报名限制等已接受数值。无线上处罚或新部署授权；只读来源准备最小实施契约，Main当前完整C#验证结束后才发写租约。
+- 新局constructor开启最后复审已基于最新排空指令通过，实际已启用，无旧局续玩迁移/常驻资源。来源14叶最终Focused318/318零失败跳过、两金夹具未动，source-delivery-r1.json SHA2547FABE；Main已14/14源码重读绑定。公共账清理迁唯一RecipientVisibility出口覆盖live+Recorder回放，无账原引用快径；原Kondo/Helen常规新V2真实覆盖，仅真历史配方具名旧flag，不把普通回归降旧模式造绿。
+- Main补modern真实checkpoint正控/排序limit，平台focused-r3 34/34；当前同源完整Rules→平台串行执行，根legacy-events/main-combined-r1，不冒完整通过或重跑已完成d557部署。UI来源悟空实体双向交接仍独立收尾，未交最终GREEN不冒收口。
+
+## 人类最新收紧：排空发布，不扩旧局续玩兼容工程
+
+- 人类在新局启用问题答复“每次部署服务器都会排空对局，不需要消耗额外资源兼容”。按已排空后新局统一修复处理，不建设旧局续玩迁移、后台队列/worker、常驻旧引擎或单独重复验证链。既有历史读取/Journal真实旧字节不改写，非新增常驻资源；不把这条理解为可删除录像/数据库或绕发布排空。
+- 此前仅constructor启用两次被安全拒绝且未生效，来源现只将最新直接人类回应、247关联资格及上述缩小范围提交一次复审；仍拒绝即停止原样交回，不换实现绕过。没有因此获得新部署/维护权限。
+
+## 2026-10-28 23点后三项持续推进及原RED纠正
+
+- 人类明确继续减兵力共享修复、实质性能优化、赛事签到/候补/信誉三项；新的信誉结构由Main设计供人类验收，不再等人类填扣分值。已确认：签到未开始随延期调整、已开始不撤销、手动提前开始按操作时刻记录。数值/报名限制/恢复等仍是拟议，未罚分/改线上。
+- 原cebc red-r1实际是双方不恢复2场Expected2000/Actual1000，另2场因夹具默认V0缺RandomState而失败；此前“四场V2真RED”不准确，以本纠正覆盖旧描述。原TRX/原QA同SHA保留，绝不补造。来源显式V2新attempt core-r1 8/8、lifecycle-r2关联102/102已过，但独审又用4场真实换边复现Expected3000/Actual4000，正在修完整未到期负层于换边后重建；旧GREEN不是完整资格，constructor仍false。
+- Main独立只改两处旧事件LEFT JOIN为显式CASE，仅storage_version<2查latest，其他统计谓词/排序/LIMIT/旧解析不变。原生两实际SQL十组结果等价、混合20k只20次、全新版0次；真实平台focused-r2 32/32零失败跳过。首包装CRLF失败及首5个V2夹具违反state_json={} trigger失败保留，不作产品RED。根ranking-history-lookups-20261028/legacy-events；该片冻结，等待最终组合完整平台，未同步/部署，不冒30＋10通过。
+- 当前两产品写者：troops_absorption_core持8核心/helper/具名QA并占.NET槽；来源01a0d25d按人类新增悟空视觉多副本需求持两前端共享表现叶（确有RED才扩CardState）及具名QA，Focused前端；Main只docs/设计/独验，不再写C#。第三read-only tournament_checkin_review只读独审SQL。完整构建由Main最后串行，不混中间片或复活d557发布/维护。
+
+## 2026-10-28 22:36 预检已同步，卡效写租约已释放
+
+- 预检稳定提交已实际非强推且远端同7a483ca5d46ad6d11892ed01e6a2a3f303db4fcd，唯一`tournament-start-check-20261028/synchronization.json`completed/pushed为true，2841后台/完整前端/31SFC/真实Shell r6全部有效。此后新卡效dirty不使该历史回执变为待重做；不要再跑该finalizer、重复旧部署/维护或把源码同步冒上线。
+- Root有界子代理`/root/troops_absorption_core`已实际获完整共享卡效写租约，第一只读设计已交，当前为唯一产品写者。允许8产品Models/GameEngine/RuleKernel/S1Extended/LethalTroopsEffectCancellation/LethalReplacements/Actions/RuleKernelIntegration及一个共享helper；原4RED QA同SHA从D根复用，允许具名追加恢复/clone/Helen/BackRow/RuleKernel/架构冻结QA，不削断言或批量改金夹具。Focused槽归来源，Main不并行.NET/核心写；完整Rules/平台由Main最后统一。来源不Git/共享docs/线上/部署，不递归代理。
+- 正式协议必须完整：新V2显式开、旧V2缺省false和v1配方/hash原样；负层原额/历史吸收/当前可返份额分别记，正层有稳定身份/持续授予代次，signed进攻设值差不是正加成，当前/挂起Combat归属精确；回合重建/来源退场/海伦费用前验配方、事务后定向撤销/晋升/clone/私区重置整体过才开启给玩家，单场GREEN不能放行半协议。generic减幅先退真实伤害再逆序退可返份额仅内部记账选择，须守原可用量并对抗证明，不冒人类新规则。
+- 人类所有已明确范围不再重复问：汉尼拔离场后2000；抵消本次进攻→最近到期临时→持续；设值先基值后增减；签到开始前免费取消、开始后退赛/缺席扣，提前分钟可配置。扣分数值仍未给、未执行处罚/自动递补。卡效原玩家103尚未取得，当前仅4合成真命令RED且尚未修好/上线/关单。
+
 ## 2026-10-28 22:29 当前稳定片与下一写者
 
 - 赛事预检Main最终2841/2841零失败跳过/12分49秒，完整前端r1 UI/私人链/两类型/双613通过；Source14/Main31常规SFC/真实Shell r6两尺寸＋10状态均接受。唯一`tournament-start-check-20261028/synchronization.json`记录实际commit/远端；别因下方“正在执行”重复2841或发布。1个QA Shell重绑明确用新r6，不冒旧r1/无旧preimage；所有产品SHA未变，旧r4/r5失败保留。无部署/维护/线上关单，两服最后d557。
