@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-home-retry-budget",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "首页加载恢复",
+  "changes": [{
+    "category": "content",
+    "text": "首页内容加载失败时只进行有限次数的自动重试，页面隐藏或离线时暂停请求；仍可手动重试，恢复联网或返回页面后可重新读取，已加载的公开内容不会被失败请求清空。",
+    "paths": ["opcgpro-vue/src/l12/site/OfficialHomePage.vue"]
+  }]
+}

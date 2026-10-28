@@ -41,6 +41,7 @@ compiledHome = compiledHome.replace(/^import[^\n]*\n/gm, '')
 compiledHome = `
 const { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } = globalThis.__homeHarness.vue
 const { authState, platformState, siteContentApi } = globalThis.__homeHarness.platform
+const navigator = globalThis.__homeHarness.navigator
 const { articleBodyText, defaultHomeComposition, defaultSiteLegal, parseHomeComposition, parseSiteLegal,
   loadPublishedHomeCache, savePublishedHomeCache, homeAccountVerified, deploymentPath } = globalThis.__homeHarness.dependencies
 const _defineComponent = value => value
@@ -61,7 +62,7 @@ const publishedPayload = {
   composition:JSON.stringify({ version:1, heroSlides:[], notices:[] }),
   legal:'{}', news:[], videos:[], products:[], media:[],
 }
-async function mountHome({ cached=null } = {}) {
+async function mountHome({ cached=null, hidden=false, online=true } = {}) {
   const mounted=[], unmounted=[], requests=[], saved=[], timers=new Map(), listeners=[]
   let nextTimer=1
   const originalWindow=globalThis.window, originalDocument=globalThis.document
@@ -73,11 +74,12 @@ async function mountHome({ cached=null } = {}) {
     removeEventListener(type,callback){ const index=listeners.findIndex(item=>item.target==='window'&&item.type===type&&item.callback===callback); if(index>=0)listeners.splice(index,1) },
   }
   globalThis.document={
-    hidden:false,
+    hidden,
     addEventListener(type,callback){ listeners.push({target:'document',type,callback}) },
     removeEventListener(type,callback){ const index=listeners.findIndex(item=>item.target==='document'&&item.type===type&&item.callback===callback); if(index>=0)listeners.splice(index,1) },
   }
   const harness={
+    navigator:{onLine:online},
     vue:{
       ref:value=>({value}),
       computed:read=>({get value(){return read()}}),
@@ -98,7 +100,7 @@ async function mountHome({ cached=null } = {}) {
   const component=(await import(url)).default
   const state=component.setup({}, { expose(){} })
   mounted.forEach(callback=>callback())
-  return { state, requests, saved, timers, listeners, async unmount(){ unmounted.forEach(callback=>callback()); await flush(); globalThis.window=originalWindow; globalThis.document=originalDocument; delete globalThis.__homeHarness } }
+  return { state, requests, saved, timers, listeners, navigator:harness.navigator, document:globalThis.document, async unmount(){ unmounted.forEach(callback=>callback()); await flush(); globalThis.window=originalWindow; globalThis.document=originalDocument; delete globalThis.__homeHarness } }
 }
 
 {
@@ -158,6 +160,71 @@ async function mountHome({ cached=null } = {}) {
   await flush()
   equal(home.state.ready.value, false, 'a late response after unmount cannot publish content')
   equal(home.saved.length, 0, 'a late response after unmount cannot update the cache')
+}
+
+{
+  const home=await mountHome()
+  try {
+    for(let index=0; index<9; index++) {
+      home.requests.at(-1).reject(Error('synthetic-persistent-503')); await flush()
+      const timer=home.timers.entries().next().value
+      if(!timer) break
+      home.timers.delete(timer[0]); timer[1].callback(); await flush()
+    }
+    equal(home.requests.length,5,'persistent failure stops after initial request plus four automatic retries')
+    equal(home.timers.size,0,'exhausted recovery never becomes an endless 20-second poll')
+    home.state.retryPublishedHome(); await flush()
+    equal(home.requests.length,6,'manual retry remains available after automatic budget exhaustion')
+    home.requests.at(-1).reject(Error('manual-failure')); await flush()
+    equal([...home.timers.values()].map(timer=>timer.delay),[2000],'explicit manual retry starts a new bounded recovery burst')
+  } finally { await home.unmount() }
+}
+
+for(const paused of ['hidden','offline']) {
+  const home=await mountHome()
+  try {
+    home.requests[0].reject(Error('synthetic-503'));await flush()
+    const [timerId,timer]=home.timers.entries().next().value
+    if(paused==='hidden')home.document.hidden=true
+    else home.navigator.onLine=false
+    home.timers.delete(timerId);timer.callback();await flush()
+    equal(home.requests.length,1,paused+' timer firing never sends a background retry')
+    equal(home.timers.size,0,paused+' page keeps no automatic retry timer')
+    home.document.hidden=false;home.navigator.onLine=true
+    home.listeners.find(item=>item.type===(paused==='hidden'?'visibilitychange':'online')).callback();await flush()
+    equal(home.requests.length,2,paused+' resume can recover once through the original single-flight path')
+    home.requests[1].resolve(publishedPayload);await flush()
+    equal(home.state.ready.value,true,paused+' recovery restores the confirmed published snapshot')
+  }finally{await home.unmount()}
+}
+
+for(const paused of ['hidden','offline']) {
+  const home=await mountHome(paused==='hidden'?{hidden:true}:{online:false})
+  try {
+    equal(home.requests.length,0,paused+' initial mount does not send an unusable request')
+    equal(home.state.initialLoadFailed.value,true,paused+' initial mount still exposes an actionable state')
+    equal(home.timers.size,0,paused+' initial mount starts no retry timer')
+    home.document.hidden=false;home.navigator.onLine=true
+    home.listeners.find(item=>item.type===(paused==='hidden'?'visibilitychange':'online')).callback();await flush()
+    equal(home.requests.length,1,paused+' initial mount recovers on the matching event')
+    home.requests[0].resolve(publishedPayload);await flush()
+    equal(home.state.ready.value,true)
+  }finally{await home.unmount()}
+}
+
+for(const paused of ['hidden','offline']) {
+  const home=await mountHome({cached:publishedPayload})
+  try {
+    home.requests[0].reject(Error('synthetic-503'));await flush()
+    equal(home.timers.size,1)
+    if(paused==='hidden')home.document.hidden=true
+    else home.navigator.onLine=false
+    home.listeners.find(item=>item.type===(paused==='hidden'?'visibilitychange':'offline')).callback();await flush()
+    equal(home.timers.size,0,paused+' event cancels an already scheduled background retry')
+    equal(home.requests.length,1)
+    equal(home.state.ready.value,true,paused+' event never erases the last published snapshot')
+  }finally{await home.unmount()}
+  equal(home.listeners.length,0,paused+' cleanup removes every recovery listener')
 }
 
 const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')

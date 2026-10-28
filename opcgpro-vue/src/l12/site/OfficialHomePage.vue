@@ -35,6 +35,7 @@ let retryAttempt = 0
 let disposed = false
 let hasPublishedSnapshot = false
 const carouselDuration = 6500
+const homeRetryDelays = [2_000, 5_000, 10_000, 20_000] as const
 
 const enabledSlides = computed<HomeHeroSlide[]>(() => {
   const configured = composition.value.heroSlides.filter(item => item.enabled)
@@ -98,17 +99,24 @@ function applyPublishedHome(payload: SiteHomePayload) {
   activeIndex.value = Math.min(activeIndex.value, Math.max(0, nextComposition.heroSlides.filter(item => item.enabled).length - 1))
 }
 function scheduleHomeRefresh() {
-  if (disposed) return
   window.clearTimeout(homeRetryTimer)
-  const delay = Math.min(30_000, [2_000, 5_000, 10_000, 20_000][Math.min(retryAttempt++, 3)]!)
+  homeRetryTimer = 0
+  if (disposed || document.hidden || navigator.onLine === false || retryAttempt >= homeRetryDelays.length) return
+  const delay = homeRetryDelays[retryAttempt++]!
   homeRetryTimer = window.setTimeout(() => {
     homeRetryTimer = 0
-    void refreshPublishedHome()
+    if (!document.hidden && navigator.onLine !== false) void refreshPublishedHome()
   }, delay)
 }
 function refreshPublishedHome() {
   if (disposed) return Promise.resolve()
   if (homeRefreshInFlight) return homeRefreshInFlight
+  if (document.hidden || navigator.onLine === false) {
+    ready.value = hasPublishedSnapshot
+    initialLoadFailed.value = !hasPublishedSnapshot
+    retrying.value = false
+    return Promise.resolve()
+  }
   const generation = ++refreshGeneration
   if (initialLoadFailed.value) retrying.value = true
   homeRefreshInFlight = (async () => {
@@ -142,13 +150,15 @@ function retryPublishedHome() {
   if (disposed || homeRefreshInFlight) return
   window.clearTimeout(homeRetryTimer)
   homeRetryTimer = 0
+  retryAttempt = 0
   retrying.value = true
   void refreshPublishedHome()
 }
 function refreshWhenVisible() {
-  if (document.hidden || disposed || homeRefreshInFlight) return
+  if (disposed) return
   window.clearTimeout(homeRetryTimer)
   homeRetryTimer = 0
+  if (document.hidden || navigator.onLine === false || homeRefreshInFlight) return
   void refreshPublishedHome()
 }
 onMounted(() => {
@@ -156,6 +166,7 @@ onMounted(() => {
   if (cached) { applyPublishedHome(cached); ready.value = true; startCarousel() }
   void refreshPublishedHome()
   window.addEventListener('online', refreshWhenVisible)
+  window.addEventListener('offline', refreshWhenVisible)
   document.addEventListener('visibilitychange', refreshWhenVisible)
 })
 onBeforeUnmount(() => {
@@ -164,6 +175,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(carouselTimer)
   window.clearTimeout(homeRetryTimer)
   window.removeEventListener('online', refreshWhenVisible)
+  window.removeEventListener('offline', refreshWhenVisible)
   document.removeEventListener('visibilitychange', refreshWhenVisible)
 })
 </script>

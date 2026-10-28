@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261028-HOME-RETRY-BUDGET｜公开主页失败恢复停止无限后台请求
+
+- 原scheduleHomeRefresh用Math.min索引落在20秒后无限重排，且未核hidden/onLine；本地真实编译组件连续503模拟10请求仍续，期望初次＋4次，RED保`home-retry-budget-20261028/red-r1.log`。同类扫描本组件schedule/refresh/manual/visibility/online/mount/unmount与原test-home-revisit，不扩大轮播、鉴权、持久化或其他页面逻辑。
+- 仅原组件2/5/10/20秒最多4次自动恢复，无新配置/轮询。排程前与callback都核可见/联网，offline或hidden事件取消timer；初次不可请求保原已发布快照或可重试错误态，无虚构内容。成功和明确手动重试才重置预算，online/visible沿原单飞一次读，不借事件无限补回自动预算。原请求世代、卸载、缓存写失败及迟到保护不变。
+- 原标准入口的真实组件测试64后补初始暂停/事件取消共84断言通过，旧场景未删；最终两类型/双613构建通过，复用公告完全未变UI链，各自pins/复用声明见`frontend-main-r1/result.json`。模板/布局不变，未再跑后台2818、Rules、30＋10或旧版线上采样；不是整个主页正文减量完成，也不能声称全站卡顿/流量根治。同步与另两族共用`media-reference-batch-20261028/synchronization.json`。
+- 回滚不得恢复无限自动轮询，且不得清已发布缓存来制造“恢复成功”；若上线后仍有请求放大须按新具体证据定位其他来源。本轮无部署、维护、账号或统计写。
+
 ## FEATURE-20261028-TOURNAMENT-ANNOUNCEMENT｜公告持久化与详情接入
 
 - 人类原turn01a180c1“123478执行56用公告”沿报名窗口接续，本片只实现公告，不冒关键提醒/候补/赛程/审核/信誉。原row新增空默认Announcement，≤2000 UTF16原样文本，空可清；原组织者/全局管理权限、RequireTournament版本、Mutate副本、preview/apply/幂等与审计保持。公开/凭码/ID可见性仍旧边界；公开summary无字段，兼容完整列表通过includeAnnouncement:false回空，不额外传2KB正文。
