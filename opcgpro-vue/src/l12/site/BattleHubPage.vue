@@ -8,8 +8,9 @@ import { deckCountSummary, ensureOfficialPrebuiltDecks, L12_DECK_SELECTION_SCOPE
 import DeckCover from '@/l12/DeckCover.vue'
 import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'
 import RulesCardSummary from './RulesCardSummary.vue'
-import { getEffectiveOperationsPolicy, normalizeRankedConfig, platformState, rankedApi, type EffectiveOperationsPolicy, type RankedOverview } from '@/l12/platform'
+import { getEffectiveOperationsPolicy, normalizeRankedConfig, platformState, rankedApi, type EffectiveOperationsPolicy, type RankedBroadcast, type RankedOverview } from '@/l12/platform'
 import RankedBroadcastTicker from './RankedBroadcastTicker.vue'
+import { rankedBroadcastPlayback } from './rankedBroadcastPlayback'
 import TutorialPage from './TutorialPage.vue'
 import { maintenanceCountdown } from './maintenanceCountdown'
 import { isFriendlyDisasterMode, loadFriendlyDisasterMode, saveFriendlyDisasterMode } from '@/l12/friendlyRoomPreferences'
@@ -172,6 +173,68 @@ let componentAlive = true
 let identityEpoch = 0
 let selectorActionEpoch = 0
 let modeActionEpoch = 0
+
+const recentBroadcasts = ref<RankedBroadcast[]>([])
+const recentBroadcastLoading = ref(false)
+const recentBroadcastError = ref('')
+const recentBroadcastsVisible = computed(() => !props.matchmakingOnly && tab.value === 'match'
+  && selectedMatchMode.value === 'ranked' && !l12State.room && !l12State.matchFound && !l12State.game)
+let recentBroadcastEpoch = 0
+let recentBroadcastFlight: Promise<void> | null = null
+let recentBroadcastRefreshQueued = false
+const broadcastTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone:'Asia/Shanghai', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false,
+})
+function broadcastTime(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '时间未知' : broadcastTimeFormatter.format(date)
+}
+function broadcastKind(type: string) {
+  if (type === 'win-streak') return '连胜'
+  if (type === 'streak-ended') return '终结'
+  if (type === 'highest-tier') return '晋升'
+  if (type === 'faction-first' || type === 'faction-top-five') return '称号'
+  return type.startsWith('master-champion-') ? '主宰' : '广播'
+}
+function refreshRecentBroadcasts() {
+  if (!componentAlive || !recentBroadcastsVisible.value) return
+  if (recentBroadcastFlight) {
+    recentBroadcastRefreshQueued = true
+    recentBroadcastLoading.value = true
+    return recentBroadcastFlight
+  }
+  const epoch = recentBroadcastEpoch
+  const current = () => componentAlive && recentBroadcastsVisible.value && epoch === recentBroadcastEpoch
+  recentBroadcastLoading.value = true
+  recentBroadcastError.value = ''
+  const flight = Promise.resolve().then(() => current() ? rankedApi.broadcasts(5) : null).then(rows => {
+    if (rows && current()) recentBroadcasts.value = rows.slice(0, 5)
+  }).catch(() => {
+    if (current()) recentBroadcastError.value = '广播暂时无法加载'
+  }).finally(() => {
+    if (recentBroadcastFlight === flight) recentBroadcastFlight = null
+    if (!componentAlive) return
+    if (current()) recentBroadcastLoading.value = false
+    if (recentBroadcastRefreshQueued && recentBroadcastsVisible.value) {
+      recentBroadcastRefreshQueued = false
+      void refreshRecentBroadcasts()
+    }
+  })
+  recentBroadcastFlight = flight
+  return flight
+}
+watch(() => [recentBroadcastsVisible.value, rankedBroadcastPlayback.claim?.broadcast.id ?? ''] as const,
+  ([visible, claimId], previous) => {
+    if (!visible) {
+      recentBroadcastEpoch++
+      recentBroadcastRefreshQueued = false
+      recentBroadcastLoading.value = false
+      recentBroadcasts.value = []
+      recentBroadcastError.value = ''
+    } else if (!previous?.[0] || claimId && claimId !== previous[1]) {
+      void refreshRecentBroadcasts()
+    }
+  }, { immediate:true, flush:'sync' })
 
 function identityCurrent(epoch: number, accountId: string | undefined, token: string) {
   return componentAlive && identityEpoch === epoch && platformState.account?.id === accountId && platformState.token === token
@@ -396,6 +459,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   componentAlive = false
+  recentBroadcastEpoch++
+  recentBroadcastRefreshQueued = false
   identityEpoch++
   selectorActionEpoch++
   modeActionEpoch++
@@ -631,6 +696,18 @@ async function copyRoomCode() {
             <DeckCover v-else variant="compact" name="未选择牌库" context="点击封面选择牌库" meta="当前没有已保存牌库"/>
           </button>
         </section>
+        <section v-if="recentBroadcastsVisible" class="ranked-broadcast-history" data-ui-contract="ranked-recent-five-broadcasts" aria-label="最近五条排位广播">
+          <header><h3>排位广播</h3><span>最近 5 条</span></header>
+          <ol v-if="recentBroadcasts.length">
+            <li v-for="broadcast in recentBroadcasts" :key="broadcast.id">
+              <time :datetime="broadcast.createdAt" :title="broadcastTime(broadcast.createdAt)">{{ broadcastTime(broadcast.createdAt) }}</time>
+              <span class="broadcast-kind">{{ broadcastKind(broadcast.eventType) }}</span>
+              <p>{{ broadcast.message }}</p>
+            </li>
+          </ol>
+          <p v-if="recentBroadcastError" class="broadcast-state broadcast-state--error" role="status"><span>{{ recentBroadcastError }}</span><button type="button" :disabled="recentBroadcastLoading" @click="refreshRecentBroadcasts">重试</button></p>
+          <p v-else-if="!recentBroadcasts.length" class="broadcast-state" role="status">{{ recentBroadcastLoading ? '正在加载广播…' : '暂无排位广播' }}</p>
+        </section>
       </section>
 
       <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div>
@@ -712,6 +789,20 @@ async function copyRoomCode() {
 .current-deck,.room-current-deck{display:flex;flex-wrap:wrap;align-items:center}
 .current-deck> :deep(.deck-cover),.room-current-deck> :deep(.deck-cover){flex:1 1 280px;max-width:420px;min-width:0;text-align:left}
 .current-deck-actions,.room-current-deck>div:not(.deck-cover){flex:1 1 160px;min-width:0}
+.ranked-broadcast-history{margin-top:24px;padding-top:20px;border-top:1px solid #34444e;min-width:0}
+.ranked-broadcast-history>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 10px}
+.ranked-broadcast-history h3{margin:0;color:#dfc16d;font-size:15px;line-height:1.5}
+.ranked-broadcast-history>header>span{color:#8c9ba2;font-size:12px;white-space:nowrap}
+.ranked-broadcast-history ol{list-style:none;margin:0;padding:0}
+.ranked-broadcast-history li{display:grid;grid-template-columns:84px 40px minmax(0,1fr);align-items:baseline;gap:12px;padding:16px 0;border-bottom:1px solid #26343c}
+.ranked-broadcast-history li:last-child{border-bottom:0;padding-bottom:0}
+.ranked-broadcast-history time{color:#819199;font-size:12px;line-height:1.7;font-variant-numeric:tabular-nums}
+.ranked-broadcast-history .broadcast-kind{align-self:start;margin-top:1px;padding:0 3px;border:1px solid #5d5331;background:#29261b;color:#c9b46e;text-align:center;font-size:11px;line-height:1.65}
+.ranked-broadcast-history li>p{min-width:0;margin:0;color:#d5dddf;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.7}
+.ranked-broadcast-history .broadcast-state{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:12px 0 0;color:#8c9ba2;font-size:13px}
+.ranked-broadcast-history .broadcast-state--error{color:#e1b2bb}
+.ranked-broadcast-history .broadcast-state>button{flex:0 0 auto;min-height:44px;padding:7px 14px;border:1px solid #887239;background:#211d10;color:#f0d582;font-size:12px}
+@media(max-width:520px){.ranked-broadcast-history{margin-top:18px;padding-top:16px}.ranked-broadcast-history li{grid-template-columns:74px 34px minmax(0,1fr);gap:8px;padding:14px 0}.ranked-broadcast-history time{font-size:11px}.ranked-broadcast-history li>p,.ranked-broadcast-history .broadcast-state{font-size:12px}}
 </style>
 
 
