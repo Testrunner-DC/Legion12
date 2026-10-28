@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261028-MEDIA-REFERENCE-BATCH｜素材列表共用一次引用遍历
+
+- P2/P3沿原_gate和事实来源，仅AdminSiteMedia与SearchSiteMedia筛选/分页后批量建view。页内Ordinal字典只保所选ID和数字，原文章current/Published/全部Revision封面及正文、ContentEntries双字段、所有ContentVersions、含停用AlternateArts和全部metadata原样计数。JSON值每次出现都计，key不计，坏JSON为0；保旧raw Ordinal Contains对转义ID的预筛语义，不借优化改变删除口径。
+- 空页0次扫描；非空一遍源，每字段最多1次parse，仍有页内ID×原文Contains成本。原ToSiteMediaView和DeleteSiteMedia保单ID函数，Upload/主页不批迁，无跨请求缓存或schema。两个internal数值测试observer不序列化/不经HTTP；distinct CreateSiteMediaView名避免LINQ indexed Select误绑定。
+- 新扫描双例真实RED（实际2/期望1），最终92关联过；独立single-ID oracle核全部来源19/7及转义/坏JSON20/7精确相等，7字段parse从14到7仅合成两ID对照，不能外推全站流量。真实内容save/publish/清draft后历史仍保引用并拒删，无引用另图仍可软删。focused-r1仅qa键白名单失败，保91/92原件，夹具用news.entries后r2全过。
+- 独审具体边界无阻断，Main同公告最终组合一次2818/2818平台Release配置零失败跳过；`media-reference-batch-20261028/main-full-r1-result.json`/TRX为主资格，原RED和失败不覆盖。未改卡池，不跑不变Rules或旧线上采样，不冒完整Release/部署/线上关单。回滚只调投影调用，不能删除历史引用或拿旧count缓存授权删图。同步统一见同根`synchronization.json`。
+
 ## PERF-20261028-RANKING-REQUEST-DEPENDENCIES｜榜单只读当前项目所需历史
 
 - 人类批准按规划推进，P2/P4不改统计口径/后端索引/权限。原RankingsPage每次mount/tab/阵营/range/manual都并行leaderboard+history，前三项目并不消费history。仅捕获requestedTab并对非history用空响应，真实history响应才赋值；history页仍展示排行summary和称号口径，故不删它的leaderboard刷新。无settled缓存、轮询或新增认证流程，所有人类明确的切项目/手动刷新仍读最新值。

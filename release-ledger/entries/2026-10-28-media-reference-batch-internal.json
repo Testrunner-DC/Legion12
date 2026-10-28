@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-media-reference-batch-internal",
+  "date": "2026-10-28",
+  "audience": "internal",
+  "reason": "后台素材列表在单次请求内批量统计引用，保留全部历史引用及删除时独立权威复验；未测线上收益，不进入玩家更新日志。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs"]
+}

@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-28 素材引用批量投影已验收（19点）
+
+- Main只改SiteContent与SiteMediaPaginationTests两叶：Admin旧列表与Search所选页在原_gate内共用一次引用源遍历，每JSON字段最多解析一次。保原raw Ordinal Contains的转义边界、字符串出现次数、草稿/发布/全部历史/停用异画来源；空页不扫。无持久缓存，删除、上传及主页单图投影仍原权威单ID路径。独审无具体阻断，仍有“页内ID数×原字符串Contains”的成本，不冒全站O(字节)或线上降幅。
+- 真RED2例为两行逐图扫描2次而非1；最终关联92/92。首focused-r1的91/92唯一失败是合成内容键不在真实白名单，仅改fixture为news.entries，原失败保留。与公告最终后端共用一次完整Release配置平台2818/2818零失败跳过，12分38秒；直接引用`media-reference-batch-20261028/main-full-r1-result.json`及TRX，不复制验收回执。后端/测试pins已核；公告正常入口及前端另有同源证据，非完整Release包或部署。
+- 三族同步结果统一见同根`synchronization.json`；两服仍d557、维护已解除、线上Bug状态未写。本轮顺手仅删无进程引用且被dc27/a取代的旧dc27/bin与obj约637MB，源码/证据/当前构建/数据保留，回执`storage-output-routing-20261016/dc27-superseded-20261028.json`，没有搬再生输出到E。
+
 ## 2026-10-28 榜单冗余读取已验收（最新）
 
 - 来源榜单3叶仅按捕获的requestedTab决定是否取history；所有真实tab/阵营/range/手动仍fresh leaderboard，history进页/手动仍两API。9次实际Vue内存host操作计数leaderboard9/history2，原为9/9；13正反例/旧刷新ABA守卫保留，不冒HTTP字节/线上收益或真机。Source纯load体RED与真实SFC RED分别保存，原host输入模拟失败只修QA不改产品。

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
@@ -12,6 +13,109 @@ namespace TwelveLegions.Platform.Tests;
 [Collection("Platform environment")]
 public sealed class SiteMediaPaginationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OneMediaListSharesOneReferenceSourceScanAndEmptyListsDoNotScan(bool legacy)
+    {
+        using var fixture = new RankedIdentityFixture();
+        Seed(fixture.Store, fixture.Admin.Id);
+        var scans = 0;
+        fixture.Store.SiteMediaReferenceScanObserver = () => scans++;
+        var rows = legacy ? fixture.Store.AdminSiteMedia("card-art", 2)
+            : fixture.Store.SearchSiteMedia(ids: ["media-0000", "media-0007"]).Items;
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(1, scans);
+        scans = 0;
+        var empty = legacy ? fixture.Store.AdminSiteMedia("hero", 2)
+            : fixture.Store.SearchSiteMedia(ids: []).Items;
+        Assert.Empty(empty);
+        Assert.Equal(0, scans);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BatchReferenceCountsMatchEveryLegacySourceAndParseEachFieldOnlyOnce(bool legacy)
+    {
+        using var fixture = new RankedIdentityFixture();
+        Seed(fixture.Store, fixture.Admin.Id, 2);
+        const string p = "media-0000", q = "media-0001";
+        var data = Data(fixture.Store);
+        var json = JsonSerializer.Serialize(new Dictionary<string, object> { [p] = "key-not-a-reference", ["values"] = new[] { p, p, q } });
+        var article = Append(data, "Articles", ("Body", json), ("MediaAssetId", p), ("Status", "archived"));
+        var publishedProperty = article.GetType().GetProperty("Published")!;
+        var published = Activator.CreateInstance(publishedProperty.PropertyType, nonPublic: true)!;
+        Set(published, "Body", json); Set(published, "MediaAssetId", p); publishedProperty.SetValue(article, published);
+        Append(article, "Revisions", ("Body", json), ("MediaAssetId", p));
+        Append(data, "ContentEntries", ("Key", "qa.media.refs"), ("DraftValue", json), ("PublishedValue", json));
+        Append(data, "ContentVersions", ("Value", json)); Append(data, "ContentVersions", ("Value", json));
+        Append(data, "AlternateArts", ("MediaAssetId", p), ("Active", false));
+        Append(data, "AlternateArtMetadata", ("ImageMediaAssetId", p));
+        var scans = 0; var parses = 0;
+        fixture.Store.SiteMediaReferenceScanObserver = () => scans++;
+        fixture.Store.SiteMediaReferenceJsonParseObserver = () => parses++;
+        var first = legacy ? fixture.Store.AdminSiteMedia(limit: 2) : fixture.Store.SearchSiteMedia(pageSize: 2).Items;
+        Assert.Equal(1, scans); Assert.Equal(7, parses);
+        Assert.Equal(19, first.Single(row => row.Id == p).ReferenceCount);
+        Assert.Equal(7, first.Single(row => row.Id == q).ReferenceCount);
+        fixture.Store.SiteMediaReferenceScanObserver = null;
+        var oldParses = 0;
+        fixture.Store.SiteMediaReferenceJsonParseObserver = () => oldParses++;
+        AssertEquivalentToSingleIdOracle(fixture.Store, first);
+        Assert.Equal(14, oldParses);
+        fixture.Store.SiteMediaReferenceJsonParseObserver = null;
+
+        var escaped = "\\u006d" + p[1..];
+        foreach (var body in new[] { "{\"value\":\"" + escaped + "\"}",
+            "{\"" + p + "\":\"" + escaped + "\"}", "{\"" + p + "\":42}",
+            "[\"prefix-" + p + "\",\"" + p.ToUpperInvariant() + "\",null,42]", p,
+            "{\"broken\":\"" + p + "\"" }) Append(data, "ContentVersions", ("Value", body));
+        var second = legacy ? fixture.Store.AdminSiteMedia(limit: 2) : fixture.Store.SearchSiteMedia(pageSize: 2).Items;
+        Assert.Equal(20, second.Single(row => row.Id == p).ReferenceCount);
+        Assert.Equal(7, second.Single(row => row.Id == q).ReferenceCount);
+        AssertEquivalentToSingleIdOracle(fixture.Store, second);
+    }
+
+    [Fact]
+    public void CountsRefreshAcrossRequestsAndNeverReplaceDeletionAuthority()
+    {
+        using var fixture = new RankedIdentityFixture();
+        Seed(fixture.Store, fixture.Admin.Id, 2);
+        const string p = "media-0000", q = "media-0001";
+        Assert.Equal(0, Assert.Single(fixture.Store.SearchSiteMedia(id: p).Items).ReferenceCount);
+        fixture.Store.SaveContentDraft(fixture.Admin, "news.entries", JsonSerializer.Serialize(new[] { p, p }));
+        Assert.True(Assert.Single(fixture.Store.SearchSiteMedia(id: p).Items).ReferenceCount >= 2);
+        Assert.Throws<L12SiteContentConflictException>(() => fixture.Store.DeleteSiteMedia(fixture.Admin, p));
+        fixture.Store.PublishContent(fixture.Admin, "news.entries");
+        fixture.Store.SaveContentDraft(fixture.Admin, "news.entries", "[]");
+        Assert.True(Assert.Single(fixture.Store.SearchSiteMedia(id: p).Items).ReferenceCount > 0);
+        Assert.Throws<L12SiteContentConflictException>(() => fixture.Store.DeleteSiteMedia(fixture.Admin, p));
+        fixture.Store.DeleteSiteMedia(fixture.Admin, q);
+        Assert.Empty(fixture.Store.SearchSiteMedia(id: q).Items);
+        Assert.Equal(p, Assert.Single(fixture.Store.SearchSiteMedia().Items).Id);
+    }
+
+    private static object Data(L12PlatformStore store)
+        => typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
+
+    private static void Set(object row, string key, object? value) => row.GetType().GetProperty(key)!.SetValue(row, value);
+
+    private static object Append(object owner, string property, params (string Key, object? Value)[] values)
+    {
+        var list = (IList)owner.GetType().GetProperty(property)!.GetValue(owner)!;
+        var row = Activator.CreateInstance(list.GetType().GetGenericArguments()[0], nonPublic: true)!;
+        foreach (var item in values) Set(row, item.Key, item.Value);
+        list.Add(row);
+        return row;
+    }
+
+    private static void AssertEquivalentToSingleIdOracle(L12PlatformStore store, IReadOnlyList<L12SiteMediaView> actual)
+    {
+        var counter = typeof(L12PlatformStore).GetMethod("SiteMediaReferenceCount", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        foreach (var row in actual) Assert.Equal((int)counter.Invoke(store, [row.Id])!, row.ReferenceCount);
+    }
+
     [Fact]
     public void EveryOldAssetIsReachableBeyondBothLegacyCapsWithStableTieOrdering()
     {
@@ -94,13 +198,13 @@ public sealed class SiteMediaPaginationTests
         }
     }
 
-    private static void Seed(L12PlatformStore store, string adminId)
+    private static void Seed(L12PlatformStore store, string adminId, int count = 1012)
     {
         var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
         var rows = (IList)data.GetType().GetProperty("SiteMedia")!.GetValue(data)!;
         var rowType = rows.GetType().GetGenericArguments()[0];
         var now = DateTimeOffset.Parse("2026-10-21T00:00:00Z");
-        for (var index = 0; index < 1012; index++)
+        for (var index = 0; index < count; index++)
         {
             var row = Activator.CreateInstance(rowType, nonPublic: true)!;
             void Set(string key, object value) => rowType.GetProperty(key)!.SetValue(row, value);

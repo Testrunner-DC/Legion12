@@ -1,5 +1,10 @@
 # 十二军团任务台账
 
+## 2026-10-28 素材引用批量统计已验收
+
+- P2/P3仅优化后台所选列表页只读投影，不增加持久索引/缓存，不改引用口径、删除许可、数据库或历史。原所有来源逐图重扫改请求局部一次遍历，每JSON最多parse一次，删除仍新鲜单ID核查。两例真实RED→最终关联92/92及独审通过；同公告最终后端一次完整平台Release配置2818/2818零失败跳过，引用`media-reference-batch-20261028/main-full-r1-result.json`，不是完整Release包、线上收益或30＋10新通过。
+- 保原raw Contains转义怪癖、次数不去重、全部revision/停用异画、坏JSON0、跨请求内容更新与删除拒绝。最初91/92的白名单夹具失败已按真实news.entries修正且原件保留；源码同步以同根`synchronization.json`为准，不重复资讯/榜单/上传已完成同步或d557部署。本片之后续接公告接入及主页有界重试，不复述六风险清单或新造验收链。
+
 ## 2026-10-28 榜单最小依赖片已验收
 
 - 3来源叶仅非history跳过无用history请求，保所有实际切tab/阵营/range/手动的leaderboard新鲜读取；history仍保summary-strip所需leaderboard与历史两API，不做settled缓存/假版本。实际Vue SFC9正+4反例13过，9操作API模拟计数9/2而非9/9；旧刷新/ABA/单飞/卸载/失败快照守卫与原RED/QA host输入失败保留。非线上性能或全站流量比例。

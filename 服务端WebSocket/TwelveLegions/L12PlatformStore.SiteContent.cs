@@ -800,9 +800,10 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var normalizedKind = string.IsNullOrWhiteSpace(kind) ? null : NormalizeMediaKind(kind);
-            return _data.SiteMedia.Where(row => row.DeletedAt is null && (normalizedKind is null || row.Kind == normalizedKind))
+            var rows = _data.SiteMedia.Where(row => row.DeletedAt is null && (normalizedKind is null || row.Kind == normalizedKind))
                 .OrderByDescending(row => row.CreatedAt).Take(Math.Clamp(limit, 1, 1000))
-                .Select(ToSiteMediaView).ToArray();
+                .ToArray();
+            return CreateSiteMediaViews(rows);
         }
     }
 
@@ -830,7 +831,7 @@ public sealed partial class L12PlatformStore
                 .OrderByDescending(row => row.CreatedAt).ThenBy(row => row.Id, StringComparer.Ordinal).ToArray();
             var selectedPage = Math.Clamp(page, 1, Math.Max(1, (int)((matches.LongLength + size - 1) / size)));
             // Only the requested page pays for reference-count/public view projection.
-            var items = matches.Skip((selectedPage - 1) * size).Take(size).Select(ToSiteMediaView).ToArray();
+            var items = CreateSiteMediaViews(matches.Skip((selectedPage - 1) * size).Take(size).ToArray());
             return new(items, selectedPage, size, matches.Length, (long)selectedPage * size < matches.Length);
         }
     }
@@ -1445,12 +1446,71 @@ public sealed partial class L12PlatformStore
         row.Slug, row.SortOrder, row.Active, row.Version, SiteCategoryReferenceCount(row.Id));
 
     private L12SiteMediaView ToSiteMediaView(SiteMediaRow row)
+        => CreateSiteMediaView(row, SiteMediaReferenceCount(row.Id));
+
+    private L12SiteMediaView CreateSiteMediaView(SiteMediaRow row, int referenceCount)
         => new(row.Id, row.Kind, row.AltText, row.FocalX, row.FocalY, row.OriginalFormat, row.ContentHash,
             SiteMediaUrl(row.Id), SiteMediaUrl(row.Id, "mobile"), SiteMediaUrl(row.Id, "thumbnail"),
             row.DesktopWidth, row.DesktopHeight, row.MobileWidth, row.MobileHeight, row.ThumbnailWidth,
             row.ThumbnailHeight, row.OriginalBytes, row.DeliveryBytes, ArticleAccountName(row.CreatedByAccountId),
-            row.CreatedAt, SiteMediaReferenceCount(row.Id), row.DesktopAltText, row.MobileAltText,
+            row.CreatedAt, referenceCount, row.DesktopAltText, row.MobileAltText,
             row.ThumbnailAltText, row.IndependentVariants);
+
+    private IReadOnlyList<L12SiteMediaView> CreateSiteMediaViews(SiteMediaRow[] rows)
+    {
+        if (rows.Length == 0) return [];
+        // Request-local projection only. DeleteSiteMedia still performs its fresh
+        // authoritative single-ID check; no counts escape this gate as a cache.
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var row in rows) counts.TryAdd(row.Id, 0);
+        SiteMediaReferenceScanObserver?.Invoke();
+        foreach (var article in _data.Articles)
+        {
+            Add(article.MediaAssetId); Json(article.Body);
+            if (article.Published is { } published) { Add(published.MediaAssetId); Json(published.Body); }
+            foreach (var revision in article.Revisions) { Add(revision.MediaAssetId); Json(revision.Body); }
+        }
+        foreach (var entry in _data.ContentEntries) { Json(entry.DraftValue); Json(entry.PublishedValue); }
+        foreach (var version in _data.ContentVersions) Json(version.Value);
+        foreach (var art in _data.AlternateArts) Add(art.MediaAssetId);
+        foreach (var metadata in _data.AlternateArtMetadata) Add(metadata.ImageMediaAssetId);
+        return rows.Select(row => CreateSiteMediaView(row, counts[row.Id])).ToArray();
+
+        void Add(string? id)
+        {
+            if (id is not null && counts.TryGetValue(id, out var value)) counts[id] = checked(value + 1);
+        }
+        void Json(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return;
+            // Preserve the legacy raw Ordinal Contains prefilter, including its
+            // escaped-ID behavior. Values count occurrences, not documents/keys.
+            HashSet<string>? found = null;
+            foreach (var id in counts.Keys)
+                if (json.Contains(id, StringComparison.Ordinal)) (found ??= new(StringComparer.Ordinal)).Add(id);
+            if (found is null) return;
+            HashSet<string> eligible = found;
+            try
+            {
+                SiteMediaReferenceJsonParseObserver?.Invoke();
+                using var document = JsonDocument.Parse(json);
+                Visit(document.RootElement);
+            }
+            catch (JsonException) { }
+
+            void Visit(JsonElement element)
+            {
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    if (element.GetString() is { } id && eligible.Contains(id)) Add(id);
+                }
+                else if (element.ValueKind == JsonValueKind.Array)
+                    foreach (var item in element.EnumerateArray()) Visit(item);
+                else if (element.ValueKind == JsonValueKind.Object)
+                    foreach (var item in element.EnumerateObject()) Visit(item.Value);
+            }
+        }
+    }
 
     private L12SiteMediaEmbedView ToSiteMediaEmbedView(SiteMediaRow row)
         => new(row.Id, row.AltText, SiteMediaUrl(row.Id), SiteMediaUrl(row.Id, "mobile"),
@@ -1461,8 +1521,13 @@ public sealed partial class L12PlatformStore
         => _data.Articles.Sum(row => (row.CategoryId == id ? 1 : 0) + (row.Published?.CategoryId == id ? 1 : 0) +
             row.Revisions.Count(revision => revision.CategoryId == id));
 
+    // Numeric-only local regression probes; never serialized or exposed by HTTP.
+    internal Action? SiteMediaReferenceScanObserver { get; set; }
+    internal Action? SiteMediaReferenceJsonParseObserver { get; set; }
+
     private int SiteMediaReferenceCount(string id)
     {
+        SiteMediaReferenceScanObserver?.Invoke();
         var count = _data.Articles.Sum(row => (row.MediaAssetId == id ? 1 : 0) +
             CountJsonString(row.Body, id) + (row.Published?.MediaAssetId == id ? 1 : 0) +
             CountJsonString(row.Published?.Body, id) + row.Revisions.Sum(revision =>
@@ -1503,11 +1568,12 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private static int CountJsonString(string? json, string expected)
+    private int CountJsonString(string? json, string expected)
     {
         if (string.IsNullOrWhiteSpace(json) || !json.Contains(expected, StringComparison.Ordinal)) return 0;
         try
         {
+            SiteMediaReferenceJsonParseObserver?.Invoke();
             using var document = JsonDocument.Parse(json);
             return CountJsonString(document.RootElement, expected);
         }
