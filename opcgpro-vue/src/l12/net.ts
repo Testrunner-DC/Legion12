@@ -63,6 +63,21 @@ const CARD_FRAME_PLAIN_RECOVERY_TIMEOUT_MS = 10_000
 const MATCHMAKING_INITIAL_STATE_GRACE_MS = 800
 let connectPromise: Promise<void> | null = null
 let cancelPendingConnect: ((reason?: string) => void) | null = null
+export type TournamentKeyNoticeView = {
+  eventId: string
+  kind: 'announcement' | 'postpone' | 'cancel' | 'pairings'
+  code: string
+  name: string
+  accountId: string
+}
+
+let noticeIdentity = ''
+let noticeConnectionToken = ''
+const seenTournamentNoticeIds = new Set<string>()
+export function tournamentNoticeTokenMatches(token: string | null | undefined) {
+  return !!token && token === noticeConnectionToken
+}
+
 let connectionAttemptSerial = 0
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -521,6 +536,7 @@ export const l12State = reactive({
   tutorial: null as ActiveTutorialState | null,
   pendingAction: false,
   notice: '',
+  tournamentNotices: [] as TournamentKeyNoticeView[],
   operationsPolicy: null as EffectiveOperationsPolicy | null,
   accountId: '',
   presence: [] as PlatformPresence[],
@@ -794,6 +810,13 @@ export function connect(): Promise<void> {
       if (message.type === 'session') {
         const nextAccountId = String(message.accountId || '')
         const nextSessionId = String(message.sessionId || '')
+        const nextNoticeIdentity = authToken + ':' + nextAccountId
+        if (noticeIdentity && noticeIdentity !== nextNoticeIdentity) {
+          noticeIdentity = ''
+          noticeConnectionToken = ''
+          seenTournamentNoticeIds.clear()
+          l12State.tournamentNotices = []
+        }
         if (l12State.accountId !== nextAccountId) retiredObservation = null
         if (l12State.accountId !== nextAccountId || l12State.sessionId !== nextSessionId) l12State.tutorial = null
         cancelResourceFallback()
@@ -890,6 +913,27 @@ export function connect(): Promise<void> {
           if (message.policy?.maintenance?.active) l12State.connectionIssue = 'maintenance'
           else if (l12State.connectionIssue === 'maintenance') l12State.connectionIssue = 'none'
         }
+      }
+      else if (message.type === 'tournamentKeyNotice') {
+        const accountId = String(message.accountId || '')
+        const eventId = String(message.eventId || '')
+        const kind = String(message.kind || '')
+        const code = String(message.tournamentCode || '')
+        const name = String(message.tournamentName || '')
+        if (claimedGeneration === null || Number(message.connectionGeneration) !== claimedGeneration
+          || String(message.sessionId || '') !== l12State.sessionId || accountId !== l12State.accountId
+          || localStorage.getItem(deploymentStorageKey('l12-auth-token')) !== authToken
+          || !eventId || eventId.length > 256 || !code || code.length > 64 || !name || name.length > 100
+          || !['announcement', 'postpone', 'cancel', 'pairings'].includes(kind)) return
+        const identity = authToken + ':' + accountId
+        if (identity !== noticeIdentity) { noticeIdentity = identity; seenTournamentNoticeIds.clear(); l12State.tournamentNotices = [] }
+        if (seenTournamentNoticeIds.has(eventId)) return
+        seenTournamentNoticeIds.add(eventId)
+        if (seenTournamentNoticeIds.size > 128) seenTournamentNoticeIds.delete(seenTournamentNoticeIds.values().next().value!)
+        noticeConnectionToken = authToken
+        const notice = { eventId, kind: kind as TournamentKeyNoticeView['kind'], code, name, accountId }
+        l12State.tournamentNotices = [...l12State.tournamentNotices, notice].slice(-8)
+        window.dispatchEvent(new CustomEvent('l12-tournament-key-notice', { detail: notice }))
       }
       else if (message.type === 'resourceVersions') {
         const epoch = String(message.epoch || '')
@@ -1269,6 +1313,8 @@ export function disconnect() {
   clearMatchmakingRecovery()
   const socket = l12State.socket
   l12State.socket = null
+  noticeConnectionToken = ''
+  l12State.tournamentNotices = []
   const cancel = cancelPendingConnect
   cancelPendingConnect = null
   connectPromise = null

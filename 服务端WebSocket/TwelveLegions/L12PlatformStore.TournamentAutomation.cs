@@ -1,7 +1,7 @@
 namespace TwelveLegions.Server;
 
 public sealed record L12TournamentAutomationSweepResult(
-    int Changed, IReadOnlyList<string> TournamentIds);
+    int Changed, IReadOnlyList<string> TournamentIds, IReadOnlyList<L12TournamentKeyNotice>? KeyNotices = null);
 
 public sealed partial class L12PlatformStore
 {
@@ -11,6 +11,7 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var changed = new List<string>();
+            var notices = new List<L12TournamentKeyNotice>();
             foreach (var current in _data.Tournaments.Where(item => item.OperationMode == "automated"
                          && item.Status is not ("completed" or "canceled")
                          && item.AutomationStatus != "attention-required").ToArray())
@@ -44,10 +45,11 @@ public sealed partial class L12PlatformStore
                             Reason: detail));
                 }
                 changed.Add(working.Id);
+                if (CreateKeyNotice(current, working, action) is { } notice) notices.Add(notice);
             }
 
             if (changed.Count > 0) Save();
-            return new L12TournamentAutomationSweepResult(changed.Count, changed);
+            return new L12TournamentAutomationSweepResult(changed.Count, changed, notices);
         }
     }
 

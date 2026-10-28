@@ -130,3 +130,5 @@ assert.ok(tournamentPages.includes("'l12-resource-tournaments'"),
 checks += pollingFiles.length + 7
 
 console.log(`Resource change synchronization: ${checks}/${checks} checks passed`)
+
+await import('./test-tournament-key-notice.mjs')

@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { usesSiteUiStates } from './siteUiStateScope'
 import { useRoute, useRouter } from 'vue-router'
-import { inviteFriend, l12State, spectateRoom } from '@/l12/net'
+import { inviteFriend, l12State, spectateRoom, tournamentNoticeTokenMatches } from '@/l12/net'
 import { alternateArtApi, friendApi, login, platformState, register, telemetryApi, type AlternateArtGrantNotification, type PlatformPresence } from '@/l12/platform'
 import SiteIcon from './SiteIcon.vue'
 import SocialPopover from './SocialPopover.vue'
@@ -810,6 +810,21 @@ function watchOnlinePlayer(player: PlatformPresence) {
   modal.value = null
   void router.push('/battle')
 }
+const tournamentNoticeText = {
+  announcement: '赛事发布了新公告', postpone: '赛事计划时间已调整', cancel: '赛事已取消', pairings: '新一轮对阵已公布',
+}
+const currentTournamentNotice = computed(() => {
+  const value = l12State.tournamentNotices[0]
+  return value && value.accountId === platformState.account?.id && value.accountId === l12State.accountId
+    && tournamentNoticeTokenMatches(platformState.token) && Object.hasOwn(tournamentNoticeText, value.kind) ? value : null
+})
+function dismissTournamentNotice() {
+  if (currentTournamentNotice.value) l12State.tournamentNotices.shift()
+}
+watch(() => [platformState.account?.id, platformState.token], () => {
+  l12State.tournamentNotices = []
+}, { flush: 'sync' })
+
 function onPresenceResource(event: Event) {
   if ((event as CustomEvent).detail?.fallback === true && l12State.status !== 'online') void refreshPresence()
 }
@@ -923,12 +938,19 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
+    <aside v-if="currentTournamentNotice" class="tournament-key-notice" role="status" aria-live="polite">
+      <span><b>{{ currentTournamentNotice.name }}</b> · {{ tournamentNoticeText[currentTournamentNotice.kind] }}</span>
+      <router-link :to="'/battle/tournaments/' + encodeURIComponent(currentTournamentNotice.code)" @click="dismissTournamentNotice()">查看赛事</router-link>
+      <button type="button" aria-label="关闭赛事提醒" @click="dismissTournamentNotice()">×</button>
+    </aside>
     <SeasonSummaryNotice :suspended="Boolean(currentAlternateArtNotification)"/>
 
   </div>
 </template>
 
 <style scoped>
+.tournament-key-notice{position:fixed;z-index:150;right:16px;bottom:16px;display:flex;align-items:center;gap:12px;max-width:min(440px,calc(100vw - 32px));padding:12px;background:var(--l12-ui-panel);border:1px solid var(--l12-ui-line-strong);color:var(--l12-ui-text)}
+.tournament-key-notice span{min-width:0;overflow-wrap:anywhere}.tournament-key-notice a,.tournament-key-notice button{flex:none;min-height:40px;display:inline-flex;align-items:center;justify-content:center}.tournament-key-notice button{min-width:40px}@media(max-width:700px){.tournament-key-notice{bottom:max(12px,env(safe-area-inset-bottom))}}
 .site-shell{--nav-w:92px;--mobile-head-h:58px;width:100vw;height:100vh;height:100dvh;background:radial-gradient(circle at 80% 10%,rgba(18,101,108,.12),transparent 34%),radial-gradient(circle at 12% 84%,rgba(121,22,32,.13),transparent 35%),#060a0d;color:#f2f0e9;font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.site-sidebar{position:fixed;z-index:40;inset:0 auto 0 0;width:var(--nav-w);display:flex;flex-direction:column;border-right:1px solid rgba(232,227,213,.16);background:#0d1318}.site-brand{display:flex;height:96px;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#f3eee1;text-decoration:none}.site-brand img{width:44px;height:44px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.site-nav{display:flex;flex:1;min-height:0;flex-direction:column;justify-content:flex-start;overflow-y:auto}.site-nav a{position:relative;display:flex;min-height:58px;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:0;background:transparent;color:#7d8991;text-decoration:none}.site-nav a:hover,.site-nav a.router-link-active{background:linear-gradient(90deg,rgba(48,181,190,.2),transparent);color:#f4f1e9}.site-nav a.router-link-active::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;background:#51c5cc;box-shadow:0 0 12px #51c5cc}.site-nav b{font-size:15px}.site-nav span{font-size:14px;font-weight:900}.site-utilities{display:flex;flex:0 0 auto;flex-direction:column;align-items:center;gap:2px;padding:4px 0;border-top:1px solid rgba(232,227,213,.12)}.site-utilities button{position:relative;display:grid;width:44px;min-width:44px;height:44px;min-height:44px;place-items:center;padding:0;border:0;background:transparent;color:#7d8991}.site-utilities .connection i{width:8px;height:8px;border-radius:50%;background:#6b7272}.site-utilities .connection.online i{background:#55c99a;box-shadow:0 0 8px #55c99a}.site-utilities .connection.connecting i{background:#d7b15f}.site-content{position:absolute;inset:0 0 0 var(--nav-w);overflow:auto}.site-mobile-head{display:none}.site-modal-mask{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(1,4,7,.75);backdrop-filter:blur(10px)}.site-modal{width:min(560px,94vw);max-height:min(720px,90vh);overflow:auto;border:1px solid rgba(235,230,216,.28);background:#111923;box-shadow:0 28px 90px #000;padding:24px}.site-modal>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid rgba(235,230,216,.14)}.site-modal header small{color:#51c5cc;font:900 14px monospace;letter-spacing:.18em}.site-modal h2{margin:4px 0 0;font-size:24px}.site-modal header button{width:34px;height:34px;border:1px solid #48545c;background:#0a1016;color:#fff}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 0;border-bottom:1px solid rgba(235,230,216,.1)}.setting-row b,.setting-row span{display:block}.setting-row span{margin-top:5px;color:#7f8b93;font-size:14px}.setting-row select,.toggle{min-width:118px;padding:10px;border:1px solid #52606a;background:#081018;color:#fff;font-weight:900}.toggle.on{border-color:#54b48f;color:#7ee2b9}.setting-note{color:#7e898f;font-size:14px;line-height:1.7}.update-modal article{padding:18px 0;border-bottom:1px solid rgba(235,230,216,.1)}.update-modal time{color:#d6ad59;font-size:14px;font-weight:900}.update-modal h3{margin:6px 0;font-size:15px}.update-modal code{display:inline-block;padding:3px 6px;border:1px solid #6f602e;color:#e5c866;font-size:14px}.update-modal li{margin:7px 0;color:#a8b0b3;font-size:14px;line-height:1.6}.online-entry{display:flex;align-items:center;gap:12px;margin-top:12px;padding:14px;background:#0a1118}.online-entry>i{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:#55c99a;box-shadow:0 0 8px #55c99a}.online-identity{min-width:0;flex:1}.online-entry b,.online-entry span{display:block}.online-entry span{margin-top:3px;color:#718088;font-size:14px}.online-actions{display:flex;flex:0 0 auto;gap:7px}.online-actions button{min-width:82px;padding:8px 10px;border:1px solid #d2b35f;background:#29220f;color:#f0d478;font-size:14px;font-weight:900}.online-actions button:disabled{border-color:#3f484e;background:#121920;color:#68747a;cursor:not-allowed}.online-notice{margin:12px 0 0;padding:9px 11px;border-left:3px solid #51c5cc;background:#0a151b;color:#9fd5d8;font-size:14px}.modal-empty{margin-top:18px;padding:38px 20px;border:1px dashed #39444b;color:#738089;text-align:center;font-size:14px;line-height:1.7}
 @media(max-width:700px){.site-shell{--nav-w:0px}.site-mobile-head{position:fixed;z-index:60;top:0;left:0;right:0;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid rgba(232,227,213,.16);background:#0d1318}.mobile-brand{display:flex;align-items:center;gap:9px;color:#fff;text-decoration:none}.mobile-brand b{display:grid;width:30px;height:30px;place-items:center;border:1px solid #d8b362;font:900 14px Georgia}.mobile-brand span{font-weight:900}.site-mobile-head button{width:38px;height:38px;border:1px solid #46525a;background:#111a22;color:#fff;font-size:20px}.site-sidebar{top:58px;width:min(310px,84vw);transform:translateX(-105%);transition:transform .2s}.site-sidebar.open{transform:none;box-shadow:18px 0 50px #000}.site-brand{display:none}.site-nav a{min-height:52px;flex-direction:row;justify-content:flex-start;padding:0 24px;gap:15px}.site-nav span{font-size:14px}.site-utilities{display:grid;grid-template-columns:repeat(2,44px);grid-auto-rows:44px;justify-content:center;gap:2px;padding:4px max(6px,env(safe-area-inset-right,0px)) 4px max(6px,env(safe-area-inset-left,0px))}.site-utilities button{width:44px}.site-content{top:58px}.site-modal{padding:18px}.setting-row{align-items:flex-start;flex-direction:column}.setting-row select,.toggle{width:100%}}
 .utility-icon{position:relative;display:grid;place-items:center}.utility-icon>i{position:absolute;top:-7px;right:-9px;display:grid!important;min-width:15px!important;width:auto!important;height:15px!important;place-items:center;padding:0 3px;border-radius:8px!important;background:#71303a;color:#fff;font:900 14px monospace!important;font-style:normal}.site-utilities .connection .utility-icon>i{top:auto;right:-5px;bottom:-3px;width:7px!important;min-width:7px!important;height:7px!important;padding:0;border-radius:50%!important;background:#6b7272}.site-utilities .connection.online .utility-icon>i{background:#55c99a!important;box-shadow:0 0 8px #55c99a}.site-utilities .connection.connecting .utility-icon>i{background:#d7b15f!important}

@@ -171,6 +171,9 @@ public sealed record L12TournamentBracketRoundView(
     int Number,
     IReadOnlyList<L12TournamentBracketMatchView> Matches);
 
+public sealed record L12TournamentKeyNotice(string EventId, string Kind, string TournamentCode,
+    string TournamentName, IReadOnlyList<string> RecipientAccountIds);
+
 public sealed record L12TournamentView(
     string Id,
     string Code,
@@ -215,7 +218,11 @@ public sealed record L12TournamentView(
     int IntermissionMinutes,
     string AutomationStatus,
     DateTimeOffset? NextAutomaticActionAt,
-    string? AutomationAttentionReason, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null, string Announcement = "");
+    string? AutomationAttentionReason, DateTimeOffset? RegistrationOpensAt = null, DateTimeOffset? RegistrationClosesAt = null, string Announcement = "")
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public L12TournamentKeyNotice? KeyNotice { get; init; }
+}
 
 public sealed record L12TournamentListView(long PlatformVersion, IReadOnlyList<L12TournamentView> Items);
 
@@ -1625,7 +1632,26 @@ public sealed partial class L12PlatformStore
         AddAdminAudit(actor, "tournament", action, target, (working.Version - 1).ToString(),
             working.Version.ToString(), context.Reason, context);
         Save();
-        return ToView(working, actor);
+        return ToView(working, actor) with { KeyNotice = CreateKeyNotice(row, working, action) };
+    }
+
+    private static L12TournamentKeyNotice? CreateKeyNotice(TournamentRow before, TournamentRow after, string action)
+    {
+        var kind = action switch
+        {
+            "announcement" when !string.IsNullOrWhiteSpace(after.Announcement)
+                && !string.Equals(before.Announcement, after.Announcement, StringComparison.Ordinal) => "announcement",
+            "postpone" when before.StartAt != after.StartAt => "postpone",
+            "cancel" when before.Status != "canceled" && after.Status == "canceled" => "cancel",
+            "start" when before.Status != "running" && after.Status == "running" => "pairings",
+            "round-create" when after.Rounds.Count > before.Rounds.Count => "pairings",
+            _ => null,
+        };
+        if (kind is null) return null;
+        var recipients = after.Participants.Where(item => !item.Dropped && !item.Removed)
+            .Select(item => item.AccountId).Concat(after.RefereeAccountIds).Append(after.OrganizerAccountId)
+            .Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return new L12TournamentKeyNotice($"{after.Id}:{after.Version}:{kind}", kind, after.Code, after.Name, recipients);
     }
 
     private TournamentRow NewTournament(L12AccountView actor, L12TournamentCreatePayload payload)

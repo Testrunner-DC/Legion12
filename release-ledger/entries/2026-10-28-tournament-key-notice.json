@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-tournament-key-notice",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "赛事关键提醒",
+  "changes": [{
+    "category": "tournaments",
+    "text": "在线参赛者、主办和裁判可收到公告更新、计划时间变更、赛事取消及新对阵提醒。对局期间收到的提醒在返回普通页面后显示，可直接查看赛事；不提供离线补发。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentAutomation.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs", "opcgpro-vue/src/l12/net.ts", "opcgpro-vue/src/l12/site/SiteShell.vue"]
+  }]
+}

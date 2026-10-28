@@ -4920,8 +4920,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 {
                     await SendManyAsync(await _rooms.TickRankedClocksAsync(), cancellationToken);
                     await SendManyAsync(await _rooms.TickResponseWindowsAsync(), cancellationToken);
-                    if (_platform.AdvanceAutomaticTournaments(DateTimeOffset.UtcNow).Changed > 0)
+                    var tournamentSweep = _platform.AdvanceAutomaticTournaments(DateTimeOffset.UtcNow);
+                    if (tournamentSweep.Changed > 0)
+                    {
                         NotifyTournamentsChanged();
+                        foreach (var notice in tournamentSweep.KeyNotices ?? [])
+                            NotifyTournamentKeyNotice(notice);
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -5532,11 +5537,42 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         }
     }
 
+    private void NotifyTournamentKeyNotice(L12TournamentKeyNotice notice)
+    {
+        try
+        {
+            var messages = new List<OutgoingMessage>();
+            foreach (var accountId in notice.RecipientAccountIds)
+            {
+                if (!_activeAccountSockets.TryGetValue(accountId, out var sessionId)
+                    || !_socketPlatformSessions.TryGetValue(sessionId, out var binding)
+                    || !string.Equals(binding.AccountId, accountId, StringComparison.OrdinalIgnoreCase)
+                    || !_activeAccountSockets.TryGetValue(accountId, out var active) || active != sessionId)
+                    continue;
+                messages.Add(new OutgoingMessage(sessionId, new
+                {
+                    type = "tournamentKeyNotice", notice.EventId, notice.Kind, notice.TournamentCode,
+                    notice.TournamentName, accountId, sessionId, binding.ConnectionGeneration,
+                }));
+            }
+            _ = SendManyAsync(messages, CancellationToken.None);
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Tournament notice delivery failed: {error.GetType().Name}");
+        }
+    }
+
     private IResult TournamentCommandResponse<TPayload, T>(HttpRequest request,
         L12AdminCommandEnvelope<TPayload> command, L12AdminCommandResult<T> outcome, string? tournamentId = null)
     {
         var result = AdminCommandResponse(request, command, outcome);
-        if (outcome.Success && !outcome.Replayed && !command.DryRun) NotifyTournamentsChanged();
+        if (outcome.Success && !outcome.Replayed && !command.DryRun)
+        {
+            NotifyTournamentsChanged();
+            if (outcome.Value is L12TournamentView { KeyNotice: { } notice })
+                NotifyTournamentKeyNotice(notice);
+        }
         var version = tournamentId is null
             ? _platform.Version
             : _platform.AdminCommandResourceVersion("tournament.read", $"tournament:{tournamentId}")

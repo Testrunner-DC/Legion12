@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## FEAT-20261028-TOURNAMENT-KEY-NOTICE｜沿现有WS的在线关键提醒
+
+- 原赛事row/Mutate/自动Save沿用，内部JsonIgnore sidecar仅在真实公告变更/延期/取消/生成对阵后生成，CommandBus外层事务成功才送。有效参赛/主办/裁判定向原socket映射，无公告正文/QQ/名单，预演/重放/no-op/Save失败不发送。无新持久通知或队列系统。
+- net校验当前generation/session/account/token及字段上限，128 eventId去重/8条reactive内存；同身份重连保已接受待显提醒，旧包拒收，换号/退出清空。SiteShell普通页显示/可关闭/可查看赛事，对局暂存后返页显示，不冒离线或系统通知送达。真实Shell+net本地390/1440两图/交互Main已检查，真实游戏切换以卸载模拟，不是真机。
+- 源真实三账户WS超时RED→6后台专项绿；手动/自动后续对阵及退出收件部分仅Store层，不写成全部实网。Main同最终C#一次2829平台及最终前端完整链/两类型/双613通过；source-delivery.json与主页frontend-main-r3绑定。仅缺旧公告展示stub的私人选择器QA补一行，保原30场及余下22metadata。无部署/维护/数据改写/在线关单，回滚不清历史或恢复越权广播。
+
+## INTAKE-20261028-CEBC6C9C｜持续加成与减兵力规则待裁定
+
+- 新鲜只读队列941历史/4未结，只导入新增1条，原940项/关闭647/阶段555不变，唯一`bug-closeout-remaining-20261027/fresh-intake-20261028-evening/local-import-receipt.json`。原3项仍待含修复运行版本线上核验，不重复修改或关单。
+- 已结束原局元信息绑定故障103；合法opaque分页至84后503，未取得目标附近记录，session已撤销，原失败保留。源码与线上同源只能证明现有独立正负层实现，不能证明原局或裁定正确。人类已收到纯假设2000/＋1000/－1000/来源离场的规则问题；只挂此项，其他任务照常，不按玩家描述擅改测试期望或规则。
+
 ## PERF-20261028-HOME-SUMMARY｜主页不再取完整文章及后台媒体统计
 
 - 原Home带三组全文及ToSiteMediaView引用统计，首页仅用摘要/图像。新PublicSiteHomeSummary在原_gate沿PublicArticleSummaries同7/6/8发布排序，显式轻量Embed保hero/封面URL和次序；原home/正文详情不变。前端类型分离、旧完整缓存转摘要，原重试/单飞/隐藏离线/迟到守卫保留，无新缓存权威或轮询。

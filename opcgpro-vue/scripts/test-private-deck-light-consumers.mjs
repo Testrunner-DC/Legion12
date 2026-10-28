@@ -405,6 +405,7 @@ function tournamentDetailComponent() {
     './TournamentDisasterSummary.vue': componentModule,
     './RulesCardSummary.vue': componentModule,
     './TournamentParticipantCounts.vue': componentModule,
+    './TournamentAnnouncement.vue': componentModule,
     '@/l12/SavedDeckSelector.vue': { default: compileComponent('src/l12/SavedDeckSelector.vue', {
       vue, './decks': { ...decks, loadDeckCatalog: deckModule.loadDeckCatalog },
       './platform': platformModule, './mobileViewport': { landscapeTeleportTarget: () => teleportRoot },
