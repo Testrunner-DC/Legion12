@@ -37,12 +37,12 @@ function account(id,verified=true){
 }
 account(scenario.startsWith('guest')||scenario==='cached-failure'?null:'a',scenario!=='unverified')
 const image='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"%3E%3Crect width="1600" height="900" fill="%23152b34"/%3E%3C/svg%3E'
-const article=(id,kind)=>({id,kind,title:'已发布'+kind+'内容',summary:'已发布摘要',body:'正文',category:'公告',coverUrl:image,link:kind==='video'?'/videos':'',slug:id,status:'published',pinned:false,createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-01T00:00:00Z',publishedAt:'2026-10-01T00:00:00Z',revision:1})
+const article=(id,kind)=>({id,kind,title:'已发布'+kind+'内容',summary:'已发布摘要',bodyPreview:'正文',category:'公告',coverUrl:image,link:kind==='video'?'/videos':'',slug:id,status:'published',pinned:false,createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-01T00:00:00Z',publishedAt:'2026-10-01T00:00:00Z',revision:1})
 const empty={composition:JSON.stringify({version:1,heroSlides:[],notices:[]}),legal:'{}',news:[],videos:[],products:[],media:[]}
 const published={...empty,news:[article('news-fixture','news')],videos:[article('video-fixture','video')],products:[article('product-fixture','product')],composition:JSON.stringify({version:1,heroSlides:[{id:'hero',enabled:true,eyebrow:'',title:'已发布主视觉',summary:'',footer:'',href:'/news/news-fixture',mediaAssetId:'hero-media'}],notices:[{id:'notice',enabled:true,label:'已发布通知',href:'/news/news-fixture',tone:'dark'}]}),media:[{id:'hero-media',desktopUrl:image,mobileUrl:image,thumbnailUrl:image,altText:'已发布主视觉'}]}
 let failHome=scenario==='cached-failure'||scenario==='retry'
 if(scenario==='cached-failure')localStorage.setItem('l12-home-published-v2',JSON.stringify({version:2,payload:published}))
-platform.siteContentApi.home=async()=>{calls.push('public-home');if(failHome)throw Error('fixture unavailable');return scenario.includes('published')?published:empty}
+platform.siteContentApi.homeSummary=async()=>{calls.push('public-home');if(failHome)throw Error('fixture unavailable');return scenario.includes('published')?published:empty}
 platform.telemetryApi.pageView=async()=>{calls.push('public-page-view')}
 platform.alternateArtApi.notifications=async()=>{calls.push('existing-shell-art-notifications');return []}
 platform.seasonSummaryApi.notifications=async()=>{calls.push('existing-shell-season-notifications');return []}

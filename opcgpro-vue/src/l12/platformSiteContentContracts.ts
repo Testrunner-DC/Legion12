@@ -54,3 +54,6 @@ export interface ModianImportBatchResult {
 export interface SiteHomePayload {
   composition: string; legal: string; news: Article[]; videos: Article[]; products: Article[]; media: SiteMedia[]
 }
+export interface SiteHomeSummaryPayload {
+  composition: string; legal: string; news: ArticleSummary[]; videos: ArticleSummary[]; products: ArticleSummary[]; media: SiteMediaEmbed[]
+}

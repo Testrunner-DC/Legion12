@@ -5,7 +5,7 @@ import ts from 'typescript'
 const names = ['SiteContentKind', 'SiteMediaKind', 'SiteMediaPolicy', 'SiteMedia', 'SiteMediaSearch',
   'SiteMediaEmbed', 'SiteCategory', 'ArticleStatus', 'Article', 'ArticleSummary', 'ArticleRevision', 'ArticleDraft',
   'ModianImportState', 'ModianImportPreviewItem', 'ModianImportPreview', 'ModianImportItemResult',
-  'ModianImportBatchResult', 'SiteHomePayload']
+  'ModianImportBatchResult', 'SiteHomePayload', 'SiteHomeSummaryPayload']
 const localNames = names.filter(name => !['SiteMediaEmbed', 'ArticleStatus', 'ModianImportState',
   'ModianImportPreviewItem', 'ModianImportItemResult'].includes(name))
 const moduleSource = fs.readFileSync(new URL('../src/l12/platformSiteContentContracts.ts', import.meta.url), 'utf8')
@@ -46,4 +46,4 @@ for (const fact of ['desktopAltText: string; mobileAltText: string; thumbnailAlt
   assert(uiGuard.includes(`siteContentContracts.includes('${fact}')`), 'the UI guard must read the real declaration owner')
   assert(!uiGuard.includes(`platform.includes('${fact}')`), 'the old API entry is no longer the declaration owner')
 }
-console.log('Site content contracts: 18 type exports including explicit ArticleSummary, no runtime, six negative guards and two real media guard mappings passed')
+console.log('Site content contracts: 19 type exports including explicit ArticleSummary and SiteHomeSummaryPayload, no runtime, six negative guards and two real media guard mappings passed')

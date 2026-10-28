@@ -3228,6 +3228,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             });
         });
         _app.MapGet("/api/site/home", () => Results.Ok(_platform.PublicSiteHome()));
+        _app.MapGet("/api/site/home-summary", () => Results.Ok(_platform.PublicSiteHomeSummary()));
         _app.MapGet("/api/site/categories", (string? kind) => Results.Ok(_platform.PublicSiteCategories(kind)));
         _app.MapGet(L12SharePage.Endpoint, (HttpRequest request) =>
         {

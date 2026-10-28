@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261028-HOME-SUMMARY｜主页不再取完整文章及后台媒体统计
+
+- 原Home带三组全文及ToSiteMediaView引用统计，首页仅用摘要/图像。新PublicSiteHomeSummary在原_gate沿PublicArticleSummaries同7/6/8发布排序，显式轻量Embed保hero/封面URL和次序；原home/正文详情不变。前端类型分离、旧完整缓存转摘要，原重试/单飞/隐藏离线/迟到守卫保留，无新缓存权威或轮询。
+- 真实端点404 RED保留，原首fixture缺alt/hero缺IndependentVariants为夹具错误不作产品RED；两新HTTP场景真实通过，完整平台2829一次全绿覆盖。合成主页UTF8实际47932→1704，非HTTP实传/压缩或线上优化百分比。
+- 独审合法cache容器内null行造成组件挂载异常，真实RED后最小结构检查＋cache try边界保证仍请求一次；最终112断言/19导出6负例。前端r1仅旧home()静态守卫、r2缺旧公告展示fixture；原失败保留，r3具名复用前缀后完成UI/私人消费者/两类型/双613构建，直接引用`home-summary-read-20261028/frontend-main-r3/result.json`，不重跑未变规则/后台/30＋10。未部署/改维护/关单，回退只换消费者，不回写正文或旧库。
+
 ## PERF-20261028-RANKING-REQUEST-LOOKUPS｜历史投影请求内复用权威查找
 
 - 原每席位RankingMasterId重新枚举/排序全可选主宰，账号资格重复线性查找。沿原_gate仅缓存本请求查找结果（含null/false），显式ID/legacy名称独立OrdinalIgnoreCase字典；保无效ID不回退、未知历史账号允许、已禁用删除排除、null账号、DistinctBy首行、日期/惩罚/赢家/源窗口语义。无持久索引或统计schema，方法仍读取原2万源。

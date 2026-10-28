@@ -48,6 +48,9 @@ public sealed record L12SiteCategoryView(string Id, string Kind, string Name, st
 public sealed record L12SiteHomeView(string Composition, string Legal, IReadOnlyList<L12ArticleView> News,
     IReadOnlyList<L12ArticleView> Videos, IReadOnlyList<L12ArticleView> Products,
     IReadOnlyList<L12SiteMediaView> Media);
+public sealed record L12SiteHomeSummaryView(string Composition, string Legal, IReadOnlyList<L12ArticleSummaryView> News,
+    IReadOnlyList<L12ArticleSummaryView> Videos, IReadOnlyList<L12ArticleSummaryView> Products,
+    IReadOnlyList<L12SiteMediaEmbedView> Media);
 
 public sealed class L12SiteContentConflictException(string message) : InvalidOperationException(message);
 
@@ -889,6 +892,24 @@ public sealed partial class L12PlatformStore
                 .Select(ToSiteMediaView).ToArray();
             return new L12SiteHomeView(GetContent(HomeCompositionContentKey, "{}"),
                 GetContent(SiteLegalContentKey, "{}"), news, videos, products, media);
+        }
+    }
+
+    public L12SiteHomeSummaryView PublicSiteHomeSummary()
+    {
+        lock (_gate)
+        {
+            var news = PublicArticleSummaries(null, null, 7, "news");
+            var videos = PublicArticleSummaries(null, null, 6, "video");
+            var products = PublicArticleSummaries(null, null, 8, "product");
+            var composition = GetContent(HomeCompositionContentKey, "{}");
+            var mediaIds = SiteContentMediaIds(composition).ToHashSet(StringComparer.Ordinal);
+            foreach (var article in news.Concat(videos).Concat(products))
+                if (!string.IsNullOrWhiteSpace(article.MediaAssetId)) mediaIds.Add(article.MediaAssetId!);
+            // Homepage covers need delivery metadata, not body embeds or administrative reference scans.
+            var media = _data.SiteMedia.Where(row => row.DeletedAt is null && mediaIds.Contains(row.Id))
+                .Select(ToSiteMediaEmbedView).ToArray();
+            return new(composition, GetContent(SiteLegalContentKey, "{}"), news, videos, products, media);
         }
     }
 

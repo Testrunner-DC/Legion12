@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
-import { authState, platformState, siteContentApi, type Article, type SiteHomePayload, type SiteMedia } from '@/l12/platform'
+import { authState, platformState, siteContentApi, type Article, type ArticleSummary, type SiteHomePayload, type SiteHomeSummaryPayload, type SiteMediaEmbed } from '@/l12/platform'
 import { articleBodyText } from './articleBlocks'
 import { defaultHomeComposition, defaultSiteLegal, parseHomeComposition, parseSiteLegal, type HomeHeroSlide } from './homeContent'
 import { loadPublishedHomeCache, savePublishedHomeCache } from './homePublishedCache'
@@ -20,10 +20,10 @@ const initialLoadFailed = ref(false)
 const retrying = ref(false)
 const composition = ref(defaultHomeComposition())
 const legal = ref(defaultSiteLegal())
-const news = ref<Article[]>([])
-const videos = ref<Article[]>([])
-const products = ref<Article[]>([])
-const media = ref<SiteMedia[]>([])
+const news = ref<ArticleSummary[]>([])
+const videos = ref<ArticleSummary[]>([])
+const products = ref<ArticleSummary[]>([])
+const media = ref<SiteMediaEmbed[]>([])
 const activeIndex = ref(0)
 const carouselPaused = ref(false)
 const carouselCycle = ref(0)
@@ -57,15 +57,15 @@ const videoEyebrow = computed(() => ['', 'COMMUNITY MOVIE'].includes(composition
 const videoHeading = computed(() => ['', '社群视频'].includes(composition.value.videoTitle.trim()) ? '最新视频' : composition.value.videoTitle.trim())
 const productHeading = computed(() => ['', '商品情报', '最新商品'].includes(composition.value.productTitle.trim()) ? '产品上新' : composition.value.productTitle.trim())
 const productCategories = computed(() => {
-  const firstByCategory = new Map<string, Article>()
+  const firstByCategory = new Map<string, ArticleSummary>()
   for (const item of products.value) if (!firstByCategory.has(item.category)) firstByCategory.set(item.category, item)
   return [...firstByCategory.values()]
 })
 
 const isInternal = (href?: string) => Boolean(href?.startsWith('/') && !href.startsWith('//'))
-const mediaFor = (article?: Article) => media.value.find(item => item.id === article?.mediaAssetId)
-const articleHref = (article: Article, fallback: string) => fallback === '/news' ? `/news/${article.id}` : article.link || fallback
-const dateLabel = (article: Article) => new Date(article.publishedAt || article.publishAt || article.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+const mediaFor = (article?: ArticleSummary) => media.value.find(item => item.id === article?.mediaAssetId)
+const articleHref = (article: ArticleSummary, fallback: string) => fallback === '/news' ? `/news/${article.id}` : article.link || fallback
+const dateLabel = (article: ArticleSummary) => new Date(article.publishedAt || article.publishAt || article.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 
 function showSlide(index: number, restart = true) {
   activeIndex.value = (index + enabledSlides.value.length) % enabledSlides.value.length
@@ -82,12 +82,18 @@ function startCarousel() {
 }
 function toggleCarousel() { carouselPaused.value = !carouselPaused.value; startCarousel() }
 
-function applyPublishedHome(payload: SiteHomePayload) {
+function homeArticleSummary(article: Article | ArticleSummary): ArticleSummary {
+  // Keep legacy published-cache recovery, but never retain full bodies in homepage state.
+  const { body, bodyMedia: _bodyMedia, ...metadata } = article as Article & Partial<ArticleSummary>
+  return { ...metadata, bodyPreview: typeof metadata.bodyPreview === 'string' ? metadata.bodyPreview
+    : !metadata.summary && typeof body === 'string' ? articleBodyText(body).slice(0, 260) : '' }
+}
+function applyPublishedHome(payload: SiteHomePayload | SiteHomeSummaryPayload) {
   const nextComposition = parseHomeComposition(payload.composition)
   const nextLegal = parseSiteLegal(payload.legal)
-  const nextNews = [...payload.news]
-  const nextVideos = [...payload.videos]
-  const nextProducts = [...payload.products]
+  const nextNews = payload.news.map(homeArticleSummary)
+  const nextVideos = payload.videos.map(homeArticleSummary)
+  const nextProducts = payload.products.map(homeArticleSummary)
   const nextMedia = [...payload.media]
   composition.value = nextComposition
   legal.value = nextLegal
@@ -124,7 +130,7 @@ function refreshPublishedHome() {
     // before the public request begins.
     await Promise.resolve()
     try {
-      const payload = await siteContentApi.home()
+      const payload = await siteContentApi.homeSummary()
       if (disposed || generation !== refreshGeneration) return
       applyPublishedHome(payload)
       savePublishedHomeCache(payload)
@@ -162,8 +168,10 @@ function refreshWhenVisible() {
   void refreshPublishedHome()
 }
 onMounted(() => {
-  const cached = loadPublishedHomeCache()
-  if (cached) { applyPublishedHome(cached); ready.value = true; startCarousel() }
+  try {
+    const cached = loadPublishedHomeCache()
+    if (cached) { applyPublishedHome(cached); ready.value = true; startCarousel() }
+  } catch { /* A bad optional cache must never prevent the one fresh public request below. */ }
   void refreshPublishedHome()
   window.addEventListener('online', refreshWhenVisible)
   window.addEventListener('offline', refreshWhenVisible)
@@ -201,7 +209,7 @@ onBeforeUnmount(() => {
     <section id="news" class="news-section">
       <header class="section-heading"><div><small>{{ composition.newsEyebrow || 'NEWS' }}</small><h2>{{ newsHeading }}</h2></div><router-link to="/news">更多 <b>→</b></router-link></header>
       <div v-if="homeNews.length" class="featured-editorial-layout">
-        <component :is="isInternal(articleHref(homeNews[0]!, '/news')) ? 'router-link' : 'a'" class="home-editorial-card featured-editorial-main" data-kind="news" :to="isInternal(articleHref(homeNews[0]!, '/news')) ? articleHref(homeNews[0]!, '/news') : undefined" :href="isInternal(articleHref(homeNews[0]!, '/news')) ? undefined : articleHref(homeNews[0]!, '/news')" :target="isInternal(articleHref(homeNews[0]!, '/news')) ? undefined : '_blank'" rel="noopener"><picture v-if="mediaFor(homeNews[0])"><source media="(max-width: 760px)" :srcset="mediaFor(homeNews[0])?.mobileUrl"><img :src="mediaFor(homeNews[0])?.desktopUrl" :alt="homeNews[0]!.title"></picture><img v-else-if="homeNews[0]!.coverUrl" :src="homeNews[0]!.coverUrl" :alt="homeNews[0]!.title"><div v-else class="editorial-placeholder">NEWS</div><span class="home-card-copy"><small>{{ homeNews[0]!.category }} · {{ dateLabel(homeNews[0]!) }}</small><b>{{ homeNews[0]!.title }}</b><p>{{ homeNews[0]!.summary || articleBodyText(homeNews[0]!.body) }}</p></span></component>
+        <component :is="isInternal(articleHref(homeNews[0]!, '/news')) ? 'router-link' : 'a'" class="home-editorial-card featured-editorial-main" data-kind="news" :to="isInternal(articleHref(homeNews[0]!, '/news')) ? articleHref(homeNews[0]!, '/news') : undefined" :href="isInternal(articleHref(homeNews[0]!, '/news')) ? undefined : articleHref(homeNews[0]!, '/news')" :target="isInternal(articleHref(homeNews[0]!, '/news')) ? undefined : '_blank'" rel="noopener"><picture v-if="mediaFor(homeNews[0])"><source media="(max-width: 760px)" :srcset="mediaFor(homeNews[0])?.mobileUrl"><img :src="mediaFor(homeNews[0])?.desktopUrl" :alt="homeNews[0]!.title"></picture><img v-else-if="homeNews[0]!.coverUrl" :src="homeNews[0]!.coverUrl" :alt="homeNews[0]!.title"><div v-else class="editorial-placeholder">NEWS</div><span class="home-card-copy"><small>{{ homeNews[0]!.category }} · {{ dateLabel(homeNews[0]!) }}</small><b>{{ homeNews[0]!.title }}</b><p>{{ homeNews[0]!.summary || homeNews[0]!.bodyPreview }}</p></span></component>
         <div v-if="homeNews.length > 1" class="featured-editorial-support"><component :is="isInternal(articleHref(item, '/news')) ? 'router-link' : 'a'" v-for="item in homeNews.slice(1)" :key="item.id" class="home-editorial-card" data-kind="news" :to="isInternal(articleHref(item, '/news')) ? articleHref(item, '/news') : undefined" :href="isInternal(articleHref(item, '/news')) ? undefined : articleHref(item, '/news')" :target="isInternal(articleHref(item, '/news')) ? undefined : '_blank'" rel="noopener"><picture v-if="mediaFor(item)"><source media="(max-width: 760px)" :srcset="mediaFor(item)?.mobileUrl"><img :src="mediaFor(item)?.desktopUrl" :alt="item.title"></picture><img v-else-if="item.coverUrl" :src="item.coverUrl" :alt="item.title"><div v-else class="editorial-placeholder">NEWS</div><span class="home-card-copy"><small>{{ dateLabel(item) }} · {{ item.category }}</small><b>{{ item.title }}</b></span></component></div>
       </div>
       <p v-else class="home-content-empty" role="status">暂无资讯</p>

@@ -4,6 +4,7 @@ import ts from 'typescript'
 import { compileScript, parse as parseSfc } from '@vue/compiler-sfc'
 import { homeAccountVerified, homeCanContinueGame } from '../src/l12/site/homeRevisit.ts'
 import { tournamentHubSection } from '../src/l12/site/tournamentHubNavigation.ts'
+import { articleBodyText } from '../src/l12/site/articleBlocks.ts'
 
 let assertions = 0
 const equal = (value, expected, message) => { assert.deepEqual(value, expected, message); assertions++ }
@@ -33,6 +34,11 @@ equal(module.loadPublishedHomeCache({getItem: key => key.endsWith('-v2') ? JSON.
 equal(module.loadPublishedHomeCache({getItem: key => key.endsWith('-v1') ? JSON.stringify(payload) : null}), payload)
 equal(module.savePublishedHomeCache(payload,{setItem:() => { throw Error('quota') }}), false)
 equal(module.savePublishedHomeCache(payload,{setItem:() => undefined}), true)
+for(const collection of ['news','videos','products'])
+  for(const badRow of [null,42,'broken',{}, {id:'missing-title'}])
+    equal(module.loadPublishedHomeCache({getItem:()=>JSON.stringify({version:2,payload:{...payload,[collection]:[badRow]}})}),null,'malformed cached content rows are rejected without touching storage')
+for(const badRow of [null,{},'broken'])
+  equal(module.loadPublishedHomeCache({getItem:()=>JSON.stringify({...payload,media:[badRow]})}),null,'malformed cached media rows are rejected')
 
 const homeSource = fs.readFileSync(new URL('../src/l12/site/OfficialHomePage.vue', import.meta.url), 'utf8')
 const descriptor = parseSfc(homeSource, { filename:'OfficialHomePage.vue' }).descriptor
@@ -87,9 +93,9 @@ async function mountHome({ cached=null, hidden=false, online=true } = {}) {
       onMounted:callback=>mounted.push(callback),
       onBeforeUnmount:callback=>unmounted.push(callback),
     },
-    platform:{ authState:{verified:false}, platformState:{account:null,token:''}, siteContentApi:{home(){ const item=deferred(); requests.push(item); return item.promise }} },
+    platform:{ authState:{verified:false}, platformState:{account:null,token:''}, siteContentApi:{homeSummary(){ const item=deferred(); requests.push(item); return item.promise },home(){throw Error('Homepage must not request the legacy full payload')}} },
     dependencies:{
-      articleBodyText:()=>'', defaultHomeComposition:()=>({heroSlides:[],notices:[],newsTitle:'',videoEyebrow:'',videoTitle:'',productTitle:'',productEyebrow:''}),
+      articleBodyText, defaultHomeComposition:()=>({heroSlides:[],notices:[],newsTitle:'',videoEyebrow:'',videoTitle:'',productTitle:'',productEyebrow:''}),
       defaultSiteLegal:()=>({}), parseHomeComposition:value=>JSON.parse(value), parseSiteLegal:()=>({}),
       loadPublishedHomeCache:()=>cached, savePublishedHomeCache:value=>{saved.push(value);return true},
       homeAccountVerified:()=>false, deploymentPath:value=>value,
@@ -226,6 +232,34 @@ for(const paused of ['hidden','offline']) {
   }finally{await home.unmount()}
   equal(home.listeners.length,0,paused+' cleanup removes every recovery listener')
 }
+
+{
+  const legacyRow={id:'legacy-news',title:'旧缓存标题',summary:'',body:'旧的完整公开正文'.repeat(100),bodyMedia:[{id:'body-only'}]}
+  const cached={...publishedPayload,news:[legacyRow]}
+  const home=await mountHome({cached})
+  try{
+    equal(home.state.news.value[0].title,'旧缓存标题')
+    equal(home.state.news.value[0].bodyPreview.length,260,'legacy cached content keeps only a bounded preview')
+    equal('body' in home.state.news.value[0],false,'legacy full body never enters homepage state')
+    equal('bodyMedia' in home.state.news.value[0],false,'legacy body embeds never enter homepage state')
+    const summary={id:'fresh-news',title:'最新摘要',summary:'',bodyPreview:'服务端有界预览',mediaAssetId:'cover'}
+    home.requests[0].resolve({...publishedPayload,news:[summary]});await flush()
+    equal(home.state.news.value[0],summary)
+    equal(home.saved[0].news[0],summary,'new cache saves the actual summary payload')
+    equal(legacyRow.body.length>260,true,'reading old cached data does not mutate its source')
+  }finally{await home.unmount()}
+}
+{
+  const home=await mountHome({cached:{...publishedPayload,news:[null]}})
+  try{
+    equal(home.requests.length,1,'an unusable old cache must never block the fresh summary request')
+    equal(home.state.ready.value,false,'corrupt cache must not claim a published snapshot')
+    home.requests[0].resolve(publishedPayload);await flush()
+    equal(home.state.ready.value,true,'the fresh published summary recovers from corrupt cached rows')
+  }finally{await home.unmount()}
+}
+assert(homeSource.includes('homeNews[0]!.bodyPreview'),'homepage feature must render the bounded preview, not a full-body fallback')
+assert(!homeSource.includes('articleBodyText(homeNews[0]!.body)'))
 
 const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 Object.defineProperty(globalThis, 'localStorage', { configurable:true, get:() => { throw Error('storage getter blocked') } })

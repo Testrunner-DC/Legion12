@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-home-summary",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "首页内容加载",
+  "changes": [{
+    "category": "content",
+    "text": "首页只读取资讯、视频和产品的摘要与所需图片，打开文章后再读取完整内容；损坏的本地缓存不再阻止首页重新加载。",
+    "paths": ["opcgpro-vue/src/l12/site/OfficialHomePage.vue", "opcgpro-vue/src/l12/site/homePublishedCache.ts", "opcgpro-vue/src/l12/platform.ts", "opcgpro-vue/src/l12/platformSiteContentContracts.ts", "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+  }]
+}

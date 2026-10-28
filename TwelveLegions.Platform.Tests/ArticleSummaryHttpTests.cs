@@ -5,12 +5,127 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace TwelveLegions.Platform.Tests;
 
 [Collection("Platform environment")]
 public sealed class ArticleSummaryHttpTests
 {
+    private readonly ITestOutputHelper _output;
+    public ArticleSummaryHttpTests(ITestOutputHelper output) => _output = output;
+
+    [Fact]
+    public async Task HomeSummaryPreservesPublishedSelectionWithoutBodiesOrAdminMediaProjection()
+    {
+        await WithServer(async (store, admin, client) =>
+        {
+            var cover = Upload(store, admin, "news");
+            var bodyImage = Upload(store, admin, "article");
+            var body = JsonSerializer.Serialize(new { format = "l12-blocks", version = 1, blocks = new object[] {
+                new { id = "paragraph", type = "paragraph", text = "首页公开正文 " + new string('x', 15_000) },
+                new { id = "paragraph-2", type = "paragraph", text = new string('y', 15_000) },
+                new { id = "paragraph-3", type = "paragraph", text = new string('z', 15_000) },
+                new { id = "body-image", type = "image", mediaAssetId = bodyImage.Id, alt = "合成正文图片", caption = "仅详情素材" } } });
+            var category = store.PublicSiteCategories("news").First();
+            var draft = store.SaveArticleDraft(admin, new(null, "首页公开标题", "", body, category.Name,
+                "", "", "home-summary-public", true, null, CategoryId: category.Id, MediaAssetId: cover.Id));
+            var published = store.PublishArticle(admin, draft.Id);
+            store.SaveArticleDraft(admin, new(published.Id, "隐藏草稿标题", "隐藏草稿摘要", "隐藏草稿正文",
+                category.Name, "", "", published.Slug, false, null, ExpectedRevision: published.Revision,
+                CategoryId: category.Id, MediaAssetId: cover.Id));
+            var future = store.SaveArticleDraft(admin, new(null, "未来标题", "", "尚未公开",
+                category.Name, "", "", "home-summary-future", false, DateTimeOffset.UtcNow.AddDays(1), CategoryId: category.Id));
+            store.PublishArticle(admin, future.Id);
+            var legacyText = await client.GetStringAsync("/api/site/home");
+            Assert.Contains("bodyMedia", legacyText);
+            _output.WriteLine("Legacy home synthetic UTF8 bytes: " + Encoding.UTF8.GetByteCount(legacyText));
+            var scans = 0;
+            store.SiteMediaReferenceScanObserver = () => scans++;
+            using var response = await client.GetAsync("/api/site/home-summary");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var summaryText = await response.Content.ReadAsStringAsync();
+            using var summary = JsonDocument.Parse(summaryText);
+            using var legacy = JsonDocument.Parse(legacyText);
+            Assert.Equal(0, scans);
+            foreach (var name in new[] { "news", "videos", "products" })
+            {
+                Assert.Equal(legacy.RootElement.GetProperty(name).EnumerateArray().Select(row => row.GetProperty("id").GetString()),
+                    summary.RootElement.GetProperty(name).EnumerateArray().Select(row => row.GetProperty("id").GetString()));
+                foreach (var row in summary.RootElement.GetProperty(name).EnumerateArray())
+                {
+                    Assert.False(row.TryGetProperty("body", out _));
+                    Assert.False(row.TryGetProperty("bodyMedia", out _));
+                    Assert.InRange(row.GetProperty("bodyPreview").GetString()!.Length, 0, 261);
+                }
+            }
+            var news = Assert.Single(summary.RootElement.GetProperty("news").EnumerateArray());
+            Assert.Equal("首页公开标题", news.GetProperty("title").GetString());
+            Assert.Contains("首页公开正文", news.GetProperty("bodyPreview").GetString());
+            var image = Assert.Single(summary.RootElement.GetProperty("media").EnumerateArray());
+            Assert.Equal(cover.Id, image.GetProperty("id").GetString());
+            Assert.Equal(cover.DesktopUrl, image.GetProperty("desktopUrl").GetString());
+            Assert.Equal(cover.MobileUrl, image.GetProperty("mobileUrl").GetString());
+            foreach (var key in new[] { "referenceCount", "createdBy", "contentHash", "originalBytes" })
+                Assert.False(image.TryGetProperty(key, out _));
+            Assert.DoesNotContain(bodyImage.Id, summaryText);
+            Assert.DoesNotContain("隐藏草稿", summaryText);
+            Assert.DoesNotContain(future.Id, summaryText);
+            Assert.Equal(legacy.RootElement.GetProperty("composition").GetString(), summary.RootElement.GetProperty("composition").GetString());
+            Assert.Equal(legacy.RootElement.GetProperty("legal").GetString(), summary.RootElement.GetProperty("legal").GetString());
+            Assert.True(Encoding.UTF8.GetByteCount(summaryText) * 10 < Encoding.UTF8.GetByteCount(legacyText));
+            _output.WriteLine("Summary home synthetic UTF8 bytes: " + Encoding.UTF8.GetByteCount(summaryText));
+            store.SiteMediaReferenceScanObserver = null;
+            using var detail = JsonDocument.Parse(await client.GetStringAsync("/api/articles/by-key/" + published.Id));
+            Assert.Equal(body, detail.RootElement.GetProperty("body").GetString());
+            store.ChangeArticleStatus(admin, published.Id, "withdraw");
+            using var withdrawn = JsonDocument.Parse(await client.GetStringAsync("/api/site/home-summary"));
+            Assert.Empty(withdrawn.RootElement.GetProperty("news").EnumerateArray());
+            Assert.Empty(withdrawn.RootElement.GetProperty("media").EnumerateArray());
+        });
+    }
+
+    [Fact]
+    public async Task HomeSummaryKeepsAllThreeLimitsOrderingAndHeroCoverSelections()
+    {
+        await WithServer(async (store, admin, client) =>
+        {
+            foreach (var (kind, limit) in new[] { ("news", 7), ("video", 6), ("product", 8) })
+            {
+                var category = store.PublicSiteCategories(kind).First();
+                var media = Upload(store, admin, kind);
+                for (var index = 0; index < limit + 2; index++)
+                {
+                    var draft = store.SaveArticleDraft(admin, new(null, kind + index, "公开摘要", "公开正文",
+                        category.Name, "", kind == "video" ? "https://example.com/video" : "", "home-" + kind + index,
+                        index == 0, null, Kind: kind, CategoryId: category.Id, MediaAssetId: media.Id,
+                        VideoAuthorName: kind == "video" ? "合成作者" : ""));
+                    store.PublishArticle(admin, draft.Id);
+                }
+            }
+            var hero = Upload(store, admin, "hero");
+            var composition = JsonSerializer.Serialize(new { version = 1, heroSlides = new[] {
+                new { id = "home-hero", enabled = true, title = "已发布轮播", mediaAssetId = hero.Id, href = "/news" } }, notices = Array.Empty<object>() });
+            store.SaveContentDraft(admin, L12PlatformStore.HomeCompositionContentKey, composition);
+            store.PublishContent(admin, L12PlatformStore.HomeCompositionContentKey);
+            using var legacy = JsonDocument.Parse(await client.GetStringAsync("/api/site/home"));
+            using var summary = JsonDocument.Parse(await client.GetStringAsync("/api/site/home-summary"));
+            foreach (var (key, limit) in new[] { ("news", 7), ("videos", 6), ("products", 8) })
+            {
+                var expected = legacy.RootElement.GetProperty(key).EnumerateArray().ToArray();
+                var actual = summary.RootElement.GetProperty(key).EnumerateArray().ToArray();
+                Assert.Equal(limit, actual.Length);
+                Assert.Equal(expected.Select(row => row.GetProperty("id").GetString()), actual.Select(row => row.GetProperty("id").GetString()));
+                Assert.Equal(expected.Select(row => row.GetProperty("title").GetString()), actual.Select(row => row.GetProperty("title").GetString()));
+                Assert.All(actual, row => Assert.False(row.TryGetProperty("body", out _)));
+            }
+            Assert.Equal(legacy.RootElement.GetProperty("composition").GetString(), summary.RootElement.GetProperty("composition").GetString());
+            Assert.Equal(legacy.RootElement.GetProperty("media").EnumerateArray().Select(row => row.GetProperty("id").GetString()),
+                summary.RootElement.GetProperty("media").EnumerateArray().Select(row => row.GetProperty("id").GetString()));
+            Assert.Contains(summary.RootElement.GetProperty("media").EnumerateArray(), row => row.GetProperty("id").GetString() == hero.Id);
+        });
+    }
+
     [Theory]
     [InlineData("news")]
     [InlineData("product")]
@@ -187,7 +302,7 @@ public sealed class ArticleSummaryHttpTests
         return store.UploadSiteMedia(admin, new L12SiteMediaUpload(kind, kind + ".webp", "image/webp",
             Webp(policy.DesktopWidth, policy.DesktopHeight), Webp(policy.DesktopWidth, policy.DesktopHeight),
             Webp(policy.MobileWidth, policy.MobileHeight), Webp(policy.ThumbnailWidth, policy.ThumbnailHeight),
-            "合成封面", .5, .5, "桌面", "移动", "缩略", false));
+            "合成封面", .5, .5, "桌面", "移动", "缩略", kind == "hero"));
     }
 
     private static byte[] Webp(int width, int height)

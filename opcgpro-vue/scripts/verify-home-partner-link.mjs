@@ -42,7 +42,7 @@ const platform=await import('/src/l12/platform.ts')
 platform.platformState.account=null;platform.platformState.token=''
 platform.authState.initialized=true;platform.authState.verified=false
 const calls=[]
-platform.siteContentApi.home=async()=>{calls.push('local-home-fixture');return {composition:JSON.stringify({version:1,heroSlides:[],notices:[]}),legal:'{}',news:[],videos:[],products:[],media:[]}}
+platform.siteContentApi.homeSummary=async()=>{calls.push('local-home-fixture');return {composition:JSON.stringify({version:1,heroSlides:[],notices:[]}),legal:'{}',news:[],videos:[],products:[],media:[]}}
 platform.telemetryApi.pageView=async()=>{calls.push('local-page-view-fixture')}
 platform.alternateArtApi.notifications=async()=>[]
 platform.seasonSummaryApi.notifications=async()=>[]

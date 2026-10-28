@@ -1,11 +1,16 @@
-import type { SiteHomePayload } from '@/l12/platform'
+import type { SiteHomePayload, SiteHomeSummaryPayload } from '@/l12/platform'
 
 const CACHE_KEY = 'l12-home-published-v2'
 const LEGACY_KEYS = ['l12-home-published-v1', 'l12-site-home-v1']
 
-type CachedHome = { version: 2; savedAt: string; payload: SiteHomePayload }
+type PublishedHomePayload = SiteHomePayload | SiteHomeSummaryPayload
+type CachedHome = { version: 2; savedAt: string; payload: PublishedHomePayload }
 
-function isPayload(value: unknown): value is SiteHomePayload {
+function hasRowFields(value: unknown, fields: string[]) {
+  return !!value && typeof value === 'object'
+    && fields.every(field => typeof (value as Record<string, unknown>)[field] === 'string')
+}
+function isPayload(value: unknown): value is PublishedHomePayload {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Partial<SiteHomePayload>
   return typeof candidate.composition === 'string'
@@ -14,15 +19,17 @@ function isPayload(value: unknown): value is SiteHomePayload {
     && Array.isArray(candidate.videos)
     && Array.isArray(candidate.products)
     && Array.isArray(candidate.media)
+    && [...candidate.news, ...candidate.videos, ...candidate.products].every(row => hasRowFields(row, ['id', 'title']))
+    && candidate.media.every(row => hasRowFields(row, ['id']))
 }
 
-function parse(value: string | null): SiteHomePayload | null {
+function parse(value: string | null): PublishedHomePayload | null {
   if (!value) return null
   try {
     const decoded = JSON.parse(value) as unknown
     if (isPayload(decoded)) return decoded
     if (decoded && typeof decoded === 'object' && isPayload((decoded as { payload?: unknown }).payload))
-      return (decoded as { payload: SiteHomePayload }).payload
+      return (decoded as { payload: PublishedHomePayload }).payload
   } catch { /* Corrupt cache must never replace the in-memory published state. */ }
   return null
 }
@@ -40,7 +47,7 @@ export function loadPublishedHomeCache(storage?: Pick<Storage, 'getItem'>) {
   return null
 }
 
-export function savePublishedHomeCache(payload: SiteHomePayload,
+export function savePublishedHomeCache(payload: PublishedHomePayload,
   storage?: Pick<Storage, 'setItem'>) {
   if (!isPayload(payload)) return false
   try {
