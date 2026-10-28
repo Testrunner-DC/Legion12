@@ -1982,4 +1982,5 @@ if (failures.length) {
   process.exit(1)
 }
 
+await import('./test-platform-alternate-art-contracts.mjs')
 console.log(`UI 契约检查通过（${contracts.length} 项）`)

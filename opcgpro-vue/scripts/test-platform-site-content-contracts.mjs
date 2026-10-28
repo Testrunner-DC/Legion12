@@ -34,7 +34,7 @@ function validate(source, entry) {
 }
 validate(moduleSource, platform)
 assert.throws(() => validate(moduleSource + '\nexport const runtime = 1', platform))
-assert.throws(() => validate(moduleSource, platform.replace('export type {', 'export {')))
+assert.throws(() => validate(moduleSource, platform.replace('export type { SiteContentKind', 'export { SiteContentKind')))
 assert.throws(() => validate(moduleSource, platform.replace('import type { SiteContentKind', 'import { SiteContentKind')))
 assert.throws(() => validate(moduleSource.replace('export interface SiteHomePayload', 'interface SiteHomePayload'), platform))
 assert.throws(() => validate(moduleSource, platform.replace('export type { SiteContentKind', 'export type { SiteMedia as SiteContentKind')))

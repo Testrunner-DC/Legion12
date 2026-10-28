@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## REFACTOR-20261028-ALTERNATE-ART-CONTRACTS｜G6画廊纯类型边界原样提取
+
+- 已批准的综合工程目标G6下一最小片：platform.ts的204—211与216—218原11接口移入platformAlternateArtContracts，夹在中间的4存储类型不移动。所有自定义引用在这11名内闭合；原入口11个import type/原名export type保CardArchive、L12DeckEditor、GameBoard、AdminAlternateArtsPanel、DeckLibraryPage、ProfilePage、SiteShell七消费页，页面无需改导入。P2/P4组织扩展不碰P0/P1/P3。
+- 原声明向量与新模块SHA同9023ed85；其余接口、鉴权、请求与存储源码按换行归一化相等；整platform擦除类型后的JS同A9D22B2F逐字节相等，新模块仅export{}。新AST守卫保可空products/rarities、kind/sourceKind联合、唯一声明、纯类型导入导出与七页入口，8个损坏反例均拒绝，并挂原UI标准链；旧site-content守卫的泛化“第一个export type”变异误击新域，已仅绑定原SiteContentKind，不减原6反例。
+- 实际专项全部通过：声明/其余源码/JS同值证明、11型/7消费/8反例、17旧site-content/6反例、原异画权益实际SFC4场、原会话边界与UI361。Main合并移动族后的frontend-main-r5完整UI/两类型/双610构建通过，源精确绑定A7742E69/CEBC3159；没有必要重跑不变后台或浏览器来为纯类型拆分造证。原Windows模块地址入口失败、旧QA变异误击失败均保留，不说成业务RED或删掉失败。
+- 唯一证据`stage-goals-20261025/g6-alternate-art-contracts`，原始专项输出在执行记录、focused-r3-result绑定退出码和源，完整前端日志在`response-prompt-visibility-20261028/graveyard-passive-wait/frontend-main-r5`。不冒G6全收口、性能改善、Release或已部署。回滚只需原11声明返原处并去本域类型导入/导出；接口请求体和权限不动。
+
 ## FIX-20261028-PASSIVE-WAIT-GRAVEYARD｜等待对手不阻挡公共墓地查看
 
 - 新反馈c25df143的“等待时不能看墓地”已用实际SFC两入口证实：旧hasBlockingPrompt把被动waiting也视为本人阻断，而被动等待本来无最小化按钮，形成不可查看。人类call_a9b2546b6eb741df9b5790d586990073批准限定共享修复；同反馈动画未完不能继续自由动作保既有UI-20261024规则，不混改队列/动画/计时。

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-alternate-art-contracts-internal",
+  "date": "2026-10-28",
+  "audience": "internal",
+  "reason": "画廊与异画的11个纯前端类型原样移入领域合同模块，保留原接口入口的类型导入及导出；编译后的整份接口运行代码逐字节不变。不改变页面、接口、权限或业务数据，不宣称性能改善。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/platformAlternateArtContracts.ts"
+  ]
+}

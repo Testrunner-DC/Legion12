@@ -2,6 +2,9 @@
 
 ## 2026-10-28 10点后当前执行状态（覆盖下面早先“同步中/未实现”阶段）
 
+- 11点补记：赛事/响应/墓地52叶已实际提交并非强推、远端同`104648a3285f728d1d0e91c441d65157a4d582c7`读回，唯一`integration-20261028/followup-synchronization.json`。下方3f与“尚未提交”是此前阶段，不重做同步。两服仍d557，维护已解除，无本轮线上关单。
+- 人类要求关闭反复开启的1.5×：全局config.toml仅service_tier priority→default，模型/思考档不变，实际读回仍default。Computer Use禁止代操作Codex自身界面，未改会话数据库或冒称已运行任务独立档位均已关闭；后续不得主动启用加速。
+- G6画廊11纯接口已原样提取、七消费入口不变，声明9023ed85及整platform擦除JS A9D22B2F与原件相同；8反例/17旧合同6反例/权益SFC/会话/UI361均过。最终frontend-main-r5完整UI/两类型/双610构建通过，两个CSS的另批移动修复亦绑定；不重复后台/原30＋10，不冒性能或Release。当前G6待源码同步，原Windows入口/旧QA变异失败保留；回执`g6-alternate-art-contracts/focused-r3-result.json`。
 - 数据终态95bf584f与活动基础3f356187已分族非强推并独立远端同3f读回；两服仍d557，不重复部署或解除维护。Main39专项/2736完整平台/前端15/两类型等真实验收见`bug-closeout-remaining-20261027/integration-20261028/main-acceptance.json`及`synchronization.json`。活动worker/慢Recorder/部署消费未实现，不能把基础同步冒全功能完成。
 - 赛事新族后台NewTournament不自动参赛、legacy不补actor、登录/公共Registered排Dropped均已实现，原4RED→4绿；48直接夹具真实组合报名，另2HTTP旧夹具改主动POST，全关联224/224。固定服务/测试DLL A67332B7/827881AB的完整平台r5已实际2740/2740零失败跳过，TRX2E39F231；仅随后测试行尾空格清理，有原字节重建校验，不重复全量。
 - 赛事18前端叶（唯一规则展示/正确人数/个人退赛状态）冻结；共享13/light30/mode46等、最终两类型/双610及12浏览器实际通过。Main复查原始截图与公共DTO，图像为合成manifest映射，不冒真实线上数据或真机。后到GameBoard产品不在该前端构建中；余下整体资格须重绑实际源。实际最后HEAD/remote为3f，赛事尚未提交/热修。
