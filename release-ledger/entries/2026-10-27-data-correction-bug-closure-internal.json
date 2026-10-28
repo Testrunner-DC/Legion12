@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-27-data-correction-bug-closure-internal",
+  "date": "2026-10-27",
+  "audience": "internal",
+  "reason": "后台Bug可如实核验已有异画数据更正，不编造代码修复提交；仅补原审计和当前权威值验证、管理终态及核验标签。没有更改卡效、图库数据或玩家功能，不写入玩家更新日志。此片隔离本地验收，不属于已冻结的06点8ec发布包。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.BugDataCorrections.cs",
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminBugsPage.vue"
+  ]
+}

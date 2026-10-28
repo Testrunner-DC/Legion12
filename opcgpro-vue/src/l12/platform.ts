@@ -94,7 +94,7 @@ export interface BugReport {
   diagnostic?: BugRuntimeDiagnostic; clientDiagnostic?: BugClientConnectionDiagnostic
   connectionDiagnostic?: BugConnectionClaimDiagnostic
   fixCommit?: string; regressionTest?: string; deployedVersion?: string; verifiedBy?: string; verifiedAt?: string; duplicateOf?: string
-  closureDisposition?: 'fixed_verified' | 'duplicate' | 'rejected'
+  closureDisposition?: 'fixed_verified' | 'duplicate' | 'rejected' | 'data_corrected_verified'
 }
 export interface AdminBugPage { items: BugReport[]; page: number; pageSize: number; total: number; platformVersion: number }
 export interface BugRuntimeDiagnostic {

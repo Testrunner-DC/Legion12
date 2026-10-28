@@ -1460,13 +1460,17 @@ public sealed partial class L12PlatformStore
                 && (!wasTerminal || !string.Equals(row.ClosureDisposition, nextClosureDisposition,
                     StringComparison.Ordinal));
 
+            if (nextClosureDisposition == "data_corrected_verified")
+                RequireDataCorrectionInputShape(fixCommit, regressionTest, deployedVersion,
+                    duplicateOf, closureDisposition);
+
             if (!willBeTerminal && closureDisposition is not null
                 && !string.IsNullOrWhiteSpace(nextClosureDisposition))
                 throw new L12BugClosureValidationException("bug_closure_disposition_without_closure",
                     "只有关闭反馈时才能选择关闭类型。");
             if (willBeTerminal && (!wasTerminal || row.ClosureDisposition is not null
                     || closureDisposition is not null))
-                ValidateBugClosure(row, nextClosureDisposition, nextFixCommit, nextRegressionTest,
+                ValidateBugClosure(row, nextStatus, nextClosureDisposition, nextFixCommit, nextRegressionTest,
                     nextDeployedVersion, nextDuplicateOf, comment, enteringClosure);
             if (validateOnly) return ToView(row);
 
@@ -1500,7 +1504,9 @@ public sealed partial class L12PlatformStore
             }
             if (!string.IsNullOrWhiteSpace(comment))
             {
-                row.History.Add(NewBugAudit(actor, "comment", null, null,
+                var commentAction = enteringClosure && nextClosureDisposition == "data_corrected_verified"
+                    ? "data-correction-proof" : "comment";
+                row.History.Add(NewBugAudit(actor, commentAction, null, null,
                     comment.Trim()[..Math.Min(comment.Trim().Length, 2000)]));
                 changed = true;
             }
@@ -1512,7 +1518,7 @@ public sealed partial class L12PlatformStore
             var requestedDisposition = appliedDisposition ?? (row.ClosureDisposition is null ? null : string.Empty);
             changed |= UpdateBugEvidence(row, actor, "closure-disposition", row.ClosureDisposition,
                 requestedDisposition, value => row.ClosureDisposition = value);
-            if (enteringClosure && string.Equals(appliedDisposition, "fixed_verified", StringComparison.Ordinal))
+            if (enteringClosure && IsVerifiedBugDisposition(appliedDisposition))
             {
                 var verifiedAt = DateTimeOffset.UtcNow;
                 changed |= UpdateBugEvidence(row, actor, "verified-by", row.VerifiedBy, actor.Username,
@@ -1522,7 +1528,7 @@ public sealed partial class L12PlatformStore
                 row.VerifiedAt = verifiedAt;
                 changed = true;
             }
-            else if (!willBeTerminal || !string.Equals(appliedDisposition, "fixed_verified", StringComparison.Ordinal))
+            else if (!willBeTerminal || !IsVerifiedBugDisposition(appliedDisposition))
             {
                 changed |= UpdateBugEvidence(row, actor, "verified-by", row.VerifiedBy, string.Empty,
                     value => row.VerifiedBy = value);
@@ -1542,10 +1548,16 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private void ValidateBugClosure(BugRow row, string? disposition, string? fixCommit,
+    private void ValidateBugClosure(BugRow row, string targetStatus, string? disposition, string? fixCommit,
         string? regressionTest, string? deployedVersion, string? duplicateOf, string? comment,
         bool enteringClosure)
     {
+        if (disposition == "data_corrected_verified")
+        {
+            ValidateDataCorrectionClosure(row, targetStatus, fixCommit, regressionTest,
+                deployedVersion, duplicateOf, comment, enteringClosure);
+            return;
+        }
         if (disposition is not ("fixed_verified" or "duplicate" or "rejected"))
             throw new L12BugClosureValidationException("bug_closure_disposition_required",
                 "请选择关闭类型：修复已复测、重复反馈或不成立或证据不足。");

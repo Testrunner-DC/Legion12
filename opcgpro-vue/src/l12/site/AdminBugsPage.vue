@@ -73,6 +73,7 @@ function discardDraft(item: BugReport) {
 
 const dispositionLabels: Record<ClosureDisposition, string> = {
   fixed_verified: '修复已复测',
+  data_corrected_verified: '数据修正已核验',
   duplicate: '重复反馈',
   rejected: '不成立或证据不足',
 }
@@ -81,6 +82,7 @@ const actionLabel = (action: string) => ({
   notes: '处理摘要变更', comment: '追加处理记录', 'fix-commit': '关联修复提交',
   'regression-test': '关联回归测试', 'deployed-version': '记录部署版本',
   'verified-by': '记录验证人', 'verified-at': '记录验证时间', 'duplicate-of': '关联重复问题',
+  'data-correction-proof': '已核验的数据修正证据（本地摘要为操作人绑定）',
   'closure-disposition': '记录关闭类型',
 } as Record<string, string>)[action] || action
 const displayHistoryValue = (value?: string) => value && (dispositionLabels[value as ClosureDisposition] || value)
@@ -214,9 +216,9 @@ onBeforeUnmount(() => { disposed = true; retireActor() })
           <p>{{ item.description }}</p>
           <dl v-if="item.fixCommit || item.regressionTest || item.deployedVersion || item.verifiedBy || item.duplicateOf">
             <template v-if="item.fixCommit"><dt>修复提交</dt><dd>{{ item.fixCommit }}</dd></template>
-            <template v-if="item.regressionTest"><dt>回归测试</dt><dd>{{ item.regressionTest }}</dd></template>
-            <template v-if="item.deployedVersion"><dt>上线版本</dt><dd>{{ item.deployedVersion }}</dd></template>
-            <template v-if="item.verifiedBy && item.verifiedAt"><dt>复测记录</dt><dd>{{ item.verifiedBy }} · {{ new Date(item.verifiedAt).toLocaleString() }}</dd></template>
+            <template v-if="item.regressionTest"><dt>{{ item.closureDisposition === 'data_corrected_verified' ? '数据核验' : '回归测试' }}</dt><dd>{{ item.regressionTest }}</dd></template>
+            <template v-if="item.deployedVersion"><dt>{{ item.closureDisposition === 'data_corrected_verified' ? '核验时版本' : '上线版本' }}</dt><dd>{{ item.deployedVersion }}</dd></template>
+            <template v-if="item.verifiedBy && item.verifiedAt"><dt>{{ item.closureDisposition === 'data_corrected_verified' ? '核验记录' : '复测记录' }}</dt><dd>{{ item.verifiedBy }} · {{ new Date(item.verifiedAt).toLocaleString() }}</dd></template>
             <template v-if="item.duplicateOf"><dt>关联反馈</dt><dd>{{ item.duplicateOf }}</dd></template>
           </dl>
           <details><summary>处理记录（{{ item.history.length }}）</summary><ol><li v-for="entry in item.history" :key="entry.id"><b>{{ actionLabel(entry.action) }}</b><span>{{ entry.actorName }} · {{ new Date(entry.createdAt).toLocaleString() }}</span><p>{{ entry.comment || `${displayHistoryValue(entry.fromValue) || '无'} → ${displayHistoryValue(entry.toValue) || '无'}` }}</p></li></ol></details>

@@ -184,6 +184,21 @@ try {
     const invalid = f.state.load(); f.calls.at(-1).resolve({ ...pageFor(2), items: [] }); await invalid; assert.equal(f.state.result, null); assert.match(f.state.loadError, /分页响应无效/)
     const unsafe = f.state.load(1); f.calls.at(-1).resolve({ ...pageFor(), total: Number.MAX_SAFE_INTEGER + 1 }); await unsafe; assert.equal(f.state.result, null)
   }))
+  await test('data-corrected terminal shows data verification and observed version without claiming a code release', () => use(async f => {
+    const pending = f.state.load(1)
+    const incoming = pageFor(1, 1, 12)
+    incoming.items[0] = { ...row(1), status: 'resolved', closureDisposition: 'data_corrected_verified',
+      fixCommit: undefined, regressionTest: 'synthetic-data-readback', deployedVersion: 'synthetic-observed-version',
+      verifiedBy: 'synthetic-verifier', verifiedAt: '2026-10-27T01:00:00Z',
+      history: [{ id: 'synthetic-data-proof', action: 'data-correction-proof', actorName: 'synthetic-verifier',
+        createdAt: '2026-10-27T01:00:00Z', comment: 'synthetic operator evidence binding only' }] }
+    f.calls.at(-1).resolve(incoming); await pending; await flush()
+    assert.match(text(f.root), /数据修正已核验/)
+    const definitions = walk(f.root).filter(child => child.tag === 'dt').map(text)
+    assert.deepEqual(definitions, ['数据核验', '核验时版本', '核验记录'])
+    assert.match(text(f.root), /已核验的数据修正证据（本地摘要为操作人绑定）/)
+    assert.equal(f.writes.length, 0)
+  }, true))
   await test('closure retains confirmed assignment/notes without submitting or dropping different drafts', () => use(async f => {
     const initial = f.state.load(1); const confirmed = { ...row(1), assignee: 'confirmed-owner', adminNotes: 'confirmed-notes' }
     const initialPage = pageFor(); initialPage.items[0] = confirmed; f.calls.at(-1).resolve(initialPage); await initial; await flush()
