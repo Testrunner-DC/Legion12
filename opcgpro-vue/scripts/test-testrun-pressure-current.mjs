@@ -7,7 +7,8 @@ import {pathToFileURL} from 'node:url'
 import {createRequire} from 'node:module'
 import {REPO, EVIDENCE_ROOT, CACHE_ROOT, FROZEN_CORE, FROZEN_SHA, PLAN, EXECUTION_GAPS, digest,
   assertTestrunTarget, assertGeneratedDirectories, validateBinding, validateProtocolBinding,
-  createTestrunProtocol, adaptFrozenCore, cleanupOwnedTestrunAccounts, strictSshArguments, currentProtocolClientBinding} from './testrun-pressure-protocol.mjs'
+  createTestrunProtocol, adaptFrozenCore, cleanupOwnedTestrunAccounts, strictSshArguments, currentProtocolClientBinding,
+  confirmPreparedPreset} from './testrun-pressure-protocol.mjs'
 import {inspectNormalPressureEvidence} from './testrun-pressure-finalizer.mjs'
 
 // This test has no real transport. All target URL strings below are allowlist or
@@ -15,8 +16,13 @@ import {inspectNormalPressureEvidence} from './testrun-pressure-finalizer.mjs'
 let forbiddenNetworkCalls = 0
 globalThis.fetch = () => {forbiddenNetworkCalls++; throw new Error('NETWORK_FORBIDDEN_IN_OFFLINE_TEST')}
 const runId = crypto.randomUUID().replaceAll('-', '')
-const output = path.join(EVIDENCE_ROOT, 'offline-' + runId), cache = path.join(CACHE_ROOT, 'offline-' + runId)
-assertGeneratedDirectories(output, cache)
+const presetPreparation=process.argv.includes('--preset-preparation')
+const output = path.join(presetPreparation?'D:/GPT/Legion12/artifacts/representative-load-9ef-20261029/prepare-preset':EVIDENCE_ROOT, 'offline-' + runId), cache = path.join(CACHE_ROOT, 'offline-' + runId)
+if(presetPreparation){
+  execFileSync(process.env.L12_PWSH||'pwsh',['-NoProfile','-Command',
+    ". '"+path.join(REPO,'ops/windows/L12GeneratedStorage.ps1').replaceAll("'","''")+"'; $null=Assert-L12GeneratedPath -Path $env:L12_PRESET_QA_OUTPUT; $null=Assert-L12GeneratedPath -Path $env:L12_PRESET_QA_CACHE"],
+    {env:{...process.env,L12_PRESET_QA_OUTPUT:output,L12_PRESET_QA_CACHE:cache},windowsHide:true,stdio:'pipe',timeout:15000})
+}else assertGeneratedDirectories(output, cache)
 fs.mkdirSync(output, {recursive: true}); fs.mkdirSync(cache, {recursive: true})
 process.env.TEMP = cache; process.env.TMP = cache; process.env.TMPDIR = cache
 process.on('uncaughtExceptionMonitor', error => fs.writeFileSync(path.join(output, 'offline-failure.json'),
@@ -175,6 +181,112 @@ function memoryClient(serverHand = true, serverPresenceReuse = true, serverPrope
   return {client: new Client('synthetic-only', metrics, 1000, new AbortController().signal,
     {observeParsed() {return null}, afterDispatch() {}}), metrics, sent, recorded, socketConstructors: () => socketConstructors}
 }
+const presetBusy={type:'error',message:'房间正在更新，请稍后重试',requestId:null}
+const presetState=(changes={})=>({type:'roomState',roomCode:'SYNTHETIC-PRESET',yourPlayerIndex:0,started:false,
+  players:[{playerIndex:0,deckIndex:1,customDeck:false,ready:false},{playerIndex:1,deckIndex:1,customDeck:false,ready:false}],...changes})
+const selectedPreset=()=>presetState({players:[{playerIndex:0,deckIndex:0,customDeck:false,ready:false},
+  {playerIndex:1,deckIndex:1,customDeck:false,ready:false}]})
+async function presetClient(onSelect){
+  const item=memoryClient();await item.client.connect('wss://legion-12.com/testrun/ws')
+  item.client.playerIndex=0;item.client.socket.emit(presetState())
+  const originalSend=item.client.socket.send.bind(item.client.socket)
+  item.client.socket.send=raw=>{originalSend(raw);const value=JSON.parse(raw);if(value.type==='selectDeck')onSelect(item,value)}
+  return item
+}
+const confirmPreset=(item,options={})=>confirmPreparedPreset(item.client,{roomCode:'SYNTHETIC-PRESET',playerIndex:0,deckIndex:0,
+  timeoutMs:1000,deadline:Date.now()+1000,signal:item.client.runSignal,...options})
+const assertPresetReleased=item=>{assert.equal(item.client.presetPreparationObserver,undefined);assert.equal(item.client.waiters.size,0)}
+await asyncCheck('preset-exact-busy-recovers-with-original-error-frame-count',async()=>{
+  let sends=0;const item=await presetClient(value=>queueMicrotask(()=>value.client.socket.emit(++sends===1?presetBusy:selectedPreset())))
+  const result=await confirmPreset(item)
+  assert.deepEqual(result,{attempts:2,busyResponses:1,confirmed:true})
+  assert.equal(item.recorded.filter(row=>row[0]==='error').length,1)
+  assert.deepEqual(item.sent.filter(row=>row.type==='selectDeck'),[{type:'selectDeck',deckIndex:0},{type:'selectDeck',deckIndex:0}])
+  assertPresetReleased(item);item.client.close()
+})
+await asyncCheck('preset-persistent-busy-stops-after-three-attempts-and-keeps-all-errors',async()=>{
+  const item=await presetClient(value=>queueMicrotask(()=>value.client.socket.emit(presetBusy)))
+  await assert.rejects(confirmPreset(item),/busy-exhausted/)
+  assert.equal(item.sent.filter(row=>row.type==='selectDeck').length,3)
+  assert.equal(item.recorded.filter(row=>row[0]==='error').length,3)
+  assertPresetReleased(item);item.client.close()
+})
+for(const [name,message] of [
+  ['foreign-room',presetState({roomCode:'OTHER'})],['wrong-self',presetState({yourPlayerIndex:1})],
+  ['already-started',presetState({started:true})],['unbound-state',{type:'roomState'}],
+  ['ready-state',presetState({players:[{playerIndex:0,deckIndex:0,customDeck:false,ready:true}]})],
+  ['duplicate-self',presetState({players:[{playerIndex:0,deckIndex:0,customDeck:false,ready:false},{playerIndex:0,deckIndex:0,customDeck:false,ready:false}]})],
+  ['different-error',{type:'error',message:'对局已经开始',requestId:null}],
+  ['busy-extra-field',{...presetBusy,unexpected:true}],['busy-request-id',{...presetBusy,requestId:'unbound'}],
+  ['deck-rejected',{type:'deckRejected',message:'synthetic rejection'}],
+])await asyncCheck('preset-immediate-fatal-'+name,async()=>{
+  const item=await presetClient(value=>queueMicrotask(()=>value.client.socket.emit(message)))
+  await assert.rejects(confirmPreset(item),/payload-floor-preset-/)
+  assert.equal(item.sent.filter(row=>row.type==='selectDeck').length,1)
+  assertPresetReleased(item);item.client.close()
+})
+for(const [name,message] of [
+  ['game-start',{type:'gameState',state:{phase:'Main',matchId:'SYNTHETIC-GAME'}}],
+  ['room-drift',presetState({roomCode:'OTHER'})],['player-drift',presetState({yourPlayerIndex:1})],
+])await asyncCheck('preset-observer-remains-live-during-backoff-'+name,async()=>{
+  const item=await presetClient(value=>queueMicrotask(()=>{value.client.socket.emit(presetBusy);value.client.socket.emit(message)}))
+  await assert.rejects(confirmPreset(item),/payload-floor-preset-/)
+  assert.equal(item.sent.filter(row=>row.type==='selectDeck').length,1)
+  assertPresetReleased(item);item.client.close()
+})
+await asyncCheck('preset-wrong-deck-and-custom-deck-never-ack-or-trigger-extra-send',async()=>{
+  const item=await presetClient(value=>queueMicrotask(()=>{
+    value.client.socket.emit(presetState())
+    value.client.socket.emit(presetState({players:[{playerIndex:0,deckIndex:0,customDeck:true,ready:false}]}))
+    setTimeout(()=>value.client.socket.emit(selectedPreset()),5)
+  }))
+  assert.deepEqual(await confirmPreset(item),{attempts:1,busyResponses:0,confirmed:true})
+  assertPresetReleased(item);item.client.close()
+})
+await asyncCheck('preset-original-success-needs-no-retry',async()=>{
+  const item=await presetClient(value=>queueMicrotask(()=>value.client.socket.emit(selectedPreset())))
+  assert.deepEqual(await confirmPreset(item),{attempts:1,busyResponses:0,confirmed:true})
+  assertPresetReleased(item);item.client.close()
+})
+await asyncCheck('generated-actual-preset-block-binds-both-original-seats-and-presets',async()=>{
+  const host=await presetClient(value=>queueMicrotask(()=>value.client.socket.emit(selectedPreset())))
+  const guest=await presetClient(value=>queueMicrotask(()=>value.client.socket.emit(presetState({yourPlayerIndex:1}))))
+  guest.client.playerIndex=1;guest.client.socket.emit(presetState({yourPlayerIndex:1}))
+  const start='  for(const [peer,deckIndex] of [[host,0],[guest,1]]) {'
+  const end="  const hostGame = host.waitFor(message => message.type === 'gameState', 'game-start')"
+  assert.equal(adapted.source.split(start).length,2);assert.equal(adapted.source.split(end).length,2)
+  const block=adapted.source.slice(adapted.source.indexOf(start),adapted.source.indexOf(end))
+  const ActualBlock=Object.getPrototypeOf(async function(){}).constructor
+  await new ActualBlock('host','guest','context','roomCode','confirmPreparedPreset','SafeError',block)(
+    host.client,guest.client,{requestTimeoutMs:1000,pressureDeadline:Date.now()+1000,signal:host.client.runSignal},
+    'SYNTHETIC-PRESET',confirmPreparedPreset,Error)
+  assert.deepEqual(host.sent.filter(row=>row.type==='selectDeck'),[{type:'selectDeck',deckIndex:0}])
+  assert.deepEqual(guest.sent.filter(row=>row.type==='selectDeck'),[{type:'selectDeck',deckIndex:1}])
+  assertPresetReleased(host);assertPresetReleased(guest);host.client.close();guest.client.close()
+})
+await asyncCheck('preset-abort-and-close-release-persistent-observer',async()=>{
+  for(const close of [false,true]){
+    const item=await presetClient(()=>{}),controller=new AbortController(),pending=confirmPreset(item,{signal:controller.signal})
+    if(close)item.client.close();else controller.abort()
+    await assert.rejects(pending,/aborted|connection-closed/);assertPresetReleased(item);item.client.close()
+  }
+})
+await asyncCheck('preset-deadline-includes-backoff-and-keeps-original-budget',async()=>{
+  const item=await presetClient(value=>queueMicrotask(()=>value.client.socket.emit(presetBusy)))
+  await assert.rejects(confirmPreset(item,{deadline:Date.now()+20}),/deadline/)
+  assert.equal(item.sent.filter(row=>row.type==='selectDeck').length,1)
+  assertPresetReleased(item);item.client.close()
+})
+await asyncCheck('preset-total-time-hard-cap-is-original-10-seconds',async()=>{
+  const item=await presetClient(()=>{}),saved={now:Date.now,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout}
+  let now=1000;const timers=[]
+  try{
+    Date.now=()=>now;globalThis.setTimeout=(callback,ms)=>{const token={callback,ms};timers.push(token);return token};globalThis.clearTimeout=()=>{}
+    const pending=confirmPreset(item,{timeoutMs:60000,deadline:now+60000})
+    assert.equal(timers[0].ms,10000);now+=10000;timers[0].callback()
+    await assert.rejects(pending,/deadline/);assertPresetReleased(item)
+  }finally{Date.now=saved.now;globalThis.setTimeout=saved.setTimeout;globalThis.clearTimeout=saved.clearTimeout;item.client.close()}
+})
 await asyncCheck('generated-actual-client-hello-session-and-hand-packet', async () => {
   const item = memoryClient()
   await item.client.connect('wss://legion-12.com/testrun/ws')
@@ -448,6 +560,13 @@ check('prospective-contract-valid-is-never-live-acceptance', () => {
   assert.equal(result.status, 'prospective-input-contract-valid'); assert.equal(result.remoteApplyReady, false)
   assert.equal(result.onlineCapacityAccepted, false); assert.equal(result.executionEnabled, false)
   assert.deepEqual(result.missingExecutionComponents, EXECUTION_GAPS)
+})
+check('original-finalizer-permits-preserved-recovered-preparation-error-count-without-gate-change',()=>{
+  const evidence=prospectiveEvidence()
+  evidence.report.websocket={messageTypes:{error:{messages:3,totalPayloadBytes:354}}}
+  const before=structuredClone(evidence.report.websocket)
+  assert.equal(inspectNormalPressureEvidence(evidence,binding).status,'prospective-input-contract-valid')
+  assert.deepEqual(evidence.report.websocket,before)
 })
 await asyncCheck('actual-frozen-cleanup-marker-begins-before-native-send-clock', async () => {
   const cleanupStart = adapted.source.indexOf('async function cleanupRoom(')

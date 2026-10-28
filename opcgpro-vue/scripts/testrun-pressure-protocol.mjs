@@ -158,13 +158,85 @@ export async function createTestrunProtocol(client) {
   return {reduce, codec: {...codec, ...property}}
 }
 
+// Preparation only: one socket/room/player/preset, never a gameAction retry.
+// The ordinary WsClient recorder observes every frame before this observer.
+export function confirmPreparedPreset(peer,{roomCode,playerIndex,deckIndex,timeoutMs,deadline,signal}) {
+  const failCode=suffix=>'payload-floor-preset-'+suffix
+  if(!peer||typeof roomCode!=='string'||!roomCode||![0,1].includes(playerIndex)
+      ||![0,1].includes(deckIndex)||!Number.isFinite(timeoutMs)||timeoutMs<=0
+      ||!Number.isFinite(deadline)||peer.presetPreparationObserver)
+    return Promise.reject(new Error(failCode('binding-invalid')))
+  const until=Math.min(Date.now()+Math.min(timeoutMs,10000),deadline)
+  return new Promise((resolve,reject)=>{
+    let done=false,attempts=0,busyResponses=0,waiting=false,retryTimer=null,deadlineTimer=null
+    const finish=(error,value)=>{
+      if(done)return
+      done=true;clearTimeout(retryTimer);clearTimeout(deadlineTimer)
+      signal?.removeEventListener('abort',abort)
+      if(peer.presetPreparationObserver===observe)delete peer.presetPreparationObserver
+      if(error)reject(error);else resolve(value)
+    }
+    const fail=suffix=>finish(new Error(failCode(suffix)))
+    const abort=()=>fail('aborted')
+    const stateSelected=state=>{
+      if(peer.closed||peer.envelope!==null&&peer.envelope!==undefined){fail('game-or-connection-changed');return false}
+      if(peer.playerIndex!==playerIndex||state?.type!=='roomState'||state.roomCode!==roomCode
+          ||state.yourPlayerIndex!==playerIndex||state.started!==false||!Array.isArray(state.players)){
+        fail('room-or-player-changed');return false
+      }
+      const players=state.players
+      if(players.length<1||players.length>2||players.some(row=>![0,1].includes(row?.playerIndex))
+          ||new Set(players.map(row=>row.playerIndex)).size!==players.length){fail('players-invalid');return false}
+      const own=players.find(row=>row.playerIndex===playerIndex)
+      if(!own||!Number.isSafeInteger(own.deckIndex)||own.deckIndex<0||typeof own.customDeck!=='boolean'
+          ||own.ready!==false){fail('own-preset-invalid');return false}
+      return own.deckIndex===deckIndex&&own.customDeck===false
+    }
+    const send=()=>{
+      retryTimer=null
+      if(done)return
+      if(signal?.aborted){abort();return}
+      if(Date.now()>=until){fail('deadline');return}
+      stateSelected(peer.preparationRoomState)
+      if(done)return
+      if(attempts>=3){fail('busy-exhausted');return}
+      attempts++;waiting=true
+      try{peer.send({type:'selectDeck',deckIndex})}catch{fail('send-failed')}
+    }
+    const observe=message=>{
+      if(done)return
+      if(Date.now()>=until){fail('deadline');return}
+      if(peer.playerIndex!==playerIndex||peer.envelope!==null&&peer.envelope!==undefined){fail('game-or-connection-changed');return}
+      if(message?.type==='roomState'){
+        const selected=stateSelected(message)
+        if(!done&&selected&&attempts>0)finish(null,{attempts,busyResponses,confirmed:true})
+      }else if(message?.type==='error'){
+        const exact=Object.keys(message).sort().join('|')==='message|requestId|type'
+          &&message.message==='房间正在更新，请稍后重试'&&message.requestId===null
+        if(!exact){fail('selection-rejected');return}
+        busyResponses++
+        if(!waiting||retryTimer!==null){fail('unexpected-busy');return}
+        waiting=false
+        if(attempts>=3){fail('busy-exhausted');return}
+        retryTimer=setTimeout(send,attempts*100)
+      }else if(['deckRejected','gameState','gameStateDelta','roomClosed','roomLeft','session',
+        'connectionRejected','authenticationRequired','maintenanceBlocked'].includes(message?.type))fail('selection-rejected')
+    }
+    observe.close=()=>fail('connection-closed')
+    peer.presetPreparationObserver=observe
+    deadlineTimer=setTimeout(()=>fail('deadline'),Math.max(0,until-Date.now()))
+    signal?.addEventListener('abort',abort,{once:true})
+    send()
+  })
+}
+
 export function adaptFrozenCore(source, adapterUrl) {
   assert.equal(digest(Buffer.from(source)), FROZEN_SHA, 'the workload must be the exact frozen F737 source')
   const replacements = [
     ["from 'file:///D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-full-workload-r7/ws-burst-r7.mjs'",
       'from ' + JSON.stringify(new URL('./ws-burst-observer.mjs', adapterUrl).href)],
     ['reconstructCandidateDelta as reduceEnvelope', 'reconstructCandidateDelta as historicReduceEnvelope'],
-    ['let productionCodec=null', `import {createTestrunProtocol,assertTestrunTarget,cleanupOwnedTestrunAccounts} from ${JSON.stringify(adapterUrl)}\nlet representativeBinding=null\nlet reduceEnvelope=historicReduceEnvelope\nexport async function initializeNormalTestrunProtocol(binding){\n assertTestrunTarget(binding.baseUrl);assertTestrunTarget(binding.wsUrl,true)\n const loaded=await createTestrunProtocol(binding.client)\n representativeBinding=binding;productionCodec=loaded.codec;reduceEnvelope=loaded.reduce;deployedNetSha=binding.client.netSha256\n initializePresenceConsumer(binding.client)\n}\nlet productionCodec=null`],
+    ['let productionCodec=null', `import {createTestrunProtocol,assertTestrunTarget,cleanupOwnedTestrunAccounts,confirmPreparedPreset} from ${JSON.stringify(adapterUrl)}\nlet representativeBinding=null\nlet reduceEnvelope=historicReduceEnvelope\nexport async function initializeNormalTestrunProtocol(binding){\n assertTestrunTarget(binding.baseUrl);assertTestrunTarget(binding.wsUrl,true)\n const loaded=await createTestrunProtocol(binding.client)\n representativeBinding=binding;productionCodec=loaded.codec;reduceEnvelope=loaded.reduce;deployedNetSha=binding.client.netSha256\n initializePresenceConsumer(binding.client)\n}\nlet productionCodec=null`],
     ['function initializePresenceConsumer() {', 'function initializePresenceConsumer(binding=FIXED) {'],
     ["const source=fs.readFileSync(FIXED.netSourcePath,'utf8')", "const source=fs.readFileSync(binding.netSourcePath,'utf8')"],
     ["if(sha256File(FIXED.netSourcePath)!==FIXED.deployedNetSha256)", "if(sha256File(binding.netSourcePath)!==(binding.netSha256??binding.deployedNetSha256))"],
@@ -210,6 +282,12 @@ export function adaptFrozenCore(source, adapterUrl) {
     ['recordWs(type, bytes, logicalJsonBytes=null) {\n    this.ws.push({ type, bytes, logicalJsonBytes, stage: this.currentStage })',
       'recordWs(type, bytes, logicalJsonBytes=null, logicalType=null) {\n    this.ws.push({ type, bytes, logicalJsonBytes, logicalType, stage: this.currentStage })'],
     ['this.metrics.recordWs(wireType, wireBytes, logicalJsonBytes)', 'this.metrics.recordWs(wireType, wireBytes, logicalJsonBytes, message.type)'],
+    ['    this.metrics.recordWs(wireType, wireBytes, logicalJsonBytes, message.type)',
+      "    this.metrics.recordWs(wireType, wireBytes, logicalJsonBytes, message.type)\n    if(type==='roomState')this.preparationRoomState=message\n    this.presetPreparationObserver?.(message)"],
+    ['  onClose() {\n    if (this.closed) return', '  onClose() {\n    this.presetPreparationObserver?.close()\n    if (this.closed) return'],
+    ['  close() {\n    this.closed = true', '  close() {\n    this.presetPreparationObserver?.close()\n    this.closed = true'],
+    ["    const selected=peer.waitFor(message=>message.type==='roomState'||message.type==='deckRejected'||message.type==='error','preset-selection')\n    peer.send({type:'selectDeck',deckIndex})\n    if((await selected).type!=='roomState')throw new SafeError('payload-floor-preset-selection-rejected')",
+      "    try{await confirmPreparedPreset(peer,{roomCode,playerIndex:peer.playerIndex,deckIndex,timeoutMs:context.requestTimeoutMs,deadline:context.pressureDeadline,signal:context.signal})}\n    catch(error){throw new SafeError(error.message)}"],
     ["const wanted = ['pong', 'gameState', 'gameStateCardFrameV1',", "const wanted = ['pong', 'gameState', 'gameStateCardFrameV1', 'gameStatePropertyFrameV1',"],
     ["const full = rows.filter(row => ['gameState','gameStateCardFrameV1'].includes(row.type))",
       "const full = rows.filter(row => ['gameState','gameStateCardFrameV1'].includes(row.type)||(row.type==='gameStatePropertyFrameV1'&&row.logicalType==='gameState'))"],

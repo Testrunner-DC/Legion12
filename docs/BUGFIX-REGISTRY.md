@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-29 QA-PRESET-PREPARATION（原30＋10真实复测通过）
+
+- 旧冻结负载的preset准备块只等任意roomState、遇任何error即停：具名合成6RED（精确busy与异房/本人/已开局/目标状态误收）＋3正控。同9ef实际JSON序列化busy为118字节，只与首轮4条等长相容，原四条正文未保留，不冒同因已证明。
+- 只在现有可逆adaptFrozenCore链替换唯一准备块并增加已解码消息观察：同room/本人/预组与ready/customDeck核验；仅精确busy最多3次、总不超过原10秒/准备截止。退避期间开局/身份变化、未知错误、关闭/取消立即失败，清观察器。原WS错误计数完整保留；不重试gameAction，不改3秒、30＋10、数据规模、finalizer或F737原字节，逆变逐字闭合。
+- 两叶158/158 Node、完整载荷/三秒拒绝反例通过；Main归属93源/19immutable输入通过。首真实负载10房后准备失败原件保留；仅本工具变更后同TEST9ef/62523热态r2完整10/20/30各60秒＋10外围、1709命令全确认、60终局原门槛全过/无3秒迟到，所有账号/会话/监护退出，正式33991不变。根representative-load-9ef-20261029与representative-load-current-20261022/live-9ef-20261029-r2；不是冷态A/B、浏览器FPS、物理手机或高成本认证容量已通过。
+- 回退仅两叶准备适配/QA，保完整原core与所有失败记录；工具同步不触发9ef重部署或正式维护。
+
 ## 2026-10-29 OPS-CI-ARTIFACT-RELOCATION（已实际TEST发布验证）
 
 - 标准CI原清单含Linux绝对生成路径，Windows原入口无法消费；只加显式ArtifactDirectory＋原manifest SHA成对映射，按固定两个leaf选择，根/祖先/leaf链接、缺失/错SHA和原tar/capability都拒绝。原三件字节与清单不改，不另造打包器。
