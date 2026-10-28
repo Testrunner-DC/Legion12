@@ -116,6 +116,7 @@ console.log('Tournament announcement real SFC cases passed: ' + passed)
 
 function managementFixture() {
   const pending = []
+  const pendingChecks = [], starts = []
   const route = Vue.reactive({ fullPath: '/battle/tournaments/a' })
   const platformState = Vue.reactive({ token: 'token-a', account: { id: 'owner' } })
   const props = Vue.reactive({ tournament: { id: 'a', version: 1, status: 'registration', referees: [], visibility: 'public', registrationVisibility: 'public' }, accountId: 'owner', canOrganize: true })
@@ -129,6 +130,8 @@ function managementFixture() {
     './TournamentAnnouncement.vue': { default: {} },
     '@/l12/platform': { platformState, friendApi: { friends: async () => [] }, tournamentApi: {
       setAnnouncement: (id, version, text) => new Promise(resolve => pending.push({ id, version, text, resolve })),
+      startCheck: id => new Promise(resolve => pendingChecks.push({ id, resolve })),
+      start: async (...args) => { starts.push(args); return { ...props.tournament, status: 'running' } },
     } },
     '@/l12/tournamentLabels': { tournamentAutomationStatusText: value => value },
   }
@@ -139,7 +142,7 @@ function managementFixture() {
   const root = { children: [] }
   const parent = Vue.h({ render: () => Vue.h(target, { ...props, onUpdated: event => events.push(event), onNotice: text => events.push(text) }) })
   renderer.render(parent, root)
-  return { props, route, platformState, pending, events, state: parent.component.subTree.component.setupState, close: () => renderer.render(null, root) }
+  return { props, route, platformState, pending, pendingChecks, starts, events, state: parent.component.subTree.component.setupState, close: () => renderer.render(null, root) }
 }
 await test('real management SFC sends exact values and publishes only its current reply', async () => {
   const f = managementFixture()
@@ -168,4 +171,53 @@ for (const change of ['route', 'account', 'account-aba', 'token-aba', 'event', '
     if (change !== 'unmount') f.close()
   })
 }
-console.log('Tournament announcement component and parent cases passed: ' + passed)
+const checked = overrides => ({ tournamentVersion: 1, eligiblePlayers: 4, checkedInWaitlistedPlayers: 1,
+  waitlistedPlayers: 2, openJudgeCases: 0, canStart: true, blockers: [], warnings: [],
+  format: 'swiss-cut', swissRounds: 3, cutSize: 4, ...overrides })
+await test('normal entry executes actual precheck and guarded start with the checked version', async () => {
+  const f = managementFixture()
+  try {
+    f.state.start(); assert.equal(f.starts.length, 0)
+    const work = f.state.checkStart(); await flush()
+    assert.equal(f.pendingChecks.length, 1); assert.equal(f.pendingChecks[0].id, 'a')
+    f.pendingChecks[0].resolve(checked()); await work
+    assert.equal(f.state.startCheck.checkedInWaitlistedPlayers, 1)
+    f.state.start(); await flush(); assert.equal(f.starts.length, 1); assert.equal(f.starts[0][1], 1)
+  } finally { f.close() }
+})
+for (const change of ['account-aba', 'token-aba', 'route-aba', 'version-aba', 'permission', 'unmount']) {
+  await test('normal entry rejects actual precheck reply after ' + change, async () => {
+    const f = managementFixture()
+    const work = f.state.checkStart(); await flush()
+    if (change === 'account-aba') { const value = f.platformState.account; f.platformState.account = { id: 'other' }; f.platformState.account = value }
+    if (change === 'token-aba') { f.platformState.token = 'other'; f.platformState.token = 'token-a' }
+    if (change === 'route-aba') { f.route.fullPath = '/other'; f.route.fullPath = '/battle/tournaments/a' }
+    if (change === 'version-aba') { f.props.tournament = { ...f.props.tournament, version: 2 }; f.props.tournament = { ...f.props.tournament, version: 1 } }
+    if (change === 'permission') f.props.canOrganize = false
+    if (change === 'unmount') f.close()
+    f.pendingChecks[0].resolve(checked()); await work
+    assert.equal(f.state.startCheck, null); f.state.start(); assert.equal(f.starts.length, 0)
+    if (change !== 'unmount') f.close()
+  })
+}
+await test('normal entry keeps only newest same-version precheck and permits single nonapplicable null fields', async () => {
+  const f = managementFixture()
+  try {
+    const old = f.state.checkStart(), fresh = f.state.checkStart(); await flush()
+    f.pendingChecks[1].resolve(checked({ format: 'single', swissRounds: null, cutSize: null })); await fresh
+    f.pendingChecks[0].resolve(checked({ eligiblePlayers: 99 })); await old
+    assert.equal(f.state.startCheck.format, 'single'); assert.equal(f.state.startCheck.eligiblePlayers, 4)
+  } finally { f.close() }
+})
+for (const malformed of [null, {}, checked({ tournamentVersion: 0 }), checked({ checkedInWaitlistedPlayers: -1 }),
+  checked({ blockers: [{}] }), checked({ canStart: true, blockers: ['存在阻塞'] })]) {
+  await test('normal entry rejects unusable precheck without exposing internal parse errors: ' + JSON.stringify(malformed), async () => {
+    const f = managementFixture()
+    try {
+      const work = f.state.checkStart(); await flush(); f.pendingChecks[0].resolve(malformed); await work
+      assert.equal(f.state.startCheck, null); f.state.start(); assert.equal(f.starts.length, 0)
+      assert(f.events.includes('开赛检查不可用，请刷新后重试'))
+    } finally { f.close() }
+  })
+}
+console.log('Tournament announcement and precheck normal-entry SFC cases passed: ' + passed)

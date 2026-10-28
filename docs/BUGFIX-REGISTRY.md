@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## FEAT-20261028-TOURNAMENT-START-CHECK｜同版本开赛事实展示
+
+- 沿受主办/全局赛事管理保护的既有start-check，在原锁内返回同一row.Version、正式已签到人数原eligiblePlayers、有效候补已签到数、当前赛制/瑞士轮数/Cut；不把候补当正式，不改BuildTournamentStartCheck的原CanStart/阻塞/提醒，不自动改赛制或递补。单败不适用轮数/Cut明确null，不从另一次详情拼数或填0；DTO无报名名单/个人牌库。
+- 前端绑定请求赛事/version/账号/token/权限/路由/单调代次，变化同步清旧结果；start函数自身复验有效快照，不只禁按钮，最终仍服务端原CAS/开赛内核。Source真实HTTP缺版本字段RED→14后台关联绿、实际SFC10竞态/旧合同/单败场景保留。Main将预检14场接入原常规公告SFC入口，原17场全保；null返回显示TypeError真实RED后，仅validStartCheck补可空/安全版本/字符串数组/有阻塞却可开赛的矛盾拒收，31/31通过。原Vue93728280逐SHA保留，不改来源旧handoff。
+- 原ui-r4独立Panel不当站点视觉；Source补真实SiteShell承载r5因新增宽屏38px门槛失败，原失败保留；r6仅移动38px并保两尺寸文字/内容可达，390/1440＋原10场通过、Main已目视。无旧QA脚本preimage，不补造；旧hash/报告仍在，只有这1个QA由实跑r6补充资格重新绑定，3产品同最终前端pins未变。证据`source-delivery.json`、`shell-qa-delivery.json`、`ui-r6/report.json`，非App/真实WS/真机。
+- Main最终完整平台2841/2841零失败跳过、12分49秒，`tournament-start-check-20261028/main-full-r1-result.json`/原TRX绑定两C#源与两DLL；完整UI/私人链/两类型/双613通过，具名1个QA改真实Shell后的独立r6资格补充见`finalize-sync.ps1`/最终同步回执，不冒r1包含新QA或伪造旧preimage。未变Rules/30＋10不重跑。信誉/签到开始事实/开赛替补均下一片，不混处罚或数据迁移；无部署/维护/线上关单，实际远端同SHA见同根`synchronization.json`。
+
+## RULING-20261028-CEBC6C9C｜限时减兵力优先抵消正加成
+
+- 人类call_6942a621明确2000＋汉尼拔1000后受本回合－1000、汉尼拔离场仍2000；call_90a48eb4明确抵消顺序沿本次进攻→最近到期临时→持续。现有设值基值不是正加成，不重新询问或把signed进攻净差混成正层。持续负光环不因本次限时结算裁定擅改。
+- Main同版本真实黄金圣甲虫声明/弃牌/选目标/响应结算，GM合法回手移除来源（不是伪造死亡效果），双方×逐步V2恢复4/4真RED，期望2000实际1000。`cebc6c9c-troops-reduction/red-r1.trx`及原测试源码同SHA26A011EE保本BugD根，未纳未完成测试到稳定提交；原玩家记录只到84遭503，依旧不是原局103重放。
+- 新规则共享实现设计中，不能仅负限时层调用伤害函数：需可撤销的正层归属、期限/回合恢复、当前及挂起进攻真实正层与设值差、海伦撤销时来源已离场、晋升/移区/clone及旧V2协议/hash边界。未修改卡效或宣称修好，原1项裁定/RED已记唯一队列，原940项/941历史4未结/关闭647和555均保留，`ruling-receipt.json`为实际本地记录，无线上关单/部署。
+
 ## PERF-20261028-RANKING-WINDOW-COUNT｜完整性检查达到阈值即停止计数
 
 - 原两分支全量COUNT相加，只为判定count<clamp(1..20000)。改原两SELECT 1的UNION ALL在整个复合查询末尾LIMIT，再COUNT；无排序/去重/窗口改写，全部WHERE/日期julianday、outbox及participant联接、隔离/错误条件保留。legacy无outbox与applied有outbox分支互斥，坏payload/hash仍算原始候选；实际SQL scalar数值observer只测试，不进HTTP。

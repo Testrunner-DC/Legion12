@@ -4,7 +4,8 @@ namespace TwelveLegions.Server;
 
 public sealed record L12TournamentStartCheckView(
     bool CanStart, IReadOnlyList<string> Blockers, IReadOnlyList<string> Warnings,
-    int EligiblePlayers, int WaitlistedPlayers, int OpenJudgeCases);
+    int EligiblePlayers, int WaitlistedPlayers, int OpenJudgeCases, long TournamentVersion,
+    int CheckedInWaitlistedPlayers, string Format, int? SwissRounds, int? CutSize);
 
 public sealed record L12TournamentSummaryView(
     string Id, string Code, string Name, string OrganizerName, string Status, string Phase,
@@ -530,7 +531,11 @@ public sealed partial class L12PlatformStore
         if (openCases > 0) warnings.Add($"仍有 {openCases} 个未关闭裁判案件");
         if (IsRegistrationAvailable(row, DateTimeOffset.UtcNow)) warnings.Add("报名仍开放；开赛时将自动关闭报名");
         return new L12TournamentStartCheckView(blockers.Count == 0, blockers, warnings,
-            eligible.Length, waiting, openCases);
+            eligible.Length, waiting, openCases, row.Version,
+            row.Participants.Count(item => item.Waitlisted && !item.Dropped && !item.Removed
+                && item.TournamentCheckedInAt is not null), row.Format,
+            row.Format is "swiss" or "swiss-cut" or "league" ? row.SwissRounds : null,
+            row.Format == "swiss-cut" ? row.CutSize : null);
     }
 
     private static int NextWaitlistPosition(TournamentRow row)

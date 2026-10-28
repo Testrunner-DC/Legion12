@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-tournament-start-check",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "开赛检查信息",
+  "changes": [{
+    "category": "tournaments",
+    "text": "开赛检查显示正式席位和候补的已签到人数，以及赛事当前赛制、适用轮数和晋级人数；切换赛事、账号或赛事版本变化后须重新检查，过期结果不能用于开赛。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentOperations.cs", "opcgpro-vue/src/l12/platform.ts", "opcgpro-vue/src/l12/site/TournamentManagementPanel.vue"]
+  }]
+}

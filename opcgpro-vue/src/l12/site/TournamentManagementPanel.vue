@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TournamentAnnouncement from './TournamentAnnouncement.vue'
 import { friendApi, platformState, tournamentApi, type PlatformFriend, type Tournament, type TournamentStartCheck } from '@/l12/platform'
-import { tournamentAutomationStatusText } from '@/l12/tournamentLabels'
+import { tournamentAutomationStatusText, tournamentFormatText } from '@/l12/tournamentLabels'
 
 const props = defineProps<{ tournament: Tournament; accountId: string; canOrganize: boolean }>()
 const emit = defineEmits<{ updated: [value: Tournament]; notice: [value: string] }>()
@@ -53,6 +53,25 @@ const postponeAt = ref('')
 const transferAccountId = ref('')
 const transferReason = ref('')
 const startCheck = ref<TournamentStartCheck | null>(null)
+let startCheckEpoch = 0
+watch(() => [props.tournament.id, props.tournament.version, props.tournament.status, props.accountId,
+  props.canOrganize, route.fullPath, platformState.token, platformState.account?.id], () => {
+  startCheckEpoch++
+  startCheck.value = null
+}, { flush: 'sync' })
+onBeforeUnmount(() => { startCheckEpoch++ })
+const nonnegativeInteger = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0
+function validStartCheck(value: TournamentStartCheck | null | undefined, version: number) {
+  if (!value || typeof value !== 'object' || !nonnegativeInteger(value.tournamentVersion)
+    || value.tournamentVersion !== version || !nonnegativeInteger(value.eligiblePlayers)
+    || !nonnegativeInteger(value.checkedInWaitlistedPlayers) || typeof value.canStart !== 'boolean'
+    || !Array.isArray(value.blockers) || !value.blockers.every(item => typeof item === 'string')
+    || !Array.isArray(value.warnings) || !value.warnings.every(item => typeof item === 'string')
+    || value.canStart && value.blockers.length > 0
+    || !['single', 'swiss', 'swiss-cut', 'league'].includes(value.format || '')) return false
+  if (value.format !== 'single' && !nonnegativeInteger(value.swissRounds)) return false
+  return value.format !== 'swiss-cut' || nonnegativeInteger(value.cutSize)
+}
 const friends = ref<PlatformFriend[]>([])
 const cancelArmed = ref(false)
 const visibility = ref(props.tournament.visibility)
@@ -80,12 +99,26 @@ function setPhase(phase: 'registration-open' | 'registration-closed' | 'pre-chec
   void mutate(item => tournamentApi.setPhase(item.id, item.version, phase, operationReason()), success)
 }
 async function checkStart() {
+  if (!props.canOrganize || !platformState.token || props.accountId !== platformState.account?.id || props.tournament.status !== 'registration') return
+  const epoch = ++startCheckEpoch, id = props.tournament.id, version = props.tournament.version,
+    account = props.accountId, token = platformState.token, sessionAccount = platformState.account?.id, path = route.fullPath
+  startCheck.value = null
+  const current = () => epoch === startCheckEpoch && props.canOrganize && props.tournament.status === 'registration'
+    && props.tournament.id === id && props.tournament.version === version && props.accountId === account
+    && platformState.token === token && platformState.account?.id === sessionAccount && route.fullPath === path
   try {
-    startCheck.value = await tournamentApi.startCheck(props.tournament.id)
-    emit('notice', startCheck.value.canStart ? '开赛检查通过' : '仍有阻塞项')
-  } catch (error) { emit('notice', error instanceof Error ? error.message : '检查失败') }
+    const result = await tournamentApi.startCheck(id)
+    if (!current()) return
+    if (!validStartCheck(result, version)) { emit('notice', '开赛检查不可用，请刷新后重试'); return }
+    startCheck.value = result
+    emit('notice', result.canStart ? '开赛检查通过' : '仍有阻塞项')
+  } catch (error) { if (current()) emit('notice', error instanceof Error ? error.message : '检查失败') }
 }
-function start() { void mutate(item => tournamentApi.start(item.id, item.version, '开赛检查完成'), '赛事已开始') }
+function start() {
+  if (!props.canOrganize || !platformState.token || props.accountId !== platformState.account?.id || props.tournament.status !== 'registration' || !startCheck.value?.canStart
+    || !validStartCheck(startCheck.value, props.tournament.version)) return
+  void mutate(item => tournamentApi.start(item.id, item.version, '开赛检查完成'), '赛事已开始')
+}
 function postpone() {
   if (!postponeAt.value) return
   void mutate(item => tournamentApi.postpone(item.id, item.version, new Date(postponeAt.value).toISOString(),
@@ -118,7 +151,7 @@ onMounted(() => { void friendApi.friends().then(value => { friends.value = value
       <section class="operation-group"><TournamentAnnouncement :tournament-id="tournament.id" :version="tournament.version" :announcement="tournament.announcement" :can-edit="canOrganize && !['completed','canceled'].includes(tournament.status)" :busy="announcementBusy" @save="saveAnnouncement" /></section>
       <section class="operation-group"><header><b>公开范围</b><span>凭码赛事不向游客公开；名单隐藏也会隐藏赛程姓名与排名。</span></header><div class="visibility-form"><label><span>赛事可见性</span><select v-model="visibility"><option value="public">公开浏览</option><option value="code">凭码访问（需登录）</option></select></label><label><span>参赛名单</span><select v-model="registrationVisibility"><option value="public">公开</option><option value="staff">仅工作人员可见</option></select></label><button :disabled="busy || (visibility === tournament.visibility && registrationVisibility === tournament.registrationVisibility)" @click="saveVisibility">保存公开范围</button></div></section>
       <section v-if="tournament.status === 'registration'" class="operation-group"><header><b>报名与签到</b><span>调整当前阶段或发布新的开赛时间</span></header><div class="actions"><button v-if="tournament.phase === 'registration-open'" @click="setPhase('registration-closed','报名已关闭')">关闭报名</button><button v-if="tournament.phase !== 'registration-open'" @click="setPhase('registration-open','报名已开放')">重新开放报名</button><button v-if="tournament.phase !== 'pre-check-in'" class="primary" @click="setPhase('pre-check-in','已进入赛前签到')">进入赛前签到</button><button v-if="tournament.phase === 'pre-check-in'" @click="setPhase('registration-closed','已退出赛前签到')">退出赛前签到</button></div><div class="postpone"><label><span>报名开放时间</span><input v-model="registrationOpensLocal" type="datetime-local"></label><label><span>报名截止时间</span><input v-model="registrationClosesLocal" type="datetime-local"></label><button :disabled="busy" @click="saveRegistrationWindow">保存报名时间</button></div><p>调整计划开赛时间不会自动改变报名时间。</p><div class="postpone"><label><span>新的计划时间</span><input v-model="postponeAt" type="datetime-local"></label><button :disabled="!postponeAt" @click="postpone">发布延期</button></div></section>
-      <section class="operation-group"><header><b>开赛与结算</b><span>开赛前必须先完成检查</span></header><div class="actions"><button v-if="tournament.status === 'registration'" @click="checkStart">执行开赛检查</button><button v-if="tournament.status === 'registration'" class="primary" :disabled="!startCheck?.canStart" @click="start">正式开赛</button><button v-if="tournament.status === 'running' && tournament.phase === 'running'" @click="setPhase('result-confirmation','进入成绩确认')">进入成绩确认</button><button v-if="tournament.phase === 'result-confirmation'" @click="setPhase('running','返回赛事进行中')">返回赛事进行中</button><button v-if="tournament.phase === 'result-confirmation'" class="primary" @click="complete">确认成绩并归档</button></div><article v-if="startCheck" class="start-check" :class="{passed:startCheck.canStart}"><b>{{ startCheck.canStart ? '开赛检查通过' : '暂不可开赛' }}</b><p v-for="item in startCheck.blockers" :key="item"><span>阻塞</span>{{ item }}</p><p v-for="item in startCheck.warnings" :key="item"><span>提醒</span>{{ item }}</p></article></section>
+      <section class="operation-group"><header><b>开赛与结算</b><span>开赛前必须先完成检查</span></header><div class="actions"><button v-if="tournament.status === 'registration'" @click="checkStart">执行开赛检查</button><button v-if="tournament.status === 'registration'" class="primary" :disabled="!startCheck?.canStart" @click="start">正式开赛</button><button v-if="tournament.status === 'running' && tournament.phase === 'running'" @click="setPhase('result-confirmation','进入成绩确认')">进入成绩确认</button><button v-if="tournament.phase === 'result-confirmation'" @click="setPhase('running','返回赛事进行中')">返回赛事进行中</button><button v-if="tournament.phase === 'result-confirmation'" class="primary" @click="complete">确认成绩并归档</button></div><article v-if="startCheck" class="start-check" :class="{passed:startCheck.canStart}"><b>{{ startCheck.canStart ? '开赛检查通过' : '暂不可开赛' }}</b><p>正式已签到 {{ startCheck.eligiblePlayers }} · 候补已签到 {{ startCheck.checkedInWaitlistedPlayers }}</p><p>赛制 {{ tournamentFormatText(startCheck.format || '') }}</p><p v-if="startCheck.format !== 'single'">瑞士轮 {{ startCheck.swissRounds }} 轮</p><p v-if="startCheck.format === 'swiss-cut'">晋级人数 {{ startCheck.cutSize }}</p><p v-for="item in startCheck.blockers" :key="item"><span>阻塞</span>{{ item }}</p><p v-for="item in startCheck.warnings" :key="item"><span>提醒</span>{{ item }}</p></article></section>
     </template>
 
     <section class="transfer-group"><header><div><small>ORGANIZER TRANSFER</small><h2>主办身份交接</h2></div><p>接任者确认后才会取得主办权限。</p></header><div v-if="tournament.pendingOrganizerTransfer" class="pending-transfer"><p><small>等待确认</small><b>{{ tournament.pendingOrganizerTransfer.toUsername }}</b></p><div v-if="tournament.pendingOrganizerTransfer.toAccountId === accountId" class="actions"><button class="primary" @click="decideTransfer(true)">接受交接</button><button @click="decideTransfer(false)">拒绝</button></div></div><div v-else-if="canOrganize" class="transfer-form"><label><span>接任者</span><select v-model="transferAccountId"><option value="">选择本场裁判或主办者好友</option><option v-for="candidate in transferCandidates" :key="candidate.accountId" :value="candidate.accountId">{{ candidate.username }}</option></select></label><label><span>交接理由</span><input v-model.trim="transferReason" placeholder="说明交接原因"></label><button :disabled="!transferAccountId || !transferReason || busy" @click="transferOrganizer">发起交接</button></div></section>

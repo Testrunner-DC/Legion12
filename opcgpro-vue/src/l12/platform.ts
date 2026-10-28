@@ -901,6 +901,7 @@ export interface PublicTournamentDetail extends PublicTournamentSummary {
 }
 export interface TournamentStartCheck {
   canStart: boolean; blockers: string[]; warnings: string[]; eligiblePlayers: number; waitlistedPlayers: number; openJudgeCases: number
+  tournamentVersion?: number; checkedInWaitlistedPlayers?: number; format?: Tournament['format']; swissRounds?: number | null; cutSize?: number | null
 }
 export interface TournamentCareerEntry {
   tournamentId: string; code: string; name: string; status: TournamentStatus; format: Tournament['format']; completedAt?: string
