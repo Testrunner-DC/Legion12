@@ -96,6 +96,7 @@ public sealed partial class L12RoomManager
         public long LastGameplayActivityUtcTicks;
         public int MeaningfulCommandCount { get; set; }
         public bool Closed { get; set; }
+        public bool InactivityRecoveryPending { get; set; }
         public int? LastMaintenanceWarningMinutes { get; set; }
         public bool MaintenanceAuthorityEventRecorded { get; set; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
@@ -281,7 +282,9 @@ public sealed partial class L12RoomManager
                         {
                             try
                             {
-                                if (!(recoveredRoom.Tutorial is not null
+                                if (!(recoveredRoom.InactivityRecoveryPending
+                                    ? await RecoverInactivityCommitLockedAsync(recoveredRoom)
+                                    : recoveredRoom.Tutorial is not null
                                     ? await ReloadJournalRoomFromRecorderAsync(recoveredRoom)
                                     : await ReloadRankedRoomFromRecorderAsync(recoveredRoom)))
                                     throw new InvalidDataException("缺少可重建的权威排位快照");
@@ -1204,6 +1207,11 @@ public sealed partial class L12RoomManager
         using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error);
+        if (!room.Gate.Wait(0)) return Error(sessionId, "房间正在更新，请稍后重试");
+        try
+        {
+        if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room))
+            return Error(sessionId, "房间状态已变化，请重新进入");
         if (room.TournamentId is not null)
             return Error(sessionId, "赛事房间已绑定规则快照，不能通过普通房间命令修改");
         if (room.Game is not null) return Error(sessionId, "对局开始后不能修改房间规则");
@@ -1224,6 +1232,8 @@ public sealed partial class L12RoomManager
         for (var index = 0; index < room.Ready.Length; index++) room.Ready[index] = false;
         if (gameplayChanged) RecordRoomGameplayActivity(room);
         return BroadcastRoom(room);
+        }
+        finally { room.Gate.Release(); }
     }
 
     public async Task<IReadOnlyList<OutgoingMessage>> CreateSandboxAsync(Guid sessionId, L12SandboxRequest? request)
@@ -1434,6 +1444,12 @@ public sealed partial class L12RoomManager
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
         if (!_rooms.TryGetValue(code, out var room)) return Error(sessionId, "房间不存在");
+        if (!room.Gate.Wait(0)) return Error(sessionId, "房间正在更新，请稍后重试");
+        try
+        {
+        if (room.Closed || !_rooms.TryGetValue(code, out var currentRoom) || !ReferenceEquals(room, currentRoom)
+            || !_sessions.TryGetValue(sessionId, out var currentSession) || !ReferenceEquals(session, currentSession)
+            || session.RoomCode is not null) return Error(sessionId, "房间状态已变化，请重新进入");
         if (room.Tutorial is not null) return Error(sessionId, "教学房间仅限本人进入");
         var currentPolicy = CaptureOperationsPolicy();
         if (TryOperationsEntryBlock(sessionId, currentPolicy, room.Options.MatchModeId, out var blocked,
@@ -1451,6 +1467,8 @@ public sealed partial class L12RoomManager
             RecordRoomGameplayActivity(room);
         }
         return BroadcastRoom(room);
+        }
+        finally { room.Gate.Release(); }
     }
 
     /// <summary>
@@ -1696,6 +1714,11 @@ public sealed partial class L12RoomManager
         if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
         using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        if (!room.Gate.Wait(0)) return Error(sessionId, "房间正在更新，请稍后重试");
+        try
+        {
+        if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room))
+            return Error(sessionId, "房间状态已变化，请重新进入");
         if (room.TournamentId is not null) return Error(sessionId, "赛事房间已锁定报名牌库", "deckRejected");
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
         if (deckIndex < 0 || deckIndex >= _catalog.PresetDecks.Count) return Error(sessionId, "无效的预组");
@@ -1708,6 +1731,8 @@ public sealed partial class L12RoomManager
         room.Ready[session.PlayerIndex!.Value] = false;
         if (gameplayChanged) RecordRoomGameplayActivity(room);
         return BroadcastRoom(room);
+        }
+        finally { room.Gate.Release(); }
     }
 
     public IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, L12CustomDeckSubmission submission)
@@ -1715,6 +1740,11 @@ public sealed partial class L12RoomManager
         if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
         using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
+        if (!room.Gate.Wait(0)) return Error(sessionId, "房间正在更新，请稍后重试");
+        try
+        {
+        if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room))
+            return Error(sessionId, "房间状态已变化，请重新进入");
         if (room.TournamentId is not null) return Error(sessionId, "赛事房间已锁定报名牌库", "deckRejected");
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
         if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out error,
@@ -1726,6 +1756,8 @@ public sealed partial class L12RoomManager
         room.Ready[session.PlayerIndex!.Value] = false;
         if (gameplayChanged) RecordRoomGameplayActivity(room);
         return BroadcastRoom(room);
+        }
+        finally { room.Gate.Release(); }
     }
 
     public async Task<IReadOnlyList<OutgoingMessage>> SetReadyAsync(Guid sessionId, bool ready)
@@ -1738,6 +1770,8 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
+            if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room))
+                return Error(sessionId, "房间状态已变化，请重新进入");
             if (room.Game?.State.Phase == L12Phase.GameOver)
             {
                 return Error(sessionId, "请先离开结算页面返回大厅，再开启新对局");

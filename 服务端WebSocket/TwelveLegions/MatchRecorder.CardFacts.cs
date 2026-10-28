@@ -235,15 +235,18 @@ public sealed partial class MatchRecorder
         };
     }
 
-    private async Task AppendWithCardFactsAsync(L12GameEngine engine, long sequence, int playerIndex,
+    private async Task<bool> AppendWithCardFactsAsync(L12GameEngine engine, long sequence, int playerIndex,
         string commandJson, CommandResult result, L12RankedRuntimeCheckpoint? rankedRuntime,
         L12RankedSettlementEnvelope? rankedSettlement, string? requestId,
         bool stateChangedOnRejection, L12ResponsePreferenceOutboxEnvelope? responsePreference,
-        L12DisasterDecisionOrigin disasterOrigin = L12DisasterDecisionOrigin.Player)
+        L12DisasterDecisionOrigin disasterOrigin = L12DisasterDecisionOrigin.Player,
+        InactivityCommit? inactivityCommit = null, CancellationToken maintenanceCancellation = default)
     {
         if (sequence <= 0)
             throw new ArgumentOutOfRangeException(nameof(sequence), sequence,
                 "对局命令序号必须从 1 开始，0 保留给初始检查点");
+        var inactivityMaintenance = inactivityCommit is not null;
+        if (!inactivityMaintenance) InterruptInactivityWrite();
         var appendStartedAt = L12PerformanceMetrics.Start();
         var journalV2 = UsesJournalV2(engine);
         var lightweightRejection = journalV2 && !result.Accepted && !stateChangedOnRejection;
@@ -252,22 +255,67 @@ public sealed partial class MatchRecorder
         var serializationStartedAt = L12PerformanceMetrics.Start();
         var stateJson = journalV2 ? "{}" : engine.SerializeFullState();
         var stateHash = engine.ComputeStateHash();
+        PreparedCheckpoint? preparedCheckpoint = null;
+        if (inactivityMaintenance)
+        {
+            if (!journalV2) throw new InvalidOperationException("无活动终局需要可恢复的v2日志");
+            checkpointStateJson = engine.SerializeFullState();
+            preparedCheckpoint = await PrepareCheckpointAsync(checkpointStateJson);
+            maintenanceCancellation.ThrowIfCancellationRequested();
+            StorageFailureInjector?.Invoke("before-inactivity-write-admission");
+        }
+        // Opening a maintenance connection and preparing its checkpoint never owns the shared writer.
+        await using var maintenanceConnection = inactivityMaintenance
+            ? await OpenWriteConnectionAsync(maintenanceCancellation, inactivityMaintenance: true) : null;
+        using var budget = inactivityMaintenance
+            ? CancellationTokenSource.CreateLinkedTokenSource(maintenanceCancellation) : null;
+        if (budget is not null) budget.CancelAfter(TimeSpan.FromMilliseconds(250));
         L12PerformanceMetrics.Duration("persistence.serialize-and-hash", serializationStartedAt);
         L12PerformanceMetrics.Bytes("persistence.command-state-json", stateJson.Length);
         L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Append,
             L12SyntheticRecorderObservation.WaitStarted);
-        await _appendWriteGate.WaitAsync();
+        if (inactivityMaintenance)
+        {
+            if (!InactivityWriteAvailable || !_appendWriteGate.Wait(0)) return false;
+            Volatile.Write(ref _inactivityWriteCancellation, budget);
+        }
+        else await EnterForegroundAppendAsync();
         L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Append,
             L12SyntheticRecorderObservation.Acquired);
         try
         {
-            await using var connection = await OpenWriteConnectionAsync();
-            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+            if (inactivityMaintenance && Volatile.Read(ref _foregroundAppendOwners) != 0) return false;
+            budget?.Token.ThrowIfCancellationRequested();
+            await using var foregroundConnection = inactivityMaintenance ? null : await OpenWriteConnectionAsync();
+            var connection = maintenanceConnection ?? foregroundConnection!;
+            using var interrupt = inactivityMaintenance
+                ? new CardAnalyticsNativeCancellation(connection, budget!.Token) : null;
+            await using var transaction = inactivityMaintenance ? connection.BeginTransaction(deferred: true)
+                : (SqliteTransaction)await connection.BeginTransactionAsync();
+            if (inactivityMaintenance)
+            {
+                // Native single-step acquisition: provider retry loops must not hold the gameplay gate.
+                SQLitePCL.raw.sqlite3_busy_timeout(connection.Handle!, 0);
+                var acquired = SQLitePCL.raw.sqlite3_exec(connection.Handle!,
+                    "UPDATE matches SET match_id=match_id WHERE 0;");
+                if (acquired is SQLitePCL.raw.SQLITE_BUSY or SQLitePCL.raw.SQLITE_LOCKED) return false;
+                if (acquired != SQLitePCL.raw.SQLITE_OK)
+                    throw new InvalidOperationException($"无活动事务写准入失败：{acquired}");
+                budget!.Token.ThrowIfCancellationRequested();
+                var scope = connection.CreateCommand();
+                scope.Transaction = transaction;
+                scope.CommandText = "SELECT mode_id FROM matches WHERE match_id=$match;";
+                scope.Parameters.AddWithValue("$match", engine.State.MatchId);
+                if (await scope.ExecuteScalarAsync() is not string mode || mode is not ("friendly" or "casual"))
+                    throw new InvalidOperationException("无活动平局仅适用于好友和休闲对局");
+            }
             var transactionStartedAt = L12PerformanceMetrics.Start();
             var identityReplacements = await ReadIdentityReplacementsAsync(
                 connection, transaction, engine.State);
             if (identityReplacements.Count > 0)
             {
+                // Never save a precompressed candidate containing a newly scrubbed identity.
+                if (inactivityMaintenance) return false;
                 commandJson = ApplyIdentityReplacements(commandJson, identityReplacements);
                 stateJson = ApplyIdentityReplacements(stateJson, identityReplacements);
             }
@@ -299,10 +347,24 @@ public sealed partial class MatchRecorder
                         await VerifyRankedCompletionAsync(connection, transaction, rankedSettlement, stateHash);
                     if (responsePreference is not null)
                         await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
+                    if (inactivityCommit is not null)
+                    {
+                        await CompleteMatchInTransactionAsync(connection, transaction, engine, stateHash);
+                        budget!.Token.ThrowIfCancellationRequested();
+                        inactivityCommit.Attempted = true;
+                    }
                     await transaction.CommitAsync();
+                    if (inactivityCommit is not null)
+                    {
+                        inactivityCommit.Committed = true;
+                        _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
+                        InvalidateAnalyticsCache();
+                        engine.MarkEventsPersisted(engine.State.EventSequence);
+                        engine.MarkCardFactsPersisted(engine.CardFactSignalSequence);
+                    }
                     engine.ClearDisasterSetupObservations();
                     engine.DiscardRecordedCommandTiming();
-                    return;
+                    return true;
                 }
             }
 
@@ -331,7 +393,7 @@ public sealed partial class MatchRecorder
                 if (writeCheckpoint)
                 {
                     var checkpointSerializationStartedAt = L12PerformanceMetrics.Start();
-                    checkpointStateJson = engine.SerializeFullState();
+                    checkpointStateJson ??= engine.SerializeFullState();
                     checkpointStateJson = ApplyIdentityReplacements(
                         checkpointStateJson, identityReplacements);
                     L12PerformanceMetrics.Duration("persistence.checkpoint-serialize",
@@ -478,35 +540,53 @@ public sealed partial class MatchRecorder
                     ? "after-match-action-event-write" : "after-ranked-action-event-write");
                 if (writeCheckpoint)
                 {
+                    budget?.Token.ThrowIfCancellationRequested();
                     await PersistCheckpointAsync(connection, transaction, engine, sequence, stateHash,
-                        checkpointStateJson!, occurredUtc);
+                        checkpointStateJson!, occurredUtc, preparedCheckpoint);
                     StorageFailureInjector?.Invoke(rankedRuntime is null
                         ? "after-match-checkpoint-write" : "after-ranked-checkpoint-write");
                 }
             }
+            if (inactivityMaintenance)
+            {
+                budget!.Token.ThrowIfCancellationRequested();
+                await CompleteMatchInTransactionAsync(connection, transaction, engine, stateHash);
+                StorageFailureInjector?.Invoke("before-match-complete-commit");
+            }
             StorageFailureInjector?.Invoke(rankedSettlement is null
                 ? rankedRuntime is null ? "before-match-command-commit" : "before-ranked-command-commit"
                 : "before-ranked-final-commit");
+            budget?.Token.ThrowIfCancellationRequested();
+            if (inactivityCommit is not null) inactivityCommit.Attempted = true;
+            if (inactivityMaintenance) StorageFailureInjector?.Invoke("before-inactivity-native-commit");
             await transaction.CommitAsync();
+            if (inactivityMaintenance) StorageFailureInjector?.Invoke("after-inactivity-native-commit");
+            if (inactivityCommit is not null) inactivityCommit.Committed = true;
             engine.ClearDisasterSetupObservations();
             L12PerformanceMetrics.Duration("persistence.transaction", transactionStartedAt);
-            if (rankedSettlement is not null) InvalidateAnalyticsCache();
+            if (rankedSettlement is not null || inactivityMaintenance) InvalidateAnalyticsCache();
             L12PerformanceMetrics.Duration("persistence.total", appendStartedAt);
             if (journalV2)
             {
-                if (rankedSettlement is null)
+                if (rankedSettlement is null && !inactivityMaintenance)
                     _factLocationBaselines[engine.State.MatchId] = CaptureLocations(engine.State);
                 else
                     _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
                 engine.MarkEventsPersisted(engine.State.EventSequence);
                 engine.MarkCardFactsPersisted(engine.CardFactSignalSequence);
             }
+            return true;
         }
         finally
         {
             L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Append,
                 L12SyntheticRecorderObservation.HoldEnded);
-            _appendWriteGate.Release();
+            if (inactivityMaintenance)
+            {
+                Interlocked.CompareExchange(ref _inactivityWriteCancellation, null, budget);
+                _appendWriteGate.Release();
+            }
+            else ExitForegroundAppend();
         }
     }
 

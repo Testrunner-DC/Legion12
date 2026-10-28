@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-explicit-registration-fixtures-internal",
+  "date": "2026-10-28",
+  "audience": "internal",
+  "reason": "将测试服隔离验收数据生成器及旧赛事回归夹具迁移到已确认的主办者显式报名流程；不恢复自动参赛、不修改已有赛事、正式数据或统计。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.TestRunFixtures.cs"]
+}

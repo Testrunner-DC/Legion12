@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-28-idle-friendly-casual-draw",
+  "date": "2026-10-28",
+  "audience": "players",
+  "title": "无活动房间自动结束",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "好友房、休闲匹配超过40分钟没有对局操作时自动结束；已经开局的对局按平局记录，保留对局记录与录像，未开局的房间不生成赛果。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12GameEngine.MatchGovernance.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.Inactivity.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.Settlement.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.Inactivity.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.CardFacts.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.Journal.cs"
+      ]
+    }
+  ]
+}

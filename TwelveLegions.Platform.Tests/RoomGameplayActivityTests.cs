@@ -423,7 +423,7 @@ public sealed class RoomGameplayActivityTests
         }
     }
 
-    private sealed class Fixture : IAsyncDisposable
+    internal sealed class Fixture : IAsyncDisposable
     {
         internal DateTimeOffset Now = new(2026, 10, 28, 8, 0, 0, TimeSpan.Zero);
         internal DateTimeOffset Start => new(2026, 10, 28, 8, 0, 0, TimeSpan.Zero);

@@ -292,20 +292,24 @@ public sealed partial class MatchRecorder
         }
     }
 
-    private static async Task PersistCheckpointAsync(SqliteConnection connection,
-        SqliteTransaction transaction, L12GameEngine engine, long commandSequence,
-        string stateHash, string stateJson, string occurredUtc)
+    private sealed record PreparedCheckpoint(byte[] Compressed, int RawBytes);
+
+    private static async Task<PreparedCheckpoint> PrepareCheckpointAsync(string stateJson)
     {
         var raw = Encoding.UTF8.GetBytes(stateJson);
+        using var output = new MemoryStream();
+        using (var brotli = new BrotliStream(output, CompressionLevel.Fastest, leaveOpen: true))
+            await brotli.WriteAsync(raw);
+        return new(output.ToArray(), raw.Length);
+    }
+
+    private static async Task PersistCheckpointAsync(SqliteConnection connection,
+        SqliteTransaction transaction, L12GameEngine engine, long commandSequence,
+        string stateHash, string stateJson, string occurredUtc, PreparedCheckpoint? prepared = null)
+    {
         var randomState = engine.RandomState
             ?? throw new InvalidOperationException("v2 检查点缺少可持久化随机状态");
-        byte[] compressed;
-        using (var output = new MemoryStream())
-        {
-            using (var brotli = new BrotliStream(output, CompressionLevel.Fastest, leaveOpen: true))
-                await brotli.WriteAsync(raw);
-            compressed = output.ToArray();
-        }
+        prepared ??= await PrepareCheckpointAsync(stateJson);
         var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
@@ -331,8 +335,8 @@ public sealed partial class MatchRecorder
         insert.Parameters.AddWithValue("$sequence", commandSequence);
         insert.Parameters.AddWithValue("$revision", engine.State.Revision);
         insert.Parameters.AddWithValue("$hash", stateHash);
-        insert.Parameters.AddWithValue("$state", compressed);
-        insert.Parameters.AddWithValue("$bytes", raw.Length);
+        insert.Parameters.AddWithValue("$state", prepared.Compressed);
+        insert.Parameters.AddWithValue("$bytes", prepared.RawBytes);
         insert.Parameters.AddWithValue("$random", engine.RandomDrawCount);
         insert.Parameters.AddWithValue("$randomStateVersion", randomState.Version);
         insert.Parameters.AddWithValue("$randomState", L12DeterministicRandom.EncodeState(randomState));
@@ -777,7 +781,15 @@ public sealed partial class MatchRecorder
                     ? reasonElement.GetString() ?? "服务端权威裁决" : "服务端权威裁决";
                 var agreedDraw = commandRoot.TryGetProperty("agreedDraw", out var drawElement)
                     && drawElement.ValueKind == JsonValueKind.True;
-                if (agreedDraw) engine.ConcludeAgreedDrawByAuthority(reason);
+                var inactivityDraw = commandRoot.TryGetProperty("inactivityDraw", out var inactivityElement)
+                    && inactivityElement.ValueKind == JsonValueKind.True;
+                if (inactivityDraw)
+                {
+                    if (agreedDraw || winner is not null)
+                        throw new InvalidDataException("无活动平局不能同时声明协议平局或胜者");
+                    engine.ConcludeInactivityDrawByAuthority(reason);
+                }
+                else if (agreedDraw) engine.ConcludeAgreedDrawByAuthority(reason);
                 else engine.ConcludeByAuthority(winner, reason);
                 return CommandResult.Ok();
             }

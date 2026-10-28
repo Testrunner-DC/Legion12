@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## FEATURE-20261028-IDLE-ROOM-DRAW｜40分钟无活动好友／休闲终局
+
+- 人类原需求为好友房与休闲匹配超过40分钟无活动自动关闭，且不能增加其他房间卡顿；本次对call_e422d2fe05ad416dba9bbb5ee3e1cc06明确裁定“打平”。与满1小时无活动好友／沙盒的部署豁免分开。沿3f356187已验的权威活动时标，只接受严格超过40分钟，时标未知／未来、最新有效操作、ranked/tournament/sandbox/tutorial与已终局均不处理。
+- P1/P2/P3不变量不变：原State直接序列化不触发原引擎只读物化，显式复制随机态／事实序号／两策略后验证同源hash；拒绝未落盘尾与旧随机格式。只在临时引擎用原平局结算出口生成非协议game-draw，沿同一个Journal V2事务写命令／公开事件／终局检查点／原赛果与统计压实，提交成功才替换房内可见引擎，不造双方同意、胜者或新存储管线。录像与历史仍按原保留规则；旧代码尾重放遇新marker应由原hash校验失败关闭，不能拿旧库回写来回退。
+- 原独立maintenance owner增一分钟轻量扫描，原沙盒磁盘清理仍按原5分钟due；一秒ranked/response看门狗不await本次持久化，每轮最多4房且轮转，不建每房任务。临时检查点压缩在共用写门槛外；维护只TryWait0，不排队，前台先登记owner并取消维护，再排原门槛。非池化SQLite连接、原native progress/interrupt、busy0单次写准入和250ms取消预算；真实磁盘fsync或被阻塞的托管故障钩子不能被承诺硬250ms，Stop仍必须等待真正拥有的任务退出，不弃置事务。
+- 独审指出并已修复两条具体竞态：COMMIT结果不明的普通房不能错误走ranked-only恢复，新增owned pending由下一维护轮／真实重连从原Journal与赛果独立核对后恢复ongoing或终局；不允许继续旧推测对象。空房退役与Join／Options／两类选牌共享room.Gate、忙即拒绝，锁内再核同实例／会员；queued ready拿锁后重核，避免关房后幽灵加入和空席位写入。观战原有锁链不改。
+- 最终专项r3真实56/56：原活动32＋新退场24，涵盖40分钟等号／超过、两模式、一次平局及正常统计、空房零赛果、四模式拒绝、四个原事务失败、外部SQLite writer／原append忙、慢准备并行健康操作和两类时钟、native长SQL预算／前台取消、终局及前检查点重放、真Server.Stop cancel/join、回滚／已提交不明×背景／重连4分支、pregame互斥／queued ready及5房分两轮退场。最终完整平台2764/2764零失败跳过，先前2758不冒最终组合；完整Rules8523中8521绿、2处旧赛事仍假定owner自动报名，最小补显式Register（含TEST隔离种子）及幂等锁牌断言后两类3/3补过，原失败/临时库保留，不拼成单次规则全绿或Release。唯一`room-inactivity-closure-20261028/main-acceptance.json`逐源/原TRX复验通过。无前端改动，不重跑旧浏览器／30＋10／未变线上采样。
+- 源码同步见同根`synchronization.json`，未部署；没有维护、线上账号／对局／Bug写。回滚本族9产品叶与两QA即可，保原活动基础；独立TEST种子显式报名与两旧QA迁移可保留。若已持久化新marker，先保留最新终局检查点／Journal并验证回退版本恢复兼容，禁止旧数据库覆盖。native合成测试不冒正式存储尾延迟上限或线上性能收益。
+
 ## FIX-20261028-MOBILE-DOCK-RESOURCES｜移动右栏宽度与士气可用空间一并收束
 
 - 人类在牌库来源直接要求扩大移动右栏、去士气下方残留及修正计数内缩。原生568×320实际RED：dock92px，summary22px而count16px，原生button padding1px 6px及边框挤内列；零资源仍绘6px空底板。只在MobileBattleDock.css和GameBoard.mobile.css调整移动域预算：dock按viewport112—132独立求宽，master预算先扣真实dock、最小32，避免卡宽和dock循环依赖；计数重置盒模型/内列最小宽，空栈不绘并去桌面余数伪元素，不删任何真实资源。

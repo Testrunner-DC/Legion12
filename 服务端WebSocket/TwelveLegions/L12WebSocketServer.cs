@@ -4915,14 +4915,24 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     private async Task RunSandboxReplayMaintenanceAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(_sandboxReplayMaintenanceInterval);
+        // One existing maintenance owner, with separate due times: do not put closure
+        // persistence on the one-second ranked/response watchdog or accelerate disk cleanup.
+        using var timer = new PeriodicTimer(_sandboxReplayMaintenanceInterval < TimeSpan.FromMinutes(1)
+            ? _sandboxReplayMaintenanceInterval : TimeSpan.FromMinutes(1));
+        var nextReplayMaintenance = 0L;
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
                 try
                 {
-                    await _rooms.RunSandboxReplayMaintenanceAsync(cancellationToken);
+                    if (Stopwatch.GetTimestamp() >= nextReplayMaintenance)
+                    {
+                        await _rooms.RunSandboxReplayMaintenanceAsync(cancellationToken);
+                        nextReplayMaintenance = Stopwatch.GetTimestamp()
+                            + (long)(_sandboxReplayMaintenanceInterval.TotalSeconds * Stopwatch.Frequency);
+                    }
+                    await SendManyAsync(await _rooms.RunInactiveRoomMaintenanceAsync(cancellationToken), cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

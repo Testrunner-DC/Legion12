@@ -36,6 +36,11 @@ public sealed class TestRunAcceptanceFixtureTests
 
             Assert.Equal("Admin", first.Owner);
             Assert.Equal(first, second);
+            var fixtureTournament = Assert.Single(store.Tournaments(admin).Items.Where(item =>
+                item.Name == "[验收] 赛事中心报名与锁牌流程"));
+            Assert.Equal(2, fixtureTournament.Participants.Count);
+            Assert.Contains(fixtureTournament.Participants, item => item.AccountId == admin.Id);
+            Assert.All(fixtureTournament.Participants, item => Assert.NotNull(item.Deck));
             Assert.Equal(3, decks.Length);
             Assert.Equal(2, published.Length);
             Assert.Equal(18, first.RankedPlayers);

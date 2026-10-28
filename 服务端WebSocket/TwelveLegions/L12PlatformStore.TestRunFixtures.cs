@@ -168,6 +168,8 @@ public sealed partial class L12PlatformStore
                 DisasterCardIds: policy.DisasterCardIds, CardRestrictions: policy.CardRestrictions,
                 RegistrationVisibility: "public", LateGraceMinutes: 5,
                 TimeControl: new L12RankedTimeControlConfig(1500, 240, 240, 60, 60)), context, true);
+            tournament = RegisterTournament(owner, tournament.Id, new L12TournamentRegistrationPayload(),
+                tournament.Version, context with { CorrelationId = "testrun-tournament-owner-register" }, true);
             tournament = PreCheckInTournament(owner, tournament.Id,
                 new L12TournamentPreCheckInPayload(ownerDeckName, string.Empty), tournament.Version,
                 context with { CorrelationId = "testrun-tournament-owner-check-in" }, true);

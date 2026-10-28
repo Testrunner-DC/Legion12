@@ -21,6 +21,10 @@ public sealed class TournamentGlobalAdministrationTests
             store.UpsertDeck(player.Id, Deck("Player Deck"));
             var tournament = store.CreateTournament(organizer, Payload(), Context("create"), true);
 
+            Assert.Empty(tournament.Participants);
+            tournament = store.RegisterTournament(organizer, tournament.Id,
+                new L12TournamentRegistrationPayload(), tournament.Version,
+                Context("organizer-registration"), true);
             tournament = store.RegisterTournament(player, tournament.Id,
                 new L12TournamentRegistrationPayload(), tournament.Version,
                 Context("player-registration"), true);

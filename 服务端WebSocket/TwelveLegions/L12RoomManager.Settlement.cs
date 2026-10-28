@@ -41,7 +41,8 @@ public sealed partial class L12RoomManager
            && (!string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase) || room.RankedResultReported)
            && (room.TournamentId is null || room.TournamentResultReported);
 
-    private IReadOnlyList<OutgoingMessage> CloseSettlementLocked(Room room)
+    private IReadOnlyList<OutgoingMessage> CloseSettlementLocked(Room room,
+        string message = "结算房间已关闭（双方已离开或保留时间已达30分钟）")
     {
         WithdrawOpponentChatScopeLocked(room);
         room.Closed = true;
@@ -54,7 +55,7 @@ public sealed partial class L12RoomManager
             if (!_sessions.TryGetValue(id, out var member) || member.RoomCode != room.Code) continue;
             ClearRoomMembership(member);
             if (member.IsVirtual) _sessions.TryRemove(id, out _);
-            else if (member.Connected) result.Add(new(id, new { type = "roomClosed", message = "结算房间已关闭（双方已离开或保留时间已达30分钟）" }));
+            else if (member.Connected) result.Add(new(id, new { type = "roomClosed", message }));
         }
         return result;
     }
