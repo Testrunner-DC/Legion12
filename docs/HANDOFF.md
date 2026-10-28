@@ -1,5 +1,40 @@
 # 十二军团简短交接
 
+## 2026-10-28 正式续发已成功，两服同d557，维护已解除（最新结果）
+
+- 人类08点明确现在部署，并新增长期规则：未开局房间与排位排队不阻止部署。AGENTS及DEPLOY-HK四步标准已固定，不再逐房问或套一小时要求；真实已开始对局不豁免。本次原生双观测均pregame2/queued1、其余room/双lease/待命令严格0，durability真实未执行保持null；完整历史另行夹验，未构造或消费v1停服许可，无旧137局再次退场。
+- 正式已实际部署并独立核验`d557daffa93caaeee7eb7a674edd75bba363e8d0`，新PID33991；TEST同版PID26740未重启/重发。标准8523规则、2697平台、9阶段及06点TEST同包验收全复用，不重新全量构建，不混入三叶挂起活动基础。
+- 正常停服成功后，最新3,288,602,350字节快照及两库/WAL原始proof真实落盘通过，验证耗时211341.73ms，SHA`faeb8c5b318ff34b480cfae3bcea8e724820577e1080ff30a0695afef37301de`；没有回写旧DB或变更F2。完整历史13未结束旧行/1放弃结算/1历史隔离/7旧孤立事件精确保全。新增第三条响应id24是17日已applied、27日20:03正常沙盒到期遗留，无match/journal/runtime关联；逐字段及整行SHA固定，原21/22旧断言保留，三条均不删不重算。原两条固定集合失败/日期表示失败保留，不冒旧集合一直通过。
+- 唯一OP`abf974a0ab3442368b1ad82ec34ae247`受控冻结工具52纯反例与独审通过；首冻结根替换顺序问题在上线前发现，旧b3cf冻结保留未执行，新四处根一致。原标准停服/备份/proof/失败恢复6函数逐文本相等；源位于`waiting-frozen-abf...`，真实manual-prestop/check-stopped/check-started及不可变失败旧件保留。
+- 独立验收`waiting-independent-formal.json`实际verified：PID/DLL、本机/公网HTTP与匿名WS、40具名静态/更新日志、真实原生双观测、完整历史、备份SHA及raw proof、owned围栏均通过，TEST PID不变。随后立即CAS结束08:26这次当前维护，ops140→141，`maintenance-completion-waiting-0827.json`completed/entryOpen/sessionRevoked均true，保未来计划及全部其他配置；所有本次会话实际撤销。没有生成正式账号、对局、赛果或统计测试数据，不冒30＋10/真机新通过或新Bug批量关单。
+- 最新唯一索引`formal-release-20261028-0600/scheduled-release-status.json`与`waiting-release-session-summary.json`；06点旧失败及已删除一次性回访保持原事实，不重放已成功TEST、旧失败或维护收尾。本次应用仍d557，后续纯文档同步不能当新应用版本或触发新发布。
+
+## 2026-10-28 06:00 发布尝试已收尾：TEST d557成功，正式保持8ec且入口开放
+
+- 一次性自动任务`l12-10-28-06-00`在实际收尾后已删除（deleteStatus=deleted），防止重复执行；没有恢复40分钟循环。
+- 本轮已结束，不重放TEST或本次维护收尾。TEST标准同包部署于06:02完成，随后完整独立读取`independent-verification.json`PASS：d557daffa93caaeee7eb7a674edd75bba363e8d0、服务/PID/DLL、全静态磁盘与公网具名资源、HTTP/WS、最新TEST备份和六诊断原SHA均过；正式850进程未变。不是30＋10性能或真机新通过。
+- 正式原生停服许可于06:06失败、尚未停服/备份/切换，仍8ec与PID850。实际根因复验为`work_remaining`：pregame_rooms2、queued_matchmaking1，unfinished/unrecorded/pendingRoomCommands/双lease均0；durability尚未执行，保持null。不能以activeGameCount0或03点历史库13行冒证这两个live准备房模式/活动满1小时，亦不重退旧137命令局。未完成子任务已按人类要求排除，不是本次阻碍。
+- 原消费者自动cancel未确认，Main持原部署锁精确核本次owner e2a39d28d3eb40e494f8da6cecf005df、同850/8ec且stopConsumed=false，保存一次真实seal后沿原API cancel成功；精确移除同字节blocked别名，immutable失败SHA3cad33b7d54b336bea12e61497f2c73b2713e62892619042dac48d8039b7a6c8和历史全保留。无强杀/重启/旧库回写/假许可；`owned-refusal-reconciliation-r2.json`为实际开放证明。首轮仅failedCommit字段误名在所有状态写前失败，原本地收据保留。
+- 按“无论成败解除维护”已实际收口：`maintenance-completion.json`completed/maintenanceEnded/entryOpen/sessionRevoked均true，原本维护即false，故零维护写；ops139与未来计划及所有其他配置不变，drain open/owner null/双lease0/无permit。原正式执行收据撤会话未确认，后续专用账号会话列表独立查该执行时间窗无存活会话，不冒称持旧token401；其余新会话均401撤销。
+- 唯一`formal-release-20261028-0600/scheduled-release-status.json`标completed=true表示本次尝试和维护收尾已结束，bothEnvironmentsDeployed=false；`release-session-summary.json`引用真实原日志、TEST备份、独验、失败、围栏及维护收据。当前源码/remote为d557，TEST d557，正式8ec，正式无合成业务统计，无对应新线上Bug关单。下一次不能为文书重复部署已成功TEST。
+
+## 2026-10-28 04点最终包已合格，06点按时发布（最新）
+
+- 04:03补记：两服同包标准预演现已各自真实退出0：TEST`dryruns-test-r2.json`、正式`dryruns-formal-r4.json`。TEST程序1495557209/1610612736、数据530795836/536870912、总量2151300925/3221225472，正式系统available11619946496满足10GiB；原容量/SSH失败保留，不再清理/重跑已成功预演。预演成功不是切换或线上独验；06:00仍重核现场易变身份、活动、容量及最新数据，并确保尝试结束后维护收尾。四来源已收到实际合格/远端同步回执并继续冻结。
+- 人类最新明确：06:00仍未完成的来源任务挂起排除，不能等齐或纳中间源码。四已接收族已整合为`d557daffa93caaeee7eb7a674edd75bba363e8d0`，已非强推并实际远端同SHA读回；标准完整Release实际8523规则、2697平台、零失败跳过、9阶段及两服包通过。复用`formal-release-20261028-0600/qualification-d557daffa93c-r2.json`与具名timings，不重复全量门禁。三叶未验活动基础保留挂起，不进包；dirty Main不可直接发布。
+- 干净发布树`D:/GPT/Legion12/cache/primary/r28/s`在`codex/release-20261028-0600`，与远端同d557；标准包清单SHA`FAB5C16E181DDBF658DEA676D7BA25C2BF72678E1EAADC80ABE28E6B6DAA034B`，releaseSHA`9a0da3a8fd8e073a66b5be4661137f01e814f83ececae24ef7a6131073887cca`。正式预演r2因detached分支空值停在本地，改具名本地分支而不改提交或包；r3在远端dry-run调用前SSH超时，原失败保留，无停服切包，随后独立SSH读回已恢复。
+- TEST预算未调高：精确退役不再需要的34265旧程序251595066字节，只unlink两受管链接，当前8ec／回滚97a／诊断2eda、六失败SHA及两服850/860进程不变；标准单次轮转仅删0ef3旧备份完整一组14109579+118字节，保最近两组及受保护材料。真实回执`test-obsolete-program-retirement.json`、`test-backup-rotation.json`已完成，绝不重复清理；当前同包TEST预演test-r2正在跑，不把估算当通过。
+- 本批06:00一次性回访`l12-10-28-06-00`已实际创建并读回；没有新增04:00或05:00计划。06点只消费此最终合格包，同包先TEST后正式，正式验收无业务统计副作用；无论尝试结果如何，finally结束本次即时/当前维护、保未来配置，实际核入口并保存回执。唯一`scheduled-release-status.json`持续更新。当前尚未正式部署，不复活10月27日已完成的发布/旧137命令局退场。
+
+## 2026-10-28 03:36 发布准备实际续记（记录未纳入当前冻结包）
+
+- 最终本地候选d557daffa93caaeee7eb7a674edd75bba363e8d0，媒体0ae82789／沙盒72c2906b／响应0105cbb0／赛事消费者QA d557daff分族整合。干净物理D盘发布树`cache/primary/r28/s`，主工作树活动基础三叶增量保留且排除；不要从dirty Main直接发布。当前尚未推送，标准完整Release正在跑，不能宣称合格包。
+- 完整低成本前端所有组及最终类型通过：绩效/所有权、UI、场面、攻防、榜单、牌库/私人消费者、卡图全部具名；旧赛事QA按真实父子SFC迁移，26/26及完整private消费者实际退出0，未改产品或删场景。旧固定导出CRLF/缺Git或dirty来源/误设同根mirror及旧QA失败保留，不放松断言；最终原生干净Git源不设mirror参数。
+- 标准Release的rules8523/8523零失败跳过已过，platform正在全量跑；前次源码组合2696/2697清理占用与同DLL8/8补验仅历史，不代替本轮完整Release。唯一状态`formal-release-20261028-0600/scheduled-release-status.json`引用当前证据，06:00回访已设，未完项挂起不拖延。
+- 容量转存已完成：8300-20261025T185143Z的3.154GB旧归档、原SHA/proof完整私有E盘逐SHA/完整流式校验，通过后仅删除server归档本体；最新8ec/97a两组、原SHA/proof和20失败日志保留，系统available11592192000。真实删除回执已完成，末尾附加本地tool-binding写因子作用域失败，已补记录，绝不可重删/重传以修文书。前两次删除前拒绝（缺具名锁文件、误用旧PID）保留；标准锁可O_CREAT+NOFOLLOW，身份必须从本批真实预检取。
+- 本批真实两服PID为850/860、同8ec，旧部署815561/812147不可复用，06:00仍重核volatile。03点前预检正式maintenance=false、activeGameCount1/roomCount2，不是06:00事实。13条unfinished SQL全是历史（含上次已退在线续玩的137命令局）；它们不是当前live room目录，不能再次处理旧137、伪造一小时分类或零计数。现成只读接口仅总计数，native readiness届时实际核；GET /api/presence会写站点活动，不用于正式零统计验收。
+- 维护收尾助手`end-current-maintenance.ps1`只备好／语法通过未在线执行，必须06:00本批attempt已结束状态才可调用；无论成功／失败／候选不足均finally解除本次即时维护、保未来配置、真实核入口，不能只改状态说成功。
+
 ## 2026-10-28 06:00 本批两服发布授权（最新）
 
 - 人类要求当前子对话收口后整合，今天北京时间06:00部署测试服与正式服；最新补充明确：届时未完成子任务挂起，不等待、不阻碍已验稳定候选发布，亦不得混入中间修改。沿四步标准同包先TEST后正式，完整Release合格包仍是实际切换前提。
