@@ -626,7 +626,7 @@ public sealed partial class L12PlatformStore
     public L12AlternateArtAwardRuleView SaveAlternateArtAwardRule(L12AccountView actor,
         L12AlternateArtAwardRuleDraft draft, L12AdminAuditContext? context = null)
     {
-        lock (_gate)
+        return ExecuteAdminTransaction(() =>
         {
             var row = string.IsNullOrWhiteSpace(draft.Id) ? null : _data.AlternateArtAwardRules.FirstOrDefault(item => item.Id == draft.Id);
             var kind = draft.Kind?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -641,9 +641,10 @@ public sealed partial class L12PlatformStore
                 && row.SeasonId == seasonId && row.EventId == eventId && row.MasterId == masterId
                 && row.MinimumTierIndex == draft.MinimumTierIndex;
             var artId = row?.AlternateArtId ?? string.Empty;
+            IReadOnlyDictionary<string, L12AlternateArtView>? definitions = null;
             if (!localDeactivation)
             {
-                var definitions = SharedAlternateArtDefinitionsLocked(requireAvailable: true);
+                definitions = SharedAlternateArtDefinitionsLocked(requireAvailable: true);
                 var art = FindAlternateArtLocked(draft.AlternateArtId, definitions: definitions)
                     ?? throw new KeyNotFoundException("异画不存在");
                 if (art.Kind == "gallery-card") throw new ArgumentException("独立联动卡不能设置异画发放规则");
@@ -670,11 +671,38 @@ public sealed partial class L12PlatformStore
             row.MinimumTierIndex = draft.MinimumTierIndex;
             row.Active = draft.Active;
             row.UpdatedAt = DateTimeOffset.UtcNow;
+            BackfillRankReachedAlternateArtRuleLocked(row, definitions);
             var view = ToAlternateArtAwardRuleView(row);
             AddAdminAudit(actor, "alternate-art-award-rule", previous is null ? "create" : "update", row.Id,
                 previous, System.Text.Json.JsonSerializer.Serialize(view), null, context);
             Save();
             return view;
+        });
+    }
+
+    private void BackfillRankReachedAlternateArtRuleLocked(AlternateArtAwardRuleRow rule,
+        IReadOnlyDictionary<string, L12AlternateArtView>? definitions)
+    {
+        if (!rule.Active || rule.Kind != "rank-reached" ||
+            FindActiveAlternateArtLocked(rule.AlternateArtId, definitions) is not { } art ||
+            !IsGrantableAlternateArtDefinition(art)) return;
+
+        // A zero-game faction selection has not reached the settlement award entry.
+        // A first settled game is enough; completing placement is not required there.
+        var accounts = _data.Accounts.Where(row => !row.Disabled && !row.Deleted)
+            .Select(row => row.Id).ToHashSet(StringComparer.Ordinal);
+        var granted = _data.AlternateArtGrants.Where(row => row.RevokedAt is null &&
+                row.AlternateArtId == art.Id &&
+                string.Equals(row.SourceKind, "rank-reached", StringComparison.OrdinalIgnoreCase))
+            .Select(row => (row.AccountId, row.SourceReference)).ToHashSet();
+        foreach (var profile in _data.RankedProfiles.Where(row => accounts.Contains(row.AccountId) &&
+                     SeasonIdsEqual(row.SeasonId, rule.SeasonId) && !string.IsNullOrWhiteSpace(row.Faction) &&
+                     row.PlacementPlayed + row.Wins + row.Losses > 0 && TierIndex(row) >= rule.MinimumTierIndex))
+        {
+            // Keep exactly the future-settlement key, including the profile's canonical season.
+            if (!granted.Add((profile.AccountId, profile.SeasonId))) continue;
+            CreateAlternateArtGrantLocked(profile.AccountId, art.Id, "rank-reached", profile.SeasonId, "system");
+            StorageFailureInjector?.Invoke("after-rank-reached-rule-backfill-grant");
         }
     }
 
@@ -837,7 +865,13 @@ public sealed partial class L12PlatformStore
             && item.RevokedAt is null && string.Equals(item.SourceKind, sourceKind, StringComparison.OrdinalIgnoreCase)
             && string.Equals(item.SourceReference, sourceReference, StringComparison.Ordinal));
         if (row is not null) return row;
-        row = new AlternateArtGrantRow { AccountId = accountId, AlternateArtId = art.Id, SourceKind = sourceKind,
+        return CreateAlternateArtGrantLocked(accountId, art.Id, sourceKind, sourceReference, grantedByAccountId);
+    }
+
+    private AlternateArtGrantRow CreateAlternateArtGrantLocked(string accountId, string alternateArtId,
+        string sourceKind, string sourceReference, string grantedByAccountId)
+    {
+        var row = new AlternateArtGrantRow { AccountId = accountId, AlternateArtId = alternateArtId, SourceKind = sourceKind,
             SourceReference = sourceReference, GrantedByAccountId = grantedByAccountId };
         _data.AlternateArtGrants.Add(row);
         return row;
