@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "20261030-accepted-player-changes",
+  "date": "2026-10-30",
+  "audience": "players",
+  "title": "卡效、代表牌与对局展示修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "万物统御之戒改变后的阵营正确参与奈芙蒂斯的阵亡触发，以及相关卡效的费用、检索和目标校验；结算时按实际阵营重新核对资格。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs", "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs", "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs", "服务端WebSocket/TwelveLegions/L12LibrarySearchPredicates.cs", "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs", "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs", "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs", "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs"]
+    },
+    {
+      "category": "decks",
+      "text": "代表牌仅从本牌库主牌中选择，保存后在编辑器、大厅及牌库展示中一致显示；本机牌库与草稿按账号和正式／测试环境分开保存，旧资料保留供手动导入，不再被旧页面覆盖或阻碍保存。",
+      "paths": ["opcgpro-vue/src/l12/L12DeckEditor.vue", "opcgpro-vue/src/l12/LobbyPage.vue", "opcgpro-vue/src/l12/cardPresentation.ts", "opcgpro-vue/src/l12/deckCacheCodec.ts", "opcgpro-vue/src/l12/deckCacheDatabase.ts", "opcgpro-vue/src/l12/deckCacheStorage.ts", "opcgpro-vue/src/l12/decks.ts", "opcgpro-vue/src/l12/platform.ts", "opcgpro-vue/src/l12/site/BattleHubPage.vue", "opcgpro-vue/src/l12/site/DeckLibraryPage.vue", "opcgpro-vue/src/l12/site/SandboxPage.vue", "opcgpro-vue/src/l12/site/deckEditorDraft.ts", "opcgpro-vue/src/l12/site/publicDeckRead.ts", "服务端WebSocket/TwelveLegions/L12DeckValidator.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckSummaries.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.PrivateDeckPersistence.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetailQueries.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetails.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryProjection.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckVersionQueries.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.cs", "服务端WebSocket/TwelveLegions/Models.cs"]
+    },
+    {
+      "category": "battle",
+      "text": "发动效果时，中央卡图与说明不再隐藏场上的卡牌本体；修正反击战术顶替本人后排盖伏卡时的位置提示与点击入口。",
+      "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/game/PlayerMat.vue"]
+    },
+    {
+      "category": "content",
+      "text": "资讯中的单卡可选用异画，文章显示对应卡图与详情；素材读取失败时保留文章内容并可重试。",
+      "paths": ["opcgpro-vue/src/l12/site/ArticleContentRenderer.vue", "opcgpro-vue/src/l12/site/ArticleDocumentEditor.vue", "opcgpro-vue/src/l12/site/articleBlocks.ts", "opcgpro-vue/src/l12/site/articleCardArt.ts", "服务端WebSocket/TwelveLegions/L12PlatformStore.Articles.cs"]
+    },
+    {
+      "category": "accounts",
+      "text": "同时登录时允许短暂等待可用处理名额，超过等待时限或承载范围时明确提示繁忙。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PasswordWorkBudget.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+    }
+  ]
+}

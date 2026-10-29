@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261030-accepted-internal-changes",
+  "date": "2026-10-30",
+  "audience": "internal",
+  "reason": "异画发放规则后台说明；未变化牌库元数据事务写入去重和回滚／兼容镜像压缩缓冲优化，保留原事实、哈希、事务及恢复边界；不把本地分配收益冒线上时延根治。管理与实现细节不进入玩家更新日志。",
+  "paths": ["opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue", "opcgpro-vue/src/l12/site/alternateArtRuleExplanation.ts", "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckSnapshotMetadata.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.PreparedMirror.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs", "服务端WebSocket/TwelveLegions/L12SegmentedWriteBuffer.cs"]
+}
