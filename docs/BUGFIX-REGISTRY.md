@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## CHECK-20261029-SNAPSHOT-ROLLBACK-COST｜后续仅两项本地分段取证
+
+- 在80de产品片完成同步后，只追加PlatformMirrorMemoryTests两合成16/192块用例，不改产品。实际调用PrepareCoreSnapshot首遍流式校验和SerializeRollbackState，分别计时/分配；不把准备当成SQLite绑定第二遍/commit/全Save。独立core SHA、rollback SHA与实际完整反序列化、内存事实、原镜像/数据库修订及临时文件保护均在测量外核验。
+- 同产品0528E7B6实际2/2，未重复前2990映射回归；约13.59MB不同内容的core准备27.7763ms/14176B，rollback124.7788ms/46273016B，最终缓存12713265B；小样本1.15MB对应core3.20ms/5296B、rollback10.97ms/5255168B。只是本地单次阶段观测，不作为稳定提速/线上容量承诺。
+- 源码回滚路径先用增长MemoryStream再分配完整最终数组，和已测镜像准备的压缩缓冲增长同型，是下一限定分配优化目标；保原字节/压缩/SHA/异常和恢复边界，不藉此改格式或取消镜像。`server-health-20261029/metadata-noop/state-phase-acceptance.json`绑定原TRX/源/产品DLL；人类暂不部署仍生效。
+
 ## FIX-20261029-DECK-METADATA-NOOP｜同一事务只跳过未变引用的重复写入
 
 - 根因由原本地隔离证据确定：普通Save即使牌库事实未变，仍逐引用全量upsert。改既有DeckStorage及新增私有DeckSnapshotMetadata helper，在stale清理后读取同一事务实际元数据，逐字段精确比较；写入成功后更新本事务视图。不是用businessChange猜测、不缓存跨事务状态、不跳正文Capture/归属/hash/distinct持久校验。

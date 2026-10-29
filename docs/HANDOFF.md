@@ -2,6 +2,7 @@
 
 ## 2026-10-29 未变化牌库元数据优化本地验收完成（不部署）
 
+- 产品片已实际提交并非强推至`80de14d0011b09954e85a6e254fd8a6d5928edec`、远端独立同SHA，原2990映射资格/同步原件完整保留。继续仅在PlatformMirrorMemoryTests新增两项分段QA，同产品0528E7B6，2/2通过且自有temp已清；没有再次改产品或重跑前2990。约13.59MB不同合成JSON的core首遍准备27.8ms/14176B，rollback压缩124.8ms/46273016B分配，最终回滚12713265B；源码MemoryStream扩容＋最终复制是下一明确分配目标。独立core SHA、压缩SHA/完整还原、原事实/镜像/DB修订不变通过。`state-phase-acceptance.json`严格排除SQLite绑定第二遍/commit/mirror/index和整体Save，不冒线上长尾全因；该QA后续同步以`state-phase-synchronization.json`为准。
 - 延续人类“暂不部署，继续本地定位”。只在既有P3同一SQLite事务读取私有/公开当前头/赛事引用的比较视图；正文Capture、归属/哈希及distinct正文持久校验仍在比较之前。精确字段未变才跳过元数据upsert，变化/缺失/墓碑复活仍走原SQL；成功写后更新本事务视图，保同批A→B→A。公开版本仍查真实DB，历史/点赞不被头部匹配跳过；无跨事务缓存、schema变更或第二权威。
 - 旧产品真实no-op RED为Red-r2；Red首轮是夹具漏Code错误，不冒产品RED。最新产品DLL0528E7B6完整平台2987/2989，两失败仅旧full≥40 SQL下限；全族尾验87/87保原三倍差异/行数/镜像/重启/修订与逐墓碑保护，实际对象full30/point5、启动恢复full30/point7。新公共墓碑的历史/点赞保护通过。按稳定TRX testId核对当前2990独立用例全部覆盖，非单轮全绿；不能按会截断/合并理论参数的显示名去重。原全部失败、源码/DLL/独审/架构证据在同根acceptance.json，源码同步以synchronization.json真实回执为准。
 - 同一9299引用/1196正文合成样本初观测10498→1202 SQL、142084128→97548464B分配；4正文对照9306→10 SQL、68700704→24164808B，SQLite脏页载荷均为0。是本地单次组件收益，不承诺线上6—8秒根因全闭环。原件统一`server-health-20261029/metadata-noop`，不得拼成Release资格或重启两服。

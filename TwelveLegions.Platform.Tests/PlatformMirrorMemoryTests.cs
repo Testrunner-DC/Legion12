@@ -19,6 +19,65 @@ public sealed class PlatformMirrorMemoryTests(ITestOutputHelper output)
     [Theory]
     [InlineData(16)]
     [InlineData(192)]
+    public void IsolatedVariedCoreAndRollbackReportsPhasesWithoutPublishing(int chunks)
+    {
+        using var fixture = new Fixture();
+        var state = State(fixture.Store);
+        var mirrorBefore = SHA256.HashData(File.ReadAllBytes(fixture.Path));
+        var revision = StorageRevision(fixture.Store.TransactionalStoragePath);
+        var random = new Random(20261029);
+        var bytes = new byte[48 * 1024];
+        for (var index = 0; index < chunks; index++)
+        {
+            random.NextBytes(bytes);
+            Content(state)["synthetic-varied-" + index] = Convert.ToBase64String(bytes);
+        }
+        var factsBefore = JsonSerializer.SerializeToUtf8Bytes(state, state.GetType());
+        using var db = new SqliteConnection($"Data Source={fixture.Store.TransactionalStoragePath};Pooling=False");
+        db.Open();
+        using var transaction = db.BeginTransaction();
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        var timer = Stopwatch.StartNew();
+        var core = typeof(L12PlatformStore).GetMethod("PrepareCoreSnapshot", PrivateStatic)!
+            .Invoke(null, [state, db, transaction])!;
+        timer.Stop();
+        var coreAllocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+        var coreMs = timer.Elapsed.TotalMilliseconds;
+        var options = (JsonSerializerOptions)typeof(L12PlatformStore)
+            .GetField("PlatformSnapshotJsonOptions", PrivateStatic)!.GetValue(null)!;
+        var expectedCore = JsonSerializer.SerializeToUtf8Bytes(state, state.GetType(), options);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(expectedCore)).ToLowerInvariant(),
+            core.GetType().GetProperty("Checksum")!.GetValue(core));
+
+        allocated = GC.GetAllocatedBytesForCurrentThread();
+        timer.Restart();
+        var rollback = (byte[])typeof(L12PlatformStore).GetMethod("SerializeRollbackState", PrivateStatic)!
+            .Invoke(null, [state])!;
+        timer.Stop();
+        var rollbackAllocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+        Assert.True(rollback.Length > 32);
+        Assert.Equal(SHA256.HashData(rollback.AsSpan(32)), rollback.AsSpan(0, 32).ToArray());
+        var restored = typeof(L12PlatformStore).GetMethod("DeserializeCompleteInMemoryState", PrivateStatic)!
+            .Invoke(null, [rollback])!;
+        Assert.Equal(factsBefore, JsonSerializer.SerializeToUtf8Bytes(restored, restored.GetType()));
+        Assert.Equal(factsBefore, JsonSerializer.SerializeToUtf8Bytes(state, state.GetType()));
+        transaction.Rollback();
+        output.WriteLine(JsonSerializer.Serialize(new
+        {
+            phase = "isolated-varied-core-and-rollback", chunks, coreJsonBytes = expectedCore.Length,
+            corePrepareMs = coreMs, coreAllocatedBytes = coreAllocated,
+            rollbackMs = timer.Elapsed.TotalMilliseconds, rollbackAllocatedBytes = rollbackAllocated,
+            rollbackBytes = rollback.Length,
+            excludes = "SQLite bind/second streamed pass, commit, mirror, audit, index and whole save; synthetic content only",
+        }));
+        Assert.Equal(mirrorBefore, SHA256.HashData(File.ReadAllBytes(fixture.Path)));
+        Assert.Equal(revision, StorageRevision(fixture.Store.TransactionalStoragePath));
+        Assert.Empty(MirrorTemporaryFiles(fixture));
+    }
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(192)]
     public void IsolatedVariedMirrorReportsPreparationAndAtomicWriteSeparately(int chunks)
     {
         using var fixture = new Fixture();
