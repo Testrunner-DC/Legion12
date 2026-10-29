@@ -44,7 +44,7 @@ internal sealed class L12PreparedPlatformMirror
         ArgumentNullException.ThrowIfNull(inputType);
         ArgumentNullException.ThrowIfNull(options);
 
-        using var payload = new MemoryStream();
+        using var payload = new L12SegmentedWriteBuffer();
         byte[] checksum;
         long byteCount;
         using (var compressed = new GZipStream(payload, CompressionLevel.Fastest, leaveOpen: true))
@@ -55,7 +55,7 @@ internal sealed class L12PreparedPlatformMirror
             byteCount = output.BytesWritten;
         }
 
-        return new L12PreparedPlatformMirror(payload.GetBuffer(), checked((int)payload.Length),
+        return new L12PreparedPlatformMirror(payload.ToArray(), checked((int)payload.Length),
             Convert.ToHexString(checksum).ToLowerInvariant(), byteCount);
     }
 

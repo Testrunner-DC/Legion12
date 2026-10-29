@@ -1487,13 +1487,11 @@ public sealed partial class L12PlatformStore
 
     private static byte[] SerializeCompleteInMemoryState(DataFile data)
     {
-        using var bytes = new MemoryStream();
+        using var bytes = new L12SegmentedWriteBuffer();
         using (var compressed = new GZipStream(bytes, CompressionLevel.Fastest, leaveOpen: true))
             JsonSerializer.Serialize(compressed, data, PlatformMigrationJsonOptions);
-        var payload = bytes.GetBuffer().AsSpan(0, checked((int)bytes.Length));
-        var snapshot = new byte[checked(payload.Length + 32)];
-        SHA256.HashData(payload, snapshot.AsSpan(0, 32));
-        payload.CopyTo(snapshot.AsSpan(32));
+        var snapshot = bytes.ToArray(prefixLength: 32);
+        SHA256.HashData(snapshot.AsSpan(32), snapshot.AsSpan(0, 32));
         return snapshot;
     }
 

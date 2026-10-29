@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-29 压缩缓冲优化已完整本地验收；百度网盘冷转存另线推进
+
+- 人类继续本地优化并新增“云上存储转存管线/评估服务器存储负担”；目标已两次明确为**百度网盘**，不是BOS/R2。此前暂不部署决定未撤销，两服/维护不动，不能把新转存任务绑成源码同步或发布门槛。
+- P3压缩族只改rollback与兼容镜像的临时缓冲：64KiB段、私有最多8段缓存（512KiB，不是总工作内存上限），归还前清零整个数组，最终结果独立所有权。JSON选项/gzip级别/原压缩字节/SHA/格式/原子镜像/失败恢复均不变；无池化事实权威、schema或新恢复体系。旧产品2真allocation RED，41专项及同最终E368AC78 DLL完整平台3002/3002、0跳过，三产品独审Clear/架构通过；唯一`server-health-20261029/compression-buffer/acceptance.json`。源码同步以同根synchronization.json为准。
+- 同类不同内容合成样本：旧回滚约47.58MB分配→26.43MB，镜像约33.56MB→24.99MB；每个新样本均独立比较相同状态的旧gzip字节/完整还原。不同进程/新建fixture非严格目标主机A/B，不承诺时延，实测时长未明显下降、不冒线上6—8秒根因全闭环。下一验证须尊重人类不部署，不对旧af反复压测。
+- 最新服务器一次有界只读：root可用10445492224B（9.728GiB，距现有10GiB门槛差291926016B），/www可用11756662784B。正式runtime约9.13GB含matches.db逻辑6.89GB和media分配1.80GB；17归档19.09GB不能与父目录重复相加。最新af+d557两归档6.62GB热留，系统盘第三旧8ec 3.20GB是首冷转存候选，4325失败关联1.48GB独立保护；不动运行库/失败证据或直接迁DB。尚有OS/历史目录残余待解释，不把分类小计冒整根全部归因。原记录`cloud-storage/assessment-summary.json`。
+- 网盘管线由原存储来源仅写L12CloudArchive.ps1与test-l12-cloud-archive.ps1两叶，完整加密组/私有新目录/独立回读正在验收，未上传真实资料、未删服务器文件。官方age1.3.2 ZIP固定F48D8F8F、两个exe独立SHA及.NET精确参数版本核验；本机PowerShell直接原生调用重复argv0错误保留，脚本统一显式ProcessStartInfo.ArgumentList。CU已找到百度客户端，但app approval timed out，按computer-use技能暂停界面动作，不读cookies/token或绕过；云上传/下载真实性未验。真实恢复密钥尚未生成/交付，不可把纯合成测试钥匙用于业务。
+
 ## 2026-10-29 未变化牌库元数据优化本地验收完成（不部署）
 
 - 产品片已实际提交并非强推至`80de14d0011b09954e85a6e254fd8a6d5928edec`、远端独立同SHA，原2990映射资格/同步原件完整保留。继续仅在PlatformMirrorMemoryTests新增两项分段QA，同产品0528E7B6，2/2通过且自有temp已清；没有再次改产品或重跑前2990。约13.59MB不同合成JSON的core首遍准备27.8ms/14176B，rollback压缩124.8ms/46273016B分配，最终回滚12713265B；源码MemoryStream扩容＋最终复制是下一明确分配目标。独立core SHA、压缩SHA/完整还原、原事实/镜像/DB修订不变通过。`state-phase-acceptance.json`严格排除SQLite绑定第二遍/commit/mirror/index和整体Save，不冒线上长尾全因；该QA后续同步以`state-phase-synchronization.json`为准。
