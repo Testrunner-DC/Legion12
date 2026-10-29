@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-29 晚间只读服务器健康及未完任务续进
+
+- 人类要求继续未完任务并评估健康。固定SSH/原信任正常接通，正式af/PID83917、TESTaf/PID80552，公网两health均200/默认TLS校验通过、维护false，服务无自动重启/failed unit。4核初样本73%idle/steal0，系统MemAvailable1.85GiB；正式服务约2.07GiB计费中约1.03GiB为文件缓存，实际RSS约1.16GiB，cgroupOOM0，未见内存耗尽。根分区仅9.76GiB可用，低于未来发布10GiB要求，制品卷约10.95GiB。没有清盘/重启/配置/业务/维护写入。
+- 首次本机正式health2870ms，后3次1.85—5.79ms、CPU也回落；不是持续失联，也不能归因供应商。既有15分钟纯数值聚合显示38次platform transactional-save最长8408ms/末窗均6490ms，engine最大24.86ms、WS serialize51.96ms。后台持久化长尾是真实风险；服务存活≠不卡顿。原解析器漏duration/bytes前缀仅取得queue-depth，原件保留，纠正后单独读数，不冒新性能收益/压测。
+- 源只读独审定位下一归因范围：普通objectWrite=null仍在TransactionalStorage325/DeckStorage501全引用元数据upsert；提交后WriteFallbackMirror解压/SHA/落盘也未分段，不能直接把剩余全部归牌库。正文去重/AuditCost旧修复仍在，snapshot两遍已计时；season6319.56≈wait2692.87＋hold3626.65，不叠加嵌套数据。复用本轮原TRX的9299/1196合成例10501SQL/205MB分配/386ms保存，不重跑原30＋10或造第二套测试项目。证据`server-health-20261029/assessment.json`及原4记录。
+- 回放只读分叉复核已完成：玩家4MiB独有限制映413，玩家50条重建起点与admin7条页不同，玩家409分支缺安全分类；已有admin56条成功仍不能定位玩家aca5。缺真实归属玩家的白名单响应元数据，不再盲扫/冒充/导raw。认证容量下一步须先更新TEST到新排队版；已一次汇总询问仅TEST部署授权，未得到前不切包、不拿旧af重复验证新排队。真机继续按人类决定未验。
+
 ## 2026-10-29 反击战术顶替独立片本地验收通过
 
 - 人类在01a0d25d直接“批准”，Main协调原来源3产品＋2QA租约，冻结5叶后独审：仅统一盖伏/本人/后排的可用位置、高亮及点击，保既有服务端费用/旧卡入墓与中央说明解耦；全18反击156场景551断言、真实PlayerMat内存SFC8配置112断言通过，原36RED/空前排RED/Portal替身警告保留。不能把内存SFC称原生触摸或真机。
