@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-30 实际发布收尾：TEST已a267，正式af开放；阻碍已定位到原生5秒读库预算
+
+- 最终干净/远端同`a267d32c6842a960ea290aea517c55089e59dfd7`完整标准R3九阶段通过，原包SHA`6378d829b48667887fef1bb7a72544729718fa05c9e1da7f180d996858f5758f`。TEST先因程序预算在停服前拒绝；双锁/原诊断验证下只退休无引用旧测试程序d557（251553782B），保当前/较新回滚/被诊断引用的2eda及全部数据库/备份/失败资料。同包第二次TEST标准部署与完整独验PASS，PID122400；不重部署TEST或重跑完整Release。
+- FORMAL操作95d9aff334ed4daa8a9bd2812656d58f在第一次原生seal、正常停服之前拒绝；服务af/PID83917未换，未创建本次停服备份或改写旧库。finally实际取消/open并结束owned维护；诊断r3/r4也各自真实撤销会话/围栏/维护。正式无合成账号/对局/赛果/教学/浏览统计写入。唯一根内`release-session-summary.json`与scheduled状态为当前，attempt1原汇总及所有失败/真实维护收据保留。
+- 已定位不是活局或新增历史：实际409 durability_not_clear，verified=false/query_budget/queries37，只有前11键；工具无条件要求14键，故二次报RESPONSE_CONTRACT_REJECTED。一次同源只读39查询实际16389.994ms，其中journal_orphans16146.642ms，结果完全等于原分类历史；原生上限5秒，必然来不及。该外部读取明确notStopAuthorization，不填零、不冒原生verified或完整停服许可、不放宽门槛盲试。
+- 下一阻碍仅排空扫描性能/失败契约及受控停服适配，须闭合数据代次/停服后完整证明，不能直接接受native partial。未完成风险独立挂起；865d67aa戒指仅本地/TEST已验仍不关正式，原4成功关单不重放，521箱子未解。云8ec已完整完成不再重做；本次不是30+10性能达标或真机通过的声明。
+
 ## 2026-10-30 R2失败续办：大厅QA mock端口落后，先穷尽前端再完整出包
 
 - R2于06:35结束：完整规则/平台及排空消费者成功，前端真实BattleHubPage调用hasSavedDeckSelection时旧mock缺端口，无合格manifest，正式/测试未切换。3个同组件QA叶统一同步新牌库端口与scope保存，保原45断言、补真实imports完整性守卫；14真实SFC场景通过。产品源未改；另两浏览器夹具仅语法通过，不冒真实浏览器覆盖。
