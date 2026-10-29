@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261029-PRIVATE-CLOUD-ARCHIVE｜网盘冷归档离线完整组及回读
+
+- 人类新增服务器存储评估与云转存，并明确为百度网盘。仅新增L12CloudArchive/test-l12-cloud-archive两脚本，不改应用、服务器或部署门槛。Prepare把主不可变归档、原完成清单及最多16个raw proof的字节完整分别age加密，不只留证据SHA；公开外清单不含原路径/私钥，同内容去重，源锁/前后SHA长度核验、内容哈希命名与原子定名。新E目录先私有ACL，现有源/父目录权限不动。
+- VerifyReturned绑定本地原清单SHA，独立返回目录逐件核密文/解密/明文SHA长度，再核恢复的原清单与所有原证据；缺件/错key/损坏/路径链接/同步盘/覆盖拒绝。内容验证明确cloudProvenanceVerified=false，不伪造真实上传/下载或恢复演练。无上传、删除、密钥生成、自动轮转功能，失败保留源和隔离partial。
+- 实际官方age20组全过、AST0；Main核两源SHA D419CC1B/29941867并全文独审，保留原QA误用自动input变量的8组后失败；`server-health-20261029/cloud-storage/pipeline/main-acceptance.json`。仅约5KB纯合成outbox无明文/私钥，非业务恢复钥匙。未改C#不重跑平台/规则，压缩独立完整3002资格另存；无Release/部署/线上Bug关闭。
+- 当前云入口缺口转官方API授权与后台传输，不继续依赖Windows前台输入。客户端已登录但捕获/几何失败，且人类要求不干扰正常使用；不以旧客户端会话提取cookie绕过授权。真实云回读、业务密钥托管及真实归档恢复仍未验，源不退休。
+
 ## FIX-20261029-BOUNDED-COMPRESSION-BUFFER｜减少回滚/兼容镜像压缩缓冲复制
 
 - 既有分段取证后，人类明确“推进优化”。同型扫描平台完整回滚与兼容镜像两压缩生产者，二者增长MemoryStream都重复分配/拷贝大数组；管理员事务也复用同一完整状态编码，不另造算法。改现有两个调用方及内部L12SegmentedWriteBuffer：固定64KiB租段、私有最多8段池、独立精确结果数组；每块全数组清零后归还，租借失败/序列化或最终分配失败仍由using清理。不改读取、压缩级别、JSON选项、SHA覆盖、gzip字节、格式/schema/CAS和事务发布时点。
