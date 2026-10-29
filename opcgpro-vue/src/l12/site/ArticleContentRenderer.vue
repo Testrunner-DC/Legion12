@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
-import { publicDeckReadApi, type PublicDeckCurrentRead, type SiteMediaEmbed } from '@/l12/platform'
+import { alternateArtApi, publicDeckReadApi, type AlternateArt, type PublicDeckCurrentRead, type SiteMediaEmbed } from '@/l12/platform'
 import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import DeckCover from '@/l12/DeckCover.vue'
 import ArticleInlineText from './ArticleInlineText.vue'
 import { settlePublicDeckRead, validatePublicDeckCurrent } from './publicDeckRead'
+import { articleCardFor } from './articleCardArt'
 import { articleInlineRuns, articleListItems, parseArticleBody, type ArticleBlock, type ArticleCardBlock, type ArticleImageBlock, type ArticlePublicDeckBlock, type ArticleTextBlock } from './articleBlocks'
 
 const props = withDefaults(defineProps<{ body?: string; media?: SiteMediaEmbed[] }>(), { body: '', media: () => [] })
@@ -21,8 +22,12 @@ const cardById = computed(() => {
   for (const card of catalog.value) { cards.set(card.id, card); cards.set(card.id.toLocaleUpperCase('en-US'), card) }
   return cards
 })
-const cardFor = (block: ArticleCardBlock) => cardById.value.get(block.cardId)
-  ?? cardById.value.get(block.cardId.toLocaleUpperCase('en-US'))
+const publicArts = ref<AlternateArt[]>([])
+const artError = ref('')
+let artsLoaded = false
+let artsRequest: Promise<AlternateArt[]> | null = null
+const cardFor = (block: ArticleCardBlock) => articleCardFor(block, cardById.value.get(block.cardId)
+  ?? cardById.value.get(block.cardId.toLocaleUpperCase('en-US')), publicArts.value)
 type ArticleRenderItem = { kind: 'cards'; key: string; cards: ArticleCardBlock[] }
   | { kind: 'block'; key: string; block: Exclude<ArticleBlock, ArticleCardBlock> }
 const renderItems = computed<ArticleRenderItem[]>(() => {
@@ -78,26 +83,42 @@ async function ensureCatalog() {
 async function openEmbeddedCard(block: ArticleCardBlock) {
   const generation = ++cardOpenGeneration
   const key = embedKey.value
-  const cardId = block.cardId
   selectedCard.value = null
   let card = cardFor(block)
   if (!card) {
-    if (!await ensureCatalog() || disposed || generation !== cardOpenGeneration || key !== embedKey.value) return
-    card = cardById.value.get(cardId) ?? cardById.value.get(cardId.toLocaleUpperCase('en-US'))
+    const [catalogReady, artsReady] = await Promise.all([ensureCatalog(), block.alternateArtId ? ensurePublicArts(true) : true])
+    if (!catalogReady || !artsReady || disposed || generation !== cardOpenGeneration || key !== embedKey.value) return
+    card = cardFor(block)
   }
   if (disposed || generation !== cardOpenGeneration || key !== embedKey.value) return
   if (card) selectedCard.value = card
+  else if (block.alternateArtId) artError.value = '所选异画当前不可用，点击重试'
   else catalogError.value = '没有找到这张卡牌，点击重试'
 }
-const cardError = (block: ArticleCardBlock) => !cardFor(block) && catalogError.value ? catalogError.value : ''
+async function ensurePublicArts(retry = false) {
+  if (artsLoaded && !retry) return true
+  let request = artsRequest
+  if (!request) { request = alternateArtApi.gallery(); artsRequest = request }
+  try {
+    const arts = await request
+    if (disposed) return false
+    publicArts.value = arts; artsLoaded = true; artError.value = ''
+    return true
+  } catch {
+    if (!disposed) artError.value = '异画资料加载失败，点击重试'
+    return false
+  } finally { if (artsRequest === request) artsRequest = null }
+}
+const cardError = (block: ArticleCardBlock) => !cardFor(block)
+  ? catalogError.value || (block.alternateArtId ? artError.value || (artsLoaded ? '所选异画当前不可用，点击重试' : '') : '') : ''
 const deckReads = ref(new Map<string, PublicDeckCurrentRead>())
 const deckErrors = ref(new Map<string, string>())
 const MAX_EMBEDDED_DECK_READS = 12
 const embedKey = computed(() => document.value.blocks
   .filter(block => block.type === 'card' || block.type === 'publicDeck')
-  .map(block => block.type === 'card' ? `card:${block.cardId}` : `deck:${block.reference}`).join('\n'))
+  .map(block => block.type === 'card' ? `card:${block.cardId}:${block.alternateArtId || ''}` : `deck:${block.reference}`).join('\n'))
 let embedGeneration = 0
-interface EmbedRefreshPlan { generation: number; needsCatalog: boolean; references: string[] }
+interface EmbedRefreshPlan { generation: number; needsCatalog: boolean; needsArts: boolean; references: string[] }
 let latestRefreshPlan: EmbedRefreshPlan | null = null
 let refreshRunning = false
 
@@ -117,7 +138,8 @@ async function drainEmbedRefreshes() {
     while (!disposed && latestRefreshPlan) {
       const plan = latestRefreshPlan
       latestRefreshPlan = null
-      if (plan.needsCatalog && !catalog.value.length) await ensureCatalog()
+      await Promise.all([plan.needsCatalog && !catalog.value.length ? ensureCatalog() : true,
+        plan.needsArts ? ensurePublicArts() : true])
       if (disposed) return
       if (latestRefreshPlan || plan.generation !== embedGeneration) continue
       const references = plan.references.slice(0, MAX_EMBEDDED_DECK_READS)
@@ -144,6 +166,7 @@ function scheduleEmbedRefresh() {
   latestRefreshPlan = {
     generation: ++embedGeneration,
     needsCatalog: blocks.some(block => block.type === 'card' || block.type === 'publicDeck'),
+    needsArts: blocks.some(block => block.type === 'card' && block.alternateArtId),
     references: [...new Set(blocks.flatMap(block => block.type === 'publicDeck' ? [block.reference] : []))],
   }
   cardOpenGeneration += 1
@@ -191,7 +214,7 @@ onBeforeUnmount(() => {
       <div v-if="item.kind === 'cards'" class="article-card-row">
         <figure v-for="card in item.cards" :key="card.id" class="article-card-figure">
           <button type="button" class="article-card-embed" :aria-label="`查看单卡${cardFor(card)?.nameZh || card.cardId}详情`" @click="openEmbeddedCard(card)">
-            <CardImage :card-id="card.cardId" :legacy-url="cardFor(card)?.imageUrl" :alt="cardFor(card)?.nameZh || card.cardId" intent="thumb" native-orientation/>
+            <CardImage :card-id="card.alternateArtId && !cardFor(card) ? '' : card.cardId" :legacy-url="cardFor(card)?.imageUrl" :alt="cardFor(card)?.nameZh || card.cardId" intent="thumb" native-orientation/>
             <span v-if="cardError(card)" class="article-card-error">{{ cardError(card) }}</span>
           </button>
           <figcaption v-if="card.caption" class="article-card-caption">{{ card.caption }}</figcaption>

@@ -27,7 +27,7 @@ export interface ArticleImageBlock {
 }
 
 export interface ArticleDividerBlock { id: string; type: 'divider' }
-export interface ArticleCardBlock { id: string; type: 'card'; cardId: string; caption?: string }
+export interface ArticleCardBlock { id: string; type: 'card'; cardId: string; alternateArtId?: string; caption?: string }
 export interface ArticlePublicDeckBlock { id: string; type: 'publicDeck'; reference: string }
 export type ArticleBlock = ArticleTextBlock | ArticleImageBlock | ArticleDividerBlock | ArticleCardBlock | ArticlePublicDeckBlock
 export interface ArticleBodyDocument { format: 'l12-blocks'; version: 1; blocks: ArticleBlock[] }
@@ -76,9 +76,10 @@ export function newArticleImageBlock(): ArticleImageBlock {
 }
 
 export function newArticleDividerBlock(): ArticleDividerBlock { return { id: articleBlockId(), type: 'divider' } }
-export function newArticleCardBlock(cardId: string, caption = ''): ArticleCardBlock {
+export function newArticleCardBlock(cardId: string, caption = '', alternateArtId = ''): ArticleCardBlock {
   const cleanCaption = cleanArticleCardCaption(caption)
-  return { id: articleBlockId(), type: 'card', cardId: cleanArticleCardId(cardId), ...(cleanCaption ? { caption: cleanCaption } : {}) }
+  const artId = cleanArticleAlternateArtId(alternateArtId)
+  return { id: articleBlockId(), type: 'card', cardId: cleanArticleCardId(cardId), ...(artId ? { alternateArtId: artId } : {}), ...(cleanCaption ? { caption: cleanCaption } : {}) }
 }
 export function newArticlePublicDeckBlock(reference: string): ArticlePublicDeckBlock {
   return { id: articleBlockId(), type: 'publicDeck', reference: articlePublicDeckReference(reference) }
@@ -94,6 +95,11 @@ export function cleanArticleCardId(value: string) {
 }
 
 export function cleanArticleCardCaption(value: string) { return value.trim().slice(0, 500) }
+
+export function cleanArticleAlternateArtId(value: string) {
+  const id = value.trim()
+  return /^[A-Za-z0-9:_-]{1,100}$/.test(id) ? id : ''
+}
 
 export function articlePublicDeckReference(value: string) {
   const input = value.trim()
@@ -144,8 +150,9 @@ function cleanStructuredBlock(value: unknown): ArticleBlock | null {
   if (block.type === 'divider') return { id, type: 'divider' }
   if (block.type === 'card') {
     const cardId = cleanArticleCardId(String(block.cardId || ''))
+    const alternateArtId = typeof block.alternateArtId === 'string' ? cleanArticleAlternateArtId(block.alternateArtId) : ''
     const caption = cleanArticleCardCaption(String(block.caption || ''))
-    return cardId ? { id, type: 'card', cardId, ...(caption ? { caption } : {}) } : null
+    return cardId ? { id, type: 'card', cardId, ...(alternateArtId ? { alternateArtId } : {}), ...(caption ? { caption } : {}) } : null
   }
   if (block.type === 'publicDeck') {
     const reference = articlePublicDeckReference(String(block.reference || ''))

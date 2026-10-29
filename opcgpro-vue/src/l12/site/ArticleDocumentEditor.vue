@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import type { PublicDeckSummary, SiteMedia } from '@/l12/platform'
-import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
+import { alternateArtApi, type PublicDeckSummary, type SiteMedia } from '@/l12/platform'
+import { loadDeckCatalog } from '@/l12/decks'
+import SingleCardPicker from '@/l12/SingleCardPicker.vue'
+import { articleCardPickerItems, type ArticleCardPickerItem } from './articleCardArt'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
 import SiteMediaPicker from './SiteMediaPicker.vue'
 import PublicDeckPicker from './PublicDeckPicker.vue'
-import { articleBlockId, articleInlineRuns, articleListItems, articlePublicDeckReference, cleanArticleCardCaption, cleanArticleCardId, isArticleTextBlock, newArticleTextBlock, normalizeArticleBlockIds, parseArticleBody, safeArticleHref, serializeArticleBody, type ArticleBlock, type ArticleBodyDocument, type ArticleMark, type ArticleMarkType, type ArticleTextAlign, type ArticleTextBlock } from './articleBlocks'
+import { articleBlockId, articleInlineRuns, articleListItems, articlePublicDeckReference, cleanArticleAlternateArtId, cleanArticleCardCaption, cleanArticleCardId, isArticleTextBlock, newArticleTextBlock, normalizeArticleBlockIds, parseArticleBody, safeArticleHref, serializeArticleBody, type ArticleBlock, type ArticleBodyDocument, type ArticleMark, type ArticleMarkType, type ArticleTextAlign, type ArticleTextBlock } from './articleBlocks'
 
 const props = withDefaults(defineProps<{ modelValue?: string; media?: SiteMedia[] }>(), { modelValue: '', media: () => [] })
 const emit = defineEmits<{ 'update:modelValue': [value: string]; 'media-uploaded': [value: SiteMedia]; notice: [value: string] }>()
@@ -26,7 +28,12 @@ const imageCaption = ref('')
 const editingFigure = ref<HTMLElement | null>(null)
 const cardPicker = ref(false)
 const cardCaptionPanel = ref(false)
-const pendingCard = ref<SingleCardPickerItem | null>(null)
+const pendingCard = ref<ArticleCardPickerItem | null>(null)
+const pickerItems = ref<ArticleCardPickerItem[]>([])
+const pickerLoading = ref(false)
+const pickerArtsUnavailable = ref(false)
+let pickerGeneration = 0
+let editorDisposed = false
 const cardCaption = ref('')
 const deckPanel = ref(false)
 const editingEmbed = ref<HTMLElement | null>(null)
@@ -62,7 +69,7 @@ function inlineHtml(block: ArticleTextBlock, from = 0, to = block.text.length) {
 function blockHtml(block: ArticleBlock) {
   const id = escapeHtml(block.id)
   if (block.type === 'divider') return `<hr data-block-id="${id}">`
-  if (block.type === 'card') return embedHtml('card', block.cardId, block.cardId, block.id, block.caption)
+  if (block.type === 'card') return embedHtml('card', block.cardId, block.cardId, block.id, block.caption, block.alternateArtId)
   if (block.type === 'publicDeck') return embedHtml('publicDeck', block.reference, block.reference, block.id)
   if (block.type === 'image') {
     const media = mediaFor(block.mediaAssetId)
@@ -78,12 +85,14 @@ function blockHtml(block: ArticleBlock) {
   const tag = block.type === 'paragraph' ? 'p' : block.type
   return `<${tag} data-block-id="${id}"${align}>${inlineHtml(block)}</${tag}>`
 }
-function embedHtml(type: 'card' | 'publicDeck', value: string, label = value, id: string = articleBlockId(), caption = '') {
+function embedHtml(type: 'card' | 'publicDeck', value: string, label = value, id: string = articleBlockId(), caption = '', alternateArtId = '') {
   const kind = type === 'card' ? '单卡' : '公共牌库'
   const cleanCaption = type === 'card' ? cleanArticleCardCaption(caption) : ''
   const captionAttribute = cleanCaption ? ` data-embed-caption="${escapeHtml(cleanCaption)}"` : ''
   const captionText = cleanCaption ? `<small>${escapeHtml(cleanCaption)}</small>` : ''
-  return `<aside class="article-embed-placeholder" data-block-id="${escapeHtml(id)}" data-article-embed="${type}" data-embed-value="${escapeHtml(value)}"${captionAttribute} contenteditable="false"><b>${kind}</b><span>${escapeHtml(label)}</span>${captionText}<button type="button" data-edit-embed="true" tabindex="-1">编辑${kind}</button><button type="button" data-remove-embed="true" tabindex="-1">删除${kind}</button></aside>`
+  const artId = type === 'card' ? cleanArticleAlternateArtId(alternateArtId) : ''
+  const artAttribute = artId ? ` data-alternate-art-id="${escapeHtml(artId)}"` : ''
+  return `<aside class="article-embed-placeholder" data-block-id="${escapeHtml(id)}" data-article-embed="${type}" data-embed-value="${escapeHtml(value)}"${captionAttribute}${artAttribute} contenteditable="false"><b>${kind}</b><span>${escapeHtml(label)}${artId ? ` · 异画 ${escapeHtml(artId)}` : ''}</span>${captionText}<button type="button" data-edit-embed="true" tabindex="-1">编辑${kind}</button><button type="button" data-remove-embed="true" tabindex="-1">删除${kind}</button></aside>`
 }
 function documentHtml(value: ArticleBodyDocument) { return value.blocks.map(blockHtml).join('') || `<p data-block-id="${articleBlockId()}" data-align="left"><br></p>` }
 function renderCanvas() {
@@ -151,7 +160,8 @@ function parseCanvas(): ArticleBodyDocument {
     const blockIndex = blocks.length
     if (node.dataset.articleEmbed === 'card') {
       const caption = cleanArticleCardCaption(node.dataset.embedCaption || '')
-      blocks.push({ id: node.dataset.blockId || '', type: 'card', cardId: (node.dataset.embedValue || '').slice(0, 100), ...(caption ? { caption } : {}) })
+      const alternateArtId = cleanArticleAlternateArtId(node.dataset.alternateArtId || '')
+      blocks.push({ id: node.dataset.blockId || '', type: 'card', cardId: (node.dataset.embedValue || '').slice(0, 100), ...(alternateArtId ? { alternateArtId } : {}), ...(caption ? { caption } : {}) })
     }
     else if (node.dataset.articleEmbed === 'publicDeck') blocks.push({ id: node.dataset.blockId || '', type: 'publicDeck', reference: (node.dataset.embedValue || '').slice(0, 64) })
     else if (tag === 'FIGURE') blocks.push({ id: node.dataset.blockId || '', type: 'image', mediaAssetId: (node.dataset.mediaId || '').slice(0, 100), alt: (node.dataset.alt || '').slice(0, 180), caption: (node.dataset.caption || '').slice(0, 500) })
@@ -259,14 +269,35 @@ function openCard(event?: MouseEvent) {
   cardCaption.value = cleanArticleCardCaption(editingEmbed.value?.dataset.embedCaption || '')
   if (editingEmbed.value) {
     const cardId = cleanArticleCardId(editingEmbed.value.dataset.embedValue || '')
-    pendingCard.value = cardId ? { id: cardId, cardId, number: cardId, name: cardId, nameZh: cardId, cardType: '' } : null
+    const alternateArtId = cleanArticleAlternateArtId(editingEmbed.value.dataset.alternateArtId || '')
+    pendingCard.value = cardId ? { id: cardId, cardId, number: cardId, name: cardId, nameZh: cardId, cardType: '', ...(alternateArtId ? { alternateArtId } : {}) } : null
     cardCaptionPanel.value = Boolean(pendingCard.value)
-    cardPicker.value = !pendingCard.value
+    if (!pendingCard.value) void showCardPicker()
   } else {
-    pendingCard.value = null; cardCaptionPanel.value = false; cardPicker.value = true
+    pendingCard.value = null; cardCaptionPanel.value = false; void showCardPicker()
   }
 }
-function selectCard(card: SingleCardPickerItem) {
+async function showCardPicker() {
+  const generation = ++pickerGeneration
+  const context = cardEditContext
+  pickerLoading.value = true
+  cardPicker.value = false; pickerItems.value = []; pickerArtsUnavailable.value = false
+  try {
+    const [catalog, arts] = await Promise.allSettled([loadDeckCatalog(), alternateArtApi.gallery()])
+    if (editorDisposed || generation !== pickerGeneration || context !== cardEditContext || context !== currentBody()) return
+    if (catalog.status !== 'fulfilled') {
+      emit('notice', '基础卡资料加载失败，请重新选择单卡')
+      return
+    }
+    pickerArtsUnavailable.value = arts.status !== 'fulfilled'
+    pickerItems.value = articleCardPickerItems(catalog.value, arts.status === 'fulfilled' ? arts.value : [])
+    cardPicker.value = true
+    if (pickerArtsUnavailable.value) emit('notice', '公开异画暂时无法读取，当前仅列出基础卡；重新打开选择器可重试')
+  } catch {
+    if (!editorDisposed && generation === pickerGeneration) emit('notice', '卡牌与公开异画加载失败，请重新选择单卡')
+  } finally { if (generation === pickerGeneration) pickerLoading.value = false }
+}
+function selectCard(card: ArticleCardPickerItem) {
   if (cardEditContext !== currentBody()) { emit('notice', '正文已更新，请重新选择单卡'); closeCardCaption(); return }
   const cardId = cleanArticleCardId(card.cardId)
   if (!cardId) { emit('notice', '所选卡牌缺少规范卡号'); return }
@@ -278,10 +309,11 @@ function saveCardEmbed() {
   const cardId = cleanArticleCardId(card?.cardId || '')
   if (!card || !cardId) { emit('notice', '请先选择单卡'); return }
   replaceOrInsertEmbed(embedHtml('card', cardId, card.nameZh || card.name || cardId,
-    editingEmbed.value?.dataset.blockId || articleBlockId(), cardCaption.value))
+    editingEmbed.value?.dataset.blockId || articleBlockId(), cardCaption.value, card.alternateArtId))
   cardPicker.value = false; cardCaptionPanel.value = false; pendingCard.value = null; cardCaption.value = ''; cardEditContext = ''
 }
 function closeCardCaption() {
+  pickerGeneration += 1; pickerLoading.value = false
   cardPicker.value = false; cardCaptionPanel.value = false; pendingCard.value = null; cardCaption.value = ''
   editingEmbed.value = null; cardEditContext = ''
 }
@@ -322,9 +354,11 @@ function canvasClick(event: MouseEvent) {
 
 watch(() => props.modelValue, value => {
   if ((value || '') === currentBody()) return
+  closeCardCaption()
   clearTimer(); historyPending.value = false; articleDocument.value = parseArticleBody(value); history.value = [currentBody()]; historyIndex.value = 0; savedRange = null; nextTick(renderCanvas)
 })
 watch(preview, value => { if (value) flushHistory(); else nextTick(renderCanvas) })
+onBeforeUnmount(() => { editorDisposed = true; pickerGeneration += 1 })
 watch(canvas, () => nextTick(renderCanvas), { immediate: true })
 onBeforeUnmount(clearTimer)
 </script>
@@ -339,13 +373,14 @@ onBeforeUnmount(clearTimer)
       <span><button @mousedown.prevent @click="command('insertUnorderedList')">• 列表</button><button @mousedown.prevent @click="command('insertOrderedList')">1. 列表</button><button @mousedown.prevent @click="insertDivider">— 分隔线</button></span>
       <span><button @mousedown.prevent @click="openLink">🔗 链接</button><button class="image-tool" @mousedown.prevent @click="openImage()">＋ 图片</button><button class="embed-tool" @mousedown.prevent @click="openCard()">＋ 单卡</button><button class="embed-tool" @mousedown.prevent @click="openDeck()">＋ 公共牌库</button></span>
     </div>
+    <p v-if="pickerLoading" role="status">正在读取卡牌与公开异画…</p>
     <ArticleContentRenderer v-if="preview" class="editor-preview" :body="currentBody()" :media="articleMedia"/>
     <div v-else class="canvas-wrap"><div ref="canvas" class="editor-canvas" contenteditable="true" spellcheck="true" data-placeholder="从这里开始撰写文章……" @input="scheduleHistory" @paste="pastePlainText" @mouseup="saveSelection" @keyup="saveSelection" @click="canvasClick" @blur="flushHistory"/><footer><span>{{ characterCount }} 字 · {{ imageCount }} 张图 · {{ embedCount }} 个卡牌/牌库</span><span>点击图片可再次编辑；单卡和公共牌库也可点击编辑</span></footer></div>
     <div v-if="linkPanel" class="dialog-mask" @mousedown.self="linkPanel = false"><section class="editor-dialog"><header><b>添加文字链接</b><button @click="linkPanel = false">×</button></header><label>链接地址<input v-model="linkHref" autofocus placeholder="/news/文章ID 或 https://example.com" @input="linkError = ''" @keydown.enter.prevent="applyLink"></label><small>仅允许站内路径或 http(s) 地址。</small><p v-if="linkError">{{ linkError }}</p><footer><button class="primary" @click="applyLink">应用链接</button><button @click="removeLink">移除链接</button><button @click="linkPanel = false">取消</button></footer></section></div>
     <div v-if="imagePanel" class="dialog-mask" @mousedown.self="imagePanel = false"><section class="editor-dialog image-dialog"><header><b>{{ editingFigure ? '编辑正文图片' : '插入正文图片' }}</b><button @click="imagePanel = false">×</button></header><label>已上传图片<SiteMediaPicker v-model="imageAssetId" kind="article" :selected-media="mediaFor(imageAssetId)" @selected="uploaded"/></label><img v-if="mediaFor(imageAssetId)" :src="mediaFor(imageAssetId)?.thumbnailUrl" :alt="imageAlt || mediaFor(imageAssetId)?.altText"><label>替代文字<input v-model="imageAlt" maxlength="180" placeholder="描述图片中的关键信息"></label><label>图片说明（可空）<input v-model="imageCaption" maxlength="500" placeholder="显示在图片下方"></label><details><summary>上传新图片</summary><MediaUploadField kind="article" :initial-alt="imageAlt" @uploaded="uploaded" @notice="emit('notice', $event)"/></details><footer><button class="primary" @click="saveImage">{{ editingFigure ? '保存图片' : '插入到光标处' }}</button><button v-if="editingFigure" class="danger" @click="removeImage">删除图片</button><button @click="imagePanel = false">取消</button></footer></section></div>
-    <div v-if="cardCaptionPanel" class="dialog-mask" @mousedown.self="closeCardCaption"><section class="editor-dialog"><header><b>{{ editingEmbed ? '编辑资讯单卡' : '插入资讯单卡' }}</b><button aria-label="关闭单卡编辑" @click="closeCardCaption">×</button></header><p class="card-caption-selection">{{ pendingCard?.nameZh || pendingCard?.name || pendingCard?.cardId }}</p><label>单卡备注（可空）<textarea v-model="cardCaption" maxlength="500" rows="3" placeholder="显示在卡图下方；留空则不占位置"/></label><small>备注会在卡图下方居中显示。</small><footer><button class="primary" @click="saveCardEmbed">{{ editingEmbed ? '保存单卡' : '插入单卡' }}</button><button @click="cardPicker = true">更换单卡</button><button v-if="editingEmbed" class="danger" @click="removeEmbed">删除单卡</button><button @click="closeCardCaption">取消</button></footer></section></div>
+    <div v-if="cardCaptionPanel" class="dialog-mask" @mousedown.self="closeCardCaption"><section class="editor-dialog"><header><b>{{ editingEmbed ? '编辑资讯单卡' : '插入资讯单卡' }}</b><button aria-label="关闭单卡编辑" @click="closeCardCaption">×</button></header><p class="card-caption-selection">{{ pendingCard?.nameZh || pendingCard?.name || pendingCard?.cardId }}{{ pendingCard?.alternateArtId ? ` · 异画 ${pendingCard.alternateArtId}` : '' }}</p><label>单卡备注（可空）<textarea v-model="cardCaption" maxlength="500" rows="3" placeholder="显示在卡图下方；留空则不占位置"/></label><small>备注会在卡图下方居中显示。</small><footer><button class="primary" @click="saveCardEmbed">{{ editingEmbed ? '保存单卡' : '插入单卡' }}</button><button :disabled="pickerLoading" @click="showCardPicker">更换单卡 / 异画</button><button v-if="editingEmbed" class="danger" @click="removeEmbed">删除单卡</button><button @click="closeCardCaption">取消</button></footer></section></div>
     <PublicDeckPicker v-if="deckPanel" :title="editingEmbed ? '更换公共牌库' : '插入公共牌库'" :selected-reference="editingDeckReference" @select="selectDeck" @close="closeDeckPanel"/>
-    <SingleCardPicker v-if="cardPicker" title="插入资讯单卡" @select="selectCard" @close="closeCardPicker"/>
+    <SingleCardPicker v-if="cardPicker" :title="pickerArtsUnavailable ? '插入资讯单卡（异画未载入）' : '插入资讯单卡 / 异画'" :items="pickerItems" @select="selectCard" @close="closeCardPicker"/>
   </section>
 </template>
 

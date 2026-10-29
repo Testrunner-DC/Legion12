@@ -311,6 +311,9 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var kind = RequireSiteKind(draft.Kind);
+            // Reject an invalid structured body before adding or mutating a live draft row.
+            var body = kind == "video" ? string.Empty : Limit(draft.Body, 100_000);
+            if (kind == "news") ValidateStructuredArticleBody(body, publishing: false);
             var row = string.IsNullOrWhiteSpace(draft.Id) ? null : FindArticle(draft.Id);
             if (row is null)
             {
@@ -342,9 +345,8 @@ public sealed partial class L12PlatformStore
 
             row.Title = Limit(draft.Title, 180);
             row.Summary = kind == "video" ? string.Empty : Limit(draft.Summary, 600);
-            row.Body = kind == "video" ? string.Empty : Limit(draft.Body, 100_000);
+            row.Body = body;
             row.VideoAuthorName = kind == "video" ? NormalizeVideoAuthorName(draft.VideoAuthorName) : string.Empty;
-            if (kind == "news") ValidateStructuredArticleBody(row.Body, publishing: false);
             row.Kind = kind;
             row.CategoryId = category.Id;
             row.Category = category.Name;
@@ -662,6 +664,7 @@ public sealed partial class L12PlatformStore
 
             var ids = new HashSet<string>(StringComparer.Ordinal);
             var hasContent = false;
+            IReadOnlyDictionary<string, L12AlternateArtView>? articleArts = null;
             foreach (var block in blocks.EnumerateArray())
             {
                 if (block.ValueKind != JsonValueKind.Object) throw new ArgumentException("正文内容块必须是对象");
@@ -699,7 +702,7 @@ public sealed partial class L12PlatformStore
 
                 if (type == "card")
                 {
-                    RequireOnlyProperties(block, "id", "type", "cardId", "caption");
+                    RequireOnlyProperties(block, "id", "type", "cardId", "caption", "alternateArtId");
                     var cardId = JsonString(block, "cardId");
                     ValidateJsonString(block, "caption", 500);
                     var caption = JsonString(block, "caption");
@@ -709,6 +712,19 @@ public sealed partial class L12PlatformStore
                         throw new ArgumentException($"正文单卡必须引用权威卡池中的规范卡号：{cardId}");
                     if (HasUnsafeControlCharacters(caption))
                         throw new ArgumentException("正文单卡备注超过限制或包含控制字符");
+                    if (block.TryGetProperty("alternateArtId", out _))
+                    {
+                        ValidateJsonString(block, "alternateArtId", 100);
+                        var alternateArtId = JsonString(block, "alternateArtId");
+                        if (string.IsNullOrWhiteSpace(alternateArtId) || alternateArtId != alternateArtId.Trim()
+                            || HasUnsafeControlCharacters(alternateArtId))
+                            throw new ArgumentException("正文单卡异画标识无效");
+                        articleArts ??= AlternateArtDefinitionsLocked(false, false, requireAvailable: true)
+                            .Where(art => art.Active && art.Kind == "alternate-art")
+                            .ToDictionary(art => art.Id, StringComparer.Ordinal);
+                        if (!articleArts.TryGetValue(alternateArtId, out var art) || art.BaseCardId != cardId)
+                            throw new ArgumentException("正文单卡异画必须引用公开且启用的同一基础卡版本");
+                    }
                     hasContent = true;
                     continue;
                 }

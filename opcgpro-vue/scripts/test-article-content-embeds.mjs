@@ -10,6 +10,13 @@ const require = createRequire(import.meta.url)
 const Vue = require('vue')
 const ts = require('typescript')
 const { parse, compileScript } = require('@vue/compiler-sfc')
+const artworkModule = { exports: {} }
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/l12/site/articleCardArt.ts', import.meta.url), 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
+{ module: artworkModule, exports: artworkModule.exports, require: id => {
+  assert.equal(id, './articleBlocks'); return articleBlocks
+}, Map })
+const articleCardArt = artworkModule.exports
 const publicDeckSummaryModule = { exports: {} }
 const publicDeckSummaryOutput = ts.transpileModule(
   readFileSync(new URL('../src/l12/site/publicDeckSummary.ts', import.meta.url), 'utf8'),
@@ -127,12 +134,14 @@ const actualModule = { exports: {} }
 const imports = {
   vue: Vue,
   '@/l12/decks': { loadDeckCatalog: () => activeHarness.loadCatalog() },
-  '@/l12/platform': { publicDeckReadApi: { current: reference => activeHarness.readDeck(reference) } },
+  '@/l12/platform': { publicDeckReadApi: { current: reference => activeHarness.readDeck(reference) },
+    alternateArtApi: { gallery: () => activeHarness.readArts() } },
   '@/l12/CardImage.vue': componentStub,
   '@/l12/CatalogCardDetails.vue': componentStub,
   '@/l12/DeckCover.vue': componentStub,
   './ArticleInlineText.vue': componentStub,
   './articleBlocks': articleBlocks,
+  './articleCardArt': articleCardArt,
   './publicDeckRead': {
     validatePublicDeckCurrent: value => value,
     settlePublicDeckRead: async (request, validate) => {
@@ -307,7 +316,8 @@ assert.equal(pickerUnmountedState.items.length, 0, '卸载后迟到响应不得�
 
 function fixture(initialBody) {
   const harness = {
-    catalogCalls: [], deckCalls: [], inFlight: 0, maxInFlight: 0,
+    catalogCalls: [], deckCalls: [], artCalls: [], inFlight: 0, maxInFlight: 0,
+    readArts() { const call = deferred(); this.artCalls.push(call); return call.promise },
     loadCatalog() { const call = deferred(); this.catalogCalls.push(call); return call.promise },
     readDeck(reference) {
       const gate = deferred()
@@ -328,7 +338,7 @@ function fixture(initialBody) {
   const app = memoryRenderer.createApp({ render: () => Vue.h(ActualRenderer, props) })
   app.mount(root)
   return {
-    catalogCalls: harness.catalogCalls, deckCalls: harness.deckCalls, props,
+    catalogCalls: harness.catalogCalls, deckCalls: harness.deckCalls, artCalls: harness.artCalls, props,
     get maxInFlight() { return harness.maxInFlight },
     get state() { return app._instance.subTree.component.setupState },
     unmount: () => app.unmount(),
@@ -441,5 +451,134 @@ await staleOpen; await flush()
 assert.equal(staleCard.state.selectedCard, null, '正文切换后旧点击不得打开过期单卡详情')
 staleCard.unmount()
 
-console.log('article content embed regression passed')
+const artBase = { ...testCard('S01-0001'), cardType: 'master', faction: 'tianting', product: '基础', effect: '基础权威规则' }
+const art = { id: 'official:art-one', active: true, kind: 'alternate-art', baseCardId: artBase.id,
+  artCode: 'ART-ONE', displayName: '公开异画', builtIn: true, cardImageId: 'S01-0001A', imageUrl: '', products: [] }
+const artBlock = { id: 'art', type: 'card', cardId: artBase.id, alternateArtId: art.id, caption: '保持备注' }
+const artBody = JSON.stringify({ format: 'l12-blocks', version: 1, blocks: [artBlock] })
+assert.deepEqual(parseArticleBody(serializeArticleBody(parseArticleBody(artBody))).blocks[0], artBlock)
+assert.equal(Object.hasOwn(parseArticleBody(source).blocks[1], 'alternateArtId'), false)
+const choices = articleCardArt.articleCardPickerItems([artBase], [art,
+  { ...art, id: 'inactive', active: false }, { ...art, id: 'standalone', kind: 'gallery-card' },
+  { ...art, id: 'unknown', baseCardId: 'NOT-A-CARD' },
+  { ...art, id: 'unsafe', builtIn: false, imageUrl: 'https://tracker.invalid/art.webp' }])
+assert.equal(choices.length, 2, 'Only active public, mapped, safely rendered alternate arts may be selected')
+assert.equal(choices[1].cardId, artBase.id, 'Artwork identity must never replace the rules card identity')
+assert.equal(choices[1].alternateArtId, art.id)
+assert.equal(choices[1].detailCard.effect, artBase.effect)
+assert.equal(choices[1].detailCard.imageUrl, 'l12-card-id:S01-0001A')
+const customUrl = '/api/site/media/synthetic-art/desktop/' + 'a'.repeat(64) + '.webp'
+assert.equal(articleCardArt.articleCardArtwork(artBase, { ...art, builtIn: false, imageUrl: customUrl }).imageUrl, customUrl)
+assert.equal(articleCardArt.articleCardFor(artBlock, artBase, []), undefined, 'Missing art must not silently render base artwork')
+const artRender = fixture(artBody)
+await flush()
+assert.equal(artRender.artCalls.length, 1)
+artRender.catalogCalls[0].resolve([artBase]); artRender.artCalls[0].resolve([art])
+await flush()
+assert.equal(artRender.state.cardFor(artBlock).imageUrl, 'l12-card-id:S01-0001A')
+await artRender.state.openEmbeddedCard(artBlock)
+assert.equal(artRender.state.selectedCard.imageUrl, 'l12-card-id:S01-0001A', 'Detail must preserve selected artwork')
+artRender.props.body = JSON.stringify({ format: 'l12-blocks', version: 1,
+  blocks: [{ ...artBlock, alternateArtId: 'missing-art' }] })
+await flush()
+assert.equal(artRender.state.selectedCard, null, 'Same base card but another artwork invalidates old detail')
+assert.equal(artRender.state.cardFor({ ...artBlock, alternateArtId: 'missing-art' }), undefined)
+artRender.unmount()
+const artRetry = fixture(artBody)
+await flush()
+artRetry.catalogCalls[0].resolve([artBase]); artRetry.artCalls[0].reject(new Error('gallery failed'))
+await flush()
+assert.match(artRetry.state.cardError(artBlock), /点击重试/)
+const artRetryOpen = artRetry.state.openEmbeddedCard(artBlock)
+artRetry.artCalls[1].resolve([art]); await artRetryOpen; await flush()
+assert.equal(artRetry.state.selectedCard.imageUrl, 'l12-card-id:S01-0001A')
+artRetry.unmount()
+const lateArt = fixture(artBody)
+await flush()
+const lateOpen = lateArt.state.openEmbeddedCard(artBlock)
+lateArt.props.body = articleBody({ cards: [artBase.id] }); await flush()
+lateArt.catalogCalls[0].resolve([artBase]); lateArt.artCalls[0].resolve([art])
+await lateOpen; await flush()
+assert.equal(lateArt.state.selectedCard, null, 'Late artwork click cannot reopen after article change')
+lateArt.unmount()
+// Mount the actual editor setup, controlling only its two asynchronous readers.
+let activeEditorHarness
+const editorModule = { exports: {} }
+const editorDescriptor = parse(editor, { filename: 'ArticleDocumentEditor.vue' }).descriptor
+const editorImports = { vue: Vue, './articleBlocks': articleBlocks, './articleCardArt': articleCardArt,
+  '@/l12/platform': { alternateArtApi: { gallery: () => activeEditorHarness.readArts() } },
+  '@/l12/decks': { loadDeckCatalog: () => activeEditorHarness.loadCatalog() } }
+vm.runInNewContext(ts.transpileModule(compileScript(editorDescriptor, { id: 'article-editor-availability' }).content,
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
+{ module: editorModule, exports: editorModule.exports,
+  require: id => editorImports[id] ?? (id.endsWith('.vue') ? componentStub : assert.fail('Unexpected editor import ' + id)),
+  window: { getSelection: () => null }, Element: class Element {}, HTMLElement: class HTMLElement {},
+  Map, Set, Promise, console, setTimeout, clearTimeout })
+const ActualEditor = editorModule.exports.default
+ActualEditor.render = () => null
+function editorFixture() {
+  const harness = { catalogCalls: [], artCalls: [],
+    loadCatalog() { const call = deferred(); this.catalogCalls.push(call); return call.promise },
+    readArts() { const call = deferred(); this.artCalls.push(call); return call.promise } }
+  activeEditorHarness = harness
+  const notices = [], root = hostNode('root')
+  const app = memoryRenderer.createApp({ render: () => Vue.h(ActualEditor, {
+    modelValue: '旧文章正文', onNotice: value => notices.push(value) }) })
+  app.mount(root)
+  return { ...harness, notices, get state() { return app._instance.subTree.component.setupState }, unmount: () => app.unmount() }
+}
+const degradedEditor = editorFixture()
+degradedEditor.state.openCard()
+degradedEditor.catalogCalls[0].resolve([artBase]); degradedEditor.artCalls[0].resolve([art])
+await flush()
+assert.equal(degradedEditor.state.pickerItems.length, 2)
+degradedEditor.state.closeCardPicker()
+degradedEditor.state.openCard()
+assert.equal(degradedEditor.state.cardPicker, false, 'Old picker must retire before retry starts')
+degradedEditor.catalogCalls[1].resolve([artBase]); degradedEditor.artCalls[1].reject(new Error('gallery unavailable'))
+await flush()
+assert.equal(degradedEditor.state.cardPicker, true, 'Gallery outage must not block the healthy base catalog')
+assert.equal(degradedEditor.state.pickerItems.length, 1, 'Failure must remove previous artwork choices')
+assert.equal(degradedEditor.state.pickerArtsUnavailable, true)
+assert.equal(degradedEditor.state.pickerItems[0].alternateArtId, undefined)
+assert.match(degradedEditor.notices.at(-1), /基础卡/)
+degradedEditor.state.closeCardPicker(); degradedEditor.state.openCard()
+degradedEditor.catalogCalls[2].resolve([artBase]); degradedEditor.artCalls[2].resolve([art])
+await flush()
+assert.equal(degradedEditor.state.pickerItems.length, 2, 'Reopening retries gallery successfully')
+assert.equal(degradedEditor.state.pickerArtsUnavailable, false)
+degradedEditor.state.closeCardPicker(); degradedEditor.state.openCard()
+degradedEditor.catalogCalls[3].reject(new Error('catalog failed')); degradedEditor.artCalls[3].resolve([art])
+await flush()
+assert.equal(degradedEditor.state.cardPicker, false, 'Broken rules catalog must not present old or artwork-only choices')
+assert.equal(degradedEditor.state.pickerItems.length, 0)
+assert.match(degradedEditor.notices.at(-1), /基础卡/)
+degradedEditor.unmount()
+const closedEditor = editorFixture()
+closedEditor.state.openCard(); closedEditor.state.closeCardPicker()
+closedEditor.catalogCalls[0].resolve([artBase]); closedEditor.artCalls[0].resolve([art])
+await flush()
+assert.equal(closedEditor.state.cardPicker, false)
+assert.equal(closedEditor.state.pickerItems.length, 0, 'Late closed response must not populate choices')
+closedEditor.unmount()
+const overlappedEditor = editorFixture()
+overlappedEditor.state.openCard(); overlappedEditor.state.openCard()
+overlappedEditor.catalogCalls[1].resolve([artBase]); overlappedEditor.artCalls[1].reject(new Error('latest gallery failure'))
+await flush()
+assert.equal(overlappedEditor.state.pickerItems.length, 1)
+overlappedEditor.catalogCalls[0].resolve([artBase]); overlappedEditor.artCalls[0].resolve([art])
+await flush()
+assert.equal(overlappedEditor.state.pickerItems.length, 1, 'Older gallery success must not refill a degraded latest picker')
+assert.equal(overlappedEditor.state.pickerArtsUnavailable, true)
+overlappedEditor.unmount()
+const disposedEditor = editorFixture()
+disposedEditor.state.openCard()
+const disposedState = disposedEditor.state
+disposedEditor.unmount()
+disposedEditor.catalogCalls[0].resolve([artBase]); disposedEditor.artCalls[0].resolve([art])
+await flush()
+assert.equal(disposedState.cardPicker, false)
+assert.equal(disposedState.pickerItems.length, 0)
+console.log('Article editor availability actual SFC: success, gallery fallback, retry, catalog failure, close, stale response and unmount passed')
+console.log('article content embed regression passed (including alternate-art model, mapping, detail, retry and stale-response contracts)')
 await import('./test-article-summary-read.mjs')

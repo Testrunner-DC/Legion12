@@ -1425,7 +1425,8 @@ const contracts = [
     && articleRenderer.includes('.article-image-zoom__img{display:block;width:auto;height:auto;max-inline-size:100%;max-block-size:calc(100dvh - 96px);object-fit:contain')
     && !newsPage.includes('.detail-cover{display:block;width:100%;aspect-ratio:16/9;object-fit:cover'), '资讯一览封面、详情封面和正文插图必须在移动端完整等比显示，不得以固定比例裁掉左右构图；放大查看同样必须完整 contain'],
   [articleStore.includes('row.Summary = kind == "video" ? string.Empty')
-    && articleStore.includes('row.Body = kind == "video" ? string.Empty')
+    && articleStore.includes('var body = kind == "video" ? string.Empty : Limit(draft.Body, 100_000);')
+    && articleStore.includes('row.Body = body;')
     && articleStore.includes('VideoAuthorRequired') && articleStore.includes('新视频发布前必须填写作者名')
     && articleStore.includes('视频发布前必须填写播放链接')
     && adminArticles.includes("props.kind === 'video'") && adminArticles.includes('selected.videoAuthorName')
