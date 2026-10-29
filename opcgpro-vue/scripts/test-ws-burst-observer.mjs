@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
+import path from 'node:path'
 import { WsBurstObserver, finalizeClientObservationStatus } from './ws-burst-observer.mjs'
 
 // Read-only original bytes travel with the test; optional local evidence remains
@@ -12,6 +13,8 @@ const body = owned.slice(owned.indexOf("import crypto from 'node:crypto'"))
 const restored = body.replace("'gameStateCardFrameV1','gameStatePropertyFrameV1','gameStateDelta'", "'gameStateCardFrameV1','gameStateDelta'")
   .replace("['gameState','gameStateCardFrameV1','gameStatePropertyFrameV1'].includes(type)", "['gameState','gameStateCardFrameV1'].includes(type)")
 assert.equal(restored, frozen.toString('utf8').replaceAll('\r\n', '\n'))
+const attributes = fs.readFileSync(process.env.L12_QA_SOURCE_REPO ? path.join(process.env.L12_QA_SOURCE_REPO, '.gitattributes') : new URL('../../.gitattributes', import.meta.url), 'utf8')
+assert.ok(attributes.split(/\r?\n/).includes('/opcgpro-vue/scripts/ws-burst-observer.mjs text eol=lf'), 'Observer checkout must preserve LF for the exact frozen reverse comparison')
 let cases = 1
 function run({ frameCap = 4096, count = 60, verified = true, lastAt = 3000 } = {}) {
   const observer = new WsBurstObserver({ frameCap, now: () => 0 }); observer.begin(0)
