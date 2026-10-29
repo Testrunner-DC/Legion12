@@ -8,7 +8,7 @@ import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
 import { battlefieldSlotLabel } from './battlefieldTargetPresentation'
 import { canopicRelicPresentation } from './canopicRelicPresentation'
-import { isCounterTacticCard } from '../cardPresentation'
+import { canReplaceOwnCoveredCounter, isCounterTacticCard } from '../cardPresentation'
 import { blackLotusLogoUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import CardImage from '../CardImage.vue'
 import RoundCardImage from '../RoundCardImage.vue'
@@ -196,7 +196,8 @@ function counterState(card: Card | null) {
 }
 function isPlacementDestination(row: number, card: Card | null) {
   if (!props.placementMode || (props.placementRow !== null && props.placementRow !== undefined && props.placementRow !== row)) return false
-  return !card || Boolean(props.placementCanReplaceCounter && row === 1 && isCounterTactic(card))
+  return !card || Boolean(props.placementCanReplaceCounter && props.controllable
+    && canReplaceOwnCoveredCounter(card, props.player.playerIndex, props.player.playerIndex, row))
 }
 function isResponseTarget(card: Card | null) {
   // Empty slots have no response identity. Never coerce a missing instanceId to

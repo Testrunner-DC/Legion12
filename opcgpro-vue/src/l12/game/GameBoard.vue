@@ -8,7 +8,7 @@ provideMobileBattleDock()
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type VNode } from 'vue'
 import type { ActionEvent, Card, DisasterCardView, GameState, Phase, Prompt } from '../types'
 import { promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
-import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
+import { canReplaceOwnCoveredCounter, isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
 import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
@@ -517,7 +517,8 @@ const promotionFoundationIdsFor = (card: Card) => me.value.promotionOptions?.[ca
 const canPromote = (card: Card) => promotionFoundationIdsFor(card).length > 0
 const playableIds = computed(() => {
   if (!isMyMain.value || hasBlockingPrompt.value) return []
-  const hasLegionDestination = me.value.field.some((row, rowIndex) => row.some(card => !card || (rowIndex === 1 && isCounter(card))))
+  const hasLegionDestination = me.value.field.some((row, rowIndex) => isLegionPlacementRowAllowed(rowIndex)
+    && row.some(card => !card || canReplaceOwnCoveredCounter(card, me.value.playerIndex, controlledPlayerIndex.value, rowIndex)))
   const hasInfiltratorDestination = hasLegionDestination || enemy.value.field.some(row => row.some(card => !card))
   return (me.value.hand ?? [])
     .filter(card => !card.playBlockedReason)
@@ -528,6 +529,7 @@ const playableIds = computed(() => {
     .map(card => card.instanceId)
 })
 const selectedHandCard = computed(() => me.value.hand?.find(card => card.instanceId === selectedId.value) ?? null)
+const handPlacementCanReplaceCounter = computed(() => selectedHandCard.value?.cardType === 'legion' || isCounter(selectedHandCard.value))
 const allowedLegionPlacementRows = computed(() => [0, 1].filter(row => (props.game.legionPlacementRows ?? [0, 1]).includes(row)))
 function isLegionPlacementRowAllowed(row: number) { return allowedLegionPlacementRows.value.includes(row) }
 const handPlacementRow = computed(() => isCounter(selectedHandCard.value) ? 1
@@ -1416,10 +1418,11 @@ function ownSlot(row: number, slot: number, card: Card | null) {
     playArmed.value = false
     return
   }
+  if (mode.value === 'play' && playArmed.value && isCounter(selectedHandCard.value) && row !== 1) return
   if (mode.value === 'play' && playArmed.value && selectedHandCard.value?.cardType === 'legion'
     && !isLegionPlacementRowAllowed(row)) return
-  if (card && mode.value === 'play' && playArmed.value && selectedHandCard.value?.cardType === 'legion'
-    && row === 1 && isCounter(card)) {
+  if (card && mode.value === 'play' && playArmed.value && selectedHandCard.value && handPlacementCanReplaceCounter.value
+    && canReplaceOwnCoveredCounter(card, me.value.playerIndex, controlledPlayerIndex.value, row)) {
     freeCommand('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: me.value.playerIndex })
     selectedId.value = null
     playArmed.value = false
@@ -1728,7 +1731,7 @@ function statusTexts(card: Card) {
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !freeActionBusy"
               :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (!freeActionBusy && !combat && isMyMain && isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)) && (selectedHandCard?.cardType !== 'legion' || allowedLegionPlacementRows.length > 0)))"
-              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="gmPlacement ? (isCounter(selectedHandCard) ? 1 : null) : handPlacementRow"
+              :placement-can-replace-counter="handPlacementCanReplaceCounter" :placement-row="gmPlacement ? (isCounter(selectedHandCard) ? 1 : null) : handPlacementRow"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'cavalryMove'"
@@ -1834,7 +1837,7 @@ function statusTexts(card: Card) {
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !freeActionBusy"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
               :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (!freeActionBusy && !combat && isMyMain && isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)) && (selectedHandCard?.cardType !== 'legion' || allowedLegionPlacementRows.length > 0)))"
-              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="gmPlacement ? (isCounter(selectedHandCard) ? 1 : null) : handPlacementRow"
+              :placement-can-replace-counter="handPlacementCanReplaceCounter" :placement-row="gmPlacement ? (isCounter(selectedHandCard) ? 1 : null) : handPlacementRow"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewMe.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"

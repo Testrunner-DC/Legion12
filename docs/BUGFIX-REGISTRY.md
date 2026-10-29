@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261029-COUNTER-REPLACEMENT-UI｜盖伏反击的合法顶替入口
+
+- 来源人类已明确批准。既有officialRules与L12Actions.SetCounterTactic允许新反击顶替本人后排盖伏反击，旧卡翻正后归属者墓地；服务端原规则/费用/支付不变。前端双PlayerMat能力绑定及ownSlot却只接受新军团，点旧盖伏卡改为选中而清除playArmed，未发送playCard；旧可落位判断还未核盖伏/所有权。Main独审3产品差异与既有服务端CanReplaceOwnCoveredCounter一致，不新增规则例外。
+- cardPresentation共享唯一资格供GameBoard可用位置/点击与PlayerMat高亮使用：己方后排、盖伏反击、归属本人；旧Owner缺省沿服务端既有本人回退。新反击和军团可顶替，正面/异主/前排拒绝；另外实测空前排不亮但仍会发非法反击指令，补同一行校验。不改天灾军团行限制、观战只读、忙态、响应、支付或中央说明解耦。
+- 全池324张枚举18种反击，旧真实函数双模板36真RED；最终156场景551断言通过，完整实际PlayerMat内存SFC8配置112断言通过（双玩家/双视觉侧/移动布局、click/Enter，叶卡图与Portal替身，不冒浏览器或真机触摸）。首Portal替身警告及空前排RED保留，最终SFC零警告；3邻接与motion通过。
+- Main核5叶SHA，新增两QA纳现有check:defense-actions；独立正常defense/UI合同整链、实际应用noEmit类型及双626模块构建退出0，`counter-replacement-20261029/main/result.json`绑定6叶含package。后台未变，复用当前规则/平台资格，不重跑全后端、不冒Release/上线/原私局重放；线上Bug仍待部署后具名核验。
+- 回退只限这3前端叶及新守卫，不能撤中央说明租约修复、删除原服务端覆盖回归或允许正面/他人盖伏误替换。原来源两条旧牌库字面合同失败已在前一代表批迁移，不按本族产品缺陷或绕过正常门禁处理。
+
 ## FIX-20261029-DECK-TRANSACTION-AUTHORITY｜代表牌及草稿跨页面事务权威
 
 - 人类批准按正式／测试环境＋账号隔离迁移，旧牌库／草稿原样保留且只手动导入。原localStorage多页读改写及自动旧页回填不能提供事务CAS；不再用延迟或WebLocks补一个平行权威。新deckCacheDatabase为唯一IDB提交源，completion后才报成功；账号代际、版本CAS、失败／abort／blocked均严格保留，BroadcastChannel只作失效提示。

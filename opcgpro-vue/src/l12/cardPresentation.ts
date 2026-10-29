@@ -22,6 +22,18 @@ export function isCounterTacticCard(card?: { cardType?: string | null; isCounter
   return Boolean(card?.cardType === 'tactic' && card.isCounterTactic === true)
 }
 
+// UI placement affordance mirrors the authority's covered-counter occupancy rule.
+export function canReplaceOwnCoveredCounter(
+  card: { cardType?: string | null; isCounterTactic?: boolean; hidden?: boolean; ownerIndex?: number } | null | undefined,
+  battlefieldPlayerIndex: number,
+  actingPlayerIndex: number,
+  row: number,
+) {
+  return battlefieldPlayerIndex === actingPlayerIndex && row === 1
+    && card?.hidden === true && isCounterTacticCard(card)
+    && (card.ownerIndex ?? battlefieldPlayerIndex) === actingPlayerIndex
+}
+
 export function cardTypeLabel(cardType: string, isCounterTactic = false) {
   if (cardType === 'tactic' && isCounterTactic) return '反击战术'
   const labels: Record<string, string> = {
