@@ -7,12 +7,16 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace TwelveLegions.Platform.Tests;
 
 [Collection("Platform environment")]
 public sealed class PrivateDeckPersistenceStartupTests
 {
+    private readonly ITestOutputHelper output;
+    public PrivateDeckPersistenceStartupTests(ITestOutputHelper output) => this.output = output;
+
     private const string StatusRoute = "/api/admin/storage/private-deck-persistence";
 
     [Theory]
@@ -135,7 +139,10 @@ public sealed class PrivateDeckPersistenceStartupTests
                 full = measurement.Complete();
             }
             Assert.InRange(point.DeckDomainStatements, 1, 12);
-            Assert.True(full.DeckDomainStatements >= 40);
+            output.WriteLine($"RestartFullSnapshotSql={full.DeckDomainStatements}; ObjectWriteSql={point.DeckDomainStatements}");
+            // Nineteen active distinct bodies remain after deletion; unchanged
+            // reference rows and retained tombstones need not be rewritten.
+            Assert.InRange(full.DeckDomainStatements, 19, 40);
             Assert.True(full.DeckDomainStatements > point.DeckDomainStatements * 3);
             Assert.Equal(0, point.InstrumentationErrors);
             Assert.Equal(0, full.InstrumentationErrors);

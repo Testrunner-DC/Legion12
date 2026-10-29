@@ -2,11 +2,15 @@ using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace TwelveLegions.Platform.Tests;
 
 public sealed class PrivateDeckObjectPersistenceTests
 {
+    private readonly ITestOutputHelper output;
+    public PrivateDeckObjectPersistenceTests(ITestOutputHelper output) => this.output = output;
+
     [Fact]
     public void FeatureDefaultsOffAndEnabledUpsertUsesBoundedObjectWrite()
     {
@@ -35,7 +39,10 @@ public sealed class PrivateDeckObjectPersistenceTests
                 point = scope.Complete();
             }
 
-            Assert.True(full.DeckDomainStatements >= 40);
+            output.WriteLine($"FullSnapshotSql={full.DeckDomainStatements}; ObjectWriteSql={point.DeckDomainStatements}");
+            // The full path still validates all 20 distinct bodies, but no longer
+            // rewrites unchanged reference metadata. Keep the object-write gap.
+            Assert.InRange(full.DeckDomainStatements, 20, 40);
             Assert.InRange(point.DeckDomainStatements, 1, 12);
             Assert.True(point.DeckDomainStatements * 3 < full.DeckDomainStatements);
             Assert.InRange(point.InclusiveAffectedRows, 1, 8);

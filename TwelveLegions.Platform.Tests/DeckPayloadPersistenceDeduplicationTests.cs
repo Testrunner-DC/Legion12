@@ -58,8 +58,7 @@ public sealed class DeckPayloadPersistenceDeduplicationTests(ITestOutputHelper o
                 excludes = "core snapshot, rollback, mirror preparation/write, audit and outer save",
             }));
             Assert.Equal(0, measured.InstrumentationErrors);
-            Assert.InRange(measured.DeckDomainStatements, references + uniqueBodies,
-                references + uniqueBodies + 64);
+            Assert.InRange(measured.DeckDomainStatements, uniqueBodies, uniqueBodies + 64);
             Assert.Equal(0, measured.MirrorBytes);
             Assert.Equal(references, Count(db, "account_decks"));
             Assert.Equal(uniqueBodies, Count(db, "deck_payloads"));
@@ -96,10 +95,9 @@ public sealed class DeckPayloadPersistenceDeduplicationTests(ITestOutputHelper o
                 allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocated,
                 measured.DeckDomainStatements, measured.SqlitePagePayloadBytes, measured.MirrorBytes }));
             Assert.Equal(0, measured.InstrumentationErrors);
-            // Every reference still has its own metadata write. Body work must
-            // scale with distinct immutable facts, not their number of owners.
-            Assert.InRange(measured.DeckDomainStatements, references + uniqueBodies,
-                references + uniqueBodies + 64);
+            // Every reference retains validation; unchanged metadata needs no
+            // command. Body work scales with distinct immutable facts.
+            Assert.InRange(measured.DeckDomainStatements, uniqueBodies, uniqueBodies + 64);
             using var db = Open(store.TransactionalStoragePath);
             Assert.Equal(references, Count(db, "account_decks"));
             Assert.Equal(uniqueBodies, Count(db, "deck_payloads"));

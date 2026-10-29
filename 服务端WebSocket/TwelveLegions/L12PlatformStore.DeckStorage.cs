@@ -504,9 +504,22 @@ public sealed partial class L12PlatformStore
         AssignDeckIdentities(data);
         CompactRuntimeDeckDomain(data);
         DeleteStaleDeckDomainRows(connection, transaction, data);
+        var accounts = DeckSnapshotMetadata.Read(connection, transaction, """
+            SELECT account_id,name_key,name,deck_id,revision,payload_hash,
+                alternate_art_selections_json,alternate_art_copies_json,bench_cards_json,updated_utc,
+                is_deleted,publication_id,publication_version,representative_card_ids_json FROM account_decks WHERE is_deleted=0;
+            """, 2);
+        var publications = DeckSnapshotMetadata.Read(connection, transaction, """
+            SELECT publication_id,public_code,owner_id,name,current_version,current_payload_hash,
+                alternate_art_selections_json,alternate_art_copies_json,views,copies,updated_utc,
+                is_deleted,representative_card_ids_json FROM published_decks WHERE is_deleted=0;
+            """, 1);
+        var tournaments = DeckSnapshotMetadata.Read(connection, transaction, """
+            SELECT tournament_id,account_id,payload_hash,submitted_utc,locked_utc FROM tournament_deck_refs;
+            """, 2);
         // Compact facts are immutable within this synchronous, owning transaction.
         // Validate/encode/insert a shared body once, while every reference retains
-        // its own identity/master checks and metadata write. Never reuse this set
+        // its own identity/master checks and exact metadata comparison. Never reuse this set
         // across saves, failed transactions, conflict refreshes or generations.
         var persistedPayloads = new HashSet<string>(StringComparer.Ordinal);
         string PersistReferencedPayload(string hash, DateTimeOffset createdAt)
@@ -521,6 +534,15 @@ public sealed partial class L12PlatformStore
         foreach (var deck in data.Decks)
         {
             var payloadHash = PersistReferencedPayload(CaptureDeckPayload(data, deck), deck.UpdatedAt);
+            var key = DeckNameKey(deck.Name);
+            var selections = JsonSerializer.Serialize(deck.AlternateArtSelections);
+            var copies = JsonSerializer.Serialize(deck.AlternateArtCopies);
+            var bench = DeckBenchJson(deck);
+            var representatives = RepresentativeJson(deck.RepresentativeCardIds);
+            var updated = deck.UpdatedAt.ToString("O");
+            object?[] values = [deck.Name, deck.Id, deck.Revision, payloadHash, selections, copies, bench,
+                updated, 0, deck.PublicationId, deck.PublicationVersion, representatives];
+            if (accounts.Matches(deck.AccountId, key, values)) continue;
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
@@ -537,19 +559,20 @@ public sealed partial class L12PlatformStore
                     publication_id=excluded.publication_id,publication_version=excluded.publication_version,representative_card_ids_json=excluded.representative_card_ids_json,is_deleted=0;
                 """;
             command.Parameters.AddWithValue("$account", deck.AccountId);
-            command.Parameters.AddWithValue("$key", DeckNameKey(deck.Name));
+            command.Parameters.AddWithValue("$key", key);
             command.Parameters.AddWithValue("$name", deck.Name);
             command.Parameters.AddWithValue("$id", deck.Id);
             command.Parameters.AddWithValue("$revision", deck.Revision);
             command.Parameters.AddWithValue("$payload", payloadHash);
-            command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
-            command.Parameters.AddWithValue("$copies", JsonSerializer.Serialize(deck.AlternateArtCopies));
-            command.Parameters.AddWithValue("$bench", DeckBenchJson(deck));
-            command.Parameters.AddWithValue("$representatives", RepresentativeJson(deck.RepresentativeCardIds));
+            command.Parameters.AddWithValue("$selections", selections);
+            command.Parameters.AddWithValue("$copies", copies);
+            command.Parameters.AddWithValue("$bench", bench);
+            command.Parameters.AddWithValue("$representatives", representatives);
             command.Parameters.AddWithValue("$publication", (object?)deck.PublicationId ?? DBNull.Value);
             command.Parameters.AddWithValue("$version", (object?)deck.PublicationVersion ?? DBNull.Value);
-            command.Parameters.AddWithValue("$updated", deck.UpdatedAt.ToString("O"));
+            command.Parameters.AddWithValue("$updated", updated);
             command.ExecuteNonQuery();
+            accounts.Written(deck.AccountId, key, values);
         }
 
         foreach (var deck in data.PublishedDecks)
@@ -557,8 +580,15 @@ public sealed partial class L12PlatformStore
             var payloadHash = PersistReferencedPayload(CaptureDeckPayload(data, deck), deck.CreatedAt);
             var version = CurrentPublishedDeckVersion(connection, transaction, deck.Id, payloadHash, deck.Name, deck.RepresentativeCardIds);
             deck.Version = version;
-            using (var command = connection.CreateCommand())
+            var selections = JsonSerializer.Serialize(deck.AlternateArtSelections);
+            var artCopies = JsonSerializer.Serialize(deck.AlternateArtCopies);
+            var representatives = RepresentativeJson(deck.RepresentativeCardIds);
+            var updated = deck.UpdatedAt.ToString("O");
+            object?[] values = [deck.PublicCode, deck.OwnerId, deck.Name, version, payloadHash, selections,
+                artCopies, Math.Max(0, deck.Views), Math.Max(0, deck.Copies), updated, 0, representatives];
+            if (!publications.Matches(deck.Id, null, values))
             {
+                using var command = connection.CreateCommand();
                 command.Transaction = transaction;
                 command.CommandText = """
                     INSERT INTO published_decks(publication_id,public_code,owner_id,name,current_version,current_payload_hash,
@@ -578,14 +608,15 @@ public sealed partial class L12PlatformStore
                 command.Parameters.AddWithValue("$name", deck.Name);
                 command.Parameters.AddWithValue("$version", version);
                 command.Parameters.AddWithValue("$payload", payloadHash);
-                command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
-                command.Parameters.AddWithValue("$artCopies", JsonSerializer.Serialize(deck.AlternateArtCopies));
-                command.Parameters.AddWithValue("$representatives", RepresentativeJson(deck.RepresentativeCardIds));
+                command.Parameters.AddWithValue("$selections", selections);
+                command.Parameters.AddWithValue("$artCopies", artCopies);
+                command.Parameters.AddWithValue("$representatives", representatives);
                 command.Parameters.AddWithValue("$views", Math.Max(0, deck.Views));
                 command.Parameters.AddWithValue("$copies", Math.Max(0, deck.Copies));
                 command.Parameters.AddWithValue("$created", deck.CreatedAt.ToString("O"));
-                command.Parameters.AddWithValue("$updated", deck.UpdatedAt.ToString("O"));
+                command.Parameters.AddWithValue("$updated", updated);
                 command.ExecuteNonQuery();
+                publications.Written(deck.Id, null, values);
             }
             using (var versionCommand = connection.CreateCommand())
             {
@@ -625,6 +656,10 @@ public sealed partial class L12PlatformStore
                 && deck.MoraleIds.Count == 0 && deck.SpecialIds.Count == 0) continue;
             var payloadHash = PersistReferencedPayload(CaptureDeckPayload(data, deck), deck.SubmittedAt);
             deck.PayloadHash = payloadHash;
+            var submitted = deck.SubmittedAt.ToString("O");
+            object locked = deck.LockedAt is null ? DBNull.Value : deck.LockedAt.Value.ToString("O");
+            object?[] values = [payloadHash, submitted, locked];
+            if (tournaments.Matches(tournament.Id, participant.AccountId, values)) continue;
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
@@ -636,9 +671,10 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$tournament", tournament.Id);
             command.Parameters.AddWithValue("$account", participant.AccountId);
             command.Parameters.AddWithValue("$payload", payloadHash);
-            command.Parameters.AddWithValue("$submitted", deck.SubmittedAt.ToString("O"));
-            command.Parameters.AddWithValue("$locked", deck.LockedAt is null ? DBNull.Value : deck.LockedAt.Value.ToString("O"));
+            command.Parameters.AddWithValue("$submitted", submitted);
+            command.Parameters.AddWithValue("$locked", locked);
             command.ExecuteNonQuery();
+            tournaments.Written(tournament.Id, participant.AccountId, values);
         }
     }
 
@@ -648,7 +684,7 @@ public sealed partial class L12PlatformStore
         var accountDecks = data.Decks.Select(deck => $"{deck.AccountId}\n{DeckNameKey(deck.Name)}")
             .ToHashSet(StringComparer.Ordinal);
         var storedAccountDecks = ReadStoredKeys(connection, transaction,
-            "SELECT account_id || char(10) || name_key FROM account_decks;");
+            "SELECT account_id || char(10) || name_key FROM account_decks WHERE is_deleted=0;");
         foreach (var key in storedAccountDecks.Where(key => !accountDecks.Contains(key)))
         {
             var parts = key.Split('\n', 2);
@@ -662,7 +698,7 @@ public sealed partial class L12PlatformStore
 
         var publications = data.PublishedDecks.Select(deck => deck.Id).ToHashSet(StringComparer.Ordinal);
         var storedPublications = ReadStoredKeys(connection, transaction,
-            "SELECT publication_id FROM published_decks;");
+            "SELECT publication_id FROM published_decks WHERE is_deleted=0;");
         foreach (var id in storedPublications.Where(id => !publications.Contains(id)))
         {
             ExecuteDeckDelete(connection, transaction,
