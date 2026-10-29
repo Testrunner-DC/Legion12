@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261030-MULTIGIB-TRANSFER｜大文件分块整数与上传地址生命周期
+
+- 真3.2GB密文预检在Math.Min自动选择Int32时溢出，原件不变、网络未发送；复查完整模块3处分块计算，统一显式long取最小值后才转有界int，覆盖源hash/上传片/下载前缀。保4MiB分片、原length/SHA/source锁及4GiB上限，不为通过而拆换业务归档。
+- 官方locateupload短效地址不能贯穿长时上传；逐片/重试前检查实际到期并重新获取，只允许原严格HTTPS主机，同一path/uploadid/片索引与内容不变。缺期限保守30秒、最多60秒、非正期限拒绝，不变成无限重试或新授权。
+- 原66＋3=69纯合成通过：到期重获、已过期拒绝、2/3.2/4GiB边界及末块/负数；Main差异独审与正常Focused整链退出0，`baidu-restore-20261030/location-r3`。真实8ec上传进行中，不冒完整云/数据库恢复或源退休；无应用构建/部署/维护变更。
+
 ## OPS-20261030-MANIFEST-ONLY-RESTORE｜丢失原电脑后不依赖本地密文/旧进度恢复
 
 - 原Download为上传后的同机完整验证，GetGroupPlan必须持有所有cipher计算MD5.parts，不能充当灾备唯一入口。新增显式Restore，提取唯一已锁manifest验证器，原Upload/Download仍要求全部cipher/age头/全SHA/parts；不把未知本地事实当云来源。

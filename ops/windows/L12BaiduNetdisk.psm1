@@ -35,6 +35,10 @@ function New-L12BaiduPrivateDirectory([string]$Path){
  return $full
 }
 function Get-L12BaiduSha([byte[]]$Bytes){[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()}
+function Get-L12BaiduChunkLength([long]$Remaining,[int]$Limit){
+ if($Remaining -lt 0 -or $Limit -le 0){throw 'L12_BAIDU_CHUNK_LENGTH'}
+ [int][Math]::Min([long]$Limit,$Remaining)
+}
 function Read-L12BaiduProtected([string]$Path){
  $null=Assert-L12BaiduLocal $Path -Exists -Private
  if((Get-Item -LiteralPath $Path).Length -gt 4MB){throw 'L12_BAIDU_PROTECTED_LIMIT'}
@@ -189,7 +193,7 @@ function Get-L12BaiduGroupPlan([string]$ManifestPath,[string]$ExpectedManifestSh
    if($definition.age){$header=[byte[]]::new(22);$stream.ReadExactly($header);if([Text.Encoding]::ASCII.GetString($header) -cne "age-encryption.org/v1`n"){throw 'L12_BAIDU_CIPHER_HEADER'};$stream.Position=0}
    $sha=[Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256);$md5=[Security.Cryptography.MD5]::Create();$buffer=[byte[]]::new($script:L12BaiduPartBytes)
    try{
-    while($stream.Position -lt $stream.Length){if([DateTime]::UtcNow -gt $Deadline){throw 'L12_BAIDU_DEADLINE'};$length=[int][Math]::Min($buffer.Length,$stream.Length-$stream.Position);$stream.ReadExactly($buffer,0,$length);$sha.AppendData($buffer,0,$length);$file.parts+=([Convert]::ToHexString($md5.ComputeHash($buffer,0,$length)).ToLowerInvariant())}
+    while($stream.Position -lt $stream.Length){if([DateTime]::UtcNow -gt $Deadline){throw 'L12_BAIDU_DEADLINE'};$length=Get-L12BaiduChunkLength ($stream.Length-$stream.Position) $buffer.Length;$stream.ReadExactly($buffer,0,$length);$sha.AppendData($buffer,0,$length);$file.parts+=([Convert]::ToHexString($md5.ComputeHash($buffer,0,$length)).ToLowerInvariant())}
     if([Convert]::ToHexString($sha.GetHashAndReset()).ToLowerInvariant() -cne $definition.sha256){throw 'L12_BAIDU_SOURCE_SHA'}
    }finally{$sha.Dispose();$md5.Dispose();[Array]::Clear($buffer,0,$buffer.Length)}
    $stream.Position=0
@@ -230,6 +234,15 @@ function Read-L12BaiduTransferState($Plan,[string]$Path){
  }
  return $state
 }
+function Get-L12BaiduUploadLocation($Context,[string]$Path,[string]$UploadId){
+ $locate=Invoke-L12BaiduJson $Context 'GET' (New-L12BaiduUrl 'https://d.pcs.baidu.com/rest/2.0/pcs/file' @{method='locateupload';appid=250528;access_token=$Context.credential.accessToken;path=$Path;uploadid=$UploadId;upload_version='2.0'})
+ $servers=@($locate.servers|Where-Object{$_.server -clike 'https://*'});if(!$servers.Count){throw 'L12_BAIDU_UPLOAD_SERVER'}
+ $origin=$servers[0].server;$null=Assert-L12BaiduUri $origin -UploadOrigin
+ $lifetime=if($locate.PSObject.Properties['expire']){[int]$locate.expire}else{30}
+ if($lifetime -le 0){throw 'L12_BAIDU_UPLOAD_LOCATION_EXPIRED'}
+ # Refresh before another part once the provider's short-lived location expires.
+ [pscustomobject]@{origin=$origin;expiresUtc=[DateTime]::UtcNow.AddSeconds([Math]::Min(60,$lifetime))}
+}
 function Invoke-L12BaiduArchiveUpload {
  param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$ExpectedManifestSha256,[Parameter(Mandatory)][string]$TransferDirectory,[string]$CredentialPath='E:/Legion12-ColdStorage/private-baidu-api-124583157/oauth.dpapi',[ValidateRange(5,3600)][int]$TimeBudgetSeconds=300,[ValidateRange(5,300)][int]$RequestTimeoutSeconds=120)
  $directory=New-L12BaiduPrivateDirectory $TransferDirectory;$leasePath=Assert-L12BaiduLocal (Join-Path $directory 'transfer.lock') -Private
@@ -261,18 +274,18 @@ function Invoke-L12BaiduArchiveUpload {
     Write-L12BaiduProtected $statePath $state
    }
    if(@(0..($file.parts.Count-1)|Where-Object{$entry.doneParts -notcontains $_}).Count){
-    $locate=Invoke-L12BaiduJson $context 'GET' (New-L12BaiduUrl 'https://d.pcs.baidu.com/rest/2.0/pcs/file' @{method='locateupload';appid=250528;access_token=$context.credential.accessToken;path=$path;uploadid=$entry.uploadid;upload_version='2.0'})
-    $servers=@($locate.servers|Where-Object{$_.server -clike 'https://*'});if(!$servers.Count){throw 'L12_BAIDU_UPLOAD_SERVER'}
-    $origin=$servers[0].server;$null=Assert-L12BaiduUri $origin -UploadOrigin
+    $location=Get-L12BaiduUploadLocation $context $path $entry.uploadid
    }
    for($part=0;$part -lt $file.parts.Count;$part++){
     if($entry.doneParts -contains $part){continue}
     $null=Get-L12BaiduRemaining $context
-    $file.stream.Position=[long]$part*$script:L12BaiduPartBytes;$length=[int][Math]::Min($script:L12BaiduPartBytes,$file.bytes-$file.stream.Position);$buffer=[byte[]]::new($length);$file.stream.ReadExactly($buffer)
+    if([DateTime]::UtcNow -ge $location.expiresUtc){$location=Get-L12BaiduUploadLocation $context $path $entry.uploadid}
+    $file.stream.Position=[long]$part*$script:L12BaiduPartBytes;$length=Get-L12BaiduChunkLength ($file.bytes-$file.stream.Position) $script:L12BaiduPartBytes;$buffer=[byte[]]::new($length);$file.stream.ReadExactly($buffer)
     try{
-     $uploadUrl=New-L12BaiduUrl ($origin.TrimEnd('/')+'/rest/2.0/pcs/superfile2') @{method='upload';access_token=$context.credential.accessToken;type='tmpfile';path=$path;uploadid=$entry.uploadid;partseq=$part}
      $reply=$null
      for($attempt=0;$attempt -lt 2;$attempt++){
+      if([DateTime]::UtcNow -ge $location.expiresUtc){$location=Get-L12BaiduUploadLocation $context $path $entry.uploadid}
+      $uploadUrl=New-L12BaiduUrl ($location.origin.TrimEnd('/')+'/rest/2.0/pcs/superfile2') @{method='upload';access_token=$context.credential.accessToken;type='tmpfile';path=$path;uploadid=$entry.uploadid;partseq=$part}
       $multipart=[Net.Http.MultipartFormDataContent]::new();$multipart.Add([Net.Http.ByteArrayContent]::new($buffer),'file',$file.name)
       try{$reply=Invoke-L12BaiduJson $context 'POST' $uploadUrl $multipart;break}catch{if($_.Exception.Message -cne 'L12_BAIDU_TRANSPORT_UNCERTAIN' -or $attempt -eq 1){throw};Start-Sleep -Milliseconds 250}
      }
@@ -295,7 +308,7 @@ function Invoke-L12BaiduArchiveUpload {
 function Get-L12BaiduPrefixSha([string]$Path,[long]$Bytes){
  $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
  $sha=[Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
- try{if($stream.Length -lt $Bytes){throw 'L12_BAIDU_PARTIAL_CHANGED'};$buffer=[byte[]]::new(65536);$remaining=$Bytes;while($remaining -gt 0){$count=$stream.Read($buffer,0,[int][Math]::Min($remaining,$buffer.Length));if($count -eq 0){throw 'L12_BAIDU_PARTIAL_CHANGED'};$sha.AppendData($buffer,0,$count);$remaining-=$count};[Convert]::ToHexString($sha.GetHashAndReset()).ToLowerInvariant()}finally{$sha.Dispose();$stream.Dispose()}
+ try{if($stream.Length -lt $Bytes){throw 'L12_BAIDU_PARTIAL_CHANGED'};$buffer=[byte[]]::new(65536);$remaining=$Bytes;while($remaining -gt 0){$count=$stream.Read($buffer,0,(Get-L12BaiduChunkLength $remaining $buffer.Length));if($count -eq 0){throw 'L12_BAIDU_PARTIAL_CHANGED'};$sha.AppendData($buffer,0,$count);$remaining-=$count};[Convert]::ToHexString($sha.GetHashAndReset()).ToLowerInvariant()}finally{$sha.Dispose();$stream.Dispose()}
 }
 function Copy-L12BaiduDownloadBody($Stream,[string]$PartialPath,[long]$ExpectedBytes,[long]$Start,$CancellationToken,[scriptblock]$Checkpoint){
  $file=[IO.File]::Open($PartialPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::Write,[IO.FileShare]::None)

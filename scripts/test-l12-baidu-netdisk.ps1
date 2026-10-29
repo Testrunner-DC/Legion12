@@ -30,7 +30,7 @@ $archiveSha='2'*64;$manifestPath=Join-Path $source ($archiveSha+'.manifest.json'
 $manifest=@{schema=2;format='l12-manual-cloud-archive-v2';status='prepared-offline';archiveSha256=$archiveSha;items=$definitions}
 [IO.File]::WriteAllText($manifestPath,($manifest|ConvertTo-Json -Depth 10 -Compress),[Text.UTF8Encoding]::new($false))
 $manifestSha=(Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant();$sourceBytes[[IO.Path]::GetFileName($manifestPath)]=[IO.File]::ReadAllBytes($manifestPath)
-$mock=[pscustomobject]@{calls=[Collections.Generic.List[object]]::new();downloadStarts=[Collections.Generic.List[long]]::new();files=@{};tasks=@{};pieces=@{};nextId=1000;failPart=-1;failPartTimes=0;badMd5=$false;badPathEcho=$false;loseCreate=$false;skipCreate=$false;downloadShort=0;rangeMode='normal';refreshCount=0;loseRefresh=$false;failWrite='';failWriteTimes=0;failDelete='';failDeleteTimes=0;wire=$false;wireBytes=[byte[]]::new(0);wireRedirect=$null;wireStatus=200;sources=$sourceBytes}
+$mock=[pscustomobject]@{calls=[Collections.Generic.List[object]]::new();downloadStarts=[Collections.Generic.List[long]]::new();files=@{};tasks=@{};pieces=@{};nextId=1000;failPart=-1;failPartTimes=0;badMd5=$false;badPathEcho=$false;locateLifetime=60;uploadPauseOnceMs=0;loseCreate=$false;skipCreate=$false;downloadShort=0;rangeMode='normal';refreshCount=0;loseRefresh=$false;failWrite='';failWriteTimes=0;failDelete='';failDeleteTimes=0;wire=$false;wireBytes=[byte[]]::new(0);wireRedirect=$null;wireStatus=200;sources=$sourceBytes}
 In-Module {
  param($m)
  $script:Mock=$m;$script:OriginalJson=(Get-Command Invoke-L12BaiduJson).ScriptBlock;$script:OriginalHttp=(Get-Command Invoke-L12BaiduHttp).ScriptBlock;$script:OriginalWrite=(Get-Command Write-L12BaiduProtected).ScriptBlock;$script:OriginalRemoveMarker=(Get-Command Remove-L12BaiduRefreshMarker).ScriptBlock
@@ -44,9 +44,10 @@ In-Module {
   $script:Mock.calls.Add(@{operation=$operation;part=if($q.ContainsKey('partseq')){[int]$q.partseq}else{-1};path=if($form.ContainsKey('path')){$form.path}elseif($q.ContainsKey('path')){$q.path}else{''}})
   switch($operation){
    'precreate'{$id='task-'+[Guid]::NewGuid().ToString('N');$parts=@($form.block_list|ConvertFrom-Json);$script:Mock.tasks[$id]=@{path=$form.path;parts=$parts;bytes=[long]$form.size};$script:Mock.pieces[$id]=@{};$reply=[pscustomobject]@{errno=0;uploadid=$id;block_list=@(0..($parts.Count-1))};if($script:Mock.badPathEcho){$reply|Add-Member -NotePropertyName path -NotePropertyValue '/apps/wrong/file.age'};return $reply}
-   'locateupload'{return [pscustomobject]@{error_code=0;servers=@(@{server='https://c.pcs.baidu.com'})}}
+   'locateupload'{return [pscustomobject]@{error_code=0;servers=@(@{server='https://c.pcs.baidu.com'});expire=$script:Mock.locateLifetime}}
    'upload'{
     $task=$script:Mock.tasks[$q.uploadid];$part=[int]$q.partseq
+    if($script:Mock.uploadPauseOnceMs -gt 0){$delay=$script:Mock.uploadPauseOnceMs;$script:Mock.uploadPauseOnceMs=0;Start-Sleep -Milliseconds $delay}
     if($part -eq $script:Mock.failPart -and $script:Mock.failPartTimes -gt 0){$script:Mock.failPartTimes--;throw 'L12_BAIDU_TRANSPORT_UNCERTAIN'}
     $enumerator=$Content.GetEnumerator();$null=$enumerator.MoveNext();[byte[]]$data=$enumerator.Current.ReadAsByteArrayAsync().GetAwaiter().GetResult()
     $digest=[Convert]::ToHexString([Security.Cryptography.MD5]::HashData($data)).ToLowerInvariant()
@@ -132,6 +133,10 @@ try{
  Check 'wrong-part-md5-is-not-checkpointed' {$mock.badMd5=$true;try{Reject {Invoke-L12BaiduArchiveUpload @corruptArgs} 'L12_BAIDU_PART_MD5'}finally{$mock.badMd5=$false};$state=In-Module {param($p) Read-L12BaiduProtected $p} (Join-Path $corrupt 'transfer.dpapi');Assert ($state.files[0].doneParts.Count -eq 0);Assert ($mock.files.Count -eq 0)}
  Check 'unconfirmed-part-resends-and-then-creates' {Invoke-L12BaiduArchiveUpload @corruptArgs|Out-Null;Assert ($mock.files.Count -eq 4)}
  Check 'wrong-cloud-content-fails-full-sha' {$record=@($mock.files.Values|Where-Object{$_.path.EndsWith('/'+$first)})[0];$record.bytes[200]=$record.bytes[200] -bxor 1;Reject {Invoke-L12BaiduArchiveDownload @corruptArgs} 'L12_BAIDU_RETURNED_SHA';Assert (!(Test-Path -LiteralPath (Join-Path $corrupt 'cloud-receipt.json')))}
+ $locationArgs=$baseArgs.Clone();$locationArgs.TransferDirectory=Join-Path $root 'location-refresh'
+ Check 'large-transfer-refreshes-expired-upload-location' {$mock.files.Clear();$mock.locateLifetime=1;$mock.uploadPauseOnceMs=1100;$before=@($mock.calls|Where-Object{$_.operation -eq 'locateupload'}).Count;try{Invoke-L12BaiduArchiveUpload @locationArgs|Out-Null}finally{$mock.locateLifetime=60;$mock.uploadPauseOnceMs=0};$after=@($mock.calls|Where-Object{$_.operation -eq 'locateupload'}).Count;Assert (($after-$before) -ge 5) 'first multi-part file reused an expired location'}
+ Check 'multi-gib-chunk-length-remains-bounded' {In-Module {foreach($remaining in @([long]2147483647,[long]2147483648,[long]3201470767,[long]4294967296)){if((Get-L12BaiduChunkLength $remaining 4MB) -ne 4MB -or (Get-L12BaiduChunkLength $remaining 65536) -ne 65536){throw 'wrong multi-GiB chunk'}};if((Get-L12BaiduChunkLength 123 4MB) -ne 123 -or (Get-L12BaiduChunkLength 0 4MB) -ne 0){throw 'wrong final chunk'}};Reject {In-Module {Get-L12BaiduChunkLength -1 4MB}} 'L12_BAIDU_CHUNK_LENGTH'}
+ Check 'already-expired-location-is-rejected' {$mock.locateLifetime=0;try{Reject {In-Module {Get-L12BaiduUploadLocation ([pscustomobject]@{credential=@{accessToken='synthetic-access'}}) '/apps/十二军团私有备份/test' 'synthetic-task'}} 'L12_BAIDU_UPLOAD_LOCATION_EXPIRED'}finally{$mock.locateLifetime=60}}
  $refresh=Join-Path $root 'refresh-oauth.dpapi';In-Module {param($a) Write-L12BaiduProtected $a.path $a.value} @{path=$refresh;value=$fake}
  Check 'refresh-single-use-response-lost-blocks-retry' {$mock.loseRefresh=$true;$before=$mock.refreshCount;Reject {Update-L12BaiduAuthorization -CredentialPath $refresh} 'L12_BAIDU_TRANSPORT_UNCERTAIN';Reject {Update-L12BaiduAuthorization -CredentialPath $refresh} 'L12_BAIDU_REFRESH_UNCERTAIN';Assert ($mock.refreshCount -eq $before+1);$mock.loseRefresh=$false}
  $staged=Join-Path $root 'staged-oauth.dpapi';In-Module {param($a) Write-L12BaiduProtected $a.path $a.value} @{path=$staged;value=$fake}
@@ -178,7 +183,7 @@ try{
  $result|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $OutputRoot 'result.json') -Encoding utf8
  [pscustomobject]$result|Select-Object passed,failed,fixtureRoot|ConvertTo-Json -Compress
 }
-if($result.failed -gt 0 -or $result.Contains('failure') -or $result.passed -ne 66){throw ('L12_BAIDU_TEST_FAILURE: '+$(if($result.Contains('failure')){$result.failure}else{'incomplete check count'}))}
+if($result.failed -gt 0 -or $result.Contains('failure') -or $result.passed -ne 69){throw ('L12_BAIDU_TEST_FAILURE: '+$(if($result.Contains('failure')){$result.failure}else{'incomplete check count'}))}
 $physical=Assert-L12GeneratedPath -Path $root
 if($physical -cnotmatch '^E:\\Legion12-ColdStorage\\l12-baidu-offline-tests-[0-9a-f]{32}$'){throw 'L12_BAIDU_FIXTURE_CLEANUP_SCOPE'}
 $children=@(Get-ChildItem -LiteralPath $physical -Recurse -Force)

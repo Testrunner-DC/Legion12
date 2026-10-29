@@ -2,6 +2,8 @@
 
 ## 2026-10-30 当前：恢复文件人类已独立保存，8ec真实冷归档推进中
 
+- 8ec原3件E私有完整拷贝/全SHA/归档流已通过，原失败和完整cold-copy收据均保；7密文＋外清单8件已生成并开始真实后台上传。外清单可信SHA `505f6760811f4d57d654dcea3d39b461b2ee862fc7c7d18d26cb17b277d23e97`独立记录在Git，不把本机DPAPI当跨机钥匙。云独立回读/业务解密/历史两库WAL核验尚待，服务器删除和释放仍0。
+- 传输工具同族修正：3个分块入口显式long消除>2GiB的Int32选重载；按短效上传地址期限重获。69项纯合成（保原66）及Main正常Focused退出0，证据location-r3；不重复已验应用门禁/发布，不更改P0—P4或线上数据库。
 - 人类明确确认独立保存，业务key状态已一次更新human-confirmed-independent-copy；不重复生成/询问，不冒独立跨机演练。真实8ec旧组开始私有E拷贝，未有完整收据前不宣称云上完成、释放空间或改服务器。
 - 灾备Restore已实现并验收：可信manifest+独立SHA+正常网盘授权可从新E目录恢复，不依赖源cipher/旧机器state，原Upload/Download强校验保留。Focused66/66、Main独审及实际同8MB云组manifest-only完整下载/解密通过；唯一`cloud-storage/baidu-restore-20261030/live-acceptance.json`，只三运维叶、不改应用/部署。
 - 8ec旧正式快照固定D646…/3200689159B、原proof369681…，非当前最新业务；最新af/d557保留。单元素JSON名单误判空引用已局部修正，直接核查无真实failure引用；本机旧ACL重复写错误改严格复验，原300秒部分传输55.8%沿同源续接。唯一`cloud-storage/real-backup-8ec-20261030`原件/失败均保留，不重问已有权限、不读取玩家正文。

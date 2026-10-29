@@ -2,6 +2,8 @@
 
 ## 2026-10-30 人类已确认独立保存恢复文件；真实8ec转存执行中
 
+- 进展：8ec原3件已完整收到私有E，全归档D646…/3200689159B、原proof369681…与归档流通过，真实`formal-backup-cold-copy.json`已落盘；按业务recipient完成7密文＋外清单8件，现正后台分片上传，尚未冒云恢复/数据库验收或删除源。独立可信外清单SHA为`505f6760811f4d57d654dcea3d39b461b2ee862fc7c7d18d26cb17b277d23e97`，需与恢复钥匙分别保留，不能依赖网盘自报。原清单/密文不可重新Prepare覆盖。
+- 大文件真实预检暴露Math.Min自动选Int32、3.2GB剩余量溢出；统一3个分块入口用显式long取最小值（含下载前缀），补2/3.2/4GiB边界；上传地址按官方短有效期逐片重获，补过期刷新/已过期拒绝。原失败保留，69/69纯合成及正常Main Focused整链退出0，`baidu-restore-20261030/location-r3`。本次真实云上传仍在进行，所有服务器原件/最新两组/失败证据保留，释放0，暂不部署。
 - 人类已明确“已独立保存”，唯一`baidu-resume-20261030/business-recovery-key.json`现human-confirmed-independent-copy；仅记录人类声明，不冒跨机实测。复用原业务recipient/私有本机DPAPI工作副本，不再生成或询问钥匙，不在聊天/Git/网盘输出私钥。
 - 新增显式`Restore`弥补灾备缺口：只需可信原manifest及独立SHA、正常新机网盘授权、新E私有目录，无需本地cipher或旧机器transfer.dpapi。唯一共享manifest解析、既有严格HTTPS/fsId/前缀/Range/最终SHA，原Upload/Download的MD5/源锁不放宽；云端原manifest也独立回读，陌生非空目录/未跟踪文件拒绝。3叶来源独立Focused66/66、自清75,540,915B；Main全文差异独审/指纹吻合，原8MB云组实际manifest-only下载并解密成功，唯一`cloud-storage/baidu-restore-20261030/live-acceptance.json`，未新上传业务或实际刷新token。
 - 真正业务转存固定`runtime-before-8ec4dd8c41f9-20261026T222532Z.tar.gz`3200689159B、D646E7D7…，归属成功bc1ad9ea操作的97a→8ec前历史停服快照，不能冒当前最新数据。原proof SHA36968160…、4件/6666276864B/指纹0b90d264…；最新af/d557两组仍保护。真实拷贝仅固定主机/旧档/三原件到私有E，唯一`cloud-storage/real-backup-8ec-20261030`；无完成cold-copy收据前不冒下载完或上传云端。

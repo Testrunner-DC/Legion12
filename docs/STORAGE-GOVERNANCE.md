@@ -1,5 +1,11 @@
 # Legion12 本地存储治理
 
+## 2026-10-30 首组真实业务冷归档（上传中，未退休源）
+
+8ec历史正式停服快照3200689159B已完整转私有E，原归档/原SHA/原raw proof均保，真实冷拷贝与归档流通过；非当前最新数据。业务key由人类确认已独立保存，不重复生成。7密文＋外清单共8件已Prepare一次并开始后台上传，原外清单可信SHA为`505f6760811f4d57d654dcea3d39b461b2ee862fc7c7d18d26cb17b277d23e97`；这是网盘之外的独立校验锚，恢复仍需原manifest、业务key及本人正常网盘访问。
+
+工具补齐真实多GiB长度计算（分块哈希/上传/下载前缀均显式long）及短效上传地址重获，69/69与正常Focused整链通过；location-r3保原本地溢出失败。当前尚未完成云独立回读/业务解密/历史SQLite-WAL冷核验，不删除服务器源，最新af/d557及失败日志保持。执行与最终状态只读`artifacts/server-health-20261029/cloud-storage/real-backup-8ec-20261030`，不重跑Prepare或把旧合成结果冒业务恢复。
+
 ## 2026-10-30 脱离原电脑的恢复入口与真实旧档接收
 
 `-Action Restore`只消费可信原外清单及其独立保留SHA、正常网盘访问授权、新E私有目录；不需要原cipher、原机器DPAPI传输状态或旧outbox。目录必须新建/空，已有目录仅可续跑自身restore.dpapi。按固定manifest SHA应用路径查询并锁云fsId/长度，复用严格HTTPS/持久前缀/Range/全SHA；不依赖清单未提供的MD5.parts，但原Upload/Download强校验不变。原manifest也真实下载，不复制本地清单冒云来源；成功后仍须原VerifyReturned加业务钥匙解密，receipt不会单凭下载冒数据库恢复成功。原外清单SHA必须在网盘之外独立记录，不能拿同网盘当前文件自报SHA作为信任来源；新机仍需本人正常网盘授权，本机oauth.dpapi不是跨机访问凭据。
