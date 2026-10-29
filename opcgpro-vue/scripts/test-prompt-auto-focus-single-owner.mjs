@@ -27,8 +27,10 @@ assert.match(board, /@focus-card="focusCard = \$event" @auto-focus-card="promptA
   'automatic and explicit focus are wired independently')
 assert.match(board, /public-reveal-cards \.l12-card-image\{border:0!important;outline:0!important;background:transparent!important;box-shadow:none!important;/,
   'public card animation adds no rectangular frame or backing plate')
-assert.match(board, /source\.kind === 'placeholder'[\s\S]*acquirePublicRevealAuthority\(card\)[\s\S]*<Transition name="public-reveal" @after-leave="finishPublicReveal">/,
-  'full-card public reveal acquires exact authority only after decode and keeps it through the completed leave transition')
+assert.match(board, /source\.kind === 'placeholder'[\s\S]*publicRevealOwner\?\.key !== ownerKey[\s\S]*publicReveal\.value\?\.ownerKey !== ownerKey[\s\S]*publicRevealReadyInstanceIds\.value = ready[\s\S]*<Transition name="public-reveal" @after-leave="finishPublicReveal">/,
+  'decoded explanation readiness remains owner-key guarded and retires through the completed leave transition')
+assert.doesNotMatch(board, /\bacquirePublicRevealAuthority\b|\bacquireAuthoritativeCardVisibility\b/,
+  'the central explanation never acquires physical card visibility')
 assert.match(board, /public-reveal-card-pending\{visibility:hidden!important/,
   'an undecoded or failed reveal cannot replace the unique visible authority with a blank card')
 assert.match(board, /publicRevealReadyInstanceIds\.value\.has\(card\.instanceId\)/,
@@ -38,4 +40,4 @@ assert.match(coordinator, /onVisualOwnershipChange\?\.\(visualKey, true\)/,
 assert.match(coordinator, /onVisualOwnershipChange\?\.\(visualKey, false\)/,
   'the shared coordinator publishes exact-instance terminal release')
 
-console.log('Prompt automatic focus single-owner contract passed: 16/16 assertions')
+console.log('Prompt automatic focus single-owner contract passed: 17/17 assertions')

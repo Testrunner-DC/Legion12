@@ -44,7 +44,6 @@ import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
 import { useBattleViewportLayout } from './battleViewportLayout'
 import { createPresentationSequenceCoordinator, type PresentationReservation } from './presentationSequenceCoordinator'
 import { createPublicRevealPresentationTracker, findLinkedPublicContinuationParent } from './publicRevealPresentation'
-import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -212,7 +211,6 @@ type PublicRevealPresentation = {
   text: string
   kind: 'full-card' | 'entry-continuation' | 'fact-continuation' | 'linked-public-continuation'
   transactionKey?: string
-  independentEffectSourceInstanceId?: string
 }
 type PublicRevealQueueItem = {
   sequence: number
@@ -267,7 +265,6 @@ type PublicRevealOwnerLifecycle = {
 }
 let publicRevealOwner: PublicRevealOwnerLifecycle | null = null
 const publicRevealReadyInstanceIds = ref<ReadonlySet<string>>(new Set())
-const publicRevealAuthorityReleases = new Map<string, Array<() => void>>()
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 let publicRevealTimer: ReturnType<typeof setTimeout> | null = null
 let diceRollTimer: ReturnType<typeof setInterval> | null = null
@@ -275,37 +272,10 @@ let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 let diceHideTimer: ReturnType<typeof setTimeout> | null = null
 let presentationEpoch = 0
 let publicRevealOwnerSerial = 0
-function releasePublicRevealAuthority() {
-  for (const releases of publicRevealAuthorityReleases.values())
-    for (const release of releases) release()
-  publicRevealAuthorityReleases.clear()
+// Explanation cards are independent reading surfaces. Their lifecycle only
+// tracks image readiness; physical card visibility belongs to physical owners.
+function resetPublicRevealCardReadiness() {
   publicRevealReadyInstanceIds.value = new Set()
-}
-function acquirePublicRevealAuthority(card: Card) {
-  if (publicRevealAuthorityReleases.has(card.instanceId)) return
-  // A structured ability image is an independent reading surface, not a second
-  // physical card. Preserve only its exact public, already-settled board source;
-  // hand/graveyard reveals and a source still owned by physical motion retain
-  // the existing authority lease and privacy/handoff behavior.
-  const independentSettledSource = publicReveal.value?.kind === 'full-card'
-    && publicReveal.value.independentEffectSourceInstanceId === card.instanceId
-    && !card.hidden && !presentationVisualOwnerKeys.value.has(card.instanceId)
-    && props.game.players.some(player => {
-      const samePublicCard = (current: Card | null | undefined) => current?.instanceId === card.instanceId && !current.hidden
-      return player.field.flat().some(samePublicCard) || samePublicCard(player.relic)
-        || (player.extraRelics ?? []).some(samePublicCard)
-        || (card.instanceId === `master-${player.playerIndex}` && !player.master.deployedAsLegion)
-    })
-  const targets = new Set<HTMLElement>()
-  const selector = `[data-card-instance-id="${CSS.escape(card.instanceId)}"]`
-  document.querySelectorAll(`[data-l12-game-stage] ${selector}, .graveyard-overlay ${selector}`)
-    .forEach(node => {
-      if (!(node instanceof HTMLElement)) return
-      if (independentSettledSource && node.closest('[data-l12-zone="field"],[data-l12-zone="relic"],[data-l12-zone="master"]')) return
-      targets.add(node)
-    })
-  publicRevealAuthorityReleases.set(card.instanceId,
-    [...targets].map(acquireAuthoritativeCardVisibility))
 }
 function markPublicRevealCardReady(ownerKey: string, card: Card, source: { kind: string }) {
   if (source.kind === 'placeholder'
@@ -315,7 +285,6 @@ function markPublicRevealCardReady(ownerKey: string, card: Card, source: { kind:
   const ready = new Set(publicRevealReadyInstanceIds.value)
   ready.add(card.instanceId)
   publicRevealReadyInstanceIds.value = ready
-  acquirePublicRevealAuthority(card)
 }
 function markPublicRevealMounted(ownerKey: string) {
   if (publicRevealOwner?.key === ownerKey && !publicRevealOwner.retiring)
@@ -329,7 +298,7 @@ function onPublicRevealMounted(vnode: VNode) {
 function finalizePublicReveal(ownerKey: string) {
   const owner = publicRevealOwner
   if (!owner || owner.key !== ownerKey || !owner.retiring) return
-  releasePublicRevealAuthority()
+  resetPublicRevealCardReadiness()
   publicRevealOwner = null
   owner.release()
   void showNextPublicReveal()
@@ -362,7 +331,7 @@ function resetCardPresentations() {
   diceHideTimer = null
   hiddenRevealCard.value = null
   publicReveal.value = null
-  releasePublicRevealAuthority()
+  resetPublicRevealCardReadiness()
   diceReveal.value = null
   const revealOwner = publicRevealOwner
   publicRevealOwner = null
@@ -1047,7 +1016,7 @@ async function showNextPublicReveal() {
   const linkedPublicContinuation = next.linkedPublicContinuation
   const kind = linkedPublicContinuation ? 'linked-public-continuation'
     : presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card'
-  releasePublicRevealAuthority()
+  resetPublicRevealCardReadiness()
   publicReveal.value = {
     ownerKey,
     sequence: next.sequence,
@@ -1055,8 +1024,6 @@ async function showNextPublicReveal() {
     text: [next.text, ...next.linkedContinuationTexts].join('\n'),
     kind,
     transactionKey: presentationFacts ? `facts:${presentationFacts.join(',')}` : entryTransactionKey ?? undefined,
-    independentEffectSourceInstanceId: kind === 'full-card' && isCardEffectPresentationEvent(next.event)
-      && next.cards[0] && !next.cards[0].hidden ? next.cards[0].instanceId : undefined,
   }
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   const duration = publicRevealDuration(publicReveal.value.kind)

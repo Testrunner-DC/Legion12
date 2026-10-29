@@ -8,7 +8,7 @@ const sfc = parse(readFileSync(new URL('../src/l12/game/GameBoard.vue', import.m
 const script = sfc.scriptSetup?.content ?? ''
 const ast = ts.createSourceFile('GameBoard.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 const names = new Set([
-  'acquirePublicRevealAuthority',
+  'resetPublicRevealCardReadiness',
   'markPublicRevealCardReady',
   'markPublicRevealMounted',
   'onPublicRevealMounted',
@@ -38,7 +38,7 @@ let publicRevealTimer = null
 let presentationEpoch = 4
 let publicRevealOwnerSerial = 0
 const modalPresentationPaused = { value: false }
-const calls = { acquired: [], authorityReleased: 0, ownerReleased: 0 }
+const calls = { acquired: [], ownerReleased: 0 }
 const publicRevealAuthorityReleases = new Map()
 const presentationVisualOwnerKeys = {value:new Set()}
 const props = {game:{players:[]}}
@@ -51,7 +51,6 @@ class HTMLElement {
 const document = {querySelectorAll(selector){return [new HTMLElement('',selector.match(/data-card-instance-id="([^"]+)"/)[1])]}}
 function acquireAuthoritativeCardVisibility(target) { calls.acquired.push(target.dataset.cardInstanceId); return () => {} }
 const nextTick = callback => Promise.resolve().then(callback)
-function releasePublicRevealAuthority() { calls.authorityReleased += 1; publicRevealReadyInstanceIds.value = new Set() }
 ${functions.join('\n')}
 return {
   calls,
@@ -71,7 +70,7 @@ return {
     authorityZone=domZone
     const card={instanceId,hidden}
     props.game.players=[{playerIndex:0,master:{deployedAsLegion:false},field:zone==='field'?[[card]]:[[]],
-      relic:zone==='relic'?card:null,extraRelics:[]}]
+      relic:zone==='relic'?card:null,extraRelics:zone==='extraRelics'?[card]:[]}]
     presentationVisualOwnerKeys.value=moving?new Set([instanceId]):new Set()
   },
   finishPublicReveal,
@@ -115,7 +114,7 @@ api.markPublicRevealCardReady('4:99:old', card, { kind:'cdn' })
 api.markPublicRevealCardReady('5:1:3', card, { kind:'placeholder' })
 assert.deepEqual(api.calls.acquired, [], 'old-match loads and placeholder loads cannot claim the new owner')
 api.markPublicRevealCardReady('5:1:3', card, { kind:'cdn' })
-assert.deepEqual(api.calls.acquired, ['same-instance'], 'only the matching decoded image claims exact authority')
+assert.deepEqual(api.calls.acquired, [], 'a matching decoded image changes readiness without claiming physical authority')
 assert.deepEqual([...api.ready.value], ['same-instance'], 'ready state belongs to the matching owner only')
 
 api.markPublicRevealMounted('old-owner')
@@ -129,27 +128,29 @@ api.publicReveal.value = { ownerKey:'6:1:4', cards:[card] }
 api.onPublicRevealMounted({ el:new api.HTMLElement('5:1:3') })
 assert.equal(api.owner().mounted, false, 'the actual vnode hook cannot read the replacement owner key')
 api.markPublicRevealCardReady(oldEntries[0].ownerKey, oldEntries[0].card, { kind:'cdn' })
-assert.deepEqual(api.calls.acquired, ['same-instance'], 'a retired render entry cannot claim the same card in a new owner')
+assert.deepEqual(api.calls.acquired, [], 'a retired render entry cannot acquire authority or alter the new owner')
 api.onPublicRevealMounted({ el:new api.HTMLElement('6:1:4') })
 assert.equal(api.owner().mounted, true)
 assert.match(sfc.template.content, /@vue:mounted="onPublicRevealMounted"/)
 assert.match(sfc.template.content, /@load="markPublicRevealCardReady\(entry\.ownerKey, entry\.card, \$event\)"/)
 assert.doesNotMatch(sfc.template.content, /@load="markPublicRevealCardReady\(publicReveal\.ownerKey/)
-const preservationCases = [
-  ['public settled legion effect', {zone:'field'}, {}, true],
-  ['public settled relic effect', {zone:'relic'}, {}, true],
-  ['public settled master effect', {zone:'master',instanceId:'master-0'}, {}, true],
-  ['ordinary public reveal still owns its field pixels', {zone:'field'}, {independent:false}, false],
-  ['private hand is not a settled board effect source', {zone:'hand'}, {}, false],
-  ['graveyard reveal keeps the old lease', {zone:'graveyard'}, {}, false],
-  ['unknown placement does not guess a settled source', {zone:'unknown'}, {}, false],
-  ['hidden current authority is not a public source', {zone:'field',hidden:true}, {}, false],
-  ['hidden event source is not preserved', {zone:'field'}, {hidden:true}, false],
-  ['physical movement owner retains its handoff', {zone:'field',moving:true}, {}, false],
-  ['graveyard overlay is not exempted by a field identity', {zone:'field',domZone:'graveyard'}, {}, false],
-  ['non-full-card presentation is not broadly exempted', {zone:'field'}, {kind:'entry-continuation'}, false],
+const independentCases = [
+  ['public field effect', {zone:'field'}, {}],
+  ['public relic effect', {zone:'relic'}, {}],
+  ['public extra relic effect', {zone:'extraRelics',moving:true}, {}],
+  ['public master effect', {zone:'master',instanceId:'master-0'}, {}],
+  ['moving master effect', {zone:'master',instanceId:'master-0',moving:true}, {}],
+  ['ordinary public reveal is an independent display', {zone:'field'}, {independent:false}],
+  ['private hand visibility is not controlled by explanation', {zone:'hand'}, {}],
+  ['graveyard reveal is an independent display', {zone:'graveyard'}, {}],
+  ['unknown placement grants no physical control', {zone:'unknown'}, {}],
+  ['hidden authority is not rewritten', {zone:'field',hidden:true}, {}],
+  ['hidden event does not acquire physical control', {zone:'field'}, {hidden:true}],
+  ['physical movement owns its own handoff', {zone:'field',moving:true}, {}],
+  ['graveyard overlay stays independent', {zone:'field',domZone:'graveyard'}, {}],
+  ['continuation image has no physical control', {zone:'field'}, {kind:'entry-continuation'}],
 ]
-for (const [label, authority, presentation, preserve] of preservationCases) {
+for (const [label, authority, presentation] of independentCases) {
   const checked = new Function(output)()
   checked.setAuthority(authority)
   const source = {instanceId:authority.instanceId ?? 'same-instance',hidden:Boolean(presentation.hidden)}
@@ -157,7 +158,10 @@ for (const [label, authority, presentation, preserve] of preservationCases) {
   checked.publicReveal.value = {ownerKey:'8:1:1',kind:presentation.kind ?? 'full-card',cards:[source],
     independentEffectSourceInstanceId:presentation.independent === false ? undefined : source.instanceId}
   checked.markPublicRevealCardReady('8:1:1',source,{kind:'cdn'})
-  assert.deepEqual(checked.calls.acquired,preserve ? [] : [source.instanceId],label)
-  assert.deepEqual([...checked.ready.value],[source.instanceId],label+': effect image readiness is preserved')
+  assert.deepEqual(checked.calls.acquired,[],label+': central readiness takes no physical lease')
+  assert.deepEqual([...checked.ready.value],[source.instanceId],label+': matching image readiness is preserved')
+  checked.markPublicRevealCardReady('8:1:1',source,{kind:'cdn'})
+  assert.deepEqual(checked.calls.acquired,[],label+': duplicate ready also takes no physical lease')
+  assert.equal(checked.ready.value.size,1,label+': duplicate readiness is idempotent')
 }
-console.log('Public reveal owner lifecycle passed: original20 + 24 settled-effect/retained-lease assertions including actual acquisition function')
+console.log('Public reveal owner lifecycle passed: original20 + 56 independent-display assertions')
