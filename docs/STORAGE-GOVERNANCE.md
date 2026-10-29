@@ -1,5 +1,18 @@
 # Legion12 本地存储治理
 
+## 2026-10-30 后台分片传输固定入口
+
+`ops/windows/L12BaiduNetdisk.ps1`消费原`L12CloudArchive.ps1 Prepare`输出，不生成新备份、不上传活库、不删源。固定本应用/本人凭据，源/状态/返回目录物理E且私有、拒绝联接/同步目录；原清单SHA及全部密文长度/SHA先核，source句柄全程禁止写入。分片4MiB、单文件保守≤4GiB；MD5只满足协议分片校验，最终可信原清单SHA256决定内容完整性。
+
+1. `-Action Status`只显示范围/到期与恢复标记，不输出令牌。确需刷新时显式`-Action Refresh`；发送前落in-flight、成功响应先DPAPI耐久pending再原子提升，先清attempt最后清pending。未知响应不重试一次性旧token，待重新授权；已有pending可无网络恢复。不为检查完备性提前消费真实refresh。
+2. `-Action Upload -ManifestPath <原清单> -ExpectedManifestSha256 <原SHA> -TransferDirectory <新E私有进度目录>`。每次恢复始终使用同一组三参数；固定应用目录/原始uploadid/片索引及MD5，确认一片才记账。create发出前持久不确定标记；重入先查确定路径，已有文件严核长度/分片/身份，只有官方确定不存在才以原任务和rtype=0继续，不盲覆盖。真实precreate可不回显path；若回显存在必须精确吻合，之后所有请求仍绑定原path/size/parts。
+3. `-Action Download`沿同组三参数，独立取元数据及下载；禁自动跨域重定向，只允许受信HTTPS百度PCS主机。中断保存实际已收前缀；重入先核前缀SHA，仅回截本次未提交尾部，严格206/Content-Range。未经本工具记录的已有文件/partial不能当云来源，最终全SHA吻合才定名。
+4. 再用原`VerifyReturned`解密/核原归档、完成清单和raw proof；其offline回执不改，由独立`cloud-receipt.json`组合证明。传输器本身永不删除服务器/本地源、建计划任务、生成业务key或把下载成功冒数据库恢复完成。总预算默认300秒、单请求默认120秒且均显式可调；超时保进度，不把工具超时当授权截止。
+
+验收：`scripts/test-l12-baidu-netdisk.ps1`49项纯合成/无真实网络，成功后精确删除自有可再生夹具。独立审查与原失败结果保留；实际4文件8,396,257B/3片、独立下载、人工2MiB已验证前缀的真实Range及解密tar成员SHA通过，非多GiB/自发断网/真实refresh实测。唯一`artifacts/server-health-20261029/cloud-storage/baidu-resume-20261030/acceptance.json`；仍先完成业务恢复钥匙独立托管，再实际转存旧8ec组并按原保护条件另处置服务器同内容副本。业务上传、服务器删除和空间释放仍0，先前暂不部署不变。
+
+业务钥匙：人类已明确选择由Main生成、由本人独立保存。唯一`baidu-resume-20261030/business-recovery-key.json`记录E私有恢复文件与DPAPI工作副本/熵标签、公开recipient和自测结果；私钥正文不得写日志/Git/同步盘/备份网盘。恢复文件须由人类另存密码管理器或离线介质并确认，之后才开始真实转存；本机DPAPI绑定机器/用户，不是独立灾备。待交付明文文件不可提前删除或重复生成新钥匙，后续只复用此状态。
+
 ## 2026-10-30 官方接口小文件链已接通，生产大备份边界不变
 
 - 应用124583157“十二军团私有备份”个人用途已创建并上线。人类明确批准basic/netdisk、E盘本机加密凭据保存及5KB合成往返，现有令牌在`E:/Legion12-ColdStorage/private-baidu-api-124583157/oauth.dpapi`，Windows DPAPI CurrentUser保护，目录仅本人/SYSTEM/管理员；不在源码、普通日志或同步盘保存令牌，不提取网页登录cookie。DPAPI绑定当前Windows用户与机器，不是跨机业务恢复钥匙备份。

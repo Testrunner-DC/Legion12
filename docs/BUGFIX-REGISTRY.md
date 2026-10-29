@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261030-BAIDU-RESUMABLE-TRANSPORT｜既有密文组的后台续传与刷新恢复
+
+- 新增L12BaiduNetdisk模块/CLI与49项本地QA，复用原离线加密/解密入口。4MiB分片/单文件保守4GiB、原清单与全SHA/source锁、E私有DPAPI进度/原子替换、凭据与传输锁、固定应用路径/动态受信HTTPS、真实终值SHA；不产生第二业务持久化体系、不改P0—P4/服务/部署门槛。
+- 专项守卫：分片未知结果只重传同id/索引/字节，创建未知结果先元数据消歧，确定missing才rtype0续行；下载持久前缀与Range/完整SHA，拒绝预置本地文件冒云、错位/忽略Range/过量/篡改。weak-link小于4MiB中断也保存，真实precreate省略path回显有正例/错误回显有反例。
+- 一次性refresh发送前记in-flight，耐久pending后原子提升；未知响应不循环旧token；先清attempt最后清pending，覆盖清理崩溃。凭据文件ACL与体积/身份/期限均核，不写明文令牌；真实refresh未执行，仅纯合成模型验。源/服务器删除与自动任务均无接口。
+- 原r1 Replace空备份路径参数失败、r2 mock类型/r3测试变量失败均保留；r5=48/48独审Clear，最终真实合同兼容后r6=49/49。实际4件8,396,257B三分片→独立下载→解密原归档/完成清单/证据/tar成员SHA通过；人工准备2MiB已下载前缀再实际Range续传通过，不冒真实断网或多GiB恢复。唯一`server-health-20261029/cloud-storage/baidu-resume-20261030/acceptance.json`，无应用Release/部署/线上Bug关闭。
+- 真实业务钥匙独立托管和旧8ec约3.20GB转存仍未完成；不使用合成key、不据本轮验收删源，实际服务器释放0。
+
 ## OPS-20261030-BAIDU-API-PILOT｜官方授权与合成密文真实云往返
 
 - 人类批准个人应用创建及后续basic/netdisk/E私有加密凭据/5KB试验，已创建124583157。官方设备码授权、不取cookie；敏感信息经内存RSA-OAEP-SHA256中转，最终Windows DPAPI CurrentUser保存并独立读回/ACL核验，临时转交件已清。源码/Git无凭据，业务恢复key未建立，P0—P4及服务配置不变。

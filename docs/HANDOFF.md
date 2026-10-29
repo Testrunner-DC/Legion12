@@ -1,5 +1,15 @@
 # 十二军团简短交接
 
+## 2026-10-30 分片续传工具已完成本地49项与真实合成三分片/Range验收
+
+- 新增`ops/windows/L12BaiduNetdisk.psm1`/`.ps1`及`scripts/test-l12-baidu-netdisk.ps1`，复用原Prepare/VerifyReturned而不另造备份/恢复体系。只运送既有schema2密文组，固定本地原清单SHA/全程source锁、4MiB分片、单文件保守4GiB上限、DPAPI原子进度与互斥锁，上传/下载/刷新均限时；不会删除源、生成业务钥匙或建自动任务。
+- 本地49/49覆盖分片未知响应重传、创建结果丢失/发出前断点、弱链路小于检查点的已收前缀、Range忽略/错位、前缀/状态/源篡改、错误MD5和最终SHA、跨域重定向、过宽凭据ACL、一次性refresh响应丢失及pending提交/标记清理崩溃。原r1原子Replace参数、r2/r3夹具错误保留；r5独审Clear后仅补真实precreate省略path回显兼容，错误回显仍拒绝，r6=49通过。
+- 已真实用原合成age公钥、4文件8,396,257B完成三分片上传→独立下载→解密/原归档成员SHA；再人工准备来自已下载密文的2MiB前缀，实际非零Range续传及最终SHA通过。它不是自发断网或多GiB实测。原offline内容回执不改；独立新云receipt组合证明，唯一`server-health-20261029/cloud-storage/baidu-resume-20261030/acceptance.json`。原5KB成功组/授权不重做。
+- Refresh本地故障模型已验但未消耗真实refresh token；响应不确定只挂起，不重复刷旧token。下一边界仍为真实业务恢复钥匙的独立托管与旧8ec约3.20GB组实际转存；不能用合成钥匙做业务备份、不能据本轮退役服务器源。真实业务上传/服务器变化/释放仍0，人类暂不部署有效。成功本地夹具自动清理、紧凑失败结果保D；这不是新的Release/两服部署资格。
+
+- 最终QA仅追加自有夹具成功清理，r7同产品49/49并实际移除fixture；r1–r6已结束可再生组精确清理125,914,790B逻辑量，另退役SHA一致的续传临时副本8,393,928B，原失败结果/当前唯一live合成组保留。标准Batch的P0/P1先过，npm批处理因子进程PATH缺Node/Git/Python中断；用已安装绝对入口、ProcessStartInfo单一PATH与L12_PYTHON补齐正常26脚本同源链，全部覆盖而非单次Batch全绿。原环境失败留存，不重跑49或云组来补环境；今后复用明确运行时，不能又盲试相同npm.cmd环境。
+- 人类已选“由你生成，我独立保存恢复文件”。官方固定SHA的age-keygen仅在新E私有目录生成一次业务恢复文件，另有DPAPI工作副本；公开recipient、路径、熵标签与真实64B加解密/DPAPI读回结果见同根`business-recovery-key.json`，不在聊天/源码输出私钥。当前`generated-awaiting-human-independent-copy`，等待人类把恢复文件独立存密码管理器/离线U盘并确认；不得再次生成或把本机E副本当独立托管，确认前不开始真实8ec转存。未改变原oauth凭据/范围，未执行真实refresh。
+
 ## 2026-10-30 百度官方API已授权，小文件真实云往返通过
 
 - 人类分别明确批准创建个人应用、basic/netdisk访问与E盘加密凭据保存、约5KB合成密文往返。正式应用124583157“十二军团私有备份”已上线；设备码官方授权成功，令牌仅Windows DPAPI CurrentUser存于私有E目录（本人/SYSTEM/管理员），独立读回/ACL通过。无cookie提取、桌面鼠标按键、收费、分享或自动任务；临时RSA转交钥匙/密文已精确清理，不含业务恢复密钥。
