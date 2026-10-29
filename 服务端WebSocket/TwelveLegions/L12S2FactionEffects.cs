@@ -439,7 +439,7 @@ public sealed partial class L12GameEngine
             case "卡纽特大帝":
             {
                 var choices = PublicLegions(player).Concat(player.Graveyard)
-                    .Where(candidate => candidate.CardType == "legion" && candidate.Faction == "asgard"
+                    .Where(candidate => candidate.CardType == "legion" && L12StructuredCardRules.HasFaction(player, candidate, "asgard")
                         && candidate.InstanceId != card.InstanceId && HasDeathTrigger(candidate))
                     .Select(candidate => candidate.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return true; }
@@ -563,7 +563,7 @@ public sealed partial class L12GameEngine
             case "伊姆何泰普":
             {
                 if (player.Hand.Count >= State.Players[1 - item.Controller].Hand.Count) { FinishStackItem(item); return true; }
-                var recoverChoices = player.Graveyard.Where(candidate => candidate.Faction == "taiyangcheng"
+                var recoverChoices = player.Graveyard.Where(candidate => L12StructuredCardRules.HasFaction(player, candidate, "taiyangcheng")
                         && candidate.CardType == "legion" && candidate.Cost >= 6)
                     .ToArray();
                 if (recoverChoices.Length == 0) { FinishStackItem(item); return true; }
@@ -757,7 +757,7 @@ public sealed partial class L12GameEngine
         {
             var targetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
             var target = FindOnField(player, targetId, out var fearlessRow, out _);
-            if (target is null || fearlessRow != 0 || target.Faction != "taiyangcheng")
+            if (target is null || fearlessRow != 0 || !L12StructuredCardRules.HasFaction(player, target, "taiyangcheng"))
                 RecordTargetSettlementFailure(item, targetId,
                     "所选军团已离场、离开前排或不再具有【太阳城】特征");
             else
@@ -1382,7 +1382,7 @@ public sealed partial class L12GameEngine
         var onceKey = L12MasterTriggeredUsageRules.Key("nephthysScarab", player.PlayerIndex, State.TurnSerial);
         var pendingKey = $"{onceKey}:pending";
         if (State.ActivePlayer == defeatedController || player.MasterId != "S02-02M1"
-            || player.UsedAbilities.Contains(onceKey) || defeated.Faction != "taiyangcheng"
+            || player.UsedAbilities.Contains(onceKey) || !L12StructuredCardRules.HasFaction(player, defeated, "taiyangcheng")
             || defeated.CurrentCost < 2)
             return null;
         if (!player.UsedAbilities.Add(pendingKey)) return null;
@@ -2568,7 +2568,7 @@ public sealed partial class L12GameEngine
             {
                 var triggers = chosen.Select(id => FindPromptCard(item.Controller, id))
                     .Where(candidate => candidate is not null && candidate.CardType == "legion"
-                        && candidate.Faction == "asgard" && HasDeathTrigger(candidate))
+                        && L12StructuredCardRules.HasFaction(player, candidate, "asgard") && HasDeathTrigger(candidate))
                     .Cast<L12CardInstance>()
                     .DistinctBy(candidate => candidate.Name, StringComparer.Ordinal)
                     .Take(2)

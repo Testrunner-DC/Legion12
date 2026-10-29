@@ -136,7 +136,7 @@ public sealed partial class L12GameEngine
                 return true;
             case "墨子":
             {
-                var choices = PublicLegions(player).Where(target => target.Faction == "tianting").Select(target => target.InstanceId).ToList();
+                var choices = PublicLegions(player).Where(target => L12StructuredCardRules.HasFaction(player, target, "tianting")).Select(target => target.InstanceId).ToList();
                 if (!CanReturnMorale(player, 1) || choices.Count == 0) { FinishStackItem(item); return true; }
                 choices.Add("skip");
                 CreatePrompt(item.Controller, "optional-targets", "可返还1士气：选择我方最多2张【天廷】军团获得免死", choices,

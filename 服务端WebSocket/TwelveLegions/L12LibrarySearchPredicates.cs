@@ -8,8 +8,8 @@ public sealed partial class L12GameEngine
             .Split('|', StringSplitOptions.RemoveEmptyEntries)
             .Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase);
 
-    private static bool IsShanheSearchCandidate(L12CardInstance card)
-        => card.Faction == "tianting";
+    private static bool IsShanheSearchCandidate(L12PlayerState player, L12CardInstance card)
+        => L12StructuredCardRules.HasFaction(player, card, "tianting");
 
     private static bool IsFactionTopSearchCandidate(L12PlayerState player, L12CardInstance card,
         string faction, string excludedCardId)

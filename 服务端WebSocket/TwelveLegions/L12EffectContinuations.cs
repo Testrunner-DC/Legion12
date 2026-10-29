@@ -415,7 +415,7 @@ public sealed partial class L12GameEngine
             "S01-0103", "top-card", top);
         item.Data["revealed"] = top.InstanceId;
         var choices = new List<string> { "top", "bottom" };
-        if (top.CardType == "legion" && top.Faction == "tianting" && L12StructuredCardRules.CurrentCostAtMost(top, 5)
+        if (top.CardType == "legion" && L12StructuredCardRules.HasFaction(player, top, "tianting") && L12StructuredCardRules.CurrentCostAtMost(top, 5)
             && CanReturnMorale(player, 1) && EmptySlots(player).Any())
             choices.Add("recruit");
         var data = new Dictionary<string, string>

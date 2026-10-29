@@ -203,7 +203,7 @@ public sealed partial class L12GameEngine
         var revealed = player.Library[0];
         AddPresentationEvent("reveal", item.Controller,
             $"〈乾坤·阴〉展示牌库顶部的〈{revealed.Name}〉", "S02-0106", "top-card", revealed);
-        if (revealed.CardType != "legion" || revealed.Faction != "tianting" || !L12StructuredCardRules.CurrentCostAtMost(revealed, 3))
+        if (revealed.CardType != "legion" || !L12StructuredCardRules.HasFaction(player, revealed, "tianting") || !L12StructuredCardRules.CurrentCostAtMost(revealed, 3))
         {
             player.Library.RemoveAt(0);
             player.Library.Add(revealed);

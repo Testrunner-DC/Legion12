@@ -834,7 +834,8 @@ public sealed partial class L12GameEngine
             }
             case "canute":
             {
-                var triggers = Many("targets").Select(id => FindAuthoritativeCard(id))
+                var triggers = Many("targets").Select(id => PublicLegions(player).Concat(player.Graveyard)
+                        .FirstOrDefault(card => card.InstanceId == id))
                     .Where(card => card is not null && card.CardType == "legion"
                         && L12StructuredCardRules.HasFaction(player, card, "asgard") && HasDeathTrigger(card))
                     .Cast<L12CardInstance>().DistinctBy(card => card.Name, StringComparer.Ordinal).Take(2)
@@ -857,13 +858,18 @@ public sealed partial class L12GameEngine
             case "perseus":
             {
                 var target = player.Graveyard.FirstOrDefault(card => card.InstanceId == One("target"));
-                if (target is not null)
+                if (target is not null && (plan != "imhotep"
+                    || (target.CardType == "legion" && target.Cost >= 6
+                        && L12StructuredCardRules.HasFaction(player, target, "taiyangcheng")
+                        && CanEnterHandOrLibrary(target))))
                 {
                     player.Graveyard.Remove(target);
                     PubliclyRevealThenAddCardToHandByEffect(player, target, "graveyard",
                         $"{source.Name}公开墓地的〈{target.Name}〉",
                         $"{source.Name}将{target.Name}加入手牌", item);
                 }
+                else if (plan == "imhotep")
+                    RecordTargetSettlementFailure(item, One("target"), "所选墓地军团已离开墓地或不再满足太阳城、费用及入手条件");
                 break;
             }
             case "heracles-promotion":

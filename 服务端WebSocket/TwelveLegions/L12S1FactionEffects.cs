@@ -100,7 +100,7 @@ public sealed partial class L12GameEngine
                 return true;
             case "拉美西斯二世":
             {
-                var choices = PublicLegions(player).Where(target => target.Faction == "taiyangcheng"
+                var choices = PublicLegions(player).Where(target => L12StructuredCardRules.HasFaction(player, target, "taiyangcheng")
                         && !target.Name.Equals(card.Name, StringComparison.Ordinal))
                     .Select(target => target.InstanceId).ToList();
                 if (choices.Count == 0) { FinishStackItem(item); return true; }
@@ -193,7 +193,7 @@ public sealed partial class L12GameEngine
                 HealMaster(item.Controller, 1, "卡诺匹斯箱");
                 if (FindAuthoritativeCard(item.SourceInstanceId) is { } box) DiscardRelic(player, box);
                 FinishStackItem(item); return true;
-            case "卡诺匹斯罐 一": PromptOwnLegion(item, "canopic-one", "卡诺匹斯罐一：选择我方1张【太阳城】军团，兵力+2000并获得强攻", target => target.Faction == "taiyangcheng", false); return true;
+            case "卡诺匹斯罐 一": PromptOwnLegion(item, "canopic-one", "卡诺匹斯罐一：选择我方1张【太阳城】军团，兵力+2000并获得强攻", target => L12StructuredCardRules.HasFaction(player, target, "taiyangcheng"), false); return true;
             case "canopic-two-free": player.FreeTacticCount++; FinishStackItem(item); return true;
             case "canopic-two-discard":
             case "canopic-three-discard":
@@ -204,7 +204,7 @@ public sealed partial class L12GameEngine
             case "卡诺匹斯罐 三": player.TemporaryMorale += 2; DiscardRelic(player, card); FinishStackItem(item); return true;
             case "卡诺匹斯罐 四":
             {
-                var choices = PublicLegions(player).Where(target => target.Faction == "taiyangcheng").Select(target => target.InstanceId).ToList();
+                var choices = PublicLegions(player).Where(target => L12StructuredCardRules.HasFaction(player, target, "taiyangcheng")).Select(target => target.InstanceId).ToList();
                 if (choices.Count == 0)
                 {
                     DiscardRelic(player, card);
@@ -465,7 +465,7 @@ public sealed partial class L12GameEngine
             {
                 var target = PublicTriggerDeclared(item, "recoverTarget");
                 if (player.Graveyard.Any(candidate => candidate.InstanceId == target && CanEnterHandOrLibrary(candidate)
-                        && candidate.CardId != "S01-0207" && candidate.Faction == "taiyangcheng" && L12StructuredCardRules.CurrentCostAtMost(candidate, 4)))
+                        && candidate.CardId != "S01-0207" && L12StructuredCardRules.HasFaction(player, candidate, "taiyangcheng") && L12StructuredCardRules.CurrentCostAtMost(candidate, 4)))
                     MoveGraveToLibraryTop(player, target);
                 else AddEvent("effect-cancelled", item.Controller, "图坦卡蒙已声明的墓地目标失效；效果取消", card);
                 FinishStackItem(item); return true;
@@ -1633,7 +1633,7 @@ public sealed partial class L12GameEngine
     {
         var temporaryBonus = 0;
         var player = State.Players[playerIndex];
-        if (row == 0 && attacker.Faction == "taiyangcheng")
+        if (row == 0 && L12StructuredCardRules.HasFaction(player, attacker, "taiyangcheng"))
         {
             var slot = Array.FindIndex(player.Field[0], card => card?.InstanceId == attacker.InstanceId);
             var saladin = slot < 0 ? null : player.Field[0]
