@@ -11,7 +11,7 @@ public sealed class PasswordWorkBudgetCapacityTests
     [InlineData(-1, 0, 0)]
     [InlineData(1, -1, 0)]
     [InlineData(1, 0, -1)]
-    [InlineData(1, 0, 1001)]
+    [InlineData(1, 0, 3001)]
     public void InvalidAdmissionConfigurationIsRejected(int workers, int queued, int waitMs)
         => Assert.Throws<ArgumentOutOfRangeException>(() => new L12PasswordWorkBudget(workers, queued, TimeSpan.FromMilliseconds(waitMs)));
 
@@ -104,13 +104,77 @@ public sealed class PasswordWorkBudgetCapacityTests
     }
 
     [Fact]
-    public void SharedBudgetKeepsItsExistingCpuQueueAndWaitPolicy()
+    public void SharedBudgetKeepsCpuAndQueueLimitsWithApprovedThreeSecondWait()
     {
         var budget = L12PasswordWorkBudget.Shared;
         Assert.Equal(Math.Clamp(Environment.ProcessorCount / 2, 1, 2) + 8,
             (int)typeof(L12PasswordWorkBudget).GetField("_maximumAdmitted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(budget)!);
-        Assert.Equal(TimeSpan.FromMilliseconds(250),
+        Assert.Equal(TimeSpan.FromSeconds(3),
             (TimeSpan)typeof(L12PasswordWorkBudget).GetField("_maximumWait", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(budget)!);
+    }
+
+    [Theory]
+    [InlineData(1001)]
+    [InlineData(3000)]
+    public void ApprovedWaitRangeDoesNotIncreaseAdmission(int waitMs)
+    {
+        var budget = new L12PasswordWorkBudget(2, 8, TimeSpan.FromMilliseconds(waitMs));
+        Assert.Equal(10, (int)typeof(L12PasswordWorkBudget).GetField("_maximumAdmitted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(budget)!);
+        Assert.Equal(0, Admitted(budget));
+    }
+
+    [Fact]
+    public async Task EightQueuedRequestsSurviveOldCutoffWithoutIncreasingWorkers()
+    {
+        var budget = new L12PasswordWorkBudget(2, 8, TimeSpan.FromSeconds(3));
+        var held = new[] { budget.Acquire(), budget.Acquire() };
+        var active = 0;
+        var maximumActive = 0;
+        async Task Work()
+        {
+            using var lease = await budget.AcquireAsync();
+            var current = Interlocked.Increment(ref active);
+            int previous;
+            do { previous = Volatile.Read(ref maximumActive); }
+            while (current > previous && Interlocked.CompareExchange(ref maximumActive, current, previous) != previous);
+            try { await Task.Delay(5); }
+            finally { Interlocked.Decrement(ref active); }
+        }
+        var waiting = Enumerable.Range(0, 8).Select(_ => Work()).ToArray();
+        try
+        {
+            Assert.Equal(10, Admitted(budget));
+            await Task.Delay(350);
+            Assert.All(waiting, task => Assert.False(task.IsCompleted));
+            Assert.Throws<L12AuthenticationBusyException>(() => budget.Acquire());
+            await Assert.ThrowsAsync<L12AuthenticationBusyException>(async () => await budget.AcquireAsync());
+        }
+        finally
+        {
+            foreach (var lease in held) lease.Dispose();
+            await Task.WhenAll(waiting).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.InRange(maximumActive, 1, 2);
+        Assert.Equal(0, Admitted(budget));
+        using var first = budget.Acquire();
+        using var second = budget.Acquire();
+    }
+
+    [Fact]
+    public async Task SynchronousConsumerUsesTheSameExtendedBoundedWait()
+    {
+        var budget = new L12PasswordWorkBudget(1, 1, TimeSpan.FromSeconds(3));
+        var held = budget.Acquire();
+        var waiting = Run(() => { using var lease = budget.Acquire(); return true; });
+        try
+        {
+            Assert.True(SpinWait.SpinUntil(() => Admitted(budget) == 2, TimeSpan.FromMilliseconds(500)));
+            await Task.Delay(350);
+            Assert.False(waiting.IsCompleted);
+        }
+        finally { held.Dispose(); await Drain(waiting); }
+        Assert.True(await waiting);
+        Assert.Equal(0, Admitted(budget));
     }
 
     [Fact]

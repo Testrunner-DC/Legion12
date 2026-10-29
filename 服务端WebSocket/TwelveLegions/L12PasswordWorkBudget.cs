@@ -10,7 +10,7 @@ internal sealed class L12AuthenticationBusyException : Exception
 internal sealed class L12PasswordWorkBudget
 {
     internal static L12PasswordWorkBudget Shared { get; } = new(
-        Math.Clamp(Environment.ProcessorCount / 2, 1, 2), 8, TimeSpan.FromMilliseconds(250));
+        Math.Clamp(Environment.ProcessorCount / 2, 1, 2), 8, TimeSpan.FromSeconds(3));
 
     private readonly SemaphoreSlim _workers;
     private readonly int _maximumAdmitted;
@@ -20,7 +20,7 @@ internal sealed class L12PasswordWorkBudget
     internal L12PasswordWorkBudget(int workers, int queued, TimeSpan maximumWait)
     {
         if (workers < 1 || queued < 0 || maximumWait < TimeSpan.Zero
-            || maximumWait > TimeSpan.FromSeconds(1)) throw new ArgumentOutOfRangeException(nameof(workers));
+            || maximumWait > TimeSpan.FromSeconds(3)) throw new ArgumentOutOfRangeException(nameof(workers));
         _workers = new(workers, workers);
         _maximumAdmitted = checked(workers + queued);
         _maximumWait = maximumWait;

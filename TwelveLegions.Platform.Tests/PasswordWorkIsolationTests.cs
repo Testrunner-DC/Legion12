@@ -415,6 +415,39 @@ public sealed class PasswordWorkIsolationTests
         Assert.True(f.Store.Login(Fixture.Username, Fixture.Password).Success);
     }
 
+    [Fact]
+    public async Task QueuedLoginBurstOutlivesOldCutoffWithoutBlockingPlatformReads()
+    {
+        using var f = new Fixture();
+        var usernames = Enumerable.Range(0, 8).Select(index => $"pwqueue{index}").ToArray();
+        var accounts = usernames.Select(username =>
+        {
+            var registration = f.Store.Register(username, Fixture.Password);
+            Assert.True(registration.Success, registration.Message);
+            return registration.Account!;
+        }).ToArray();
+        f.Store.PasswordWorkBudget = new(2, 8, TimeSpan.FromSeconds(3));
+        var held = new[] { f.Store.PasswordWorkBudget.Acquire(), f.Store.PasswordWorkBudget.Acquire() };
+        var attempts = usernames.Select(username => LoginAsync(f.Store, username, Fixture.Password)).ToArray();
+        try
+        {
+            await Task.Delay(350);
+            Assert.All(attempts, attempt => Assert.False(attempt.IsCompleted));
+            Assert.True(await Run(() => f.Store.AccountExists(f.Owner.Id)).WaitAsync(TimeSpan.FromSeconds(1)));
+        }
+        finally { foreach (var lease in held) lease.Dispose(); await Task.WhenAll(attempts).WaitAsync(TimeSpan.FromSeconds(10)); }
+        var results = await Task.WhenAll(attempts);
+        for (var index = 0; index < results.Length; index++)
+        {
+            var result = results[index];
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(accounts[index].Id, f.Store.AuthenticateTokenSession(result.Token)!.Account.Id);
+        }
+        Assert.Equal(8, results.Select(result => result.Token).Distinct().Count());
+        using var first = f.Store.PasswordWorkBudget.Acquire();
+        using var second = f.Store.PasswordWorkBudget.Acquire();
+    }
+
     private static Task<L12AuthenticationResult> StartLogin(L12PlatformStore store, bool asyncLogin,
         string username, string password, L12LoginAttemptContext? context = null)
         => asyncLogin ? LoginAsync(store, username, password, context) : Run(() => store.Login(username, password, context));
