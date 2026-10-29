@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261030-BAIDU-API-PILOT｜官方授权与合成密文真实云往返
+
+- 人类批准个人应用创建及后续basic/netdisk/E私有加密凭据/5KB试验，已创建124583157。官方设备码授权、不取cookie；敏感信息经内存RSA-OAEP-SHA256中转，最终Windows DPAPI CurrentUser保存并独立读回/ACL核验，临时转交件已清。源码/Git无凭据，业务恢复key未建立，P0—P4及服务配置不变。
+- 4文件5192B通过官方预上传/动态HTTPS域名/分片/创建，再按实际fs_id重新查询与独立下载；4/4长度/SHA一致，原L12CloudArchive VerifyReturned解密原归档/完成清单/全部证据通过。旧内容回执仍是offline、不伪造cloud字段；真实API回执与其组合见`D:/GPT/Legion12/artifacts/legacy-c-entry-20261016/artifacts/baidu-api-20261030/acceptance.json`。
+- 过程PKCS8 Span在PowerShell不可调用，改CNG强类型导入；上传200响应声明charset=utf8导致.NET ReadAsString异常，改受限长度的严格UTF-8字节解析。原错误保留，不误报网盘权限/安全软件拦截。接入/试验脚本仅artifact，无应用修改、不重跑规则/平台/Release、不部署、不关线上Bug。
+- 尚未验证多GiB分片续传、刷新令牌更新和真实业务钥匙托管；真实备份上传/服务器删除/释放/自动任务均0，不据5KB试验退役源或宣称整个生产备份体系完成。
+
 ## OPS-20261029-PRIVATE-CLOUD-ARCHIVE｜网盘冷归档离线完整组及回读
 
 - 人类新增服务器存储评估与云转存，并明确为百度网盘。仅新增L12CloudArchive/test-l12-cloud-archive两脚本，不改应用、服务器或部署门槛。Prepare把主不可变归档、原完成清单及最多16个raw proof的字节完整分别age加密，不只留证据SHA；公开外清单不含原路径/私钥，同内容去重，源锁/前后SHA长度核验、内容哈希命名与原子定名。新E目录先私有ACL，现有源/父目录权限不动。
