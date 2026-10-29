@@ -1,5 +1,11 @@
 # Legion12 本地存储治理
 
+## 2026-10-30 脱离原电脑的恢复入口与真实旧档接收
+
+`-Action Restore`只消费可信原外清单及其独立保留SHA、正常网盘访问授权、新E私有目录；不需要原cipher、原机器DPAPI传输状态或旧outbox。目录必须新建/空，已有目录仅可续跑自身restore.dpapi。按固定manifest SHA应用路径查询并锁云fsId/长度，复用严格HTTPS/持久前缀/Range/全SHA；不依赖清单未提供的MD5.parts，但原Upload/Download强校验不变。原manifest也真实下载，不复制本地清单冒云来源；成功后仍须原VerifyReturned加业务钥匙解密，receipt不会单凭下载冒数据库恢复成功。原外清单SHA必须在网盘之外独立记录，不能拿同网盘当前文件自报SHA作为信任来源；新机仍需本人正常网盘授权，本机oauth.dpapi不是跨机访问凭据。
+
+原49＋17新例=66/66通过，Main独审及现有8MB云组合成manifest-only实际下载/解密通过，未重传/换授权，结果`artifacts/server-health-20261029/cloud-storage/baidu-restore-20261030`。人类已确认业务恢复文件独立保存，原key定位仍在business-recovery-key.json，不能再生成另把旧档钥匙丢失。真实8ec组接收只进私有E；完成原SHA/原proof/独立云下载及历史冷恢复验证、再核最新两份/引用/保护之前，服务器同内容副本不退休。当前原拷贝工具单元素名单误判空failure已纠正（显式JSON数组），私有ACL只核不重复重设，部分文件用同源reget续接；失败状态不丢弃。
+
 ## 2026-10-30 后台分片传输固定入口
 
 `ops/windows/L12BaiduNetdisk.ps1`消费原`L12CloudArchive.ps1 Prepare`输出，不生成新备份、不上传活库、不删源。固定本应用/本人凭据，源/状态/返回目录物理E且私有、拒绝联接/同步目录；原清单SHA及全部密文长度/SHA先核，source句柄全程禁止写入。分片4MiB、单文件保守≤4GiB；MD5只满足协议分片校验，最终可信原清单SHA256决定内容完整性。

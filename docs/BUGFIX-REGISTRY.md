@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261030-MANIFEST-ONLY-RESTORE｜丢失原电脑后不依赖本地密文/旧进度恢复
+
+- 原Download为上传后的同机完整验证，GetGroupPlan必须持有所有cipher计算MD5.parts，不能充当灾备唯一入口。新增显式Restore，提取唯一已锁manifest验证器，原Upload/Download仍要求全部cipher/age头/全SHA/parts；不把未知本地事实当云来源。
+- Restore只需可信原manifest与独立SHA、正常网盘授权、新E私有根，用自身新机DPAPI进度而非旧机器transfer.dpapi；固定app/path、首次fsId后持久绑定、元数据身份/持久前缀/Range/全SHA，云manifest也真实下载。没有本地MD5时不凭空补造，以原清单SHA256验证全部字节；不放宽原上传/下载或删除源、改库、造钥匙。
+- 来源Focused66/66（原49＋17灾备例），纯本地/无真实凭据/自动清理75,540,915B；Main全文差异独审/实际3指纹核验，旧8MB云组合成manifest-only新目录实际回读与原校验器解密通过。`cloud-storage/baidu-restore-20261030/live-acceptance.json`，不是业务恢复/Release/部署资格。真实8ec转存另根独立记录，不混完成态。
+
 ## OPS-20261030-BAIDU-RESUMABLE-TRANSPORT｜既有密文组的后台续传与刷新恢复
 
 - 新增L12BaiduNetdisk模块/CLI与49项本地QA，复用原离线加密/解密入口。4MiB分片/单文件保守4GiB、原清单与全SHA/source锁、E私有DPAPI进度/原子替换、凭据与传输锁、固定应用路径/动态受信HTTPS、真实终值SHA；不产生第二业务持久化体系、不改P0—P4/服务/部署门槛。

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
- [Parameter(Mandatory)][ValidateSet('Status','Refresh','Upload','Download')][string]$Action,
+ [Parameter(Mandatory)][ValidateSet('Status','Refresh','Upload','Download','Restore')][string]$Action,
  [string]$ManifestPath,
  [string]$ExpectedManifestSha256,
  [string]$TransferDirectory,
@@ -16,4 +16,5 @@ try{switch($Action){
  'Refresh'{Update-L12BaiduAuthorization -CredentialPath $CredentialPath -TimeBudgetSeconds $TimeBudgetSeconds}
  'Upload'{Invoke-L12BaiduArchiveUpload -ManifestPath $ManifestPath -ExpectedManifestSha256 $ExpectedManifestSha256 -TransferDirectory $TransferDirectory -CredentialPath $CredentialPath -TimeBudgetSeconds $TimeBudgetSeconds -RequestTimeoutSeconds $RequestTimeoutSeconds}
  'Download'{Invoke-L12BaiduArchiveDownload -ManifestPath $ManifestPath -ExpectedManifestSha256 $ExpectedManifestSha256 -TransferDirectory $TransferDirectory -CredentialPath $CredentialPath -TimeBudgetSeconds $TimeBudgetSeconds -RequestTimeoutSeconds $RequestTimeoutSeconds}
+ 'Restore'{Invoke-L12BaiduArchiveRestore -ManifestPath $ManifestPath -ExpectedManifestSha256 $ExpectedManifestSha256 -TransferDirectory $TransferDirectory -CredentialPath $CredentialPath -TimeBudgetSeconds $TimeBudgetSeconds -RequestTimeoutSeconds $RequestTimeoutSeconds}
 }}catch{if($_.Exception.Message -cmatch '^L12_BAIDU_[A-Z0-9_-]+$'){throw $_.Exception.Message};throw 'L12_BAIDU_LOCAL_FAILURE'}

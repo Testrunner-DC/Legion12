@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-30 人类已确认独立保存恢复文件；真实8ec转存执行中
+
+- 人类已明确“已独立保存”，唯一`baidu-resume-20261030/business-recovery-key.json`现human-confirmed-independent-copy；仅记录人类声明，不冒跨机实测。复用原业务recipient/私有本机DPAPI工作副本，不再生成或询问钥匙，不在聊天/Git/网盘输出私钥。
+- 新增显式`Restore`弥补灾备缺口：只需可信原manifest及独立SHA、正常新机网盘授权、新E私有目录，无需本地cipher或旧机器transfer.dpapi。唯一共享manifest解析、既有严格HTTPS/fsId/前缀/Range/最终SHA，原Upload/Download的MD5/源锁不放宽；云端原manifest也独立回读，陌生非空目录/未跟踪文件拒绝。3叶来源独立Focused66/66、自清75,540,915B；Main全文差异独审/指纹吻合，原8MB云组实际manifest-only下载并解密成功，唯一`cloud-storage/baidu-restore-20261030/live-acceptance.json`，未新上传业务或实际刷新token。
+- 真正业务转存固定`runtime-before-8ec4dd8c41f9-20261026T222532Z.tar.gz`3200689159B、D646E7D7…，归属成功bc1ad9ea操作的97a→8ec前历史停服快照，不能冒当前最新数据。原proof SHA36968160…、4件/6666276864B/指纹0b90d264…；最新af/d557两组仍保护。真实拷贝仅固定主机/旧档/三原件到私有E，唯一`cloud-storage/real-backup-8ec-20261030`；无完成cold-copy收据前不冒下载完或上传云端。
+- 原遗留copy工具单个名单经管道ConvertTo-Json变字符串，导致空failure引用误判；直接核查无真实引用，修正-InputObject数组并保0/1/2例，未放宽保护。重复Set-Acl因本机SeSecurityPrivilege拒绝，改为复用并严格核既有私有ACL；300秒首轮拷贝在55.8%保留，后续同源reget续接、预算900秒，不重下前段。原失败保留；当前服务器删除/释放/部署/维护变化仍0，暂不部署有效。
+
 ## 2026-10-30 分片续传工具已完成本地49项与真实合成三分片/Range验收
 
 - 新增`ops/windows/L12BaiduNetdisk.psm1`/`.ps1`及`scripts/test-l12-baidu-netdisk.ps1`，复用原Prepare/VerifyReturned而不另造备份/恢复体系。只运送既有schema2密文组，固定本地原清单SHA/全程source锁、4MiB分片、单文件保守4GiB上限、DPAPI原子进度与互斥锁，上传/下载/刷新均限时；不会删除源、生成业务钥匙或建自动任务。
