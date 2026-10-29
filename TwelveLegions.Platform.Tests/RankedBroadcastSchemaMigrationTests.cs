@@ -1,3 +1,4 @@
+using SchemaContract = TwelveLegions.Platform.Tests.PlatformSchemaTestContract;
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using TwelveLegions.Server;
@@ -9,14 +10,14 @@ namespace TwelveLegions.Platform.Tests;
 public sealed class RankedBroadcastSchemaMigrationTests
 {
     [Fact]
-    public void FreshStoreCommitsSchemaElevenWithExistingBroadcastObjectsAndGeneration()
+    public void FreshStoreCommitsCurrentSchemaWithExistingBroadcastObjectsAndGeneration()
     {
         InStore((_, store) =>
         {
             using var connection = Open(store.TransactionalStoragePath);
-            Assert.Equal(11, ScalarLong(connection,
+            Assert.Equal(SchemaContract.Current, ScalarLong(connection,
                 "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
-            Assert.Equal("11", ScalarText(connection,
+            Assert.Equal(SchemaContract.Current.ToString(), ScalarText(connection,
                 "SELECT value FROM storage_meta WHERE key='schema_version';"));
             Assert.Equal(1, ScalarLong(connection,
                 "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='ranked_broadcast_definitions');"));
@@ -89,7 +90,7 @@ public sealed class RankedBroadcastSchemaMigrationTests
     }
 
     [Fact]
-    public void SchemaElevenRestartNeverDowngradesAndFutureTwelveFailsClosed()
+    public void CurrentSchemaRestartNeverDowngradesAndUnsupportedSchemaFailsClosed()
     {
         InStore((path, store) =>
         {
@@ -98,24 +99,24 @@ public sealed class RankedBroadcastSchemaMigrationTests
             var restarted = new L12PlatformStore(path);
             using (var current = Open(restarted.TransactionalStoragePath))
             {
-                Assert.Equal(11, ScalarLong(current,
+                Assert.Equal(SchemaContract.Current, ScalarLong(current,
                     "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
-                Assert.Equal("11", ScalarText(current,
+                Assert.Equal(SchemaContract.Current.ToString(), ScalarText(current,
                     "SELECT value FROM storage_meta WHERE key='schema_version';"));
                 Assert.Equal(generation, ScalarText(current,
                     "SELECT value FROM storage_meta WHERE key='ranked_broadcast_generation';"));
-                Execute(current, """
-                    UPDATE storage_meta SET value='12' WHERE key='schema_version';
-                    UPDATE platform_state SET schema_version=12 WHERE singleton_id=1;
+                Execute(current, $"""
+                    UPDATE storage_meta SET value='{SchemaContract.Unsupported}' WHERE key='schema_version';
+                    UPDATE platform_state SET schema_version={SchemaContract.Unsupported} WHERE singleton_id=1;
                     """);
             }
             SqliteConnection.ClearAllPools();
             Assert.Throws<L12PlatformStorageUnavailableException>(
                 () => new L12PlatformStore(path));
             using var future = Open(store.TransactionalStoragePath);
-            Assert.Equal("12", ScalarText(future,
+            Assert.Equal(SchemaContract.Unsupported.ToString(), ScalarText(future,
                 "SELECT value FROM storage_meta WHERE key='schema_version';"));
-            Assert.Equal(12, ScalarLong(future,
+            Assert.Equal(SchemaContract.Unsupported, ScalarLong(future,
                 "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
         });
     }
@@ -154,7 +155,7 @@ public sealed class RankedBroadcastSchemaMigrationTests
             using var preserved = Open(store.TransactionalStoragePath);
             Assert.Equal("invalid-generation", ScalarText(preserved,
                 "SELECT value FROM storage_meta WHERE key='ranked_broadcast_generation';"));
-            Assert.Equal("11", ScalarText(preserved,
+            Assert.Equal(SchemaContract.Current.ToString(), ScalarText(preserved,
                 "SELECT value FROM storage_meta WHERE key='schema_version';"));
         });
     }
@@ -175,9 +176,9 @@ public sealed class RankedBroadcastSchemaMigrationTests
                 failure?.ToString() ?? "missing filesystem prewrite failure");
 
             using var preserved = Open(store.TransactionalStoragePath);
-            Assert.Equal(11, ScalarLong(preserved,
+            Assert.Equal(SchemaContract.Current, ScalarLong(preserved,
                 "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
-            Assert.Equal("11", ScalarText(preserved,
+            Assert.Equal(SchemaContract.Current.ToString(), ScalarText(preserved,
                 "SELECT value FROM storage_meta WHERE key='schema_version';"));
             Assert.Equal(1, ScalarLong(preserved, """
                 SELECT EXISTS(SELECT 1 FROM sqlite_schema
@@ -339,15 +340,15 @@ public sealed class RankedBroadcastSchemaMigrationTests
     }
 
     [Fact]
-    public void ReverseExitRejectsFutureSchemaTwelveWithoutChangingObjectAuthority()
+    public void ReverseExitRejectsUnsupportedSchemaWithoutChangingObjectAuthority()
     {
         InStore((_, store) =>
         {
             CreateLiveBroadcast(store);
             using (var connection = Open(store.TransactionalStoragePath))
-                Execute(connection, """
-                    UPDATE storage_meta SET value='12' WHERE key='schema_version';
-                    UPDATE platform_state SET schema_version=12 WHERE singleton_id=1;
+                Execute(connection, $"""
+                    UPDATE storage_meta SET value='{SchemaContract.Unsupported}' WHERE key='schema_version';
+                    UPDATE platform_state SET schema_version={SchemaContract.Unsupported} WHERE singleton_id=1;
                     """);
 
             Assert.Throws<InvalidDataException>(() =>
@@ -355,9 +356,9 @@ public sealed class RankedBroadcastSchemaMigrationTests
                     store.TransactionalStoragePath));
 
             using var preserved = Open(store.TransactionalStoragePath);
-            Assert.Equal("12", ScalarText(preserved,
+            Assert.Equal(SchemaContract.Unsupported.ToString(), ScalarText(preserved,
                 "SELECT value FROM storage_meta WHERE key='schema_version';"));
-            Assert.Equal(12, ScalarLong(preserved,
+            Assert.Equal(SchemaContract.Unsupported, ScalarLong(preserved,
                 "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
             Assert.Equal(1, ScalarLong(preserved, """
                 SELECT EXISTS(SELECT 1 FROM sqlite_schema
@@ -466,7 +467,7 @@ public sealed class RankedBroadcastSchemaMigrationTests
             var upgraded = new L12PlatformStore(path);
             using (var schemaNine = Open(upgraded.TransactionalStoragePath))
             {
-                Assert.Equal("11", ScalarText(schemaNine,
+                Assert.Equal(SchemaContract.Current.ToString(), ScalarText(schemaNine,
                     "SELECT value FROM storage_meta WHERE key='schema_version';"));
                 Assert.Equal(generation, ScalarText(schemaNine,
                     "SELECT value FROM storage_meta WHERE key='ranked_broadcast_generation';"));

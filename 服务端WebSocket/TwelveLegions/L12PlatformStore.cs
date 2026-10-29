@@ -29,7 +29,7 @@ public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyL
     IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null,
     IReadOnlyList<string>? BenchIds = null, string? PublicationId = null, int? PublicationVersion = null,
-    string Id = "", long Revision = 0);
+    string Id = "", long Revision = 0, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? RepresentativeCardIds = null);
 public sealed record L12DeckMutationResult(string Status, L12AccountDeckView? Deck = null,
     long? CurrentRevision = null)
 {
@@ -263,6 +263,7 @@ public sealed partial class L12PlatformStore
     private sealed class DeckRow
     {
         public string PayloadHash { get; set; } = string.Empty;
+        public List<string>? RepresentativeCardIds { get; set; }
         public string BenchJson { get; set; } = "[]";
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public long Revision { get; set; } = 1;
@@ -283,6 +284,7 @@ public sealed partial class L12PlatformStore
     private sealed class PublishedDeckRow
     {
         public string PayloadHash { get; set; } = string.Empty;
+        public List<string>? RepresentativeCardIds { get; set; }
         public int Version { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string PublicCode { get; set; } = string.Empty;
@@ -1069,6 +1071,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            _ = ResolveRepresentatives(null, deck);
             var appearances = PrepareDeckAlternateArtsLocked(accountId, deck);
             var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
                 && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal));
@@ -1101,6 +1104,7 @@ public sealed partial class L12PlatformStore
             if (_data.Decks.Any(item => item.AccountId == accountId
                     && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal)))
                 return new("name_conflict");
+            _ = ResolveRepresentatives(null, deck);
             var appearances = PrepareDeckAlternateArtsLocked(accountId, deck);
             var row = new DeckRow { AccountId = accountId, Name = deck.Name, Revision = 1 };
             ApplyDeck(row, accountId, deck, appearances);
@@ -1127,6 +1131,7 @@ public sealed partial class L12PlatformStore
             if (_data.Decks.Any(item => item.AccountId == accountId && item != row
                     && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal)))
                 return new("name_conflict");
+            _ = ResolveRepresentatives(null, deck);
             var appearances = PrepareDeckAlternateArtsLocked(accountId, deck);
             row.Revision++;
             ApplyDeck(row, accountId, deck, appearances);
@@ -1178,9 +1183,23 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    private static List<string>? ResolveRepresentatives(List<string>? previous, L12PresetDeckDefinition deck)
+    {
+        var allowed = deck.CardIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (deck.RepresentativeCardIds is { } explicitIds
+            && (explicitIds.Count > 3 || explicitIds.Any(id => string.IsNullOrWhiteSpace(id) || !allowed.Contains(id.Trim()))
+                || explicitIds.Select(id => id.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != explicitIds.Count))
+            throw new ArgumentException("代表卡必须是主牌库中不重复的最多三张卡");
+        var chosen = deck.RepresentativeCardIds ?? previous;
+        if (chosen is null || chosen.Count == 0) return null;
+        var retained = chosen.Where(id => allowed.Contains(id.Trim()))
+            .Select(id => deck.CardIds.First(card => string.Equals(card, id.Trim(), StringComparison.OrdinalIgnoreCase))).ToList();
+        return retained.Count == 0 ? null : retained;
+    }
     private void ApplyDeck(DeckRow row, string accountId, L12PresetDeckDefinition deck,
         (Dictionary<string, string> Selections, Dictionary<string, List<string>> Copies) appearances)
     {
+        row.RepresentativeCardIds = ResolveRepresentatives(row.RepresentativeCardIds, deck);
         row.PayloadHash = string.Empty;
         row.BenchJson = "[]";
         row.Name = deck.Name;
@@ -1314,6 +1333,7 @@ public sealed partial class L12PlatformStore
             var row = string.IsNullOrWhiteSpace(publicationId) ? null : FindPublishedDeck(publicationId);
             if (row is not null && row.OwnerId != accountId) row = null;
             if (!string.IsNullOrWhiteSpace(publicationId) && row is null) return null;
+            _ = ResolveRepresentatives(null, deck);
             var appearances = PrepareDeckAlternateArtsLocked(accountId, deck);
             row ??= _data.PublishedDecks.FirstOrDefault(item => item.OwnerId == accountId
                 && string.Equals(item.Name, deck.Name, StringComparison.OrdinalIgnoreCase));
@@ -1327,6 +1347,7 @@ public sealed partial class L12PlatformStore
                 };
                 _data.PublishedDecks.Add(row);
             }
+            row.RepresentativeCardIds = ResolveRepresentatives(row.RepresentativeCardIds, deck);
             row.PayloadHash = string.Empty;
             row.Name = deck.Name;
             row.MasterId = deck.MasterId;
@@ -2084,7 +2105,7 @@ public sealed partial class L12PlatformStore
             new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase),
             (row.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
                 item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
-            ExpandCards(DeckBenchJson(row)), row.PublicationId, row.PublicationVersion, row.Id, row.Revision);
+            ExpandCards(DeckBenchJson(row)), row.PublicationId, row.PublicationVersion, row.Id, row.Revision, row.RepresentativeCardIds?.ToArray());
     }
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
@@ -2094,7 +2115,7 @@ public sealed partial class L12PlatformStore
         var deck = new L12AccountDeckView(row.Name, row.MasterId, payload.MainCards, payload.MoraleCards,
             payload.SpecialCards, row.UpdatedAt,
             PublicationId: viewerAccountId == row.OwnerId ? row.Id : null,
-            PublicationVersion: viewerAccountId == row.OwnerId ? row.Version : null);
+            PublicationVersion: viewerAccountId == row.OwnerId ? row.Version : null, RepresentativeCardIds: row.RepresentativeCardIds?.ToArray());
         return new L12PublishedDeckView(row.Id, row.PublicCode, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,
             viewerAccountId is not null && row.LikedByAccountIds.Contains(viewerAccountId), row.CreatedAt, row.UpdatedAt);
     }

@@ -183,14 +183,14 @@ public sealed partial class L12PlatformStore
     private IReadOnlyList<L12PublicDeckVersionView> ReadPublicDeckVersions(SqliteConnection connection,
         PublishedDeckRow published)
     {
-        var stored = new List<(int Version, string Name, NormalizedDeckPayload Payload, DateTimeOffset Created)>();
+        var stored = new List<(int Version, string Name, NormalizedDeckPayload Payload, DateTimeOffset Created, IReadOnlyList<string>? Representatives)>();
         var total = 0L;
         using (var command = connection.CreateCommand())
         {
             command.CommandText = """
                 SELECT versions.version,versions.name,versions.payload_hash,payload.master_id,
                        payload.payload_format,payload.payload_json,
-                       versions.created_utc
+                       versions.created_utc,versions.representative_card_ids_json
                 FROM published_deck_versions versions
                 JOIN deck_payloads payload ON payload.payload_hash=versions.payload_hash
                 WHERE versions.publication_id=$id AND versions.version<=$version ORDER BY versions.version;
@@ -206,7 +206,7 @@ public sealed partial class L12PlatformStore
                     decoded.MoraleJson, decoded.SpecialJson, [], [], []);
                 CheckOnlineDeckExpansionBudget(payload, null, ref total);
                 stored.Add((reader.GetInt32(0), string.IsNullOrWhiteSpace(reader.GetString(1)) ? published.Name : reader.GetString(1),
-                    payload, DateTimeOffset.Parse(reader.GetString(6))));
+                    payload, DateTimeOffset.Parse(reader.GetString(6)), ReadRepresentativeJson(reader, 7)));
             }
         }
         // All version consumers have passed the aggregate budget before copies.
@@ -218,7 +218,7 @@ public sealed partial class L12PlatformStore
             {
                 MainCards = ExpandCards(row.Payload.MainJson), MoraleCards = ExpandCards(row.Payload.MoraleJson),
                 SpecialCards = ExpandCards(row.Payload.SpecialJson),
-            }, row.Created);
+            }, row.Created, row.Representatives);
         }
         var views = new List<L12PublicDeckVersionView>(stored.Count);
         for (var index = 0; index < stored.Count; index++)
@@ -226,7 +226,7 @@ public sealed partial class L12PlatformStore
             var current = stored[index];
             var previous = index == 0 ? null : stored[index - 1].Payload;
             var deck = new L12AccountDeckView(current.Name, current.Payload.MasterId, current.Payload.MainCards,
-                current.Payload.MoraleCards, current.Payload.SpecialCards, current.Created);
+                current.Payload.MoraleCards, current.Payload.SpecialCards, current.Created, RepresentativeCardIds: current.Representatives);
             views.Add(new(current.Version, current.Name, deck, current.Created,
                 previous is null ? [] : DiffPublicDeckPayloads(previous, current.Payload)));
         }

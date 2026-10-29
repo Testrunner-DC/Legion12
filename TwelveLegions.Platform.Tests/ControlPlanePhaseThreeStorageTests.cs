@@ -1,3 +1,4 @@
+using SchemaContract = TwelveLegions.Platform.Tests.PlatformSchemaTestContract;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
@@ -42,8 +43,8 @@ public sealed class ControlPlanePhaseThreeStorageTests
             {
                 Assert.Equal("ok", Scalar(connection, "PRAGMA quick_check;"));
                 Assert.Equal("1", Scalar(connection, "SELECT COUNT(*) FROM platform_state;"));
-                Assert.Equal("11", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-                Assert.Equal("11", Scalar(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+                Assert.Equal(SchemaContract.Current.ToString(), Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal(SchemaContract.Current.ToString(), Scalar(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
                 Assert.Equal("2", Scalar(connection, """
                     SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
                     WHERE name IN ('payload_format','payload_json');
@@ -111,8 +112,8 @@ public sealed class ControlPlanePhaseThreeStorageTests
             Assert.Equal("schema-upgrade-preserved",
                 reloaded.OperationsConfig(reloadedAdmin).Config.Maintenance.Message);
             using var upgraded = Open(reloaded.TransactionalStoragePath);
-            Assert.Equal("11", Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-            Assert.Equal("11", Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+            Assert.Equal(SchemaContract.Current.ToString(), Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+            Assert.Equal(SchemaContract.Current.ToString(), Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
             Assert.Equal("2", Scalar(upgraded, """
                 SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
                 WHERE name IN ('payload_format','payload_json');

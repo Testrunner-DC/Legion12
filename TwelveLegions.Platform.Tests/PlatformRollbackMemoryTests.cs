@@ -1,3 +1,4 @@
+using SchemaContract = TwelveLegions.Platform.Tests.PlatformSchemaTestContract;
 using System.IO.Compression;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -358,7 +359,7 @@ public sealed class PlatformRollbackMemoryTests
                 connection.Open();
                 using var command = connection.CreateCommand();
                 command.CommandText = damage == "future-schema"
-                    ? "UPDATE storage_meta SET value='12' WHERE key='schema_version'; UPDATE platform_state SET schema_version=12 WHERE singleton_id=1;"
+                    ? $"UPDATE storage_meta SET value='{SchemaContract.Unsupported}' WHERE key='schema_version'; UPDATE platform_state SET schema_version={SchemaContract.Unsupported} WHERE singleton_id=1;"
                     : "UPDATE deck_payloads SET payload_format=99;";
                 command.ExecuteNonQuery();
             }

@@ -116,8 +116,9 @@ function frozenActorGuard(platformState) {
   const listeners = []
   const watch = (get, listener) => listeners.push({ get, listener, last: get() })
   const code = ['let deckAccountEpoch = 0;', listenerNode.getText(file),
-    ...['captureDeckAccountGuard', 'captureDeckStorageContext', 'isCurrentDeckStorageContext'].map(name => declarations.get(name))].join('\n')
-  const guard = evaluated(code, { platformState, watch, accountStorageKey: id => `cache:${id}`, selectedDeckStorageKey: id => `select:${id}` }, 'captureDeckAccountGuard')
+    ...['deckCacheOwner', 'captureDeckAccountGuard', 'captureDeckStorageContext', 'isCurrentDeckStorageContext'].map(name => declarations.get(name))].join('\n')
+  const guard = evaluated(code, { platformState, watch, accountStorageKey: id => `cache:${id}`, selectedDeckStorageKey: id => `select:${id}`,
+    deploymentBasePath: '/', deckDatabaseScope: productionModule('src/l12/deckCacheDatabase.ts').deckDatabaseScope }, 'captureDeckAccountGuard')
   return { capture: guard, set(id, token) {
     platformState.account = id ? { id } : null; platformState.token = token
     for (const row of listeners) { const next = row.get(); row.listener(next, row.last); row.last = next }

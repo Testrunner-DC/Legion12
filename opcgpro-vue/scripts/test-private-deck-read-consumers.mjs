@@ -228,6 +228,7 @@ function bodyRuntime(options = {}) {
     decks: { Old: body('deck-A', 1, 'Old'), Unrelated: body('deck-U', 4, 'Unrelated') },
   }
   const calls = [], locks = [], committed = [], storage = new Map()
+  const transactionStates = new WeakMap()
   const selectedKey = 'l12-selected-custom-deck:owner'
   for (const key of [selectedKey, ...scopes.map(scope => `${selectedKey}:${scope}`)]) storage.set(key, 'Old')
   const localStorage = { getItem: key => storage.has(key) ? storage.get(key) : null, setItem: (key, value) => storage.set(key, value) }
@@ -235,9 +236,19 @@ function bodyRuntime(options = {}) {
   const requests = options.deferred ? null : options.response ?? body()
   const dependencies = {
     platformState: { account: { id: 'owner' }, token: 'token' }, SELECTED_DECK_KEY: 'l12-selected-custom-deck',
+    ensureDeckDatabase: async () => {}, transactionStates,
+    stateForContext: context => transactionStates.get(context) ?? { selections: Object.fromEntries(storage), cacheRaw: snapshot.raw },
+    deckCacheDatabase: { update: async (_scope, _revision, mutate, guard) => {
+      guard(); locks.push('idb:account:owner')
+      const state = { selections: Object.fromEntries(storage), cacheRaw: snapshot.raw }
+      const result = mutate(state); guard(); return { state, result }
+    } },
+    announceDeckCacheChange: () => {},
     L12_DECK_SELECTION_SCOPES: scopes,
+    newStorageKey: () => 'l12-custom-decks-v2:owner',
+    getRepresentativeDeckRequestHeaders: () => options.headers ?? {},
     localStorage, captureDeckStorageContext: () => ({ accountId: 'owner', token: 'token', epoch: 1,
-      storageKey: 'l12-custom-decks-v1:owner', selectedKey }),
+      storageKey: 'l12-custom-decks-v1:owner', selectedKey, scope: { environment: '/', owner: 'account:owner' } }),
     assertCompleteDeckAccount: () => {}, isCurrentDeckStorageContext: () => current,
     platformRequest: (url, init) => {
       const row = { url, init, ...(options.deferred ? deferred() : {}) }; calls.push(row)
@@ -282,10 +293,16 @@ function bodyRuntime(options = {}) {
     activityMarks: () => activityMarks, commits: () => commits }
 }
 
-await check('selected body uses exact id and revision, then one real Web Lock/CAS merge', async () => {
+await check('private body negotiates representative v2 only when requested', async () => {
+  const legacy = bodyRuntime(); await legacy.call(); assert.deepEqual(legacy.calls[0].init.headers, {})
+  const modern = bodyRuntime({ headers: { 'X-L12-Deck-Cover': '2' } }); await modern.call()
+  assert.deepEqual(modern.calls[0].init.headers, { 'X-L12-Deck-Cover': '2' })
+})
+
+await check('selected body uses exact id and revision, then one transaction/CAS merge', async () => {
   const runtime = bodyRuntime({ response: body() }), result = await runtime.call()
   assert.equal(runtime.calls[0].url, '/api/decks/by-id/deck-A?expectedRevision=2'); assert.equal(runtime.calls[0].init.cache, 'no-store')
-  assert.deepEqual(runtime.locks, ['l12:deck-save:l12-custom-decks-v1:owner']); assert.equal(runtime.commits(), 1)
+  assert.deepEqual(runtime.locks, ['idb:account:owner']); assert.equal(runtime.commits(), 1)
   assert.equal(result.name, '重命名牌库'); assert.equal(runtime.snapshot().decks.Old, undefined)
   assert.equal(runtime.snapshot().decks['重命名牌库'].id, 'deck-A'); assert.equal(runtime.snapshot().decks.Unrelated.id, 'deck-U')
   const aliases = runtime.committed[0].aliases
@@ -316,6 +333,7 @@ await check('another identity with the same name blocks merge and preserves both
 })
 await check('merge re-reads the latest cache after the network reply and retains concurrent objects', async () => {
   const runtime = bodyRuntime({ deferred: true }), loading = runtime.call()
+  for (let turn = 0; !runtime.calls.length && turn < 20; turn++) await new Promise(resolve => setImmediate(resolve))
   const latest = clone(runtime.snapshot()); latest.raw = 'raw-latest'; latest.decks.Concurrent = body('deck-C', 5, 'Concurrent')
   runtime.setSnapshot(latest); runtime.calls[0].resolve(body()); const result = await loading
   assert.equal(result.id, 'deck-A'); assert.equal(runtime.snapshot().decks.Concurrent.revision, 5)
@@ -323,10 +341,13 @@ await check('merge re-reads the latest cache after the network reply and retains
 await check('route or sequence guard can cancel before request and after reply with zero cache write', async () => {
   const before = bodyRuntime({ response: body() }); await assert.rejects(before.call(undefined, () => false), /取消/); assert.equal(before.calls.length, 0)
   const after = bodyRuntime({ deferred: true }); let allowed = true; const loading = after.call(undefined, () => allowed)
+  for (let turn = 0; !after.calls.length && turn < 20; turn++) await new Promise(resolve => setImmediate(resolve))
   allowed = false; after.calls[0].resolve(body()); await assert.rejects(loading, /页面已切换/); assert.equal(after.commits(), 0)
 })
 await check('account transition after reply prevents lock and cache merge', async () => {
-  const runtime = bodyRuntime({ deferred: true }), loading = runtime.call(); runtime.setCurrent(false); runtime.calls[0].resolve(body())
+  const runtime = bodyRuntime({ deferred: true }), loading = runtime.call()
+  for (let turn = 0; !runtime.calls.length && turn < 20; turn++) await new Promise(resolve => setImmediate(resolve))
+  runtime.setCurrent(false); runtime.calls[0].resolve(body())
   await assert.rejects(loading, /账号或页面已切换/); assert.equal(runtime.locks.length, 0); assert.equal(runtime.commits(), 0)
 })
 for (const [status, code] of [[401, 'request_failed'], [404, 'request_failed'], [409, 'deck_revision_conflict']]) await check(`${status} selected read performs no retry, merge, deletion or scope write`, async () => {
@@ -347,6 +368,7 @@ function mountRuntime(account) {
   const context = { account: platformState.account?.id, token: platformState.token, epoch: 1, route: '/decks?tab=mine', tab: 'mine' }
   const mounted = mountedCallback({
     restoreFiltersFromRoute: () => {}, platformState, privateLoadState,
+    window: { addEventListener() {} }, initializeDeckCache: async () => {},
     libraryContext: () => context, loadSavedDecksState: () => ({ status: 'missing', decks: {} }),
     loadSummarySources: async () => {}, libraryContextCurrent: () => true,
     loadDeckCatalog: async () => [], loadMineDirectory: async () => { calls.summaries++ },
@@ -381,7 +403,7 @@ await check('authenticated library has no full-body directory fallback while leg
   const library = read('src/l12/site/DeckLibraryPage.vue'), sync = functionSource('src/l12/decks.ts', 'syncSavedDecksFromAccount')
   assert.equal(library.includes('syncSavedDecksFromAccount'), false)
   assert.match(library, /platformState\.account \? loadMineDirectory\(\)\.then\(\(\) => null\) : ensureOfficialPrebuiltDecks\(\)/)
-  assert.match(sync, /platformRequest<SavedL12Deck\[]>\('\/api\/decks'\)/)
+  assert.match(sync, /platformRequest<SavedL12Deck\[]>\('\/api\/decks', \{ headers: getRepresentativeDeckRequestHeaders\(\) \}\)/)
 })
 
 console.log(`C-U4 focused private read result: ${passed}/${passed}, failed=0, skipped=0`)

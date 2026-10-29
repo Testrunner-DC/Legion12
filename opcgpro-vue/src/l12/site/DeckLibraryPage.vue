@@ -3,7 +3,7 @@ import { optionalSessionStorage as sessionStorage } from '@/l12/browserStorage'
 import { vHorizontalScrollArrows, type HorizontalScrollArrowOptions } from '@/l12/horizontalScrollArrows'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { captureDeckAccountGuard, deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, loadPrivatePublicationSource, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type PrivateDeckSummary, type PrivateDeckSummaryPage, type PrivateDeckSummaryQuery, type SavedL12Deck } from '@/l12/decks'
+import { captureDeckAccountGuard, deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, initializeDeckCache, loadDeckCatalog, loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, loadPrivatePublicationSource, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type PrivateDeckSummary, type PrivateDeckSummaryPage, type PrivateDeckSummaryQuery, type SavedL12Deck } from '@/l12/decks'
 import { alternateArtApi, deckLibraryApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, publicDeckReadApi, type AlternateArt, type EffectiveOperationsPolicy, type PublishedDeck, type PublicDeckGuide, type PublicDeckMatchup, type PublicDeckSummary, type PublicDeckSummaryPage, type PublicDeckSummaryQuery, type OwnPublicDeckReference } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import DeckCover from '@/l12/DeckCover.vue'
@@ -174,8 +174,10 @@ watch(() => [platformState.account?.id, platformState.token], async () => {
     await loadSummarySources()
     if (libraryDisposed || !libraryContextCurrent(context, false)) return
   }
-  if (snapshot.status === 'unavailable' && !platformState.account) return
   try {
+    await initializeDeckCache()
+    if (libraryDisposed || !libraryContextCurrent(context, false)) return
+    applyLibraryCacheSnapshot()
     const [decks, arts] = await Promise.all([
       platformState.account ? loadMineDirectory().then(() => null) : ensureOfficialPrebuiltDecks(),
       platformState.account ? alternateArtApi.mine() : Promise.resolve([] as AlternateArt[]),
@@ -189,7 +191,7 @@ watch(() => [platformState.account?.id, platformState.token], async () => {
     if (libraryContextCurrent(context, false) && deckErrorBelongsToCurrentAccount(error)) notice.value = error instanceof Error ? error.message : '牌库暂不可读取'
   }
 }, { flush: 'sync' })
-onBeforeUnmount(() => { publishRequestSequence++; pendingPublicDeckPublish = null })
+onBeforeUnmount(() => { publishRequestSequence++; pendingPublicDeckPublish = null; window.removeEventListener('l12-deck-cache-changed', applyLibraryCacheSnapshot) })
 
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
@@ -273,8 +275,12 @@ onMounted(async () => {
     window.addEventListener('pointercancel', releaseHotDeckTouches, true)
   }
   libraryMounted = true
+  window.addEventListener('l12-deck-cache-changed', applyLibraryCacheSnapshot)
   if (!platformState.account) privateLoadState.value = 'available'
   const context = libraryContext()
+  try { await initializeDeckCache() }
+  catch (error) { if (libraryContextCurrent(context, false)) notice.value = error instanceof Error ? error.message : '本机事务牌库未就绪' }
+  if (libraryDisposed || !libraryContextCurrent(context, false)) return
   applyLibraryCacheSnapshot()
   await loadSummarySources()
   if (libraryDisposed || !libraryContextCurrent(context, false)) return

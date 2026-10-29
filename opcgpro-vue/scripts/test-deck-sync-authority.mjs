@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { reactive, watch } from 'vue'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
 import './test-deck-catalog-cache.mjs'
+import { TransactionFixtureStorage, databaseUrl, draftUrl, bindTransactionFaults, transactionModel } from './deck-transaction-test-fixture.mjs'
 
 const deckSourceUrl = new URL('../src/l12/decks.ts', import.meta.url)
 const editorSourceUrl = new URL('../src/l12/L12DeckEditor.vue', import.meta.url)
@@ -27,17 +30,24 @@ class MemoryStorage {
   setItem(key, value) { this.values.set(key, String(value)) }
 }
 
-globalThis.localStorage = new MemoryStorage()
+globalThis.localStorage = new TransactionFixtureStorage()
+bindTransactionFaults(globalThis.localStorage)
 // 隔离 Node 实验性 Web Locks；共享锁排序由下方确定性夹具单独覆盖。
 Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: {} })
 const platformState = reactive({ account: null, token: '' })
 let requestHandler = async () => { throw new Error('Unexpected platform request') }
+let requestEntryCount = 0
+async function waitForRequest(count) {
+  for (let turn = 0; requestEntryCount < count && turn < 20; turn++) await new Promise(resolve => setImmediate(resolve))
+  assert.ok(requestEntryCount >= count, 'The intended HTTP request must actually start before changing its handler or actor')
+}
 globalThis.__deckAuthorityTestPlatform = {
   platformState,
   watch,
   getEffectiveOperationsPolicy: async () => ({ defaultPresetDeckIds: [] }),
   getDeckCoverRequestHeaders: () => ({ 'X-L12-Deck-Cover': '1' }),
-  platformRequest: (...args) => requestHandler(...args),
+  getRepresentativeDeckRequestHeaders: () => ({ 'X-L12-Deck-Cover': '2' }),
+  platformRequest: (...args) => { requestEntryCount++; return requestHandler(...args) },
 }
 
 const productionModuleUrl = source => 'data:text/javascript;base64,' + Buffer.from(ts.transpileModule(source, {
@@ -58,6 +68,8 @@ const storageUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCach
 const cacheStorage = await import(storageUrl)
 
 const executableSource = deckSource
+  .replace("from './deckCacheDatabase'", `from '${databaseUrl}'`)
+  .replace("from './site/deckEditorDraft'", `from '${draftUrl}'`)
   .replace("from './browserStorage'", "from '" + productionModuleUrl(readFileSync(new URL('../src/l12/browserStorage.ts', import.meta.url), 'utf8')) + "'")
   .replace("from './deckCover'", "from '" + coverUrl + "'")
   .replace("import { watch } from 'vue'", 'const { watch } = globalThis.__deckAuthorityTestPlatform')
@@ -65,10 +77,10 @@ const executableSource = deckSource
   .replace("from './deckCacheCodec'", "from '" + codecUrl + "'")
   .replace("import { normalizeLookupCardType } from './cardPresentation'", "const normalizeLookupCardType = value => value")
   .replace(
-    "import { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
-    "const { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform",
+    "import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
+    "const { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform",
   )
-  .replace("import { deploymentPath } from './deploymentBase'", "const deploymentPath = value => value")
+  .replace("import { deploymentPath, deploymentBasePath } from './deploymentBase'", "const deploymentPath = value => value; const deploymentBasePath = '/'")
   .replace("import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'", 'const moraleIdentityData = []')
   .replace("import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'", 'const cardProductInclusionsData = { products: [], cards: [] }')
   .replace("import cardArchiveAssetsData from '../../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'", 'const cardArchiveAssetsData = { cards: [] }')
@@ -206,7 +218,7 @@ async function allSelectionScopesRemainIsolatedAfterAtomicDeletion() {
     localStorage.setItem(cacheKey, JSON.stringify({ [original.name]: original, [survivor.name]: survivor }))
     const scopes = decksModule.L12_DECK_SELECTION_SCOPES
     for (const [index, scope] of scopes.entries()) {
-      decksModule.saveSelectedDeckName(scope, index % 2 ? survivor.name : original.name)
+      await decksModule.saveSelectedDeckName(scope, index % 2 ? survivor.name : original.name)
     }
     localStorage.setItem(selectionKey, original.id)
     const otherOwnerKey = 'l12-selected-custom-deck:account-b:ranked'
@@ -236,7 +248,7 @@ async function allSelectionScopesRemainIsolatedAfterAtomicDeletion() {
     for (const [index, scope] of scopes.entries()) assert.equal(
       decksModule.loadSelectedDeckName(scope, afterReplacement), index % 2 ? survivor.name : '',
       `${actor}/${scope}: reusing a deleted name must not revive its old selection`)
-    decksModule.saveSelectedDeckName('ranked', original.name)
+    await decksModule.saveSelectedDeckName('ranked', original.name)
     assert.equal(decksModule.loadSelectedDeckName('ranked', afterReplacement), original.name)
     for (const [index, scope] of scopes.entries()) {
       if (scope === 'ranked') continue
@@ -276,7 +288,9 @@ async function staleSyncResponsesCannotOverwriteNewerState() {
   seedAccountDecks([deck('删除目标')])
   const staleDeleteSync = deferred()
   requestHandler = () => staleDeleteSync.promise
+  const deleteStart = requestEntryCount
   const syncingBeforeDelete = decksModule.syncSavedDecksFromAccount()
+  await waitForRequest(deleteStart + 1)
   requestHandler = async (_path, init = {}) => {
     assert.equal(init.method, 'DELETE')
     return {}
@@ -289,7 +303,9 @@ async function staleSyncResponsesCannotOverwriteNewerState() {
   seedAccountDecks([deck('保存目标', '2026-09-09T00:00:00.000Z')])
   const staleSaveSync = deferred()
   requestHandler = () => staleSaveSync.promise
+  const saveStart = requestEntryCount
   const syncingBeforeSave = decksModule.syncSavedDecksFromAccount()
+  await waitForRequest(saveStart + 1)
   requestHandler = async (_path, init = {}) => {
     assert.equal(init.method, 'PUT')
     return owned('保存目标', '2026-09-09T03:00:00.000Z', 2)
@@ -303,7 +319,9 @@ async function staleSyncResponsesCannotOverwriteNewerState() {
   seedAccountDecks([deck('账号乙')], 'account-b')
   const oldAccountSync = deferred()
   requestHandler = () => oldAccountSync.promise
+  const accountStart = requestEntryCount
   const syncingOldAccount = decksModule.syncSavedDecksFromAccount()
+  await waitForRequest(accountStart + 1)
   platformState.account = { id: 'account-b' }
   platformState.token = 'token-b'
   oldAccountSync.resolve([deck('账号甲远端')])
@@ -320,8 +338,7 @@ async function guestPresetSeedingCannotCrossAnAccountSwitch() {
   let fetchIndex = 0
   globalThis.fetch = () => presetResponses[fetchIndex++].promise
   const ensuring = decksModule.ensureOfficialPrebuiltDecks()
-  await Promise.resolve()
-  await Promise.resolve()
+  for (let turn = 0; fetchIndex < 2 && turn < 20; turn++) await new Promise(resolve => setImmediate(resolve))
   assert.equal(fetchIndex, 2, 'guest preset loading should be in flight')
   platformState.account = { id: 'account-b' }
   platformState.token = 'token-b'
@@ -445,37 +462,22 @@ async function staleGuestSaveCannotOverwriteOrResurrect() {
   assert.deepEqual(Object.values(decksModule.loadSavedDecks()).map(value => value.id).sort(), [a.id, b.id].sort())
 }
 
-async function guestDeleteAndSaveShareLock() {
+async function guestDeleteAndSaveShareTransaction() {
   localStorage.clear()
   platformState.account = null
   platformState.token = ''
   const original = await decksModule.saveDeck(deck('并发删除'))
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
-  const gate = deferred(), names = []
-  let tail = gate.promise
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: {
-    request(name, callback) {
-      names.push(name)
-      const result = tail.then(callback)
-      tail = result.catch(() => undefined)
-      return result
-    },
-  } } })
-  try {
+  let release
+  transactionModel.pauseNextWriteCommit(complete => { release = complete })
     const deleting = decksModule.deleteDeck(original)
     const saving = decksModule.saveDeck(original)
     const rejected = assert.rejects(saving, /变化|更新/)
-    assert.equal(Object.keys(decksModule.loadSavedDecks()).length, 1, '锁持有时删除必须等待')
-    assert.equal(names.length, 2)
-    assert.equal(names[0], names[1], '删除和保存必须使用同一把同源锁')
-    gate.resolve()
+    while (!release) await new Promise(resolve => setImmediate(resolve))
+    assert.equal(Object.keys(decksModule.loadSavedDecks()).length, 1, '事务未提交时删除不得提前显示成功')
+    release()
     await deleting
     await rejected
     assert.deepEqual(decksModule.loadSavedDecks(), {})
-  } finally {
-    if (descriptor) Object.defineProperty(globalThis, 'navigator', descriptor)
-    else delete globalThis.navigator
-  }
 }
 
 async function guestPresetIdentityMigration() {
@@ -503,7 +505,7 @@ async function guestPresetIdentityMigration() {
 }
 
 await staleGuestSaveCannotOverwriteOrResurrect()
-await guestDeleteAndSaveShareLock()
+await guestDeleteAndSaveShareTransaction()
 await guestPresetIdentityMigration()
 await authenticatedSyncUsesServerAuthority()
 authenticatedLoadDoesNotImplicitlyMigrateGuestCache()
@@ -523,8 +525,10 @@ async function accountLateMutationCannotCrossIdentity() {
     seedAccountDecks([owned('原牌库')])
     const beforeA = localStorage.getItem(accountKey())
     const pending = deferred(); requestHandler = () => pending.promise
+    const requestStart = requestEntryCount
     const task = operation === 'save' ? decksModule.saveDeck(deck('迟到保存')) : decksModule.deleteDeck('原牌库')
     const captured = task.then(() => { throw Error('Late mutation unexpectedly succeeded') }, error => error)
+    await waitForRequest(requestStart + 1)
     platformState.account = { id: 'account-b' }; platformState.token = 'token-b'
     seedAccountDecks([owned('乙牌库')], 'account-b')
     const beforeB = localStorage.getItem(accountKey('account-b'))
@@ -542,8 +546,7 @@ async function confirmedSaveQuotaPreservesOriginalAndDraft() {
   localStorage.setItem('l12-selected-custom-deck:account-a:ranked', 'id-原牌库')
   localStorage.setItem('l12:deck-editor-draft:v1:account%3Aaccount-a', '本机独有草稿')
   const before = localStorage.getItem(accountKey())
-  const set = localStorage.setItem.bind(localStorage)
-  localStorage.setItem = (key, value) => { if (key === accountKey()) throw Error('QuotaExceededError'); set(key, value) }
+  localStorage.rejectWrite = key => key === accountKey()
   let requests = 0
   requestHandler = async () => { requests++; return owned('云端已保存') }
   try {
@@ -552,7 +555,7 @@ async function confirmedSaveQuotaPreservesOriginalAndDraft() {
       assert.match(error.message, /服务器已确认.*缓存写入失败.*Quota/)
       return true
     })
-  } finally { localStorage.setItem = set }
+  } finally { localStorage.rejectWrite = null }
   assert.equal(requests, 1, 'Local failure must not automatically repeat POST')
   assert.equal(localStorage.getItem(accountKey()), before)
   assert.equal(localStorage.getItem('l12-selected-custom-deck:account-a:ranked'), 'id-原牌库')
@@ -563,8 +566,10 @@ async function lateSameAccountAckCannotResurrectOrDowngrade() {
   const original = readAccountDecks()['同ID']
   const pending = deferred()
   requestHandler = (_path, init) => init.method === 'PUT' ? pending.promise : Promise.resolve({})
+  const requestStart = requestEntryCount
   const saving = decksModule.saveDeck(original)
   const captured = saving.then(() => { throw Error('Old save unexpectedly won') }, error => error)
+  await waitForRequest(requestStart + 1)
   await decksModule.deleteDeck(original)
   const afterDelete = localStorage.getItem(accountKey())
   pending.resolve(owned('同ID', undefined, 2, original.id))
@@ -602,10 +607,9 @@ async function exactMetadataAndMigrationQuota() {
   const raw = JSON.stringify({ [full.name]: full })
   localStorage.setItem('l12-custom-decks-v1', raw)
   localStorage.setItem('l12-selected-custom-deck:friendly', full.name)
-  const set = localStorage.setItem.bind(localStorage)
-  localStorage.setItem = (key, value) => { if (key === 'l12-custom-decks-v1') throw Error('QuotaExceeded'); set(key, value) }
+  localStorage.rejectWrite = key => key === 'l12-custom-decks-v1'
   try { await assert.rejects(decksModule.ensureOfficialPrebuiltDecks(), /写入失败/) }
-  finally { localStorage.setItem = set }
+  finally { localStorage.rejectWrite = null }
   assert.equal(localStorage.getItem('l12-custom-decks-v1'), raw)
   assert.equal(localStorage.getItem('l12-selected-custom-deck:friendly'), full.name)
   const migrated = await decksModule.ensureOfficialPrebuiltDecks()
@@ -708,8 +712,10 @@ async function authenticationABARejectsRealLateSaveAndDelete() {
     localStorage.clear(); authenticate(); seedAccountDecks([owned('ABA原文')])
     const before = localStorage.getItem(accountKey()), pending = deferred()
     requestHandler = () => pending.promise
+    const requestStart = requestEntryCount
     const operation = action === 'save' ? decksModule.saveDeck(deck('ABA迟到')) : decksModule.deleteDeck('ABA原文')
     const caught = operation.then(() => { throw Error('Authentication ABA was accepted') }, error => error)
+    await waitForRequest(requestStart + 1)
     platformState.account = { id: 'account-b' }; platformState.token = 'token-b'
     platformState.account = { id: 'account-a' }; platformState.token = 'token-a'
     pending.resolve(action === 'save' ? owned('ABA迟到') : {})
@@ -777,6 +783,7 @@ async function unavailablePrivateCacheDoesNotBlockPublicLibrary() {
   const publicWork = []
   const environment = {
     restoreFiltersFromRoute: () => {}, libraryContext: () => ({}), libraryContextCurrent: () => true,
+    window: { addEventListener() {} }, initializeDeckCache: decksModule.initializeDeckCache,
     libraryMounted: false, libraryDisposed: false, loadSummarySources: () => { const task = loadSummarySources(); publicWork.push(task); return task }, loadOwnReferences: () => {},
     catalog, saved, published, notice, ownedAlternateArts: arts, operationsPolicy: policy, platformState,
     privateLoadState: { value: 'loading' },
@@ -803,6 +810,19 @@ async function unavailablePrivateCacheDoesNotBlockPublicLibrary() {
   assert.equal(localStorage.getItem('l12-custom-decks-v1'), raw); assert.equal(posts, 0)
 }
 
+// An older server can confirm the deck but silently discard an unknown optional field.
+// The caller must retain its working selection and receive a confirmed-stage warning.
+{
+  localStorage.clear(); authenticate(); const original = { ...owned('旧服务器'), cardIds: ['A', 'B', 'C'] }
+  seedAccountDecks([original]); const before = localStorage.getItem(accountKey())
+  requestHandler = async () => ({ ...original, revision: 2 })
+  await assert.rejects(decksModule.saveDeck({ ...original, representativeCardIds: ['B', 'A'] }), error => {
+    assert.equal(error.serverConfirmed, true)
+    assert.match(error.message, /服务器已确认.*服务器未确认代表卡/)
+    return true
+  })
+  assert.equal(localStorage.getItem(accountKey()), before, 'Unconfirmed representatives must not enter cache')
+}
 await queuedPublicCopyUsesOriginalAuthenticationGeneration()
 await authenticationABARejectsRealLateSaveAndDelete()
 confirmedEditorCatchUsesAccurateStage()
@@ -821,6 +841,7 @@ await unavailablePrivateCacheDoesNotBlockPublicLibrary()
     let contextCurrent = true, privateStarts = 0
     const environment = {
       restoreFiltersFromRoute: () => {}, libraryMounted: false,
+      window: { addEventListener() {} }, initializeDeckCache: async () => {},
       libraryContext: () => ({}), libraryContextCurrent: () => contextCurrent,
       loadSummarySources: () => publicRead.promise, loadOwnReferences: () => {},
       loadDeckCatalog: async () => { privateStarts++; return [] },
@@ -849,3 +870,11 @@ await unavailablePrivateCacheDoesNotBlockPublicLibrary()
   }
 }
 console.log('Deck authority/migration/Quota/unavailable, real queued public copies, authentication ABA, editor stage and public-init isolation passed')
+// Run the new protocol in its own JS realm: the historical scenario fixture's
+// logical-record seeding must not replace the independent legacy source ports.
+const transactional = spawnSync(process.execPath, [fileURLToPath(new URL('./test-deck-transactional-consumers.mjs', import.meta.url))], {
+  encoding: 'utf8', env: process.env,
+})
+if (transactional.stdout) process.stdout.write(transactional.stdout)
+if (transactional.stderr) process.stderr.write(transactional.stderr)
+assert.equal(transactional.status, 0, 'Independent production IDB/legacy-source/draft regressions must pass in the normal deck gate')

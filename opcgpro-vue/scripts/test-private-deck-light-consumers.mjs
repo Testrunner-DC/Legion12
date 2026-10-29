@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { TransactionFixtureStorage, databaseUrl, draftUrl, bindTransactionFaults } from './deck-transaction-test-fixture.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const requireDependency = createRequire(path.join(root, 'package.json'))
@@ -38,9 +39,11 @@ class MemoryEvents {
   }
   removeEventListener(name, listener) { this.listeners.get(name)?.delete(listener) }
   dispatch(name) { for (const listener of this.listeners.get(name) ?? []) listener({ type: name }) }
+  dispatchEvent(event) { this.dispatch(event.type); return true }
 }
 
-const localStorage = new MemoryStorage()
+const localStorage = new TransactionFixtureStorage()
+bindTransactionFaults(localStorage)
 const sessionStorage = new MemoryStorage()
 const windowEvents = new MemoryEvents()
 const documentEvents = new MemoryEvents()
@@ -60,6 +63,7 @@ Object.assign(globalThis, {
     createElement: () => ({ click() {}, style: {} }),
   }),
   location: { origin: 'http://synthetic.invalid', href: 'http://synthetic.invalid/' },
+  BroadcastChannel: class SyntheticHintChannel { postMessage() {} close() {} },
 })
 Object.defineProperty(globalThis, 'navigator', {
   configurable: true,
@@ -74,6 +78,7 @@ globalThis.__deckAuthorityTestPlatform = {
   watch,
   getEffectiveOperationsPolicy: async () => ({ defaultPresetDeckIds: [] }),
   getDeckCoverRequestHeaders: () => ({ 'X-L12-Deck-Cover': '1' }),
+  getRepresentativeDeckRequestHeaders: () => ({ 'X-L12-Deck-Cover': '2' }),
   platformRequest: (...args) => requestHandler(...args),
 }
 
@@ -97,6 +102,8 @@ const storageUrl = productionModuleUrl(read('src/l12/deckCacheStorage.ts')
   .replace("from './deckCodeCodec'", `from '${binaryUrl}'`)
   .replace("from './deckCacheCodec'", `from '${codecUrl}'`))
 const executableDeckSource = deckSource
+  .replace("from './deckCacheDatabase'", `from '${databaseUrl}'`)
+  .replace("from './site/deckEditorDraft'", `from '${draftUrl}'`)
   .replace("from './browserStorage'", `from '${productionModuleUrl(read('src/l12/browserStorage.ts'))}'`)
   .replace("from './deckCover'", `from '${coverUrl}'`)
   .replace("import { watch } from 'vue'", 'const { watch } = globalThis.__deckAuthorityTestPlatform')
@@ -104,10 +111,10 @@ const executableDeckSource = deckSource
   .replace("from './deckCacheCodec'", `from '${codecUrl}'`)
   .replace("import { normalizeLookupCardType } from './cardPresentation'", 'const normalizeLookupCardType = value => value')
   .replace(
-    "import { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
-    'const { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform',
+    "import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
+    'const { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform',
   )
-  .replace("import { deploymentPath } from './deploymentBase'", 'const deploymentPath = value => value')
+  .replace("import { deploymentPath, deploymentBasePath } from './deploymentBase'", "const deploymentPath = value => value; const deploymentBasePath = '/'")
   .replace("import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'", 'const moraleIdentityData = []')
   .replace("import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'", 'const cardProductInclusionsData = { products: [], cards: [] }')
   .replace("import cardArchiveAssetsData from '../../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'", 'const cardArchiveAssetsData = { cards: [] }')

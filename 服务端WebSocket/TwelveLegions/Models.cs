@@ -78,6 +78,7 @@ public sealed class L12PresetDeckDefinition
     // Optional explicit publication provenance; the platform verifies ownership and immutable content at lock-in.
     public string? PublicationId { get; init; }
     public int? PublicationVersion { get; init; }
+    public List<string>? RepresentativeCardIds { get; init; }
     public required string Name { get; init; }
     public required string MasterId { get; init; }
     public required List<string> CardIds { get; init; }
@@ -95,6 +96,7 @@ public sealed class L12CustomDeckSubmission
 {
     public string? PublicationId { get; init; }
     public int? PublicationVersion { get; init; }
+    public List<string>? RepresentativeCardIds { get; init; }
     public string Name { get; init; } = string.Empty;
     public string MasterId { get; init; } = string.Empty;
     public List<string> CardIds { get; init; } = [];

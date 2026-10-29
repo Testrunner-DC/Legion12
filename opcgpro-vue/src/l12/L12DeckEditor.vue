@@ -8,8 +8,8 @@ import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import { samplePublicDeckOpeningHand } from './site/publicDeckHands'
 import {
-  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, trialCapacityForMaster,
-  loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, saveDeck, validateDeck, type DeckCard,
+  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, enableRepresentativeCards, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, trialCapacityForMaster,
+  loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, saveDeck, validateDeck, initializeDeckCache, loadLegacyDeckImports, legacyDeckCacheCandidates, legacyDeckImportWarning, type DeckCard,
   type PrivateDeckSummary, type PrivateDeckSummaryPage, type SavedL12Deck,
 } from './decks'
 import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, type AlternateArt, type OperationsCardRestriction } from './platform'
@@ -22,7 +22,9 @@ import L12SettingsModal from './site/L12SettingsModal.vue'
 import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './site/bugFeedbackEntry'
 import { matchesPublishedDeckReference, publicDeckRouteReference } from './site/publicDeckEntry'
 import { deckEditorReturnTarget } from './site/deckEditorNavigation'
-import { clearDeckEditorDraft, draftOwner, readDeckEditorDraft, writeDeckEditorDraft, type DeckEditorDraft } from './site/deckEditorDraft'
+import { draftOwner, readDeckEditorDraft, transactionalDraftScope, readTransactionalDeckDrafts, writeTransactionalDeckDraft, clearTransactionalDeckDraft, type TransactionalDeckDraft, type DeckEditorDraft } from './site/deckEditorDraft'
+import type { LegacyDeckImport } from './deckCacheDatabase'
+import { deploymentBasePath } from './deploymentBase'
 import { deckEditorPortrait } from './deckEditorViewport'
 
 const router = useRouter()
@@ -51,6 +53,8 @@ const notice = ref('')
 const deckName = ref('新牌库')
 const masterId = ref('')
 const counts = ref<Record<string, number>>({})
+const representativeCardIds = ref<string[]>([])
+const representativesEnabled = ref(false)
 const benchCounts = ref<Record<string, number>>({})
 const query = ref('')
 const typeFilter = ref('all')
@@ -80,6 +84,27 @@ const publicationVersion = ref<number | null>(null)
 const editorContentRevision = ref(0)
 const persistedContentRevision = ref(0)
 const localDraft = ref<DeckEditorDraft | null>(null)
+const draftBusy = ref(false)
+const draftConflict = ref(false)
+const draftEntries = ref<TransactionalDeckDraft[]>([])
+const selectedDraftSlot = ref('')
+const localDraftEntry = computed(() => draftEntries.value.find(item => item.slot === selectedDraftSlot.value) ?? draftEntries.value[0] ?? null)
+watch(selectedDraftSlot, () => { localDraft.value = localDraftEntry.value?.draft ?? null }, { flush: 'sync' })
+const legacySources = ref<LegacyDeckImport[]>([])
+const legacySourceId = ref('')
+const legacySource = computed(() => legacySources.value.find(item => item.id === legacySourceId.value) ?? legacySources.value[0] ?? null)
+const legacyCandidates = computed(() => {
+  const source = legacySource.value
+  if (!source) return []
+  try {
+    if (source.source === 'cache') return legacyDeckCacheCandidates(source)
+    const draft = readDeckEditorDraft({ getItem: () => source.raw }, draftOwner(platformState.account?.id), 2)
+    return draft ? [draft.deck] : []
+  } catch { return [] }
+})
+const pendingAccountDrafts = new Map<string, { accountId: string | undefined; scope?: ReturnType<typeof transactionalDraftScope>; deck: SavedL12Deck; name: string | null; id: string | null; revision: number | null }>()
+const pendingDraftCount = ref(0)
+let recoveringAccountDrafts = false
 const restoredLocalDraft = ref(false)
 const hasUnsavedChanges = computed(() => editorContentRevision.value !== persistedContentRevision.value)
 const ownedAlternateArts = ref<AlternateArt[]>([])
@@ -102,7 +127,7 @@ function savedDeckCountLabel(deck: EditorSavedDeck) {
   return `${deck.counts.main}${deck.counts.uncountedMain ? `（${deck.counts.uncountedMain} 不计构筑）` : ''} 张主牌`
 }
 function savedDeckCoverIds(deck: EditorSavedDeck) {
-  return 'counts' in deck ? deck.coverCardIds : undefined
+  return 'counts' in deck ? deck.coverCardIds : deck.representativeCardIds?.length ? deck.representativeCardIds : undefined
 }
 function savedDeckSourceIds(deck: EditorSavedDeck) {
   return 'counts' in deck ? undefined : deck.cardIds
@@ -233,7 +258,7 @@ try {
   collapsedSections.value = { ...collapsedSections.value, ...JSON.parse(localStorage.getItem(SECTION_STORAGE_KEY) || '{}') }
 } catch { /* 使用默认分区状态 */ }
 
-watch([deckName, masterId, counts, benchCounts, specialIds, alternateArtSelections, alternateArtCopies], () => editorContentRevision.value++, { deep: true, flush: 'sync' })
+watch([deckName, masterId, counts, benchCounts, specialIds, alternateArtSelections, alternateArtCopies, representativeCardIds], () => editorContentRevision.value++, { deep: true, flush: 'sync' })
 watch(collapsedSections, value => localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(value)), { deep: true })
 
 const factionLabels: Record<string, string> = {
@@ -251,6 +276,13 @@ onMounted(async () => {
   const requestedPublicationCode = publicationCode.value
   try {
     catalog.value = await loadDeckCatalog()
+    if (!isCurrentEditorContext(loadingContext)) return
+    try {
+      const enabled = await enableRepresentativeCards()
+      if (isCurrentEditorContext(loadingContext)) representativesEnabled.value = enabled
+    } catch (error) {
+      if (isCurrentEditorContext(loadingContext)) notice.value = `代表卡暂不可用：${mutationError(error, '请检查本机存储')}`
+    }
     if (!isCurrentEditorContext(loadingContext)) return
     if (authenticatedEditor.value) savedDecks.value = loadSavedDecks()
     else savedDecks.value = await ensureOfficialPrebuiltDecks()
@@ -316,6 +348,21 @@ const entries = computed(() => Object.entries(counts.value)
   .map(([id, count]) => ({ card: byId.value.get(id)!, count }))
   .filter(entry => entry.card)
   .sort((a, b) => compareDeckCards(a.card, b.card, selectedMaster.value?.faction)))
+watch(counts, value => {
+  const available = new Set(Object.entries(value).filter(([, count]) => count > 0).map(([id]) => id.toLowerCase()))
+  const remaining = representativeCardIds.value.filter(id => available.has(id.toLowerCase()))
+  if (remaining.length !== representativeCardIds.value.length) representativeCardIds.value = remaining
+}, { deep: true, flush: 'sync' })
+function toggleRepresentative(card: DeckCard) {
+  if (!representativesEnabled.value) return
+  const index = representativeCardIds.value.findIndex(id => id.toLowerCase() === card.id.toLowerCase())
+  if (index >= 0) representativeCardIds.value = representativeCardIds.value.filter((_, i) => i !== index)
+  else if (representativeCardIds.value.length < 3) representativeCardIds.value = [...representativeCardIds.value, card.id]
+}
+function representativeNumber(cardId: string) {
+  const index = representativeCardIds.value.findIndex(id => id.toLowerCase() === cardId.toLowerCase())
+  return index < 0 ? 0 : index + 1
+}
 const benchEntries = computed(() => Object.entries(benchCounts.value)
   .filter(([, count]) => count > 0)
   .map(([id, count]) => ({ card: byId.value.get(id)!, count }))
@@ -685,6 +732,7 @@ function removeAppearance(entry: PoolCardAppearance) {
 }
 
 function newDeck() {
+  draftConflict.value = false
   deckReadSequence++
   deckReadBusy.value = false
   editorDocumentEpoch++
@@ -697,6 +745,7 @@ function newDeck() {
   deckName.value = '新牌库'
   masterId.value = ''
   counts.value = {}
+  representativeCardIds.value = []
   benchCounts.value = {}
   specialIds.value = []
   alternateArtSelections.value = {}
@@ -708,23 +757,29 @@ function newDeck() {
   notice.value = '已新建空白牌库'
 }
 
-function draftScopeFor(accountId: string | null | undefined) {
-  return { owner: draftOwner(accountId), storage: accountId ? localStorage : sessionStorage }
-}
+function draftScopeFor(accountId: string | null | undefined) { return transactionalDraftScope(accountId) }
 
 function draftScope() { return draftScopeFor(platformState.account?.id) }
 
-function refreshLocalDraft() {
+async function refreshLocalDraft() {
+  const context = editorContext()
   try {
-    const { owner, storage } = draftScope()
-    localDraft.value = readDeckEditorDraft(storage, owner)
+    const entries = await readTransactionalDeckDrafts(draftScope())
+    if (!isCurrentEditorContext(context)) return
+    draftEntries.value = entries
+    if (!entries.some(item => item.slot === selectedDraftSlot.value)) selectedDraftSlot.value = entries[0]?.slot ?? ''
+    localDraft.value = localDraftEntry.value?.draft ?? null
+    legacySources.value = loadLegacyDeckImports()
+    if (!legacySources.value.some(item => item.id === legacySourceId.value)) legacySourceId.value = legacySources.value[0]?.id ?? ''
   } catch (error) {
+    if (!isCurrentEditorContext(context)) return
     localDraft.value = null
     notice.value = `无法读取本地草稿：${mutationError(error, '请检查浏览器存储')}`
   }
 }
 
 function confirmDiscardChanges() {
+  if (pendingAccountDrafts.size) { notice.value = '原账号草稿尚未确认暂存，请先完成本机保存再离开编辑器'; return false }
   return !hasUnsavedChanges.value || window.confirm('当前修改尚未保存。继续操作会丢失这些修改；可先取消并暂存本地草稿。确定继续？')
 }
 
@@ -757,29 +812,45 @@ async function requestLoadDeck(deck: EditorSavedDeck, actionCurrent: () => boole
   } finally { if (call === deckReadSequence) deckReadBusy.value = false }
 }
 
-function saveLocalDraft() {
-  if (deckMutationBusy.value || deletingDeck.value) return
+async function saveLocalDraft(recovery = false) {
+  if (deckMutationBusy.value || deletingDeck.value || draftBusy.value) return
+  const asRecovery = recovery === true
+  if (asRecovery && (!draftConflict.value || !window.confirm('将当前构筑另存为恢复草稿？原有草稿会完整保留，不会被覆盖。'))) return
+  const context = editorContext(), contentRevision = editorContentRevision.value
+  draftBusy.value = true
   try {
-    const { owner, storage } = draftScope()
-    if (localDraft.value && (localDraft.value.baseDeckName !== activeDeckName.value
+    const scope = draftScope()
+    if (!asRecovery && localDraft.value && (localDraft.value.baseDeckName !== activeDeckName.value
       || localDraft.value.deck.name !== deckName.value.trim())
       && !window.confirm('本账号已有另一份本地草稿。要用当前构筑覆盖它吗？')) return
-    localDraft.value = writeDeckEditorDraft(storage, owner, currentDeck(), activeDeckName.value,
-      new Date().toISOString(), activeDeckId.value, activeDeckRevision.value)
-    persistedContentRevision.value = editorContentRevision.value
+    const saved = await writeTransactionalDeckDraft(scope, currentDeck(), activeDeckName.value,
+      activeDeckId.value, activeDeckRevision.value, localDraftEntry.value, asRecovery)
+    if (!isCurrentEditorContext(context)) return
+    draftConflict.value = false
+    selectedDraftSlot.value = saved.slot
+    await refreshLocalDraft()
+    if (!isCurrentEditorContext(context) || editorContentRevision.value !== contentRevision) return
+    persistedContentRevision.value = contentRevision
     restoredLocalDraft.value = true
     secondaryActionsOpen.value = false
     notice.value = '已暂存到本机；草稿尚未同步到牌库，不能用于对战或公开'
   } catch (error) {
-    notice.value = `本地草稿暂存失败：${mutationError(error, '请检查浏览器存储空间')}`
-  }
+    if (isCurrentEditorContext(context)) {
+      draftConflict.value = Boolean(error && typeof error === 'object' && 'kind' in error && error.kind === 'conflict')
+      notice.value = `本地草稿暂存失败：${mutationError(error, '请检查浏览器存储空间')}`
+    }
+  } finally { draftBusy.value = false }
 }
 
-function restoreLocalDraft() {
-  if (!confirmDiscardChanges()) return
+async function restoreLocalDraft() {
+  if (draftBusy.value || !confirmDiscardChanges()) return
+  const context = editorContext(), contentRevision = editorContentRevision.value
   try {
-    const { owner, storage } = draftScope()
-    const draft = readDeckEditorDraft(storage, owner)
+    const slot = localDraftEntry.value?.slot
+    const entries = await readTransactionalDeckDrafts(draftScope())
+    if (!isCurrentEditorContext(context) || editorContentRevision.value !== contentRevision) return
+    draftEntries.value = entries
+    const draft = entries.find(item => item.slot === slot)?.draft ?? entries[0]?.draft
     if (!draft) { localDraft.value = null; notice.value = '本账号没有可恢复的本地草稿'; return }
     const cardIds = [draft.deck.masterId, ...draft.deck.cardIds, ...(draft.deck.specialIds ?? []), ...(draft.deck.benchIds ?? [])].filter(Boolean)
     if (cardIds.some(id => !byId.value.has(id))) throw new Error('草稿含当前卡池中不存在的卡牌，已保留原草稿')
@@ -794,29 +865,34 @@ function restoreLocalDraft() {
     secondaryActionsOpen.value = false
     notice.value = '已恢复本地草稿；完成构筑并保存牌库后才能用于对战或公开'
   } catch (error) {
-    notice.value = `本地草稿恢复失败：${mutationError(error, '请检查浏览器存储')}`
+    if (isCurrentEditorContext(context)) notice.value = `本地草稿恢复失败：${mutationError(error, '请检查浏览器存储')}`
   }
 }
 
-function clearCurrentDraftAfterServerSave() {
+async function clearCurrentDraftAfterServerSave() {
+  const context = editorContext(), contentRevision = editorContentRevision.value
   try {
-    const { owner, storage } = draftScope()
     if (!restoredLocalDraft.value) {
       persistedContentRevision.value = editorContentRevision.value
       return
     }
-    clearDeckEditorDraft(storage, owner)
-    localDraft.value = null
+    const cleared = localDraftEntry.value
+    if (cleared) await clearTransactionalDeckDraft(draftScope(), cleared)
+    if (!isCurrentEditorContext(context)) return
+    draftEntries.value = draftEntries.value.filter(item => item.slot !== cleared?.slot)
+    if (!draftEntries.value.some(item => item.slot === selectedDraftSlot.value)) selectedDraftSlot.value = draftEntries.value[0]?.slot ?? ''
+    localDraft.value = localDraftEntry.value?.draft ?? null
     restoredLocalDraft.value = false
   } catch {
+    if (!isCurrentEditorContext(context)) return
     // The authoritative save succeeded; keep the local copy visible for manual cleanup.
     refreshLocalDraft()
   }
-  persistedContentRevision.value = editorContentRevision.value
+  if (isCurrentEditorContext(context) && editorContentRevision.value === contentRevision) persistedContentRevision.value = contentRevision
 }
 
 function warnBeforeUnload(event: BeforeUnloadEvent) {
-  if (!hasUnsavedChanges.value) return
+  if (!hasUnsavedChanges.value && !pendingAccountDrafts.size) return
   event.preventDefault()
   event.returnValue = ''
 }
@@ -831,6 +907,7 @@ function currentDeck(): SavedL12Deck {
     cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
     moraleIds: moraleIds.value, specialIds: [...specialIds.value], updatedAt: new Date().toISOString(),
     benchIds: benchEntries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
+    ...(representativesEnabled.value ? { representativeCardIds: [...representativeCardIds.value] } : {}),
     alternateArtSelections: { ...alternateArtSelections.value },
     alternateArtCopies: Object.fromEntries(Object.entries(alternateArtCopies.value).map(([id, values]) => [id, [...values]])),
   }
@@ -866,7 +943,7 @@ async function onSave() {
     activeDeckRevision.value = saved.revision ?? null
     if (editorUnchanged) {
       deckName.value = saved.name
-      clearCurrentDraftAfterServerSave()
+      await clearCurrentDraftAfterServerSave()
       void router.replace({ query: { ...route.query, deck: saved.name, deckId: saved.id } })
     }
     if (editorUnchanged) {
@@ -905,7 +982,7 @@ async function onSaveAs() {
       activeDeckId.value = saved.id ?? null
       activeDeckRevision.value = saved.revision ?? null
       deckName.value = saved.name
-      clearCurrentDraftAfterServerSave()
+      await clearCurrentDraftAfterServerSave()
       void router.replace({ query: { ...route.query, deck: saved.name, deckId: saved.id } })
       notice.value = `已另存为〈${saved.name}〉`
     }
@@ -947,7 +1024,7 @@ async function publishCurrentDeck() {
       publicationVersion.value = result.deck.publicationVersion ?? null
       await router.replace({ query: { ...route.query, deck: saved.name,
         deckId: published.id, published: publicationCode.value } })
-      clearCurrentDraftAfterServerSave()
+      await clearCurrentDraftAfterServerSave()
       notice.value = publishedId ? `已更新公开牌库〈${saved.name}〉` : `已公开〈${saved.name}〉，后续可从此处更新公开版本`
     }
   } catch (error) {
@@ -958,6 +1035,7 @@ async function publishCurrentDeck() {
 }
 
 function loadDeck(deck: SavedL12Deck, preservePublication = false) {
+  draftConflict.value = false
   editorDocumentEpoch++
   if (!preservePublication || deck.publicationId) publicationId.value = deck.publicationId || ''
   publicationCode.value = ''
@@ -970,6 +1048,7 @@ function loadDeck(deck: SavedL12Deck, preservePublication = false) {
   const next: Record<string, number> = {}
   deck.cardIds.forEach(id => next[id] = (next[id] || 0) + 1)
   counts.value = next
+  representativeCardIds.value = [...(deck.representativeCardIds ?? [])].filter(id => Object.keys(next).some(main => main.toLowerCase() === id.toLowerCase()))
   const nextBench: Record<string, number> = {}
   ;(deck.benchIds ?? []).forEach(id => nextBench[id] = (nextBench[id] ?? 0) + 1)
   benchCounts.value = nextBench
@@ -1107,39 +1186,88 @@ onBeforeUnmount(() => {
   window.removeEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource)
   window.removeEventListener('keydown', closeEditorDialogOnEscape)
   window.removeEventListener('beforeunload', warnBeforeUnload)
+  window.removeEventListener('l12-deck-cache-changed', refreshEditorCacheView)
   closeDeckImage()
 })
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
+onMounted(() => window.addEventListener('l12-deck-cache-changed', refreshEditorCacheView))
+function refreshEditorCacheView() {
+  const cache = loadSavedDecksState()
+  if (cache.status !== 'unavailable') savedDecks.value = cache.decks
+  legacySources.value = loadLegacyDeckImports()
+  if (!legacySources.value.some(item => item.id === legacySourceId.value)) legacySourceId.value = legacySources.value[0]?.id ?? ''
+}
+async function recoverPendingAccountDrafts() {
+  if (recoveringAccountDrafts) return
+  recoveringAccountDrafts = true
+  try {
+    for (const [key, item] of pendingAccountDrafts) {
+      try {
+        const scope = item.scope ?? (item.scope = draftScopeFor(item.accountId))
+        await writeTransactionalDeckDraft(scope, item.deck, item.name, item.id, item.revision, null, true)
+        pendingAccountDrafts.delete(key)
+        pendingDraftCount.value = pendingAccountDrafts.size
+      } catch { notice.value = '原账号修改仍保留在当前页面，尚未完成本机暂存；请勿关闭页面，允许存储后重试' }
+    }
+  } finally { recoveringAccountDrafts = false }
+}
+async function loadLegacyCandidate(deck: SavedL12Deck) {
+  if (!confirmDiscardChanges() || !window.confirm(`旧资料的环境归属无法确认。确定将它作为新构筑载入当前${deploymentBasePath === '/' ? '正式' : '测试'}环境？原资料和已有牌库均不会覆盖。`)) return
+  const context = editorContext(), contentRevision = editorContentRevision.value
+  try {
+    const name = await uniqueDeckCopyName(`${deck.name.slice(0, 18)} 旧资料`)
+    if (!isCurrentEditorContext(context) || editorContentRevision.value !== contentRevision) return
+    loadDeck({ ...deck, name, id: undefined, revision: undefined, publicationId: undefined, publicationVersion: undefined }, true)
+    // This explicit import is a new construction, not an unproven revision of
+    // an existing draft. Keep its visible name but clear the entire save base.
+    activeDeckName.value = null
+    activeDeckId.value = null
+    activeDeckRevision.value = null
+    persistedContentRevision.value = -1
+    notice.value = '旧资料已作为独立新构筑载入；请保存牌库。原牌库、旧草稿均未改动。'
+  } catch (error) { if (isCurrentEditorContext(context)) notice.value = mutationError(error, '旧资料暂不可载入') }
+}
 
 // Complete the local document/draft switch synchronously before starting new reads.
 function applyEditorAccountChange(previous: string | undefined) {
   let preserveError = ''
   if (hasUnsavedChanges.value) {
     try {
-      const { owner, storage } = draftScopeFor(previous)
-      writeDeckEditorDraft(storage, owner, currentDeck(), activeDeckName.value,
-        new Date().toISOString(), activeDeckId.value, activeDeckRevision.value)
+      pendingAccountDrafts.set(crypto.randomUUID(), { accountId: previous, deck: JSON.parse(JSON.stringify(currentDeck())), name: activeDeckName.value,
+        id: activeDeckId.value, revision: activeDeckRevision.value })
+      pendingDraftCount.value = pendingAccountDrafts.size
+      void recoverPendingAccountDrafts()
     } catch (error) { preserveError = mutationError(error, '浏览器存储不可用') }
   }
   mobileDetailOpen.value = mobileSavedDecksOpen.value = false
   closePendingDelete()
   closeDeckImage()
   newDeck()
+  draftEntries.value = []; localDraft.value = null; legacySources.value = []
+  representativesEnabled.value = false
   const cache = loadSavedDecksState()
   savedDecks.value = cache.status === 'unavailable' ? {} : cache.decks
   savedDirectorySearch.value = savedDirectoryKeyword.value = ''
   refreshLocalDraft()
-  if (cache.status === 'unavailable') preserveError = [preserveError, cache.error.message].filter(Boolean).join('；')
-  notice.value = preserveError ? `账号已切换，原账号未保存的修改暂存失败：${preserveError}` : '账号已切换；当前仅显示此账号的牌库和草稿'
+  notice.value = preserveError ? `账号已切换；原账号修改仍在当前页面待暂存：${preserveError}`
+    : pendingAccountDrafts.size ? '账号已切换；原账号修改正在暂存到原账号，不会进入当前账号'
+      : '账号已切换；当前仅显示此账号的牌库和草稿'
+  if (cache.status === 'unavailable') notice.value += '；当前账号的本机事务牌库尚未就绪'
 }
 
 async function refreshEditorAccountReads(context: ReturnType<typeof editorContext>) {
+  if (!isCurrentEditorContext(context)) return
+  try {
+    const enabled = await enableRepresentativeCards()
+    if (isCurrentEditorContext(context)) { representativesEnabled.value = enabled; savedDecks.value = loadSavedDecks(); await refreshLocalDraft(); await recoverPendingAccountDrafts() }
+  } catch (error) { if (isCurrentEditorContext(context)) notice.value = `代表卡暂不可用：${mutationError(error, '请检查本机存储')}` }
   if (!isCurrentEditorContext(context)) return
   await Promise.all([loadSavedDirectory(1), refreshOwnedAlternateArts()])
 }
 
 watch(() => [platformState.account?.id, platformState.token] as const, ([current, token], [previous, previousToken]) => {
   if (current === previous && token === previousToken) return
+  draftConflict.value = false
   editorAccountEpoch++
   directoryReadSequence++
   deckReadSequence++
@@ -1166,8 +1294,9 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
         <div class="secondary-actions" :class="{ open: secondaryActionsOpen }">
           <button type="button" @click="openEditorSettings">设置</button>
           <button @click="requestNewDeck">新建牌库</button>
-          <button @click="saveLocalDraft">暂存草稿</button>
-          <button v-if="localDraft" @click="restoreLocalDraft">恢复草稿</button>
+          <button :disabled="draftBusy" @click="saveLocalDraft()">{{ draftBusy ? '暂存中…' : '暂存草稿' }}</button>
+          <button v-if="localDraft" :disabled="draftBusy" @click="restoreLocalDraft">恢复草稿</button>
+          <select v-if="draftEntries.length > 1" v-model="selectedDraftSlot" aria-label="选择待恢复草稿"><option v-for="item in draftEntries" :key="item.slot" :value="item.slot">{{ item.draft.deck.name }} · {{ item.draft.savedAt }}</option></select>
           <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSaveAs">另存为牌库</button>
           <button :disabled="!!validation || generatingDeckImage" @click="generateDeckImage">{{ generatingDeckImage ? '生成中…' : '生成牌库图' }}</button>
           <button :disabled="!!validation || deckMutationBusy || deletingDeck" @click="publishCurrentDeck">{{ publicationId ? '更新公开牌库' : '公开牌库' }}</button>
@@ -1177,6 +1306,17 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
     </header>
 
     <p v-if="notice" class="deck-operation-notice" role="status">{{ notice }}</p>
+    <button v-if="draftConflict" :disabled="draftBusy" type="button" @click="saveLocalDraft(true)">另存为恢复草稿（保留原草稿）</button>
+    <button v-if="pendingDraftCount" type="button" @click="recoverPendingAccountDrafts().then(refreshLocalDraft)">重试暂存原账号修改（{{ pendingDraftCount }}）</button>
+    <details v-if="legacySources.length" class="legacy-deck-import">
+      <summary>旧本机资料（{{ legacySources.length }} 个保留版本）</summary>
+      <p>旧资料的正式／测试归属未识别，未自动导入。载入后须另行保存，不覆盖旧资料或当前牌库；旧页面的后续修改也只在此保留。</p>
+      <select v-model="legacySourceId" aria-label="选择旧资料版本"><option v-for="item in legacySources" :key="item.id" :value="item.id">{{ item.source === 'cache' ? '旧牌库' : '旧草稿' }} · {{ item.fingerprint.slice(0, 10) }}</option></select>
+      <button v-for="(deck, index) in legacyCandidates" :key="index" type="button" @click="loadLegacyCandidate(deck)">作为新构筑载入：{{ deck.name }}</button>
+      <p v-if="!legacyCandidates.length">此版本无可载入构筑或格式不受支持；原串仍完整保留。</p>
+      <button type="button" @click="initializeDeckCache().then(refreshEditorCacheView)">重新检查旧资料</button>
+    </details>
+    <p v-if="legacyDeckImportWarning()" class="deck-operation-notice">{{ legacyDeckImportWarning() }}</p>
     <p v-if="seasonAdvisory" class="deck-operation-notice" data-season-advisory>{{ seasonAdvisory }}</p>
     <div v-if="authenticatedEditor && (ownedArtLoading || ownedArtError)" class="alternate-art-status" role="status" :aria-busy="ownedArtLoading">
       <span>{{ ownedArtError || '正在更新已拥有的异画…' }}</span>
@@ -1300,6 +1440,19 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
         </section>
         <section class="stats-block"><h3>费用曲线</h3><p class="stats-note">按主牌实际张数统计，包含不计构筑数量的卡牌；不含士气、额外区和备选区。</p><DeckCostCurve :values="curve" expanded/><p v-if="costStatistics.unknown" class="stats-note">费用未标明：{{ costStatistics.unknown }} 张，不计入曲线。</p></section>
         <div class="stats-columns"><section class="stats-block"><h3>主牌类型</h3><p class="stats-note">按主牌实际张数统计</p><p v-if="!typeStats.length" class="stats-note">暂无主牌</p><article v-for="[label,value] in typeStats" :key="label"><span>{{ label }}</span><b>{{ value }}</b></article></section><section class="stats-block"><h3>主牌阵营</h3><p class="stats-note">按主牌实际张数统计</p><p v-if="!factionStats.length" class="stats-note">暂无主牌</p><article v-for="[label,value] in factionStats" :key="label"><span>{{ label }}</span><b>{{ value }}</b></article></section></div>
+        <section class="stats-block representatives" aria-label="选择代表卡">
+          <h3>代表卡 <small>选填，最多 3 张</small></h3>
+          <p class="stats-note">从主牌中依次选择。1 是牌库封面最右侧的卡牌，2、3 依次向左；再次点击可取消，未选择时自动展示。</p>
+          <p v-if="!representativesEnabled" class="stats-note">本机事务存储尚未就绪，代表卡暂不可选；未保存的编辑内容仍保留。</p>
+          <div class="representative-preview"><DeckCover variant="compact" :master-id="masterId" :name="deckName || '未命名牌库'" :catalog="catalog" :cover-card-ids="representativeCardIds.length ? representativeCardIds : undefined" :source-card-ids="mainCardIds" context="牌库封面预览"/></div>
+          <div class="representative-grid">
+            <button v-for="entry in entries" :key="entry.card.id" type="button" class="representative-card" :class="{ chosen: representativeNumber(entry.card.id) }" :disabled="!representativesEnabled || (!representativeNumber(entry.card.id) && representativeCardIds.length >= 3)" :aria-pressed="!!representativeNumber(entry.card.id)" @click="toggleRepresentative(entry.card)">
+              <span class="representative-image"><CardImage :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="contain"/><b v-if="representativeNumber(entry.card.id)" class="representative-number">{{ representativeNumber(entry.card.id) }}</b><i>×{{ entry.count }}</i></span>
+              <strong>{{ entry.card.nameZh }}</strong><small>{{ entry.card.number }}</small>
+            </button>
+            <p v-if="!entries.length" class="stats-note">主牌为空，加入卡牌后可选择代表卡。</p>
+          </div>
+        </section>
       </section>
       <section v-show="workspace === 'hand'" class="deck-insight-panel hand-workspace grand-panel" data-editor-workspace="hand">
         <header><div><p class="kicker">起手试抽</p><h2>当前构筑试抽</h2><p>从当前 {{ totalCards }} 张主牌中等概率、不放回抽取 6 张；按抽取顺序完整展示，不修改牌库或生成对局记录。</p></div><button @click="redrawOpeningHand">重新试抽</button></header>
@@ -1309,7 +1462,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
       </div>
 
       <aside class="deck-list grand-panel">
-        <header class="deck-list-header"><DeckCover variant="compact" :master-id="selectedMaster?.id" :master-name="selectedMaster?.nameZh" :name="deckName || selectedMaster?.nameZh || '未选择主宰'" :catalog="catalog" :source-card-ids="mainCardIds" context="当前牌表" :meta="selectedMaster ? `${factionLabels[selectedMaster.faction]} · 士气 ${moraleIds.length} 张` : '先从牌库选择主宰'"/><b>{{ countSummary.label }}</b></header>
+        <header class="deck-list-header"><DeckCover variant="compact" :master-id="selectedMaster?.id" :master-name="selectedMaster?.nameZh" :name="deckName || selectedMaster?.nameZh || '未选择主宰'" :catalog="catalog" :cover-card-ids="representativeCardIds.length ? representativeCardIds : undefined" :source-card-ids="mainCardIds" context="当前牌表" :meta="selectedMaster ? `${factionLabels[selectedMaster.faction]} · 士气 ${moraleIds.length} 张` : '先从牌库选择主宰'"/><b>{{ countSummary.label }}</b></header>
         <p v-if="validation && deckEditorPortrait" class="portrait-deck-issue">{{ validation }}</p>
         <div class="deck-sections">
           <section class="deck-zone" data-deck-section="master"><header><button @click="toggleSection('master')"><span>主宰</span><b>{{ selectedMaster ? '1/1' : '0/1' }}</b><i>{{ collapsedSections.master ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.master" class="deck-zone-body"><article v-if="selectedMaster" class="deck-entry-row" @click="selectCard(selectedMaster)"><CardImage class="deck-entry-banner" :card-id="selectedMasterArt?.cardImageId || selectedMaster.id" :legacy-url="selectedMasterArt ? (selectedMasterArt.builtIn ? undefined : selectedMasterArt.thumbnailUrl || selectedMasterArt.imageUrl) : selectedMaster.imageUrl" :alt="selectedMaster.nameZh" intent="thumb" fit="cover" native-orientation/><span>主</span><div><b>{{ selectedMaster.nameZh }}</b><small>{{ factionLabels[selectedMaster.faction] }}{{ selectedMasterArt ? ' · 异画' : '' }}</small></div><strong>×1</strong></article><p v-else>请从卡池选择主宰。</p></div></section>
@@ -1372,6 +1525,14 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
 </template>
 
 <style scoped>
+.legacy-deck-import{margin:8px 0;padding:10px;border:1px solid #495754;border-radius:8px;background:#17211f;color:#d9e1db;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}.legacy-deck-import select,.secondary-actions select{max-width:100%;min-width:0;background:#17211f;color:#e1e7df;border:1px solid #52645d;border-radius:5px;padding:8px}.legacy-deck-import option,.secondary-actions option{background:#17211f;color:#e1e7df}.legacy-deck-import button{margin:4px;white-space:normal;overflow-wrap:anywhere}
+/* Legacy import accessibility boundary. */
+.legacy-deck-import{min-width:0;flex:none}
+.legacy-deck-import summary{box-sizing:border-box;min-height:38px;max-width:100%;padding:8px 0;list-style-position:inside;cursor:pointer;overflow-wrap:anywhere}
+.legacy-deck-import button{box-sizing:border-box;display:block;min-width:0;min-height:38px;max-width:100%;margin:4px 0;padding:8px 10px;white-space:normal;overflow-wrap:anywhere}
+.legacy-deck-import select{box-sizing:border-box;min-width:0;min-height:38px;width:100%;max-width:100%}
+.legacy-deck-import[open]{max-height:44vh;max-height:min(44dvh,22rem);overflow-y:auto;overscroll-behavior:contain}
+/* End legacy import accessibility boundary. */
 .alternate-art-status{display:flex;flex:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:0;padding:6px 12px;border-bottom:1px solid #675f59;background:#151c20;color:#e0c875;font-size:13px;line-height:1.5}.alternate-art-status span{min-width:0;flex:1 1 220px;overflow-wrap:anywhere}.alternate-art-status button{flex:none;min-height:44px;padding:6px 10px;border:1px solid #617572;background:#142326;color:#eee;font:inherit;font-weight:700}.alternate-art-status button:focus-visible{outline:2px solid #70d7df;outline-offset:2px}
 .deck-side-column .saved-decks-panel{overflow-y:auto;overscroll-behavior:contain}.saved-decks-panel .saved-list{flex:none;overflow:visible}
 .deck-builder-shell .mobile-saved-decks-dialog{display:flex;flex-direction:column}
@@ -1476,4 +1637,6 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
 :global(html[data-l12-editor-portrait="true"] .single-card-filters input){grid-column:1/-1}
 .saved-list{padding-top:5px}.saved-list article,.mobile-saved-decks-list>button{transition:transform .3s cubic-bezier(.4,0,.2,1)}
 @media(hover:hover) and (pointer:fine){.saved-list article:hover,.saved-list article:focus-within,.mobile-saved-decks-list>button:hover,.mobile-saved-decks-list>button:focus-visible{transform:translateY(-4px)}.saved-list article:hover :deep(.deck-cover),.saved-list article:focus-within :deep(.deck-cover),.mobile-saved-decks-list>button:hover :deep(.deck-cover),.mobile-saved-decks-list>button:focus-visible :deep(.deck-cover){transform:none}}
+
+.representative-preview{max-width:340px;margin:12px 0}.representative-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:7px}.representative-card{min-width:0;padding:5px;border:1px solid #354041;background:#0d1315;color:#eee;text-align:left}.representative-card.chosen{border-color:#d8bd6a}.representative-card:disabled{opacity:.55}.representative-card strong,.representative-card small{display:block;overflow:hidden;text-overflow:ellipsis}.representative-card strong{min-height:2.5em}.representative-card small{color:#99a7a6}.representative-image{display:block;position:relative;aspect-ratio:5/7}.representative-image :deep(img){width:100%;height:100%;object-fit:contain}.representative-image i,.representative-number{position:absolute;top:2px;padding:2px 5px;background:#101719;color:#ead27f;font-style:normal}.representative-image i{right:2px}.representative-number{left:2px}.representatives h3 small{font-size:12px;color:#aab6b4}
 </style>

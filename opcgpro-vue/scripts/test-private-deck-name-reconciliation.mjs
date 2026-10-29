@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { TransactionFixtureStorage, databaseUrl, draftUrl, bindTransactionFaults, transactionModel } from './deck-transaction-test-fixture.mjs'
 
 const vueRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const dependency=createRequire(path.join(vueRoot,'package.json'))
@@ -17,7 +18,8 @@ class MemoryStorage {
   setItem(k,v){this.values.set(k,String(v));this.writes++}
   snapshot(){return [...this.values.entries()]}
 }
-const storage=new MemoryStorage(), descriptors=new Map()
+const storage=new TransactionFixtureStorage(), descriptors=new Map()
+bindTransactionFaults(storage)
 for(const key of ['localStorage','navigator','__deckNameReconciliationTest']) descriptors.set(key,Object.getOwnPropertyDescriptor(globalThis,key))
 Object.defineProperty(globalThis,'localStorage',{configurable:true,value:storage})
 let lockDepth=0
@@ -28,9 +30,10 @@ const state=reactive({account:null,token:''}), calls=[]
 let handler=()=>{throw new Error('Unexpected platform read')}
 Object.defineProperty(globalThis,'__deckNameReconciliationTest',{configurable:true,value:{watch,platformState:state,
   getDeckCoverRequestHeaders:()=>({'X-L12-Deck-Cover':'1'}),
+  getRepresentativeDeckRequestHeaders:()=>({'X-L12-Deck-Cover':'2'}),
   getEffectiveOperationsPolicy:async()=>({}),platformRequest:(p,init)=>{
     assert.equal(init?.method,undefined,'Name reconciliation is read-only')
-    assert.equal(lockDepth,0,'HTTP may not run while holding the cache Web Lock')
+    assert.equal(transactionModel.transactionActive,false,'HTTP may not run inside a cache transaction')
     calls.push({path:p,init});return handler(p,init)
   }}})
 const binary=url(read('src/l12/deckCodeCodec.ts'))
@@ -39,14 +42,16 @@ const cache=url(read('src/l12/deckCacheStorage.ts').replace("from './deckCodeCod
 const opening=url(read('src/l12/openingHandEligibility.ts'))
 const cover=url(read('src/l12/deckCover.ts'))
 const executable=read('src/l12/decks.ts')
+  .replace("from './deckCacheDatabase'",`from '${databaseUrl}'`)
+  .replace("from './site/deckEditorDraft'",`from '${draftUrl}'`)
   .replace("from './browserStorage'",`from '${url(read('src/l12/browserStorage.ts'))}'`)
   .replace("from './deckCover'",`from '${cover}'`)
   .replace("import { watch } from 'vue'",'const {watch}=globalThis.__deckNameReconciliationTest')
   .replace("from './deckCacheStorage'",`from '${cache}'`)
   .replace("from './deckCacheCodec'",`from '${codec}'`)
   .replace("import { normalizeLookupCardType } from './cardPresentation'",'const normalizeLookupCardType=value=>value')
-  .replace("import { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",'const {getDeckCoverRequestHeaders,getEffectiveOperationsPolicy,platformRequest,platformState}=globalThis.__deckNameReconciliationTest')
-  .replace("import { deploymentPath } from './deploymentBase'",'const deploymentPath=value=>value')
+  .replace("import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",'const {getDeckCoverRequestHeaders,getRepresentativeDeckRequestHeaders,getEffectiveOperationsPolicy,platformRequest,platformState}=globalThis.__deckNameReconciliationTest')
+  .replace("import { deploymentPath, deploymentBasePath } from './deploymentBase'", "const deploymentPath=value=>value; const deploymentBasePath='/'")
   .replace(/import (\w+) from '(\.\.\/\.\.\/\.\.\/服务端WebSocket\/TwelveLegions\/Data\/[^']+\.json)'/g,(_all,name,relative)=>
     `const ${name}=${fs.readFileSync(path.resolve(vueRoot,'src/l12',relative),'utf8').replace(/^\uFEFF/,'')}`)
   .replace("from './openingHandEligibility'",`from '${opening}'`)
@@ -64,7 +69,7 @@ function seed(decks,owner='B',format='legacy'){
   else cacheApi.commitDeckCache(storage,key(owner),cacheApi.requireDeckCache(cacheApi.readDeckCache(storage,key(owner),`account:${owner}`)),mapped,'synthetic-seed')
 }
 function reset(decks=[],format='legacy'){
-  storage.values.clear();storage.writes=0;calls.length=0;account('A');seed([body('A-deck')],'A');account('B');seed(decks,'B',format)
+  storage.clear();calls.length=0;account('A');seed([body('A-deck')],'A');account('B');seed(decks,'B',format)
   storage.setItem('l12:synthetic-draft:B','unsaved draft preserved')
   storage.setItem('l12-selected-custom-deck:B:ranked','old')
 }
@@ -141,7 +146,7 @@ try {
       const old=body('B-old'),selected=body('B-new');reset([old]);let resolve,allowed=true
       handler=p=>p===route(selected)?Promise.resolve(selected):new Promise(yes=>{resolve=yes})
       const pending=api.loadPrivateDeckBody(selected,()=>allowed)
-      for(let i=0;i<8&&!resolve;i++)await Promise.resolve();assert.ok(resolve)
+      for(let i=0;i<20&&!resolve;i++)await new Promise(next=>setImmediate(next));assert.ok(resolve)
       if(transition==='account ABA'){account('A');account('B')}
       if(transition==='page retired')allowed=false
       if(transition==='unrelated cache changed')seed([old,body('B-other','新缓存')])
@@ -155,9 +160,8 @@ try {
   })
   await check('cache persistence failure leaves original contents and drafts intact',async()=>{
     const old=body('B-old'),selected=body('B-new');reset([old]);const before=storage.getItem(key('B'))
-    serve({[route(selected)]:selected,[route(old)]:error(404)});const originalSet=storage.setItem
-    storage.setItem=function(k,v){if(k===key('B'))throw new Error('QuotaExceededError');return originalSet.call(this,k,v)}
-    try{await assert.rejects(api.loadPrivateDeckBody(selected),/写入失败/)}finally{storage.setItem=originalSet}
+    serve({[route(selected)]:selected,[route(old)]:error(404)});storage.rejectWrite=k=>k===key('B')
+    try{await assert.rejects(api.loadPrivateDeckBody(selected),/写入失败/)}finally{storage.rejectWrite=null}
     assert.equal(storage.getItem(key('B')),before);assert.equal(storage.getItem('l12:synthetic-draft:B'),'unsaved draft preserved')
   })
   await check('duplicate old ID with a higher revision never gets downgraded or queried',async()=>{

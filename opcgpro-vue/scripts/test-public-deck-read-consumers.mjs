@@ -140,11 +140,11 @@ async function oldLoadUsesLegacyBody() {
   return calls
 }
 
-function apiRuntime() {
+function apiRuntime(headers = {}) {
   const source = read('src/l12/platform.ts'), requests = []
   const code = [functionSource(source, 'publicDeckReadReference'), functionSource(source, 'publicDeckReadToken'),
     functionSource(source, 'publicDeckReadPage'), `const publicDeckReadApi=${variableInitializer(source, 'publicDeckReadApi')};`].join('\n')
-  const publicDeckReadApi = evaluated(code, { URLSearchParams,
+  const publicDeckReadApi = evaluated(code, { URLSearchParams, getRepresentativeDeckRequestHeaders: () => headers,
     platformRequest: (value, options) => { requests.push(options ? { url: value, options } : value); return value } }, 'publicDeckReadApi')
   return { publicDeckReadApi, requests }
 }
@@ -571,6 +571,14 @@ async function main() {
       `/api/public-decks/A%2FB/statistics?page=4&pageSize=100&expectedReadToken=${token}`,
     ])
   })
+  await check('representative-capable current and history negotiate v2 without changing metadata reads', () => {
+    const row = apiRuntime({ 'X-L12-Deck-Cover': '2' })
+    row.publicDeckReadApi.current('deck', token); row.publicDeckReadApi.version('deck', 2, token)
+    row.publicDeckReadApi.versions('deck', 1, 30, token)
+    assert.deepEqual(row.requests[0].options.headers, { 'X-L12-Deck-Cover': '2' })
+    assert.deepEqual(row.requests[1].options.headers, { 'X-L12-Deck-Cover': '2' })
+    assert.equal(typeof row.requests[2], 'string')
+  })
   await check('typed API permits explicit unpinned current and rejects invalid client parameters', () => {
     const row = apiRuntime(); row.publicDeckReadApi.current('legacy-id')
     assert.equal(row.requests[0], '/api/public-decks/legacy-id/current')
@@ -787,7 +795,9 @@ async function main() {
   })
   await check('legacy eight-method API initializer remains at its reviewed normalized source digest', () => {
     const initializer = variableInitializer(read('src/l12/platform.ts'), 'publicDeckApi').replace(/\r\n/g, '\n')
-    assert.equal(crypto.createHash('sha256').update(initializer).digest('hex'),
+    assert.match(initializer, /headers: getRepresentativeDeckRequestHeaders\(\)/)
+    const legacyInitializer = initializer.replace("    headers: getRepresentativeDeckRequestHeaders(),\n", '')
+    assert.equal(crypto.createHash('sha256').update(legacyInitializer).digest('hex'),
       'e779f4eeb21694006de74ad038c985a28377d19f4d1ae5d17be93cfc84a41e9f')
   })
   await check('actual content editor keeps fields and picker behavior while exposing guarded refresh and save states', () => {

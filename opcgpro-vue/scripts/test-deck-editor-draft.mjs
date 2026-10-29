@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
-import {
-  clearDeckEditorDraft, draftOwner, draftStorageKey, readDeckEditorDraft, writeDeckEditorDraft,
-} from '../src/l12/site/deckEditorDraft.ts'
+import { readFileSync } from 'node:fs'
+import ts from 'typescript'
+// Keep the legacy format roundtrip suite independent of browser/IDB ports.
+// New production draft persistence is covered by test-deck-transactional-consumers.
+const source = readFileSync(new URL('../src/l12/site/deckEditorDraft.ts', import.meta.url), 'utf8')
+const pure = source.slice(0, source.indexOf('/** An opaque per-tab-session key'))
+  .replace(/^import .*$/gm, '')
+const code = ts.transpileModule(pure, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+const { clearDeckEditorDraft, draftOwner, draftStorageKey, readDeckEditorDraft, writeDeckEditorDraft } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'))
 
 function storage() {
   const rows = new Map()
@@ -49,4 +55,22 @@ assert.equal(readDeckEditorDraft(local, alpha)?.baseDeckName, '旧名称', '旧�
 local.setItem(draftStorageKey(alpha), JSON.stringify({ schema: 2, owner: alpha, savedAt: '', baseDeckName: '旧名称',
   baseDeckId: 'stable-a', baseDeckRevision: -1, deck: incomplete }))
 assert.throws(() => readDeckEditorDraft(local, alpha), /归属/)
+{
+  const s = storage(), owner = draftOwner('v2-owner')
+  writeDeckEditorDraft(s, owner, incomplete, null)
+  const legacy = s.getItem(draftStorageKey(owner))
+  assert.deepEqual(readDeckEditorDraft(s, owner, 2)?.deck, incomplete)
+  const chosen = { ...incomplete, representativeCardIds: ['S01-0001'] }
+  writeDeckEditorDraft(s, owner, chosen, null, '2026-10-02T00:00:00Z', null, null, 2)
+  assert.equal(s.getItem(draftStorageKey(owner)), legacy)
+  assert.deepEqual(readDeckEditorDraft(s, owner, 2)?.deck.representativeCardIds, ['S01-0001'])
+  assert.throws(() => writeDeckEditorDraft(s, owner, { ...chosen, representativeCardIds: ['NOT-MAIN'] }, null), /暂存/)
+  clearDeckEditorDraft(s, owner, 2)
+  assert.equal(readDeckEditorDraft(s, owner, 2), null)
+  assert.equal(s.getItem(draftStorageKey(owner)), legacy)
+  assert.deepEqual(readDeckEditorDraft(s, owner)?.deck, incomplete)
+  s.setItem(draftStorageKey(owner, 2), '{bad')
+  assert.throws(() => readDeckEditorDraft(s, owner, 2), /损坏/)
+  assert.equal(s.getItem(draftStorageKey(owner)), legacy)
+}
 console.log('Deck editor local draft passed: incomplete save, account/session isolation, corruption, quota and bounds.')

@@ -27,6 +27,7 @@ function runtime(options = {}) {
   const selected = functions('src/l12/decks.ts', ['uniqueDeckCopyName', 'loadPrivatePublicationSource'], {
     captureDeckStorageContext: () => ({ accountId: state.accountId, token: state.accountId ? 'synthetic-only' : '' }),
     assertCompleteDeckAccount: () => undefined, isCurrentDeckStorageContext: () => state.current,
+    ensureDeckDatabase: async () => {},
     operationError: error => error, currentDeckSnapshot: () => ({ decks: state.cache }),
     sameDeckName: (left, right) => left.trim().toLowerCase() === right.trim().toLowerCase(),
     loadPrivateDeckSummaryPage: async query => { state.calls.push(query); return state.query(query) },

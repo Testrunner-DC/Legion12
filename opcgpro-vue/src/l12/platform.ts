@@ -1038,6 +1038,12 @@ export function getDeckCoverRequestHeaders() {
   return deckCoverHeadersForOrigin(apiBase(), globalThis.location?.origin)
 }
 
+export function getRepresentativeDeckRequestHeaders(): Record<string, string> {
+  // This advertises the reader's field contract, not a local cache's existence.
+  // Persistent editing is separately gated by the single transaction store.
+  return getDeckCoverRequestHeaders()['X-L12-Deck-Cover'] ? { 'X-L12-Deck-Cover': '2' } : {}
+}
+
 function retryAfterMilliseconds(response: Response) {
   const raw = response.headers.get('Retry-After')?.trim()
   if (!raw) return 0
@@ -2065,7 +2071,8 @@ export const publicDeckReadApi = {
   current: (reference: string, expectedReadToken?: string) => {
     const params = new URLSearchParams(), token = publicDeckReadToken(expectedReadToken)
     if (token) params.set('expectedReadToken', token)
-    return platformRequest<PublicDeckCurrentRead>(`/api/public-decks/${publicDeckReadReference(reference)}/current${params.size ? `?${params}` : ''}`)
+    const headers = getRepresentativeDeckRequestHeaders()
+    return platformRequest<PublicDeckCurrentRead>(`/api/public-decks/${publicDeckReadReference(reference)}/current${params.size ? `?${params}` : ''}`, Object.keys(headers).length ? { headers } : undefined)
   },
   versions: (reference: string, page = 1, pageSize = 30, expectedReadToken?: string) =>
     platformRequest<PublicDeckVersionPage>(`/api/public-decks/${publicDeckReadReference(reference)}/versions?${publicDeckReadPage(page, pageSize, expectedReadToken)}`),
@@ -2073,7 +2080,8 @@ export const publicDeckReadApi = {
     if (!Number.isSafeInteger(version) || version < 1) throw new Error('公开牌库版本参数无效')
     const params = new URLSearchParams(), token = publicDeckReadToken(expectedReadToken)
     if (token) params.set('expectedReadToken', token)
-    return platformRequest<PublicDeckVersionRead>(`/api/public-decks/${publicDeckReadReference(reference)}/versions/${version}${params.size ? `?${params}` : ''}`)
+    const headers = getRepresentativeDeckRequestHeaders()
+    return platformRequest<PublicDeckVersionRead>(`/api/public-decks/${publicDeckReadReference(reference)}/versions/${version}${params.size ? `?${params}` : ''}`, Object.keys(headers).length ? { headers } : undefined)
   },
   statistics: (reference: string, page = 1, pageSize = 30, expectedReadToken?: string) =>
     platformRequest<PublicDeckStatisticsPage>(`/api/public-decks/${publicDeckReadReference(reference)}/statistics?${publicDeckReadPage(page, pageSize, expectedReadToken)}`),
@@ -2100,6 +2108,7 @@ export const publicDeckApi = {
   get: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}`),
   publish: (deck: SavedL12Deck, publicationId?: string) => platformRequest<PublishedDeck>('/api/public-decks', {
     method: 'POST', body: JSON.stringify({ publicationId: publicationId || null, deck }),
+    headers: getRepresentativeDeckRequestHeaders(),
   }),
   updateContent: (id: string, guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) => platformRequest<PublicDeckDetails>(
     `/api/public-decks/${encodeURIComponent(id)}/content`, {

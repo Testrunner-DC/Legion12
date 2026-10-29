@@ -1,3 +1,4 @@
+using SchemaContract = TwelveLegions.Platform.Tests.PlatformSchemaTestContract;
 using System.Collections;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -279,7 +280,7 @@ public sealed class PlatformCoreSnapshotMemoryTests(ITestOutputHelper output)
         Assert.True(store.IsSessionActive(session.SessionId));
         AssertProductPlatformState(store, databaseEncoding);
         var schemaNine = AssertEncodedSchemaState(databasePath, databaseEncoding,
-            expectedSchema: 11, expectedRankedTableCount: 2);
+            expectedSchema: SchemaContract.Current, expectedRankedTableCount: 2);
         var originalSnapshotChecksum = schemaNine.Checksum;
         var oldFinalBytes = File.ReadAllBytes(platformPath);
         var oldFinalChecksum = Utf8Sha256(oldFinalBytes);
@@ -333,14 +334,14 @@ public sealed class PlatformCoreSnapshotMemoryTests(ITestOutputHelper output)
         AssertMigrationStoreState(firstReopen, committedVersion, session.SessionId, expectedValue);
         AssertProductPlatformState(firstReopen, databaseEncoding);
         var firstSchemaNine = AssertEncodedSchemaState(databasePath, databaseEncoding,
-            expectedSchema: 11, expectedRankedTableCount: 2);
+            expectedSchema: SchemaContract.Current, expectedRankedTableCount: 2);
         Assert.Equal(originalSnapshotChecksum, firstSchemaNine.Checksum);
 
         var secondReopen = NewStore(platformPath, fixture);
         AssertMigrationStoreState(secondReopen, committedVersion, session.SessionId, expectedValue);
         AssertProductPlatformState(secondReopen, databaseEncoding);
         var secondSchemaNine = AssertEncodedSchemaState(databasePath, databaseEncoding,
-            expectedSchema: 11, expectedRankedTableCount: 2);
+            expectedSchema: SchemaContract.Current, expectedRankedTableCount: 2);
         Assert.Equal(firstSchemaNine, secondSchemaNine);
     }
 

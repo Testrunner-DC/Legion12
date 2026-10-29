@@ -178,15 +178,15 @@ public sealed partial class L12PlatformStore
             command.CommandText = """
                 INSERT INTO account_decks(account_id,name_key,name,deck_id,revision,payload_hash,
                     alternate_art_selections_json,alternate_art_copies_json,bench_cards_json,updated_utc,is_deleted,
-                    publication_id,publication_version)
-                VALUES($account,$key,$name,$id,$revision,$payload,$selections,$copies,$bench,$updated,0,$publication,$version)
+                    publication_id,publication_version,representative_card_ids_json)
+                VALUES($account,$key,$name,$id,$revision,$payload,$selections,$copies,$bench,$updated,0,$publication,$version,$representatives)
                 ON CONFLICT(account_id,name_key) DO UPDATE SET
                     name=excluded.name,deck_id=excluded.deck_id,revision=excluded.revision,
                     payload_hash=excluded.payload_hash,
                     alternate_art_selections_json=excluded.alternate_art_selections_json,
                     alternate_art_copies_json=excluded.alternate_art_copies_json,
                     bench_cards_json=excluded.bench_cards_json,updated_utc=excluded.updated_utc,
-                    publication_id=excluded.publication_id,publication_version=excluded.publication_version,is_deleted=0
+                    publication_id=excluded.publication_id,publication_version=excluded.publication_version,representative_card_ids_json=excluded.representative_card_ids_json,is_deleted=0
                 WHERE account_decks.is_deleted=1
                    OR (account_decks.deck_id=excluded.deck_id AND account_decks.revision=excluded.revision-1);
                 """;
@@ -200,6 +200,7 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$copies", JsonSerializer.Serialize(deck.AlternateArtCopies));
             command.Parameters.AddWithValue("$bench", DeckBenchJson(deck));
             command.Parameters.AddWithValue("$updated", deck.UpdatedAt.ToString("O"));
+            command.Parameters.AddWithValue("$representatives", RepresentativeJson(deck.RepresentativeCardIds));
             command.Parameters.AddWithValue("$publication", (object?)deck.PublicationId ?? DBNull.Value);
             command.Parameters.AddWithValue("$version", (object?)deck.PublicationVersion ?? DBNull.Value);
             if (command.ExecuteNonQuery() != 1)
@@ -283,7 +284,7 @@ public sealed partial class L12PlatformStore
         command.Transaction = transaction;
         command.CommandText = """
             SELECT name_key,name,revision,payload_hash,alternate_art_selections_json,
-                   alternate_art_copies_json,bench_cards_json,updated_utc,publication_id,publication_version
+                   alternate_art_copies_json,bench_cards_json,updated_utc,publication_id,publication_version,representative_card_ids_json
             FROM account_decks
             WHERE account_id=$account AND deck_id=$id AND is_deleted=0;
             """;
@@ -301,6 +302,7 @@ public sealed partial class L12PlatformStore
             || reader.GetString(7) != deck.UpdatedAt.ToString("O")
             || ReadNullableString(reader, 8) != deck.PublicationId
             || ReadNullableInt(reader, 9) != deck.PublicationVersion
+            || !Equals(RepresentativeJson(deck.RepresentativeCardIds), reader.IsDBNull(10) ? DBNull.Value : reader.GetString(10))
             || reader.Read())
             throw new InvalidDataException("私人牌库对象写入引用读回校验失败");
     }

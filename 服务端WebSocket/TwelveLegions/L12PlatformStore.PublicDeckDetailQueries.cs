@@ -47,7 +47,7 @@ public sealed partial class L12PlatformStore
         command.CommandText = """
             SELECT deck.name,deck.current_version,deck.current_payload_hash,deck.owner_id,deck.public_code,
                    deck.updated_utc,content.revision,content.content_hash,content.updated_utc,
-                   EXISTS(SELECT 1 FROM published_deck_content_revisions WHERE publication_id=deck.publication_id)
+                   EXISTS(SELECT 1 FROM published_deck_content_revisions WHERE publication_id=deck.publication_id),deck.representative_card_ids_json
             FROM published_decks deck
             LEFT JOIN published_deck_content_heads content ON content.publication_id=deck.publication_id
             WHERE deck.publication_id=$id AND deck.is_deleted=0;
@@ -56,7 +56,8 @@ public sealed partial class L12PlatformStore
         using var reader = command.ExecuteReader();
         if (!reader.Read() || row.Version < 1 || reader.GetString(0) != row.Name || reader.GetInt32(1) != row.Version
             || reader.GetString(2) != row.PayloadHash || reader.GetString(3) != row.OwnerId
-            || reader.GetString(4) != row.PublicCode || DateTimeOffset.Parse(reader.GetString(5)) != row.UpdatedAt)
+            || reader.GetString(4) != row.PublicCode || DateTimeOffset.Parse(reader.GetString(5)) != row.UpdatedAt
+            || !Equals(RepresentativeJson(row.RepresentativeCardIds), reader.IsDBNull(10) ? DBNull.Value : reader.GetString(10)))
             throw new InvalidDataException("公开牌库头与已提交代际不一致");
         var revision = reader.IsDBNull(6) ? 0 : reader.GetInt32(6);
         var hash = reader.IsDBNull(7) ? null : reader.GetString(7);
@@ -125,7 +126,8 @@ public sealed partial class L12PlatformStore
             if (expectedReadToken is not null && expectedReadToken != head.Token) return new("read_conflict");
             var selected = ReadPinnedPublicDeckVersion(connection, transaction, head, head.Version)
                 ?? throw new InvalidDataException("公开牌库当前不可变版本缺失");
-            if (selected.Payload.Hash != head.Hash || selected.Name != head.Name)
+            if (selected.Payload.Hash != head.Hash || selected.Name != head.Name
+                || !Equals(RepresentativeJson(selected.RepresentativeCardIds), RepresentativeJson(row.RepresentativeCardIds)))
                 throw new InvalidDataException("公开牌库当前版本与头引用不一致");
             var runtime = ReadReferencedDeckPayload(_data, row.PayloadHash);
             if (runtime.MasterId != selected.Payload.MasterId || runtime.MainJson != selected.Payload.MainJson
@@ -141,7 +143,7 @@ public sealed partial class L12PlatformStore
             var owner = viewer?.Account.Id == row.OwnerId;
             var deck = new L12AccountDeckView(row.Name, payload.MasterId, payload.MainCards, payload.MoraleCards,
                 payload.SpecialCards, row.UpdatedAt, PublicationId: owner ? row.Id : null,
-                PublicationVersion: owner ? row.Version : null);
+                PublicationVersion: owner ? row.Version : null, RepresentativeCardIds: selected.RepresentativeCardIds);
             return new("ok", new(summary, head.Version, deck, content.Guide, content.Matchups, content.Revision,
                 content.UpdatedAt, head.Token, head.CatalogVersion, policy.Version));
         }

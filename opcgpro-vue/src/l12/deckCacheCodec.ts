@@ -22,7 +22,7 @@ const PREFIX = 'L12C1-'
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 const METADATA_KEYS = [
   'id', 'revision', 'name', 'updatedAt', 'publicationId', 'publicationVersion',
-  'alternateArtSelections', 'alternateArtCopies',
+  'alternateArtSelections', 'alternateArtCopies', 'representativeCardIds',
 ] as const
 const FIELD_KEYS = new Set<string>([
   ...METADATA_KEYS, 'masterId', 'cardIds', 'moraleIds', 'specialIds', 'benchIds',
@@ -80,6 +80,12 @@ function validateDeck(value: unknown): asserts value is SavedL12Deck {
   validateCards(value.moraleIds, DECK_CACHE_LIMITS.cardsPerSection)
   validateCards(value.specialIds, DECK_CACHE_LIMITS.cardsPerSection)
   if (value.benchIds !== undefined) validateCards(value.benchIds, DECK_CACHE_LIMITS.benchCards)
+  if (value.representativeCardIds !== undefined) {
+    validateCards(value.representativeCardIds, 3)
+    const main = new Set(value.cardIds.map(id => id.toLowerCase()))
+    const selected = value.representativeCardIds.map(id => id.toLowerCase())
+    if (selected.some(id => !id || !main.has(id)) || new Set(selected).size !== selected.length) invalid('代表卡必须是不重复的主牌')
+  }
   if (value.id !== undefined && (typeof value.id !== 'string' || value.id.length > DECK_CACHE_LIMITS.metadataBytes)) invalid('牌库身份无效')
   for (const key of ['revision', 'publicationVersion']) {
     const item = value[key]
@@ -197,7 +203,7 @@ export function decodeDeckCache(value: unknown): SavedL12Deck {
   if (reader.byte() !== 1) invalid('正文版本不受支持')
   const present = reader.varint()
   const undefinedValues = reader.varint()
-  if (present > 255 || undefinedValues > 255 || (undefinedValues & ~present) !== 0) invalid('字段标记无效')
+  if (present >= 1 << METADATA_KEYS.length || undefinedValues >= 1 << METADATA_KEYS.length || (undefinedValues & ~present) !== 0) invalid('字段标记无效')
   let metadata: unknown
   try { metadata = JSON.parse(reader.string(DECK_CACHE_LIMITS.metadataBytes)) }
   catch { invalid('元数据损坏或超出限制') }

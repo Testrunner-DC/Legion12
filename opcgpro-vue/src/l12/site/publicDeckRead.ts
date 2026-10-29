@@ -82,7 +82,7 @@ function validateDeck(value: unknown) {
   const deck = record(value)
   if (!deck) throw new Error('牌库正文无效')
   const allowed = new Set(['id', 'revision', 'publicationId', 'publicationVersion', 'name', 'masterId', 'cardIds',
-    'moraleIds', 'specialIds', 'benchIds', 'alternateArtSelections', 'alternateArtCopies', 'updatedAt'])
+    'moraleIds', 'specialIds', 'benchIds', 'alternateArtSelections', 'alternateArtCopies', 'representativeCardIds', 'updatedAt'])
   if (Object.keys(deck).some(key => !allowed.has(key)) || typeof deck.name !== 'string' || !deck.name
     || typeof deck.masterId !== 'string' || !deck.masterId || !dateText(deck.updatedAt)
     || deck.id !== undefined && typeof deck.id !== 'string'
@@ -90,7 +90,14 @@ function validateDeck(value: unknown) {
     || deck.publicationId !== undefined && deck.publicationId !== null && typeof deck.publicationId !== 'string'
     || deck.publicationVersion !== undefined && deck.publicationVersion !== null && !integer(deck.publicationVersion, 1))
     throw new Error('牌库正文无效')
-  validateStringArray(deck.cardIds, '主牌正文')
+  const main = validateStringArray(deck.cardIds, '主牌正文')
+  if (deck.representativeCardIds !== undefined) {
+    const ids = validateStringArray(deck.representativeCardIds, '代表卡')
+    const normalized = ids.map(id => id.toLowerCase())
+    const mainIds = new Set(main.map(id => id.toLowerCase()))
+    if (ids.length > 3 || new Set(normalized).size !== ids.length || normalized.some(id => !mainIds.has(id)))
+      throw new Error('代表卡无效')
+  }
   validateStringArray(deck.moraleIds, '士气正文')
   validateStringArray(deck.specialIds, '额外牌正文')
   if (deck.benchIds !== undefined && deck.benchIds !== null) validateStringArray(deck.benchIds, '备牌正文')

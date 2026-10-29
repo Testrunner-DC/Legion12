@@ -31,7 +31,7 @@ public sealed partial class L12PlatformStore
         DateTimeOffset? createdAt, DateTimeOffset? updatedAt, IReadOnlyList<L12DeckCardQuantity> main,
         IReadOnlyList<L12DeckCardQuantity> morale, IReadOnlyList<L12DeckCardQuantity> special,
         IReadOnlyList<L12DeckCardQuantity> bench, IReadOnlyDictionary<string, IReadOnlyList<string>?>? art,
-        int views, int likes, int copies, bool liked, bool canEdit)
+        int views, int likes, int copies, bool liked, bool canEdit, IReadOnlyList<string>? representatives = null)
     {
         var legal = L12DeckValidator.TryValidateCounts(catalog, new(name, masterId, main, morale, special, bench, art),
             out var reason, restrictions);
@@ -44,7 +44,7 @@ public sealed partial class L12PlatformStore
         catalog.Cards.TryGetValue(masterId, out var master);
         return new(new(id, source, name, masterId, master?.NameZh ?? masterId, master?.Faction ?? "unknown", author,
             publicCode, publicationVersion, createdAt, updatedAt, counts,
-            L12DeckCoverSelection.SelectCardIds(catalog, main), legal, legal ? null : reason, environment,
+            representatives ?? L12DeckCoverSelection.SelectCardIds(catalog, main), legal, legal ? null : reason, environment,
             views, likes, copies, liked, canEdit), cards);
     }
 
@@ -58,7 +58,7 @@ public sealed partial class L12PlatformStore
             owner is null ? "已注销玩家" : PublicUsername(owner), row.PublicCode, isOwner ? row.Version : null, row.CreatedAt, row.UpdatedAt,
             SummaryCardCounts(payload.MainJson), SummaryCardCounts(payload.MoraleJson), SummaryCardCounts(payload.SpecialJson),
             [], null, row.Views, row.LikedByAccountIds.Count, row.Copies,
-            viewerId is not null && row.LikedByAccountIds.Contains(viewerId), isOwner);
+            viewerId is not null && row.LikedByAccountIds.Contains(viewerId), isOwner, row.RepresentativeCardIds);
     }
 
     private static DeckLibraryEntry OfficialLibraryEntry(L12PresetDeckDefinition deck, L12Catalog catalog, L12OperationsPolicySnapshot policy)

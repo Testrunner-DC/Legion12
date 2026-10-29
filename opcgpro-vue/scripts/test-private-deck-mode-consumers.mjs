@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { TransactionFixtureStorage, databaseUrl, draftUrl, bindTransactionFaults } from './deck-transaction-test-fixture.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dependencyRoot = path.resolve(process.env.L12_MODE_CONSUMER_DEPENDENCY_ROOT || projectRoot)
@@ -71,7 +72,8 @@ class MemoryStorage {
   }
 }
 
-globalThis.localStorage = new MemoryStorage()
+globalThis.localStorage = new TransactionFixtureStorage()
+bindTransactionFaults(globalThis.localStorage)
 // 拒写与重试只验证牌库语义，避免继承 Node 实验性 Web Locks 的锁滞留。
 Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: {} })
 const platformState = { account: { id: 'mode-consumer-account', username: '认证玩家' }, token: 'mode-consumer-token' }
@@ -107,6 +109,7 @@ globalThis.__modeConsumerPlatform = {
   watch: platformWatch,
   getEffectiveOperationsPolicy: async () => ({ defaultPresetDeckIds: [] }),
   getDeckCoverRequestHeaders: () => ({ 'X-L12-Deck-Cover': '1' }),
+  getRepresentativeDeckRequestHeaders: () => ({ 'X-L12-Deck-Cover': '2' }),
   platformRequest: (...args) => requestHandler(...args),
 }
 
@@ -133,6 +136,8 @@ async function loadProductionDeckModule() {
   normalOpeningHandCopies,
 } from './openingHandEligibility'`
   const executable = read(sources.decks)
+    .replace("from './deckCacheDatabase'", `from '${databaseUrl}'`)
+    .replace("from './site/deckEditorDraft'", `from '${draftUrl}'`)
     .replace("from './browserStorage'", "from '" + moduleUrl(read('src/l12/browserStorage.ts')) + "'")
     .replace("from './deckCover'", "from '" + coverUrl + "'")
     .replace("import { watch } from 'vue'", 'const { watch } = globalThis.__modeConsumerPlatform')
@@ -140,10 +145,10 @@ async function loadProductionDeckModule() {
     .replace("from './deckCacheCodec'", "from '" + codecUrl + "'")
     .replace("import { normalizeLookupCardType } from './cardPresentation'", 'const normalizeLookupCardType = value => value')
     .replace(
-      "import { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
-      'const { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__modeConsumerPlatform',
+      "import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
+      'const { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__modeConsumerPlatform',
     )
-    .replace("import { deploymentPath } from './deploymentBase'", 'const deploymentPath = value => value')
+    .replace("import { deploymentPath, deploymentBasePath } from './deploymentBase'", "const deploymentPath = value => value; const deploymentBasePath = '/'")
     .replace("import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'", 'const moraleIdentityData = []')
     .replace("import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'", 'const cardProductInclusionsData = { products: [], cards: [] }')
     .replace("import cardArchiveAssetsData from '../../../服务端WebSocket/TwelveLegions/Data/card-archive-assets.json'", 'const cardArchiveAssetsData = { cards: [] }')
@@ -222,7 +227,9 @@ const deferred = () => {
   const promise = new Promise((accept, decline) => { resolve = accept; reject = decline })
   return { promise, resolve, reject }
 }
-const tick = () => new Promise(resolve => queueMicrotask(resolve))
+// Drain the actual IDB request/completion microtasks before inspecting an
+// in-flight HTTP boundary; a single pre-IDB microtask is no longer sufficient.
+const tick = () => new Promise(resolve => setImmediate(resolve))
 
 function makeSummary(overrides = {}) {
   const legal = overrides.legal ?? true
@@ -283,6 +290,8 @@ async function runAuthenticatedMount(relative) {
     maintenanceClockTimer: 0,
     window: { setInterval: () => 1, addEventListener: () => {} },
     onOperationsResource: () => {},
+    initializeDeckCache: async () => {}, loadSavedDecks: () => cachedDecks.value,
+    refreshPersistentDecks: () => {}, refreshCacheView: () => {},
     platformState,
     identityEpoch: 0,
     identityCurrent: (epoch, accountId, token) => epoch === 0 && platformState.account?.id === accountId && platformState.token === token,
@@ -315,6 +324,8 @@ async function runGuestMount(relative) {
     maintenanceClockTimer: 0,
     window: { setInterval: () => 1, addEventListener: () => {} },
     onOperationsResource: () => {}, platformState, identityEpoch: 0,
+    initializeDeckCache: async () => {}, loadSavedDecks: () => cachedDecks.value,
+    refreshPersistentDecks: () => {}, refreshCacheView: () => {},
     identityCurrent: (epoch, accountId, token) => epoch === 0 && platformState.account?.id === accountId && platformState.token === token,
     ensureOfficialPrebuiltDecks: async () => { officialCalls++; return { [official.name]: official } },
     loadDeckCatalog: async () => [], catalog, cachedDecks, decks: ref({}), ranked,
@@ -456,6 +467,7 @@ function createBattleMatchHarness(deckModule, scope = 'ranked', { matchmakingOnl
     operationsAllowed: () => true, ensureConnected: async () => true,
     deckSelectorOpen: ref(false), deckSelectorConfirming: ref(false), deckSelectorError: ref(''),
     visibleDecks: () => cachedDecks.value, hydrateDeckSelections: () => {}, refreshGuestDecks: async () => {},
+    initializeDeckCache: async () => {}, loadSavedDecks: () => cachedDecks.value,
     joinMatchmaking: (mode, deck) => joins.push({ mode, deck }),
   })
   return { runtime, refs: { selectedDecks, selectionMessages, selectedMatchMode, modeActionPending }, selection, joins, validationCalls, l12State, rule }
@@ -1202,11 +1214,10 @@ async function main() {
     const selectedDecks = ref(emptySelectionMap())
     const selectionMessages = ref(emptyMessageMap())
     const runtime = createRuntime(`
-      ${functionText(sources.battle, 'selectionStorageBase')}
       ${functionText(sources.battle, 'hasStoredSelection')}
       ${functionText(sources.battle, 'hydrateDeckSelections')}
       return { hydrateDeckSelections }
-    `, { platformState, SELECTED_DECK_KEY: deckModule.SELECTED_DECK_KEY,
+    `, { platformState, hasSavedDeckSelection: deckModule.hasSavedDeckSelection,
       L12_DECK_SELECTION_SCOPES: deckModule.L12_DECK_SELECTION_SCOPES,
       loadSelectedDeckName: () => '', cachedDecks, selectedDeckNames, selectedDecks, selectionMessages })
     runtime.hydrateDeckSelections()

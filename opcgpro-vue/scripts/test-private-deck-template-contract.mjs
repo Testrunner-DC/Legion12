@@ -6,6 +6,14 @@ const editor = read('../src/l12/L12DeckEditor.vue'), selector = read('../src/l12
 let checks = 0
 const check = (value, expected, name) => { assert.equal(value, expected, name); checks++ }
 check(privateEditorSavedPanelsContract(editor), true, 'actual editor panel bindings')
+for (const [before, after] of [
+  ['aria-label="选择待恢复草稿"', 'aria-label="选择牌库"'],
+  ['v-model="selectedDraftSlot"', 'v-model="activeDeckId"'],
+  ['v-if="draftEntries.length > 1"', 'v-if="true"'],
+  ['item in draftEntries', 'deck in savedDirectoryDecks'],
+  [':value="item.slot"', ':value="item.draft.deck.id"'],
+]) check(privateEditorSavedPanelsContract(editor.replaceAll(before, after)), false, `topbar rejects non-draft selector ${after}`)
+check(privateEditorSavedPanelsContract(editor.replace('<header class="deck-builder-topbar">', '<header class="deck-builder-topbar"><select aria-label="选择牌库"/>')), false, 'topbar saved-deck dropdown remains forbidden')
 check(privateEditorSavedPanelsContract(editor.replace('saved-decks-panel grand-panel', 'grand-panel added-state saved-decks-panel')), true, 'class order and extra state are irrelevant')
 check(privateEditorSavedPanelsContract(editor.replaceAll('deck.id ? deck.id === activeDeckId : deck.name === activeDeckName', '(deck.id ? deck.id === activeDeckId : deck.name === activeDeckName)')), true, 'parentheses preserve identity selection')
 for (const [before, after] of [['chooseMobileSavedDeck(deck)', 'requestNewDeck()'], ['requestLoadDeck(deck)', 'requestDelete(deck)'],

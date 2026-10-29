@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cancelMatchmaking, connect, createRoom, joinMatchmaking, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, updateRoomOptions, type RoomOptions } from '@/l12/net'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, L12_DECK_SELECTION_SCOPES, loadDeckCatalog, loadPrivateDeckBody,
-  loadSavedDecksState, deckErrorBelongsToCurrentAccount, loadSelectedDeckName, saveSelectedDeckName, SELECTED_DECK_KEY,
+  loadSavedDecksState, initializeDeckCache, loadSavedDecks, hasSavedDeckSelection, deckErrorBelongsToCurrentAccount, loadSelectedDeckName, saveSelectedDeckName,
   validateDeck, type DeckCard, type L12DeckSelectionScope, type PrivateDeckSummary, type SavedL12Deck } from '@/l12/decks'
 import DeckCover from '@/l12/DeckCover.vue'
 import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'
@@ -141,13 +141,8 @@ const selectorRestrictions = computed(() => restrictionsForScope(deckSelectorSco
 const selectorLoading = computed(() => !catalog.value.length
   || (scopeNeedsPolicy(deckSelectorScope.value) && !operationsPolicy.value))
 
-function selectionStorageBase() {
-  return platformState.account?.id ? `${SELECTED_DECK_KEY}:${platformState.account.id}` : SELECTED_DECK_KEY
-}
 function hasStoredSelection(scope: L12DeckSelectionScope) {
-  const base = selectionStorageBase()
-  try { return Boolean(localStorage.getItem(`${base}:${scope}`) || localStorage.getItem(base)) }
-  catch { return false }
+  return hasSavedDeckSelection(scope)
 }
 function hydrateDeckSelections() {
   L12_DECK_SELECTION_SCOPES.forEach(scope => {
@@ -289,7 +284,7 @@ async function confirmDeckSelection(candidate: DeckSelectionCandidate) {
       ? '正在加载当前模式规则'
       : validateDeck(deck, catalog.value, restrictionsForScope(scope))
     if (invalid) { deckSelectorError.value = invalid; return }
-    saveSelectedDeckName(scope, deck.name)
+    await saveSelectedDeckName(scope, deck.name)
     if (!current()) return
     const selection = cachedSelection(deck, 'counts' in candidate ? candidate : undefined)
     const nextCache = { ...cachedDecks.value }
@@ -423,16 +418,24 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([account
   try { hydrateDeckSelections() }
   catch (error) { l12State.notice = error instanceof Error ? error.message : '牌库选择暂不可读取' }
   if (!accountId && !token) void refreshGuestDecks(identityEpoch, accountId, token)
+  else {
+    const epoch = identityEpoch
+    void initializeDeckCache().then(() => { if (identityCurrent(epoch, accountId, token)) { cachedDecks.value = loadSavedDecks(); hydrateDeckSelections() } })
+      .catch(error => { if (identityCurrent(epoch, accountId, token)) l12State.notice = error.message })
+  }
 }, { flush: 'sync' })
+function refreshPersistentDecks() { cachedDecks.value = visibleDecks(); hydrateDeckSelections() }
+onBeforeUnmount(() => window.removeEventListener('l12-deck-cache-changed', refreshPersistentDecks))
 
 onMounted(async () => {
+  window.addEventListener('l12-deck-cache-changed', refreshPersistentDecks)
   maintenanceClockTimer = window.setInterval(() => { policyNow.value = Date.now() }, 1_000)
   window.addEventListener('l12-resource-operationsPolicy', onOperationsResource)
   const epoch = identityEpoch
   const account = platformState.account?.id, token = platformState.token
   try {
     const [decks, cards] = await Promise.all([
-      account && token ? Promise.resolve(cachedDecks.value) : ensureOfficialPrebuiltDecks(),
+      account && token ? initializeDeckCache().then(() => loadSavedDecks()) : ensureOfficialPrebuiltDecks(),
       loadDeckCatalog(),
     ])
     if (identityCurrent(epoch, account, token)) {

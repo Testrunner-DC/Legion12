@@ -1,3 +1,4 @@
+using SchemaContract = TwelveLegions.Platform.Tests.PlatformSchemaTestContract;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
@@ -138,7 +139,7 @@ public sealed class TournamentReputationFoundationTests
             command.ExecuteNonQuery();
         }
         var restored = new L12PlatformStore(f.Path);
-        Assert.Equal(11, restored.StorageStatus().SchemaVersion);
+        Assert.Equal(SchemaContract.Current, restored.StorageStatus().SchemaVersion);
         Assert.Equal(snapshot, Scalar("SELECT snapshot_json FROM platform_state WHERE singleton_id=1"));
         Assert.Equal(0, restored.TournamentCheckInFacts(f.Admin, Assert.Single(imported.Tournaments).Id).RuleVersion);
     }

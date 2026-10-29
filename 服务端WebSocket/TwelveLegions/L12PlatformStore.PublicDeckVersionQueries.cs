@@ -38,7 +38,7 @@ public sealed record L12PublicDeckVersionReadResult(string Status, L12PublicDeck
 
 public sealed partial class L12PlatformStore
 {
-    private sealed record PinnedPublicDeckVersion(int Version, string Name, NormalizedDeckPayload Payload, DateTimeOffset CreatedAt);
+    private sealed record PinnedPublicDeckVersion(int Version, string Name, NormalizedDeckPayload Payload, DateTimeOffset CreatedAt, IReadOnlyList<string>? RepresentativeCardIds);
 
     private static PinnedPublicDeckVersion? ReadPinnedPublicDeckVersion(SqliteConnection connection,
         SqliteTransaction transaction, PublicDeckReadHead head, int version)
@@ -47,7 +47,7 @@ public sealed partial class L12PlatformStore
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT version.name,version.payload_hash,version.created_utc,payload.master_id,payload.payload_format,payload.payload_json
+            SELECT version.name,version.payload_hash,version.created_utc,payload.master_id,payload.payload_format,payload.payload_json,version.representative_card_ids_json
             FROM published_deck_versions version
             LEFT JOIN deck_payloads payload ON payload.payload_hash=version.payload_hash
             WHERE version.publication_id=$id AND version.version=$version AND version.version<=$head;
@@ -66,7 +66,7 @@ public sealed partial class L12PlatformStore
         var decoded = L12DeckPayloadCodec.Decode(reader.GetInt32(4), reader.GetString(5));
         L12DeckPayloadCodec.ValidateHash(hash, master, decoded);
         return new(version, name, new(hash, master, decoded.MainJson, decoded.MoraleJson, decoded.SpecialJson, [], [], []),
-            DateTimeOffset.Parse(reader.GetString(2)));
+            DateTimeOffset.Parse(reader.GetString(2)), ReadRepresentativeJson(reader, 6));
     }
 
     private static PinnedPublicDeckVersion? ReadPreviousPinnedPublicDeckVersion(SqliteConnection connection,
@@ -187,7 +187,7 @@ public sealed partial class L12PlatformStore
             var owner = viewer?.Account.Id == row.OwnerId;
             var deck = new L12AccountDeckView(selected.Name, payload.MasterId, payload.MainCards, payload.MoraleCards,
                 payload.SpecialCards, selected.CreatedAt, PublicationId: owner ? row.Id : null,
-                PublicationVersion: owner ? version : null);
+                PublicationVersion: owner ? version : null, RepresentativeCardIds: selected.RepresentativeCardIds);
             return new("ok", new(row.Id, row.PublicCode, metadata, deck, head.Token, head.CatalogVersion, policy.Version, owner));
         }
     }

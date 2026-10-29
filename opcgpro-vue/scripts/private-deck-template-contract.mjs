@@ -64,8 +64,16 @@ export function privateEditorSavedPanelsContract(source) {
     && parsed.parents.get(node).some(parent => has(parent, 'deck-side-column')))
   const mobile = parsed.nodes.find(node => has(node, 'mobile-saved-decks-dialog') && attr(node, 'role') === 'dialog'
     && attr(node, 'aria-modal') === 'true' && parsed.parents.get(node).some(parent => has(parent, 'mobile-saved-decks-mask')))
+  const allowedDraftSelector = node => attr(node, 'aria-label') === '选择待恢复草稿'
+    && equal(directive(node, 'model'), 'selectedDraftSlot')
+    && equal(directive(node, 'if'), 'draftEntries.length > 1')
+    && parsed.parents.get(node).some(parent => has(parent, 'secondary-actions'))
+    && descendants(parsed, node).some(option => option.tag === 'option'
+      && equal(directive(option, 'for'), 'item in draftEntries')
+      && equal(directive(option, 'bind', 'value'), 'item.slot'))
   if (!desktop || !mobile || parsed.nodes.some(node => node.tag === 'select'
-    && parsed.parents.get(node).some(parent => has(parent, 'deck-builder-topbar')))) return false
+    && parsed.parents.get(node).some(parent => has(parent, 'deck-builder-topbar'))
+    && !allowedDraftSelector(node))) return false
   const selected = 'deck.id ? deck.id === activeDeckId : deck.name === activeDeckName'
   const desktopNodes = descendants(parsed, desktop), mobileNodes = descendants(parsed, mobile)
   const row = desktopNodes.find(node => node.tag === 'article' && equal(directive(node, 'for'), 'deck in savedDirectoryDecks'))

@@ -786,7 +786,7 @@ const contracts = [
     && !homeRevisitActions.includes('loadSavedDecks') && !homeRevisitActions.includes('loadPrivateDeck'), '首页回访区只在权威续局成立时显示继续对局/观战，不得读取牌库或恢复我的牌库、我的赛事快捷入口'],
   [mainEntry.includes('initializeAuth()') && mainEntry.includes('await Promise.race([') && mainEntry.includes('window.setTimeout(resolve, 3_000)') && mainEntry.indexOf('initializeAuth()') < mainEntry.indexOf("mount('#app')"), '应用挂载前必须有界等待权威身份初始化，认证服务不可达时也不能让公共站点无限白屏'],
   [l12Net.includes('scheduleReconnect') && l12Net.includes('connectPromise') && l12Net.includes("type: 'ping'") && l12Net.includes("location.protocol === 'https:'"), 'WebSocket 必须防止并发建连、支持断线退避重连和正式站同源选址'],
-  [decks.includes("platformRequest<SavedL12Deck[]>('/api/decks')") && decks.includes("method: 'PUT'") && decks.includes("method: 'DELETE'"), '玩家牌库必须与账号服务端持久化同步'],
+  [decks.includes("platformRequest<SavedL12Deck[]>('/api/decks', { headers: getRepresentativeDeckRequestHeaders() })") && decks.includes("method: 'PUT'") && decks.includes("method: 'DELETE'"), '玩家牌库必须与账号服务端持久化同步'],
   [lobby.includes('copyRoomCode') && lobby.includes('复制房间码'), '友谊战整备室必须保留房间码复制按钮'],
   [lobby.includes('isRoomHost') && lobby.includes('updateRoomOptions(editableRoomOptions.value)') && lobby.includes('保存房间规则') && l12Net.includes("type: 'updateRoomOptions'") && friendChallengeNotifications.includes('l12State.friendInvitation = null\n  resolveFriendInvitation(invitation.invitationId, accept)'), '好友邀请接受后必须立即关闭邀请层并进入整备室，且仅房主可在开战前调整房间规则'],
   [lobby.includes('v-model="roomOptions.useCardRestrictions"') && lobby.includes('不启用运营禁限卡') && lobby.includes('启用运营禁限卡') && !lobby.includes('v-model="roomOptions.matchModeId"') && lobby.includes('<option value="season">赛季天灾'), '好友房必须以是否启用运营禁限卡取代排位/休闲模式，并可选择赛季天灾快照'],
@@ -1017,9 +1017,12 @@ const contracts = [
   [decks.includes("'ranked', 'casual', 'friendly', 'sandbox-player', 'sandbox-opponent'")
     && decks.includes('scopedSelectedDeckStorageKey(scope)') && decks.includes('saveSelectedDeckName')
     && decks.includes('L12_DECK_SELECTION_SCOPES.map(scope =>')
-    && decks.includes('interpretDeckSelection(snapshot, key, raw)')
+    && decks.includes('interpretDeckSelection(previous, key, raw)')
     && decks.includes('migrateDeckSelectionReferences(context, previous, decks)')
-    && decks.includes('commitDeckCache(localStorage, context.storageKey, previous, decks, activity, aliases'), '当前牌库必须按排位、休闲、好友房及沙盒双方隔离持久化，删除后的选择须与缓存单次提交一同逻辑失效（行为由test-deck-sync-authority覆盖）'],
+    && decks.includes('deckCacheDatabase.update(context.scope, null, state =>')
+    && decks.includes('scope: deckDatabaseScope(deploymentBasePath, deckCacheOwner(accountId))')
+    && decks.includes('commitDeckCache({ getItem: () => state.cacheRaw, setItem: (_key, raw) => { state.cacheRaw = raw } }, context.storageKey, previous, decks, activity, aliases')
+    && !decks.includes('commitDeckCache(localStorage,'), '当前牌库必须按排位、休闲、好友房及沙盒双方隔离持久化，删除后的选择须与缓存单次提交一同逻辑失效（行为由test-deck-sync-authority覆盖）'],
   [lobby.includes("import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'")
     && lobby.includes("scope === 'ranked'") && lobby.includes("scope === 'friendly' && friendlyUsesRestrictions()")
     && lobby.includes("const tab = ref<'match' | 'friendly' | 'tutorial'>('match')")

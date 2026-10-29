@@ -18,6 +18,7 @@ public static class L12DeckValidator
         IReadOnlyList<L12CardRestrictionConfig>? cardRestrictions = null)
         => TryValidate(catalog, new L12CustomDeckSubmission
         {
+            RepresentativeCardIds = preset.RepresentativeCardIds?.ToList(),
             Name = preset.Name,
             MasterId = preset.MasterId,
             CardIds = preset.CardIds.ToList(),
@@ -42,9 +43,17 @@ public static class L12DeckValidator
                 CountCards(submission.BenchIds), (submission.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
                     item => (IReadOnlyList<string>?)item.Value)),
                 out error, cardRestrictions)) return false;
+        if (submission.RepresentativeCardIds is { } representatives)
+        {
+            var main = submission.CardIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (representatives.Count > 3 || representatives.Any(id => string.IsNullOrWhiteSpace(id) || !main.Contains(id.Trim()))
+                || representatives.Select(id => id.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != representatives.Count)
+            { error = "代表卡必须是主牌库中不重复的最多三张卡"; return false; }
+        }
         deck = new L12PresetDeckDefinition
         {
             PublicationId = submission.PublicationId, PublicationVersion = submission.PublicationVersion,
+            RepresentativeCardIds = submission.RepresentativeCardIds?.Select(id => submission.CardIds.First(card => string.Equals(card, id.Trim(), StringComparison.OrdinalIgnoreCase))).ToList(),
             Name = submission.Name.Trim(), MasterId = catalog.Cards[submission.MasterId].Id,
             CardIds = submission.CardIds.ToList(),
             MoraleIds = submission.MoraleIds.Select(catalog.MoraleIdentities.CanonicalDeckCardId).ToList(),

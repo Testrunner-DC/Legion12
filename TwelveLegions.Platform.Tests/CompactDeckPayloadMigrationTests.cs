@@ -1,3 +1,4 @@
+using SchemaContract = TwelveLegions.Platform.Tests.PlatformSchemaTestContract;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
@@ -79,8 +80,8 @@ public sealed class CompactDeckPayloadMigrationTests
             var restoredTournament = migrated.Tournament(ownerSession.Account, fixture.TournamentId)!;
             Assert.Equal(new[] { "C00" }, Assert.Single(restoredTournament.Participants).Deck!.CardIds.ToArray());
             using var current = Open(migrated.TransactionalStoragePath);
-            Assert.Equal("11", Scalar(current, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-            Assert.Equal("11", Scalar(current, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+            Assert.Equal(SchemaContract.Current.ToString(), Scalar(current, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+            Assert.Equal(SchemaContract.Current.ToString(), Scalar(current, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
             Assert.Equal("compact-v1", Scalar(current,
                 "SELECT value FROM storage_meta WHERE key='deck_payload_format_state';"));
             Assert.Contains("payload_format", PayloadColumns(current));
@@ -211,7 +212,7 @@ public sealed class CompactDeckPayloadMigrationTests
             using (var connection = Open(store.TransactionalStoragePath))
             {
                 Execute(connection, damage == "future-schema"
-                    ? "UPDATE storage_meta SET value='12' WHERE key='schema_version'; UPDATE platform_state SET schema_version=12 WHERE singleton_id=1;"
+                    ? $"UPDATE storage_meta SET value='{SchemaContract.Unsupported}' WHERE key='schema_version'; UPDATE platform_state SET schema_version={SchemaContract.Unsupported} WHERE singleton_id=1;"
                     : "UPDATE deck_payloads SET payload_format=99;");
             }
             var before = FullDatabaseProjection(store.TransactionalStoragePath);

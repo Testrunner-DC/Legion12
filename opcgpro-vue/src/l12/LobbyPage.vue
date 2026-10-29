@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, selectCustomDeck, selectDeck, setReady } from './net'
-import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, type DeckCard, type OfficialL12PresetDeck, type SavedL12Deck } from './decks'
+import { deckCountSummary, ensureOfficialPrebuiltDecks, initializeDeckCache, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, type DeckCard, type OfficialL12PresetDeck, type SavedL12Deck } from './decks'
 import CardArchive from './CardArchive.vue'
 import MatchRecords from './MatchRecords.vue'
 import { platformState } from './platform'
@@ -16,7 +16,14 @@ function visibleDecks(): Record<string, SavedL12Deck> {
   return snapshot.decks
 }
 const customDecks = ref(visibleDecks())
-watch(() => [platformState.account?.id, platformState.token], () => { customDecks.value = visibleDecks() }, { flush: 'sync' })
+watch(() => [platformState.account?.id, platformState.token], ([account, token]) => {
+  customDecks.value = {}
+  void initializeDeckCache().then(() => {
+    if (account === platformState.account?.id && token === platformState.token) customDecks.value = visibleDecks()
+  }).catch(error => { if (account === platformState.account?.id && token === platformState.token) l12State.notice = error.message })
+}, { flush: 'sync' })
+function refreshDeckCacheView() { customDecks.value = visibleDecks() }
+onBeforeUnmount(() => window.removeEventListener('l12-deck-cache-changed', refreshDeckCacheView))
 const catalog = ref<DeckCard[]>([])
 const officialDecks = ref<OfficialL12PresetDeck[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
@@ -24,6 +31,7 @@ const view = ref<'home' | 'room' | 'cards' | 'replay'>('home')
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
 
 onMounted(async () => {
+  window.addEventListener('l12-deck-cache-changed', refreshDeckCacheView)
   const account = platformState.account?.id, token = platformState.token
   try {
     const [decks, , presets] = await Promise.all([ensureOfficialPrebuiltDecks(),

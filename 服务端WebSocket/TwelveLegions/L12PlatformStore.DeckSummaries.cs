@@ -36,6 +36,6 @@ public sealed partial class L12PlatformStore
         return new(row.Id, row.Revision, row.Name, row.MasterId, row.UpdatedAt, row.PublicationId, row.PublicationVersion,
             new(L12DeckValidator.CountCards(main) - uncounted, uncounted, L12DeckValidator.CountCards(morale),
                 L12DeckValidator.CountCards(special), L12DeckValidator.CountCards(bench)),
-            includeCover ? L12DeckCoverSelection.SelectCardIds(catalog, main) : null, legal, legal ? null : reason);
+            includeCover ? row.RepresentativeCardIds?.ToArray() ?? L12DeckCoverSelection.SelectCardIds(catalog, main) : null, legal, legal ? null : reason);
     }
 }

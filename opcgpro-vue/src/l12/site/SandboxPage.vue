@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { connect, createSandbox, l12State } from '@/l12/net'
 import { ensureOfficialPrebuiltDecks, deckErrorBelongsToCurrentAccount, loadSavedDecksState, loadDeckCatalog, loadPrivateDeckBody,
-  loadSelectedDeckName, saveSelectedDeckName, SELECTED_DECK_KEY, validateDeck, type DeckCard, type L12DeckSelectionScope,
+  loadSelectedDeckName, saveSelectedDeckName, initializeDeckCache, loadSavedDecks, hasSavedDeckSelection, validateDeck, type DeckCard, type L12DeckSelectionScope,
   type PrivateDeckSummary, type SavedL12Deck } from '@/l12/decks'
 import { authState, platformState } from '@/l12/platform'
 import DeckCover from '@/l12/DeckCover.vue'
@@ -46,13 +46,8 @@ let createActionEpoch = 0
 function identityCurrent(epoch: number, accountId: string | undefined, token: string) {
   return componentAlive && identityEpoch === epoch && platformState.account?.id === accountId && platformState.token === token
 }
-function selectionStorageBase() {
-  return platformState.account?.id ? `${SELECTED_DECK_KEY}:${platformState.account.id}` : SELECTED_DECK_KEY
-}
 function hasStoredSelection(scope: SandboxScope) {
-  const base = selectionStorageBase()
-  try { return Boolean(localStorage.getItem(`${base}:${scope}`) || localStorage.getItem(base)) }
-  catch { return false }
+  return hasSavedDeckSelection(scope)
 }
 function selectionCurrent(scope: SandboxScope, id: string, revision: number) {
   const selection = selectedDecks.value[scope]
@@ -132,14 +127,21 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([account
   creating.value = false
   refreshCacheView()
   if (!accountId && !token) void refreshGuestDecks(identityEpoch, accountId, token)
+  else {
+    const epoch = identityEpoch
+    void initializeDeckCache().then(() => { if (identityCurrent(epoch, accountId, token)) refreshCacheView() })
+      .catch(error => { if (identityCurrent(epoch, accountId, token)) l12State.notice = error.message })
+  }
 }, { flush: 'sync' })
+onBeforeUnmount(() => window.removeEventListener('l12-deck-cache-changed', refreshCacheView))
 
 onMounted(async () => {
+  window.addEventListener('l12-deck-cache-changed', refreshCacheView)
   const epoch = identityEpoch
   const account = platformState.account?.id, token = platformState.token
   try {
     const [savedDecks, cards] = await Promise.all([
-      account && token ? Promise.resolve(cachedDecks.value) : ensureOfficialPrebuiltDecks(),
+      account && token ? initializeDeckCache().then(() => loadSavedDecks()) : ensureOfficialPrebuiltDecks(),
       loadDeckCatalog(),
     ])
     if (!identityCurrent(epoch, account, token)) return
@@ -185,7 +187,7 @@ async function confirmDeckSelection(candidate: DeckSelectionCandidate) {
     if (deck.id !== id || deck.revision !== revision) throw new Error('服务器返回了不同的牌库身份或修订，请重新选择')
     const invalid = !catalog.value.length ? '正在加载沙盒构筑规则' : validateDeck(deck, catalog.value)
     if (invalid) { selectorError.value = invalid; return }
-    saveSelectedDeckName(scope, deck.name)
+    await saveSelectedDeckName(scope, deck.name)
     if (!current()) return
     const nextCache = { ...cachedDecks.value }
     Object.keys(nextCache).filter(name => nextCache[name]?.id === deck.id).forEach(name => delete nextCache[name])

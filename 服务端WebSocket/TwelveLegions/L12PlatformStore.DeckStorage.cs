@@ -151,6 +151,39 @@ public sealed partial class L12PlatformStore
         identityIndexes.ExecuteNonQuery();
     }
 
+    private static void InitializeRepresentativeSchema(SqliteConnection connection)
+    {
+        var version = ReadExistingStorageSchemaVersion(connection);
+        if (version == PlatformStorageSchemaVersion) return;
+        if (version != 11) throw new L12PlatformStorageIncompatibleException("代表卡元数据迁移需要完整 schema 11 数据库");
+        using var transaction = connection.BeginTransaction(deferred: false);
+        if (ReadSnapshot(connection, transaction) is { } stored)
+            DeserializeDataAndValidate(ValidateSnapshot(stored));
+        foreach (var table in new[] { "account_decks", "published_decks", "published_deck_versions" })
+        {
+            var exists = false;
+            using (var query = connection.CreateCommand())
+            {
+                query.Transaction = transaction;
+                query.CommandText = $"PRAGMA table_info({table});";
+                using var reader = query.ExecuteReader();
+                while (reader.Read())
+                {
+                    if (!string.Equals(reader.GetString(1), "representative_card_ids_json", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!string.Equals(reader.GetString(2), "TEXT", StringComparison.OrdinalIgnoreCase) || reader.GetInt32(3) != 0)
+                        throw new InvalidDataException("代表卡元数据字段格式不兼容");
+                    exists = true;
+                }
+            }
+            if (exists) continue;
+            using var alter = connection.CreateCommand();
+            alter.Transaction = transaction;
+            alter.CommandText = $"ALTER TABLE {table} ADD COLUMN representative_card_ids_json TEXT;";
+            alter.ExecuteNonQuery();
+        }
+        SetStorageSchemaVersion(connection, transaction, PlatformStorageSchemaVersion);
+        transaction.Commit();
+    }
     private static void EnsureDeckColumn(SqliteConnection connection, string table, string column, string declaration)
     {
         using var query = connection.CreateCommand();
@@ -493,15 +526,15 @@ public sealed partial class L12PlatformStore
             command.CommandText = """
                 INSERT INTO account_decks(account_id,name_key,name,deck_id,revision,payload_hash,
                     alternate_art_selections_json,alternate_art_copies_json,bench_cards_json,updated_utc,is_deleted,
-                    publication_id,publication_version)
-                VALUES($account,$key,$name,$id,$revision,$payload,$selections,$copies,$bench,$updated,0,$publication,$version)
+                    publication_id,publication_version,representative_card_ids_json)
+                VALUES($account,$key,$name,$id,$revision,$payload,$selections,$copies,$bench,$updated,0,$publication,$version,$representatives)
                 ON CONFLICT(account_id,name_key) DO UPDATE SET
                     name=excluded.name,deck_id=excluded.deck_id,revision=excluded.revision,
                     payload_hash=excluded.payload_hash,
                     alternate_art_selections_json=excluded.alternate_art_selections_json,
                     alternate_art_copies_json=excluded.alternate_art_copies_json,
                     bench_cards_json=excluded.bench_cards_json,updated_utc=excluded.updated_utc,
-                    publication_id=excluded.publication_id,publication_version=excluded.publication_version,is_deleted=0;
+                    publication_id=excluded.publication_id,publication_version=excluded.publication_version,representative_card_ids_json=excluded.representative_card_ids_json,is_deleted=0;
                 """;
             command.Parameters.AddWithValue("$account", deck.AccountId);
             command.Parameters.AddWithValue("$key", DeckNameKey(deck.Name));
@@ -512,6 +545,7 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
             command.Parameters.AddWithValue("$copies", JsonSerializer.Serialize(deck.AlternateArtCopies));
             command.Parameters.AddWithValue("$bench", DeckBenchJson(deck));
+            command.Parameters.AddWithValue("$representatives", RepresentativeJson(deck.RepresentativeCardIds));
             command.Parameters.AddWithValue("$publication", (object?)deck.PublicationId ?? DBNull.Value);
             command.Parameters.AddWithValue("$version", (object?)deck.PublicationVersion ?? DBNull.Value);
             command.Parameters.AddWithValue("$updated", deck.UpdatedAt.ToString("O"));
@@ -521,18 +555,18 @@ public sealed partial class L12PlatformStore
         foreach (var deck in data.PublishedDecks)
         {
             var payloadHash = PersistReferencedPayload(CaptureDeckPayload(data, deck), deck.CreatedAt);
-            var version = CurrentPublishedDeckVersion(connection, transaction, deck.Id, payloadHash, deck.Name);
+            var version = CurrentPublishedDeckVersion(connection, transaction, deck.Id, payloadHash, deck.Name, deck.RepresentativeCardIds);
             deck.Version = version;
             using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
                 command.CommandText = """
                     INSERT INTO published_decks(publication_id,public_code,owner_id,name,current_version,current_payload_hash,
-                        alternate_art_selections_json,alternate_art_copies_json,views,copies,created_utc,updated_utc,is_deleted)
-                    VALUES($id,$code,$owner,$name,$version,$payload,$selections,$artCopies,$views,$copies,$created,$updated,0)
+                        alternate_art_selections_json,alternate_art_copies_json,views,copies,created_utc,updated_utc,is_deleted,representative_card_ids_json)
+                    VALUES($id,$code,$owner,$name,$version,$payload,$selections,$artCopies,$views,$copies,$created,$updated,0,$representatives)
                     ON CONFLICT(publication_id) DO UPDATE SET
                         public_code=excluded.public_code,owner_id=excluded.owner_id,name=excluded.name,current_version=excluded.current_version,
-                        current_payload_hash=excluded.current_payload_hash,
+                        current_payload_hash=excluded.current_payload_hash,representative_card_ids_json=excluded.representative_card_ids_json,
                         alternate_art_selections_json=excluded.alternate_art_selections_json,
                         alternate_art_copies_json=excluded.alternate_art_copies_json,
                         views=excluded.views,copies=excluded.copies,
@@ -546,6 +580,7 @@ public sealed partial class L12PlatformStore
                 command.Parameters.AddWithValue("$payload", payloadHash);
                 command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
                 command.Parameters.AddWithValue("$artCopies", JsonSerializer.Serialize(deck.AlternateArtCopies));
+                command.Parameters.AddWithValue("$representatives", RepresentativeJson(deck.RepresentativeCardIds));
                 command.Parameters.AddWithValue("$views", Math.Max(0, deck.Views));
                 command.Parameters.AddWithValue("$copies", Math.Max(0, deck.Copies));
                 command.Parameters.AddWithValue("$created", deck.CreatedAt.ToString("O"));
@@ -556,13 +591,14 @@ public sealed partial class L12PlatformStore
             {
                 versionCommand.Transaction = transaction;
                 versionCommand.CommandText = """
-                    INSERT OR IGNORE INTO published_deck_versions(publication_id,version,payload_hash,name,created_utc)
-                    VALUES($id,$version,$payload,$name,$created);
+                    INSERT OR IGNORE INTO published_deck_versions(publication_id,version,payload_hash,name,created_utc,representative_card_ids_json)
+                    VALUES($id,$version,$payload,$name,$created,$representatives);
                     """;
                 versionCommand.Parameters.AddWithValue("$id", deck.Id);
                 versionCommand.Parameters.AddWithValue("$version", version);
                 versionCommand.Parameters.AddWithValue("$payload", payloadHash);
                 versionCommand.Parameters.AddWithValue("$name", deck.Name);
+                versionCommand.Parameters.AddWithValue("$representatives", RepresentativeJson(deck.RepresentativeCardIds));
                 versionCommand.Parameters.AddWithValue("$created", deck.UpdatedAt.ToString("O"));
                 versionCommand.ExecuteNonQuery();
             }
@@ -732,12 +768,12 @@ public sealed partial class L12PlatformStore
     }
 
     private static int CurrentPublishedDeckVersion(SqliteConnection connection, SqliteTransaction transaction,
-        string publicationId, string payloadHash, string name)
+        string publicationId, string payloadHash, string name, List<string>? representatives)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT current_version,current_payload_hash,name FROM published_decks WHERE publication_id=$id;
+            SELECT current_version,current_payload_hash,name,representative_card_ids_json FROM published_decks WHERE publication_id=$id;
             """;
         command.Parameters.AddWithValue("$id", publicationId);
         using var reader = command.ExecuteReader();
@@ -745,7 +781,22 @@ public sealed partial class L12PlatformStore
         var current = reader.GetInt32(0);
         return string.Equals(reader.GetString(1), payloadHash, StringComparison.Ordinal)
                && string.Equals(reader.GetString(2), name, StringComparison.Ordinal)
+               && Equals(RepresentativeJson(representatives), reader.IsDBNull(3) ? DBNull.Value : reader.GetString(3))
             ? current : current + 1;
+    }
+
+    private static object RepresentativeJson(IReadOnlyList<string>? ids)
+        => ids is null || ids.Count == 0 ? DBNull.Value : JsonSerializer.Serialize(ids);
+
+    private static List<string>? ReadRepresentativeJson(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal)) return null;
+        var ids = JsonSerializer.Deserialize<List<string>>(reader.GetString(ordinal))
+            ?? throw new InvalidDataException("代表卡元数据无效");
+        if (ids.Count is < 1 or > 3 || ids.Any(string.IsNullOrWhiteSpace)
+            || ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != ids.Count)
+            throw new InvalidDataException("代表卡元数据无效");
+        return ids;
     }
 
     private static string DeckNameKey(string value) => (value ?? string.Empty).Trim().ToUpperInvariant();
@@ -762,7 +813,7 @@ public sealed partial class L12PlatformStore
             command.CommandText = """
                 SELECT account_id,name,payload_hash,alternate_art_selections_json,
                        alternate_art_copies_json,bench_cards_json,updated_utc,publication_id,publication_version,
-                       deck_id,revision
+                       deck_id,revision,representative_card_ids_json
                 FROM account_decks WHERE is_deleted=0 ORDER BY updated_utc DESC;
                 """;
             using var reader = command.ExecuteReader();
@@ -774,6 +825,7 @@ public sealed partial class L12PlatformStore
                 {
                     Id = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
                     Revision = reader.IsDBNull(10) ? 1 : Math.Max(1, reader.GetInt64(10)),
+                    RepresentativeCardIds = ReadRepresentativeJson(reader, 11),
                     AccountId = reader.GetString(0), Name = reader.GetString(1), MasterId = payload.MasterId,
                     PayloadHash = reader.GetString(2),
                     AlternateArtSelections = DeserializeDictionary(reader.GetString(3)),
@@ -806,7 +858,7 @@ public sealed partial class L12PlatformStore
             command.CommandText = """
                 SELECT publication_id,public_code,owner_id,name,current_payload_hash,
                        alternate_art_selections_json,alternate_art_copies_json,
-                       views,copies,created_utc,updated_utc,current_version
+                       views,copies,created_utc,updated_utc,current_version,representative_card_ids_json
                 FROM published_decks WHERE is_deleted=0 ORDER BY updated_utc DESC;
                 """;
             using var reader = command.ExecuteReader();
@@ -824,6 +876,7 @@ public sealed partial class L12PlatformStore
                     CreatedAt = DateTimeOffset.Parse(reader.GetString(9)),
                     UpdatedAt = DateTimeOffset.Parse(reader.GetString(10)),
                     Version = reader.GetInt32(11),
+                    RepresentativeCardIds = ReadRepresentativeJson(reader, 12),
                     LikedByAccountIds = likes.GetValueOrDefault(reader.GetString(0)) ?? [],
                 });
             }

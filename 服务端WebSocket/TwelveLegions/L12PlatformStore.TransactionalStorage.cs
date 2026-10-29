@@ -74,7 +74,7 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 11;
+    private const int PlatformStorageSchemaVersion = 12;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
@@ -885,7 +885,9 @@ public sealed partial class L12PlatformStore
             InitializeDeckDomainSchema(connection, existingSchemaVersion);
             InitializeRankedBroadcastObjectStorage(connection, ReadExistingStorageSchemaVersion(connection));
             InitializeAccountRankedRestrictionSchema(connection);
-            InitializeTournamentReputationSchema(connection);
+            if (ReadExistingStorageSchemaVersion(connection) is not PlatformStorageSchemaVersion)
+                InitializeTournamentReputationSchema(connection);
+            InitializeRepresentativeSchema(connection);
         }
         catch (L12PlatformStorageIncompatibleException)
         {

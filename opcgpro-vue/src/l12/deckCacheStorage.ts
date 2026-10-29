@@ -10,6 +10,7 @@ export interface ReadableDeckCache {
   generation: string | null
   decks: Record<string, SavedL12Deck>
   aliases: DeckSelectionAliases
+  legacyRaw?: string | null
 }
 export interface UnavailableDeckCache {
   status: 'unavailable'
@@ -30,6 +31,7 @@ interface CacheBody {
   generation: string
   entries: Record<string, EncodedDeckCache>
   aliases: DeckSelectionAliases
+  legacyRaw?: string | null
 }
 const encoder = new TextEncoder()
 const owns = (value: object, key: PropertyKey) => Object.prototype.hasOwnProperty.call(value, key)
@@ -76,15 +78,19 @@ function parse(raw: string | null, owner: string): ReadableDeckCache {
   }
   if (value.format !== 'l12-deck-cache' || value.schema !== 1) fail('牌库缓存版本不受支持；原数据已保留')
   const fields = ['format', 'schema', 'owner', 'generation', 'entries', 'aliases', 'checksum']
+  if (owns(value, 'legacyRaw')) fields.push('legacyRaw')
   if (Reflect.ownKeys(value).length !== fields.length || fields.some(key => !owns(value, key))
     || value.owner !== owner || typeof value.generation !== 'string' || !value.generation
-    || typeof value.checksum !== 'string' || !object(value.entries)) fail('牌库缓存字段或归属不正确；原数据已保留')
+    || typeof value.checksum !== 'string' || !object(value.entries)
+    || owns(value, 'legacyRaw') && value.legacyRaw !== null && typeof value.legacyRaw !== 'string') fail('牌库缓存字段或归属不正确；原数据已保留')
   const aliases = checkedAliases(value.aliases)
   const body: CacheBody = { format: 'l12-deck-cache', schema: 1, owner, generation: value.generation,
-    entries: value.entries as Record<string, EncodedDeckCache>, aliases }
+    entries: value.entries as Record<string, EncodedDeckCache>, aliases,
+    ...(owns(value, 'legacyRaw') ? { legacyRaw: value.legacyRaw as string | null } : {}) }
   if (checksum(body) !== value.checksum) fail('牌库缓存整体校验失败；原数据已保留')
   const decks = Object.fromEntries(Object.entries(body.entries).map(([key, entry]) => [key, decodeDeckCache(entry)]))
-  return { status: 'ready', raw, owner, generation: body.generation, decks, aliases }
+  return { status: 'ready', raw, owner, generation: body.generation, decks, aliases,
+    ...(owns(body, 'legacyRaw') ? { legacyRaw: body.legacyRaw } : {}) }
 }
 
 /** Read errors are explicit states. No read performs a migration, repair or write. */
@@ -112,12 +118,14 @@ export function commitDeckCache(storage: Pick<Storage, 'getItem' | 'setItem'>, k
   const restored = checkedDecks(decks)
   const plan = checkedAliases(aliases)
   const body: CacheBody = { format: 'l12-deck-cache', schema: 1, owner: previous.owner, generation,
-    entries: Object.fromEntries(Object.entries(restored).map(([name, deck]) => [name, encodeDeckCache(deck)])), aliases: plan }
+    entries: Object.fromEntries(Object.entries(restored).map(([name, deck]) => [name, encodeDeckCache(deck)])), aliases: plan,
+    ...(owns(previous, 'legacyRaw') ? { legacyRaw: previous.legacyRaw } : {}) }
   const raw = JSON.stringify({ ...body, checksum: checksum(body) })
   const result = parse(raw, previous.owner)
   if (!same(decks, result.decks) || !same(plan, result.aliases)) fail('牌库缓存写入前核验失败；原数据已保留')
   guard()
-  // Callers serialize this compare-and-write under the existing namespace Web Lock.
+  // Production callers provide the current IDB transaction's private record.
+  // This pure codec/CAS helper never makes Web Storage a write authority.
   if (storage.getItem(key) !== previous.raw) fail('牌库缓存已由其他操作更新，请刷新后重试', 'conflict')
   try { storage.setItem(key, raw) }
   catch (error) { fail(`本机牌库缓存写入失败：${error instanceof Error ? error.message : '存储不可用'}；原数据已保留`, 'persistence') }

@@ -112,7 +112,7 @@ function editorRuntime(options = {}) {
     requestDelete: async () => undefined, requestSave: async deck => ({ ...deck, id: deck.id ?? 'saved-id', revision: (deck.revision ?? 0) + 1 }),
     requestPublish: async deck => ({ id: 'public-id', publicCode: 'PUBLICCODE12', deck: { ...deck, publicationId: 'public-id', publicationVersion: 1 } }), ...options }
   const names = ['savedDecks', 'savedDirectory', 'savedDirectorySearch', 'savedDirectoryKeyword', 'savedDirectoryLoading',
-    'savedDirectoryError', 'deckReadBusy', 'directoryReadSequence', 'deckReadSequence', 'editorAlive', 'authenticatedEditor',
+    'savedDirectoryError', 'deckReadBusy', 'directoryReadSequence', 'deckReadSequence', 'editorAlive', 'authenticatedEditor', 'representativeCardIds', 'representativesEnabled', 'draftConflict',
     'savedDirectoryDecks', 'savedDirectoryTotal', 'savedDirectoryPages', 'notice', 'deckName', 'masterId', 'counts', 'benchCounts',
     'specialIds', 'alternateArtSelections', 'alternateArtCopies', 'activeDeckName', 'activeDeckId', 'activeDeckRevision',
     'pendingDeleteName', 'pendingDeleteDeck', 'deletingDeck', 'deckMutationBusy', 'publicationId', 'publicationCode', 'publicationVersion',
@@ -126,6 +126,7 @@ function editorRuntime(options = {}) {
   const source = names.map(declarationText).join('\n') + '\n' + functionText(editorPath, functions)
   const runtime = execute(source, {
     ref, computed, platformState: state.platform, route: state.route, mainCards: ref([]), byId: ref(new Map()),
+    pendingAccountDrafts: new Map(),
     MAIN_DECK_TYPES: new Set(['legion', 'tactic', 'artifact']), validation: options.validation ?? ref(''),
     catalog: options.catalog ?? ref([]), ownedAlternateArts: ref([]),
     window: { confirm: () => state.confirmed }, deckErrorBelongsToCurrentAccount: () => true,
@@ -192,6 +193,11 @@ await check('selected summary opens exactly its stable id/revision and retains r
 await check('guest selection retains its actual local body without private API calls', async () => {
   const r = editorRuntime(); r.state.platform.account = null; r.state.platform.token = ''
   assert.equal(await r.requestLoadDeck(body()), true); assert.equal(r.state.calls.length, 0)
+})
+await check('changing the actual editor document clears a prior draft-conflict action', async () => {
+  const r = editorRuntime()
+  r.draftConflict.value = true; r.newDeck(); assert.equal(r.draftConflict.value, false)
+  r.draftConflict.value = true; await r.requestLoadDeck(summary()); assert.equal(r.draftConflict.value, false)
 })
 await check('declining unsaved discard performs no read or editor replacement', async () => {
   const r = editorRuntime(); r.editorContentRevision.value++; r.state.confirmed = false
