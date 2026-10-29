@@ -15,7 +15,7 @@
     "verify:deck-editor-scroll": "node scripts/verify-deck-editor-scroll.mjs",
     "verify:deck-stale-tabs": "node scripts/verify-deck-stale-tabs.mjs",
     "check:ranked-broadcast": "node scripts/check-ranked-broadcast-playback.mjs && node scripts/test-ranked-broadcast-playback.mjs && node scripts/test-ranking-refresh.mjs",
-    "check:reputation-and-broadcast": "node scripts/test-tournament-reputation-panel.mjs && node scripts/test-ranked-recent-broadcasts-20261029.mjs && node scripts/test-alternate-art-rule-intent.mjs",
+    "check:reputation-and-broadcast": "node scripts/test-tournament-reputation-panel.mjs && node scripts/test-ranked-recent-broadcasts-20261029.mjs && node scripts/test-alternate-art-rule-intent.mjs && node scripts/test-alternate-art-rule-explanation.mjs",
     "check:friends-and-statistics": "node scripts/test-friends-presentation.mjs && node scripts/test-friend-history-ui.mjs && node scripts/test-deck-statistics.mjs",
     "check:defense-actions": "node scripts/test-defense-action-owner.mjs && node scripts/test-action-resource-projection.mjs && node scripts/test-l12-free-move-affordance.mjs",
     "check:stage-usability": "node scripts/test-mobile-battle-usability-contract-20261023.mjs && node scripts/test-deck-banner-and-lobby-copy-20261023.mjs && node scripts/test-governed-record-export.mjs",
