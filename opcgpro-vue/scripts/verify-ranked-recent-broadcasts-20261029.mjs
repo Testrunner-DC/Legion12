@@ -31,7 +31,9 @@ const virtual={
     export const connect=async()=>{},cancelMatchmaking=()=>{},createRoom=()=>{},joinMatchmaking=()=>{},joinRoom=()=>{},leaveRoom=()=>{},selectCustomDeck=()=>{},setReady=()=>{},spectateRoom=()=>{},updateRoomOptions=()=>{};`,
   '/__recent_decks__.js':`const deck={id:'qa',revision:1,name:'汉堡王',masterId:'S02-06M2',cardIds:['S02-0604','S01-0417','S02-0610'],moraleIds:[],specialIds:[]};
     export const SELECTED_DECK_KEY='fixture-selection',L12_DECK_SELECTION_SCOPES=['ranked','casual','friendly','sandbox-player','sandbox-opponent'];
-    export const loadSavedDecksState=()=>({status:'ready',decks:{'汉堡王':deck}}),loadSelectedDeckName=()=> '汉堡王',saveSelectedDeckName=()=>{},
+    const decks={'汉堡王':deck},selected=new Map(L12_DECK_SELECTION_SCOPES.map(scope=>[scope,'汉堡王'])),requireScope=scope=>{if(!L12_DECK_SELECTION_SCOPES.includes(scope))throw Error('unexpected deck scope')};
+    export const initializeDeckCache=async()=>{},loadSavedDecks=()=>decks,hasSavedDeckSelection=scope=>{requireScope(scope);return selected.has(scope)};
+    export const loadSavedDecksState=()=>({status:'ready',decks}),loadSelectedDeckName=(scope,available)=>{requireScope(scope);return selected.get(scope)??Object.keys(available)[0]??''},saveSelectedDeckName=async(scope,name)=>{requireScope(scope);if(!Object.hasOwn(decks,name))throw Error('absent fixture deck');selected.set(scope,name)},
       ensureOfficialPrebuiltDecks=async()=>({'汉堡王':deck}),loadDeckCatalog=async()=>[],loadPrivateDeckBody=async()=>deck,
       deckErrorBelongsToCurrentAccount=()=>false,validateDeck=()=>'',deckCountSummary=()=>({label:'43'});`,
   '/__recent_entry__.js':`import {createApp} from 'vue';import {createRouter,createMemoryHistory} from 'vue-router';

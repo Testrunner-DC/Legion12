@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## QA-20261030-DECK-PORT-MOCKS｜大厅真实组件的牌库端口夹具同步
+
+- 完整Release R2的后端与排空消费者通过，前端真实BattleHubPage因旧mock缺少hasSavedDeckSelection而中断；无完整合格包，不切服。全量检索同组件牌库mock，仅另有好友偏好和最近播报浏览器夹具同类遗漏，一并补initializeDeckCache/loadSavedDecks/hasSavedDeckSelection及按scope选择保存。
+- 不改产品组件、牌库、缓存或既有45条业务断言；新增检查真实SFC导入端口均有mock，未来漂移明确失败。真实14场景45断言通过，另两叶node语法通过。完整前端预检另找出备选区QA仍要求旧内联表达式，改为核现有同一bench预计算和参数绑定，24合同均通过；产品紧凑存储/详情展开断言保持。完整前端预检与后续Release分开留证，不把本地mock通过冒线上验收。
+- 原R1换行/R2夹具失败与日志均保留于formal-release-20261030-0600。完整前端r3实际退出0，全部合同/类型/双Vite通过，再冻结新提交进行标准Release，避免每次到长后端结束后才发现同族夹具失配；本次无产品变化、不改变P0—P4。
+
 ## OPS-20261030-OBSERVER-CHECKOUT-LF｜标准隔离包的观察器换行表示
 
 - 干净39c检出受Windows core.autocrlf=true转换，观察器与受保护冻结LF原件的逐字逆变换比较失败；r1已通过后端，但前端失败故无完整Release。不是产品卡效错误，也不能把源码分段资格冒包通过。

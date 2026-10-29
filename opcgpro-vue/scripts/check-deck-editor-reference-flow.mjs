@@ -34,7 +34,7 @@ const checks = [
   ['备选区不计主牌数量与合法性', editor.includes('备选区') && editor.includes('不计入主牌数量与合法性') && !editor.match(/validateDeck\([\s\S]{0,300}benchIds/)],
   ['私人牌库类型与无损缓存保留 benchIds（真实迁移由test-deck-sync-authority验证）', decks.includes('benchIds?: string[]') && decks.includes('return decodeDeckCache(encodeDeckCache(deck))')],
   ['服务端输入与私人牌库视图支持 BenchIds', models.includes('public List<string> BenchIds') && store.includes('IReadOnlyList<string>? BenchIds = null')],
-  ['备选区在账号牌库行使用紧凑数量 JSON，只在详情边界展开', storage.includes('bench_cards_json') && storage.includes('"$bench", DeckBenchJson(deck)') && storage.includes('BenchJson = reader.GetString(5)') && payloadReferences.includes('row.BenchIds.Count > 0 ? CompactDeckCardsJson(row.BenchIds) : row.BenchJson') && store.includes('ExpandCards(DeckBenchJson(row))')],
+  ['备选区在账号牌库行使用紧凑数量 JSON，只在详情边界展开', storage.includes('bench_cards_json') && storage.includes('var bench = DeckBenchJson(deck);') && storage.includes('command.Parameters.AddWithValue("$bench", bench);') && storage.includes('BenchJson = reader.GetString(5)') && payloadReferences.includes('row.BenchIds.Count > 0 ? CompactDeckCardsJson(row.BenchIds) : row.BenchJson') && store.includes('ExpandCards(DeckBenchJson(row))')],
   ['备选区不进入公开构筑正文哈希', !storage.match(/NormalizeDeckPayload\([^\n]*BenchIds/) && store.includes('row.BenchIds = deck.BenchIds.ToList()')],
   ['服务端限制未知、异阵营、非主牌与超大备选区', ['备选区最多保存 200 张卡牌', '备选区包含未知卡牌', '不能放入备选区', '与主宰阵营不符'].every(value => validator.includes(value))],
   ['竖屏不再强制提示旋转设备', !editor.includes('横屏编辑更完整') && !editor.includes('orientation:portrait')],

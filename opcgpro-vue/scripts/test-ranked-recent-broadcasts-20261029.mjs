@@ -49,18 +49,27 @@ function mount(options={}){
     overview:async()=>({profile:{faction:'混沌',placed:true,tier:'破败先锋Ⅲ',displayValue:'七曜值 31,427'},config:{factions:[]},factionTotals:{}}),
     claimBroadcast(){hooks.claims++;throw Error('History must not claim')},completeBroadcast(){hooks.completions++;throw Error('History must not complete')}}
   const stub=vue.defineComponent({render:()=>vue.h('span')})
+  const deckScopes=['ranked','casual','friendly','sandbox-player','sandbox-opponent'],emptyDecks={}
+  const requireDeckScope=scope=>assert.ok(deckScopes.includes(scope),'Unexpected deck selection scope '+scope)
   const deps={
     vue:{...vue,vModelText:{},vModelSelect:{}},
     'vue-router':{useRouter:()=>({push(){}})},
     '@/l12/net':{l12State,connect:async()=>{},selectCustomDeck(){},cancelMatchmaking(){},createRoom(){},joinMatchmaking(){},joinRoom(){},leaveRoom(){},setReady(){},spectateRoom(){},updateRoomOptions(){}},
     '@/l12/platform':{platformState,rankedApi,getEffectiveOperationsPolicy:async()=>policy,normalizeRankedConfig:value=>value},
-    '@/l12/decks':{deckCountSummary:()=>({label:43}),ensureOfficialPrebuiltDecks:async()=>({}),L12_DECK_SELECTION_SCOPES:['ranked','casual','friendly','sandbox-player','sandbox-opponent'],
-      loadDeckCatalog:async()=>[],loadPrivateDeckBody:async()=>null,loadSavedDecksState:()=>({status:'ready',decks:{}}),deckErrorBelongsToCurrentAccount:()=>false,
-      loadSelectedDeckName:()=>'',saveSelectedDeckName(){},SELECTED_DECK_KEY:'qa',validateDeck:()=>''},
+    '@/l12/decks':{deckCountSummary:()=>({label:43}),ensureOfficialPrebuiltDecks:async()=>emptyDecks,L12_DECK_SELECTION_SCOPES:deckScopes,
+      loadDeckCatalog:async()=>[],loadPrivateDeckBody:async()=>null,loadSavedDecksState:()=>({status:'ready',decks:emptyDecks}),deckErrorBelongsToCurrentAccount:()=>false,
+      initializeDeckCache:async()=>{},loadSavedDecks:()=>emptyDecks,
+      hasSavedDeckSelection(scope){requireDeckScope(scope);return false},
+      loadSelectedDeckName(scope,decks){requireDeckScope(scope);return Object.keys(decks)[0]??''},
+      async saveSelectedDeckName(scope,name){requireDeckScope(scope);assert.ok(Object.hasOwn(emptyDecks,name),'No saved deck in this broadcast fixture')},
+      SELECTED_DECK_KEY:'qa',validateDeck:()=>''},
     './rankedBroadcastPlayback':{rankedBroadcastPlayback:playback},
     './maintenanceCountdown':{maintenanceCountdown:()=>null},
     '@/l12/friendlyRoomPreferences':{isFriendlyDisasterMode:()=>true,loadFriendlyDisasterMode:()=>undefined,saveFriendlyDisasterMode(){}},
   }
+  const deckImports=Object.values(compiled.imports).filter(value=>value.source==='@/l12/decks'&&!value.isType)
+  assert.ok(deckImports.length>0,'Actual SFC deck imports must be inspected')
+  for(const dependency of deckImports)assert.ok(Object.hasOwn(deps['@/l12/decks'],dependency.imported),'Missing actual deck port '+dependency.imported)
   const module={exports:{}}
   new Function('require','module','exports',code)(id=>{
     if(id in deps)return deps[id]

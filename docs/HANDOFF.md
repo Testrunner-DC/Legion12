@@ -1,5 +1,10 @@
 # 十二军团简短交接
 
+## 2026-10-30 R2失败续办：大厅QA mock端口落后，先穷尽前端再完整出包
+
+- R2于06:35结束：完整规则/平台及排空消费者成功，前端真实BattleHubPage调用hasSavedDeckSelection时旧mock缺端口，无合格manifest，正式/测试未切换。3个同组件QA叶统一同步新牌库端口与scope保存，保原45断言、补真实imports完整性守卫；14真实SFC场景通过。产品源未改；另两浏览器夹具仅语法通过，不冒真实浏览器覆盖。
+- Main完整前端r3预检已退出0：全部npm合同/类型/正式与测试双Vite构建通过（不是Release）。同族另修旧bench内联断言为现有预计算+参数绑定，24合同通过；源仅4QA叶、产品0变更。首预检mirror环境误指自身与后续旧断言失败保留。接续从新干净提交一次完整标准Release，不逐叶重跑长后端；执行器绑定真实新commit/原manifest，不消费旧R2或合成freeze夹具。现服af仍开放，本批维护尚未开启；正式尝试finally仍按授权结束本次维护。
+
 ## 2026-10-30 06:00执行：首包被检出换行差异拦截，现服未切换且维护false
 
 - 真实39c标准r1于03:33结束：规则/平台和排空消费者通过，隔离前端首链在ws-burst逐字还原比较因Windows检出CRLF与冻结LF不同而拒绝，无最终manifest，不冒合格包。06:00正常curl控制读回正式af、activeGameCount=0/roomCount=0、drain=open、维护false、运维145，会话实际撤销；未停服、未开维护、未切包。原失败与原完整日志保留，scheduled状态曾running仅旧计划，须以r1真实failed为准。
