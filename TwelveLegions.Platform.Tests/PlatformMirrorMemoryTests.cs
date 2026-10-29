@@ -1,18 +1,64 @@
 using System.Reflection;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace TwelveLegions.Platform.Tests;
 
 [Collection("Platform environment")]
-public sealed class PlatformMirrorMemoryTests
+public sealed class PlatformMirrorMemoryTests(ITestOutputHelper output)
 {
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     private const BindingFlags PrivateStatic = BindingFlags.Static | BindingFlags.NonPublic;
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(192)]
+    public void IsolatedVariedMirrorReportsPreparationAndAtomicWriteSeparately(int chunks)
+    {
+        using var fixture = new Fixture();
+        var state = State(fixture.Store);
+        var original = SHA256.HashData(File.ReadAllBytes(fixture.Path));
+        var revision = StorageRevision(fixture.Store.TransactionalStoragePath);
+        var random = new Random(20261029);
+        var bytes = new byte[48 * 1024];
+        for (var index = 0; index < chunks; index++)
+        {
+            random.NextBytes(bytes);
+            Content(state)["synthetic-varied-" + index] = Convert.ToBase64String(bytes);
+        }
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        var timer = Stopwatch.StartNew();
+        var prepared = L12PreparedPlatformMirror.Create(state, state.GetType(), MirrorOptions());
+        timer.Stop();
+        var preparationAllocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+        var path = System.IO.Path.Combine(fixture.Root, "isolated-varied-mirror.json");
+        allocated = GC.GetAllocatedBytesForCurrentThread();
+        var writeTimer = Stopwatch.StartNew();
+        prepared.WriteAtomically(path);
+        writeTimer.Stop();
+        var writeAllocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+        output.WriteLine(JsonSerializer.Serialize(new
+        {
+            phase = "isolated-varied-mirror", chunks, jsonBytes = prepared.ByteCount,
+            compressedBytes = prepared.CompressedLength, preparationMs = timer.Elapsed.TotalMilliseconds,
+            preparationAllocatedBytes = preparationAllocated,
+            atomicWriteMs = writeTimer.Elapsed.TotalMilliseconds, atomicWriteAllocatedBytes = writeAllocated,
+            excludes = "snapshot, rollback, audit, SQLite and whole save; data is synthetic, not player content",
+        }));
+        Assert.True(prepared.ByteCount > (long)chunks * 64 * 1024);
+        Assert.Equal(prepared.ByteCount, new FileInfo(path).Length);
+        using (var input = File.OpenRead(path))
+            Assert.Equal(prepared.Checksum, Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant());
+        Assert.Empty(Directory.EnumerateFiles(fixture.Root, "isolated-varied-mirror.json.*.tmp"));
+        Assert.Equal(original, SHA256.HashData(File.ReadAllBytes(fixture.Path)));
+        Assert.Equal(revision, StorageRevision(fixture.Store.TransactionalStoragePath));
+    }
 
     [Fact]
     public void PreparedMirrorMatchesLegacyIndentedUtf8AndChecksum()

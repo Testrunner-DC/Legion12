@@ -17,6 +17,65 @@ public sealed class DeckPayloadPersistenceDeduplicationTests(ITestOutputHelper o
     [InlineData(240, 4)]
     [InlineData(240, 240)]
     [InlineData(9299, 1196)]
+    public void IsolatedUnchangedDeckPersistenceReportsReferenceWorkWithoutChangingFacts(int references, int uniqueBodies)
+        => MeasureUnchangedPersistence(references, uniqueBodies);
+
+    [Fact]
+    public void IsolatedReferenceFanoutWithFourBodiesReportsReferenceOverhead()
+        => MeasureUnchangedPersistence(9299, 4);
+
+    private void MeasureUnchangedPersistence(int references, int uniqueBodies)
+    {
+        InStore(references, uniqueBodies, (path, store) =>
+        {
+            var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(store)!;
+            var factsBefore = SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(data, data.GetType()));
+            var mirrorBefore = SHA256.HashData(File.ReadAllBytes(path));
+            var revisionBefore = store.StorageStatus().StorageRevision;
+            using var db = new SqliteConnection(new SqliteConnectionStringBuilder
+                { DataSource = store.TransactionalStoragePath, Pooling = false }.ToString());
+            db.Open();
+            using var scope = L12PlatformStore.BeginSyntheticStorageMeasurement();
+            typeof(L12PlatformStore).GetMethod("AttachSyntheticStorageMeasurement", BindingFlags.Static | BindingFlags.NonPublic)!
+                .Invoke(null, [db]);
+            using var transaction = db.BeginTransaction();
+            var allocated = GC.GetAllocatedBytesForCurrentThread();
+            var timer = Stopwatch.StartNew();
+            InvokePersistence(db, transaction, data);
+            timer.Stop();
+            var persistenceAllocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+            var commitTimer = Stopwatch.StartNew();
+            transaction.Commit();
+            commitTimer.Stop();
+            var measured = scope.Complete();
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                phase = "isolated-unchanged-deck-domain", references, uniqueBodies,
+                persistenceMs = timer.Elapsed.TotalMilliseconds, allocatedBytes = persistenceAllocated,
+                commitMs = commitTimer.Elapsed.TotalMilliseconds,
+                measured.DeckDomainStatements, measured.SqlitePagePayloadBytes, measured.MirrorBytes,
+                excludes = "core snapshot, rollback, mirror preparation/write, audit and outer save",
+            }));
+            Assert.Equal(0, measured.InstrumentationErrors);
+            Assert.InRange(measured.DeckDomainStatements, references + uniqueBodies,
+                references + uniqueBodies + 64);
+            Assert.Equal(0, measured.MirrorBytes);
+            Assert.Equal(references, Count(db, "account_decks"));
+            Assert.Equal(uniqueBodies, Count(db, "deck_payloads"));
+            Assert.Equal(factsBefore, SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(data, data.GetType())));
+            Assert.Equal(mirrorBefore, SHA256.HashData(File.ReadAllBytes(path)));
+            Assert.Equal(revisionBefore, store.StorageStatus().StorageRevision);
+            var restarted = new L12PlatformStore(path);
+            Assert.Equal(references, restarted.StorageStatus().DeckStorage!.ActiveAccountDecks);
+            Assert.True(restarted.RehearseStorageRecovery().Success);
+        });
+    }
+
+    [Theory]
+    [InlineData(240, 4)]
+    [InlineData(240, 240)]
+    [InlineData(9299, 1196)]
     public void FullSaveValidatesAndInsertsEachDistinctBodyOnce(int references, int uniqueBodies)
     {
         InStore(references, uniqueBodies, (path, store) =>
