@@ -175,6 +175,162 @@ try{
  Check 'download-cross-host-redirect-rejected' {Reject {In-Module {Receive-L12BaiduFile ([pscustomobject]@{credential=@{accessToken='synthetic-access'}}) 'https://d.pcs.baidu.com/file?a=b' (Join-Path $args[0] 'redirect.partial') 1024 $null} $root} 'L12_BAIDU_UNTRUSTED_HOST'}
  Check 'dlink-with-token-rejected' {Reject {In-Module {param($r) Receive-L12BaiduFile ([pscustomobject]@{credential=@{accessToken='synthetic-access'}}) 'https://d.pcs.baidu.com/file?access_token=other' (Join-Path $r 'token.partial') 1024 $null} $root} 'L12_BAIDU_DLINK_TOKEN'}
  Check 'original-sources-unchanged' {foreach($pair in $sourceBytes.GetEnumerator()){Assert ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([IO.File]::ReadAllBytes((Join-Path $source $pair.Key)))).ToLowerInvariant() -ceq (In-Module {param($b) Get-L12BaiduSha $b} $pair.Value))}}
+ # All original 69 checks above remain independent and unchanged.
+ $volumeStart=$checks.Count;Assert ($volumeStart -eq 69)
+ $mock.wire=$false;$mock.wireStatus=200;$mock.wireRedirect=$null;$mock.downloadShort=0;$mock.rangeMode='normal'
+ $volumeDirectory=Join-Path $root 'volume-source'
+ Check 'volumes-actual-streaming-preparation' {
+  $script:preparedVolumes=New-L12BaiduTransportVolumes -ManifestPath $manifestPath -ExpectedManifestSha256 $manifestSha -TransferDirectory $volumeDirectory -VolumeBytes 1MB
+  Assert ($preparedVolumes.volumeReferences -eq 11);Assert (!$preparedVolumes.sourceDeleted -and !$preparedVolumes.uploadPerformed)
+  $script:volumeEnvelope=Get-Content -LiteralPath $preparedVolumes.manifestPath -Raw|ConvertFrom-Json -Depth 20
+  Assert ($volumeEnvelope.originalManifest.sha256 -ceq $manifestSha)
+  Assert (@(Get-ChildItem -LiteralPath $volumeDirectory -Filter '*.volume').Count -eq 11)
+ }
+ $volumeArgs=@{ManifestPath=$preparedVolumes.manifestPath;ExpectedManifestSha256=$preparedVolumes.manifestSha256;ExpectedOriginalManifestSha256=$manifestSha;CredentialPath=$credential;TimeBudgetSeconds=120;TransferDirectory=(Join-Path $root 'volume-transfer')}
+ function Read-VolumeTest($Arguments){In-Module {param($a) $p=Read-L12BaiduManifest $a.ManifestPath $a.ExpectedManifestSha256 $a.ExpectedOriginalManifestSha256;try{return $p.definitions.Count}finally{$p.stream.Dispose()}} $Arguments}
+ function New-VolumeVariant([scriptblock]$Change){
+  $copy=Get-Content -LiteralPath $preparedVolumes.manifestPath -Raw|ConvertFrom-Json -Depth 20
+  & $Change $copy
+  $bytes=[Text.Encoding]::UTF8.GetBytes(($copy|ConvertTo-Json -Depth 20 -Compress));$hash=In-Module {param($b) Get-L12BaiduSha $b} $bytes
+  $directory=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $root ('variant-'+[Guid]::NewGuid().ToString('N')))
+  $path=Join-Path $directory ($hash+'.volumes.json');[IO.File]::WriteAllBytes($path,$bytes)
+  return @{ManifestPath=$path;ExpectedManifestSha256=$hash;ExpectedOriginalManifestSha256=$manifestSha}
+ }
+ Check 'volumes-require-both-independent-trusted-shas' {$bad=$volumeArgs.Clone();$bad.ExpectedOriginalManifestSha256='';Reject {Read-VolumeTest $bad} 'L12_BAIDU_VOLUME_TRUST';$bad.ExpectedOriginalManifestSha256='f'*64;Reject {Read-VolumeTest $bad} 'L12_BAIDU_VOLUME_TRUST';$bad=$volumeArgs.Clone();$bad.ExpectedManifestSha256='f'*64;Reject {Read-VolumeTest $bad}}
+ Check 'volumes-original-v2-four-gib-guard-unchanged' {
+  $copy=$manifest|ConvertTo-Json -Depth 16|ConvertFrom-Json;$copy.items[0].cipher.bytes=[long]4GB+1
+  $directory=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $root 'large-v2-metadata')
+  $path=Join-Path $directory ($archiveSha+'.manifest.json');[IO.File]::WriteAllText($path,($copy|ConvertTo-Json -Depth 16 -Compress),[Text.UTF8Encoding]::new($false));$hash=(Get-FileHash $path).Hash.ToLowerInvariant()
+  Reject {In-Module {param($a) Read-L12BaiduManifest $a.path $a.sha} @{path=$path;sha=$hash}} 'L12_BAIDU_CIPHER_DEFINITION'
+ }
+ Check 'volumes-int64-above-four-gib-metadata-is-explicit-not-a-large-file-run' {
+  $copy=Get-Content $preparedVolumes.manifestPath -Raw|ConvertFrom-Json -Depth 20
+  $original=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($copy.originalManifest.contentBase64))|ConvertFrom-Json -Depth 20
+  $original.items[0].cipher.bytes=[long]4GB+1;$raw=[Text.Encoding]::UTF8.GetBytes(($original|ConvertTo-Json -Depth 20 -Compress))
+  $hash=In-Module {param($b) Get-L12BaiduSha $b} $raw;$copy.originalManifest.sha256=$hash;$copy.originalManifest.bytes=$raw.Length;$copy.originalManifest.contentBase64=[Convert]::ToBase64String($raw)
+  $copy.volumeBytes=1GB;$copy.ciphers[0].bytes=[long]4GB+1;$copy.ciphers[0].volumes=@()
+  for($i=0;$i -lt 5;$i++){$digest=('8'*63)+$i;$copy.ciphers[0].volumes+=@{index=$i;offset=[long]$i*1GB;bytes=$(if($i -eq 4){1}else{1GB});sha256=$digest;name=($digest+'.volume')}}
+  $bytes=[Text.Encoding]::UTF8.GetBytes(($copy|ConvertTo-Json -Depth 20 -Compress));$envelopeHash=In-Module {param($b) Get-L12BaiduSha $b} $bytes
+  $directory=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $root 'large-envelope-metadata')
+  $path=Join-Path $directory ($envelopeHash+'.volumes.json');[IO.File]::WriteAllBytes($path,$bytes)
+  Assert ((Read-VolumeTest @{ManifestPath=$path;ExpectedManifestSha256=$envelopeHash;ExpectedOriginalManifestSha256=$hash}) -eq 9)
+ }
+ Check 'volumes-original-source-and-plan-fully-bound' {In-Module {param($a) $p=Get-L12BaiduGroupPlan $a.ManifestPath $a.ExpectedManifestSha256 ([DateTime]::MaxValue) $a.ExpectedOriginalManifestSha256;try{if($p.files.Count -ne 13 -or @($p.files|Where-Object{$_.bytes -gt 1GB}).Count -or $p.remoteRoot -cnotlike '/apps/十二军团私有备份/l12-volumes-v1-*'){throw 'volume plan not bounded'}}finally{Close-L12BaiduPlan $p}} $volumeArgs}
+ Check 'volumes-reference-count-and-group-capacity-are-bounded-before-output' {
+  $directory=Join-Path $root 'too-many-volumes'
+  Reject {New-L12BaiduTransportVolumes -ManifestPath $manifestPath -ExpectedManifestSha256 $manifestSha -TransferDirectory $directory -VolumeBytes 64KB} 'L12_BAIDU_VOLUME_LIMIT';Assert (!(Test-Path $directory))
+  $copy=$manifest|ConvertTo-Json -Depth 16|ConvertFrom-Json;$copy.items[0].cipher.bytes=[long]64GB
+  Reject {In-Module {param($a) Get-L12BaiduVolumeOriginalModel $a.value $a.name} @{value=$copy;name=($archiveSha+'.manifest.json')}} 'L12_BAIDU_VOLUME_LIMIT'
+ }
+ Check 'volumes-preparation-never-overwrites-a-completed-or-unknown-directory' {
+  Reject {New-L12BaiduTransportVolumes -ManifestPath $manifestPath -ExpectedManifestSha256 $manifestSha -TransferDirectory $volumeDirectory -VolumeBytes 1MB} 'L12_BAIDU_VOLUME_DIRECTORY_NOT_EMPTY'
+  $directory=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $root 'prepare-interrupted');$partial=Join-Path $directory 'volume.partial-unknown';[IO.File]::WriteAllText($partial,'keep')
+  Reject {New-L12BaiduTransportVolumes -ManifestPath $manifestPath -ExpectedManifestSha256 $manifestSha -TransferDirectory $directory -VolumeBytes 1MB} 'L12_BAIDU_VOLUME_DIRECTORY_NOT_EMPTY';Assert ([IO.File]::ReadAllText($partial) -ceq 'keep')
+ }
+ foreach($damage in @('reordered','duplicate-index','missing','overlap','truncated-length','extra-field','boolean-schema','string-length','scalar-volumes','boolean-index')){
+  Check ('volumes-reject-'+$damage) {
+   $variant=New-VolumeVariant {
+    param($value)
+    switch($damage){
+     'reordered'{$first=$value.ciphers[0].volumes[0];$value.ciphers[0].volumes[0]=$value.ciphers[0].volumes[1];$value.ciphers[0].volumes[1]=$first}
+     'duplicate-index'{$value.ciphers[0].volumes[1].index=0}
+     'missing'{$value.ciphers[0].volumes=@($value.ciphers[0].volumes|Select-Object -SkipLast 1)}
+     'overlap'{$value.ciphers[0].volumes[1].offset=0}
+     'truncated-length'{$value.ciphers[0].volumes[0].bytes--}
+     'extra-field'{$value|Add-Member -NotePropertyName skipHash -NotePropertyValue $true}
+     'boolean-schema'{$value.schema=$true}
+     'string-length'{$value.ciphers[0].bytes=[string]$value.ciphers[0].bytes}
+     'scalar-volumes'{$value.ciphers[1].volumes=$value.ciphers[1].volumes[0]}
+     'boolean-index'{$value.ciphers[0].volumes[0].index=$false}
+    }
+   }
+   Reject {Read-VolumeTest $variant} 'L12_BAIDU_VOLUME_'
+  }
+ }
+ Check 'volumes-reject-duplicate-json-key' {
+  $text=Get-Content $preparedVolumes.manifestPath -Raw;$text=$text.Replace('"schema":1,','"schema":1,"schema":1,');$bytes=[Text.Encoding]::UTF8.GetBytes($text);$hash=In-Module {param($b) Get-L12BaiduSha $b} $bytes
+  $directory=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $root 'duplicate-json');$path=Join-Path $directory ($hash+'.volumes.json');[IO.File]::WriteAllBytes($path,$bytes)
+  Reject {Read-VolumeTest @{ManifestPath=$path;ExpectedManifestSha256=$hash;ExpectedOriginalManifestSha256=$manifestSha}} 'L12_BAIDU_VOLUME_FORMAT'
+ }
+ Check 'volumes-full-original-cipher-sha-required' {
+  $cipher=$volumeEnvelope.ciphers[0]|ConvertTo-Json -Depth 12|ConvertFrom-Json;$cipher.sha256='f'*64
+  Reject {In-Module {param($a) Copy-L12BaiduVolumeCipher $a.cipher $a.directory $null ([DateTime]::MaxValue)} @{cipher=$cipher;directory=$volumeDirectory}} 'L12_BAIDU_VOLUME_CIPHER_SHA'
+ }
+ $mock.files.Clear();$mock.tasks.Clear();$mock.pieces.Clear()
+ Check 'volumes-real-original-upload-path' {$result=Invoke-L12BaiduArchiveUpload @volumeArgs;Assert ($result.fileCount -eq 13);Assert ($result.remoteRoot -clike '/apps/十二军团私有备份/l12-volumes-v1-*')}
+ Check 'volumes-real-original-download-reassembles-exact-ciphertext' {
+  $script:volumeDownload=Invoke-L12BaiduArchiveDownload @volumeArgs
+  Assert ($volumeDownload.status -ceq 'cloud-volume-cipher-roundtrip-verified' -and !$volumeDownload.plaintextRecoveryVerified)
+  foreach($item in $definitions){Assert ((Get-FileHash (Join-Path $volumeDownload.returnedDirectory $item.cipher.fileName)).Hash.ToLowerInvariant() -ceq $item.cipher.sha256)}
+  Assert ((Get-FileHash $volumeDownload.originalManifestPath).Hash.ToLowerInvariant() -ceq $manifestSha)
+  Assert (!(Split-Path -Parent $volumeDownload.originalManifestPath).StartsWith($volumeDownload.returnedDirectory,[StringComparison]::OrdinalIgnoreCase))
+ }
+ $volumeRecovery=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $root 'only-volume-envelope')
+ $envelopeOnly=Join-Path $volumeRecovery ([IO.Path]::GetFileName($preparedVolumes.manifestPath));[IO.File]::Copy($preparedVolumes.manifestPath,$envelopeOnly)
+ $volumeRestore=$volumeArgs.Clone();$volumeRestore.ManifestPath=$envelopeOnly;$volumeRestore.TransferDirectory=Join-Path $root 'volume-fresh-restore'
+ Check 'volumes-independent-envelope-only-restore' {
+  Assert (@(Get-ChildItem $volumeRecovery -Force).Count -eq 1)
+  $script:volumeRestored=Invoke-L12BaiduArchiveRestore @volumeRestore
+  Assert ($volumeRestored.status -ceq 'cloud-volume-cipher-restore-verified' -and $volumeRestored.cloudProvenanceVerified -and !$volumeRestored.plaintextRecoveryVerified)
+  Assert ($volumeRestored.originalManifestSha256 -ceq $manifestSha -and $volumeRestored.transportEnvelopeSha256 -ceq $preparedVolumes.manifestSha256)
+  foreach($item in $definitions){Assert ((Get-FileHash (Join-Path $volumeRestored.returnedDirectory $item.cipher.fileName)).Hash.ToLowerInvariant() -ceq $item.cipher.sha256)}
+ }
+ Check 'volumes-restore-repeat-preserves-exact-completed-outputs' {$receipt=Join-Path $volumeRestore.TransferDirectory 'restore-receipt.json';$before=(Get-FileHash $receipt).Hash;$again=Invoke-L12BaiduArchiveRestore @volumeRestore;Assert ($again.originalManifestSha256 -ceq $manifestSha);Assert ((Get-FileHash $receipt).Hash -ceq $before)}
+ Check 'volumes-interrupted-remote-prefix-requires-real-range-resume' {
+  $bad=$volumeRestore.Clone();$bad.TransferDirectory=Join-Path $root 'volume-range-resume';$mock.downloadShort=123
+  Reject {Invoke-L12BaiduArchiveRestore @bad} 'L12_BAIDU_DOWNLOAD_INCOMPLETE';$before=$mock.downloadStarts.Count
+  $result=Invoke-L12BaiduArchiveRestore @bad;Assert (@($mock.downloadStarts|Select-Object -Skip $before|Where-Object{$_ -eq 123}).Count -eq 1);Assert $result.cloudProvenanceVerified
+ }
+ Check 'volumes-damaged-cloud-volume-rejected-without-success-receipt' {
+  $bad=$volumeRestore.Clone();$bad.TransferDirectory=Join-Path $root 'volume-corrupt-cloud';$cloud=$mock.files[$volumeRestored.remoteRoot+'/'+$volumeEnvelope.ciphers[0].volumes[0].name];$cloud.bytes[50]=$cloud.bytes[50] -bxor 1
+  try{Reject {Invoke-L12BaiduArchiveRestore @bad} 'L12_BAIDU_RETURNED_SHA';Assert (!(Test-Path (Join-Path $bad.TransferDirectory 'restore-receipt.json')))}finally{$cloud.bytes[50]=$cloud.bytes[50] -bxor 1}
+ }
+ Check 'volumes-missing-cloud-volume-rejected' {
+  $bad=$volumeRestore.Clone();$bad.TransferDirectory=Join-Path $root 'volume-missing-cloud';$path=$volumeRestored.remoteRoot+'/'+$volumeEnvelope.ciphers[0].volumes[0].name;$saved=$mock.files[$path];$mock.files.Remove($path)
+  try{Reject {Invoke-L12BaiduArchiveRestore @bad};Assert (!(Test-Path (Join-Path $bad.TransferDirectory 'restore-receipt.json')))}finally{$mock.files[$path]=$saved}
+ }
+ Check 'volumes-truncated-cloud-volume-rejected' {
+  $bad=$volumeRestore.Clone();$bad.TransferDirectory=Join-Path $root 'volume-truncated-cloud';$cloud=$mock.files[$volumeRestored.remoteRoot+'/'+$volumeEnvelope.ciphers[0].volumes[0].name];$saved=$cloud.bytes;$cloud.bytes=[byte[]]$saved[0..($saved.Length-2)]
+  try{Reject {Invoke-L12BaiduArchiveRestore @bad};Assert (!(Test-Path (Join-Path $bad.TransferDirectory 'restore-receipt.json')))}finally{$cloud.bytes=$saved}
+ }
+ In-Module {
+  $script:OriginalVolumeCopy=(Get-Command Copy-L12BaiduVolumeCipher).ScriptBlock;$script:VolumeInterrupt=$false
+  $script:VolumeWrite=(Get-Command Write-L12BaiduProtected).ScriptBlock;$script:VolumeAckInterrupt=$false
+  function script:Copy-L12BaiduVolumeCipher($Cipher,[string]$Directory,$Output,[DateTime]$Deadline){if($script:VolumeInterrupt -and $Output){$script:VolumeInterrupt=$false;$Output.Write([byte[]]@(1,2,3),0,3);throw 'L12_TEST_VOLUME_INTERRUPTED'};& $script:OriginalVolumeCopy $Cipher $Directory $Output $Deadline}
+  function script:Write-L12BaiduProtected([string]$Path,$Value){if($script:VolumeAckInterrupt -and $Path.EndsWith('reassembly.dpapi') -and $Value.files[0].phase -ceq 'complete'){$script:VolumeAckInterrupt=$false;throw 'L12_TEST_VOLUME_ACK_INTERRUPTED'};& $script:VolumeWrite $Path $Value}
+ }
+ Check 'volumes-owned-partial-reassembly-resumes-without-overwriting-unknown' {
+  $bad=$volumeRestore.Clone();$bad.TransferDirectory=Join-Path $root 'volume-reassembly-resume';In-Module {$script:VolumeInterrupt=$true}
+  Reject {Invoke-L12BaiduArchiveRestore @bad} 'L12_TEST_VOLUME_INTERRUPTED';Assert (!(Test-Path (Join-Path $bad.TransferDirectory 'restore-receipt.json')))
+  Assert (@(Get-ChildItem (Join-Path $bad.TransferDirectory 'returned') -Filter '*.assembling-*').Count -eq 1)
+  $result=Invoke-L12BaiduArchiveRestore @bad;Assert $result.cloudProvenanceVerified
+ }
+ Check 'volumes-move-before-state-ack-reconciles-owned-output' {
+  $bad=$volumeRestore.Clone();$bad.TransferDirectory=Join-Path $root 'volume-ack-resume';In-Module {$script:VolumeAckInterrupt=$true}
+  Reject {Invoke-L12BaiduArchiveRestore @bad} 'L12_TEST_VOLUME_ACK_INTERRUPTED'
+  Assert (Test-Path (Join-Path $bad.TransferDirectory ('returned/'+$definitions[0].cipher.fileName)))
+  $result=Invoke-L12BaiduArchiveRestore @bad;Assert $result.cloudProvenanceVerified
+ }
+ Check 'volumes-untracked-full-cipher-is-not-adopted' {
+  $directory=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $root 'volume-untracked-reassembly');$returned=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $directory 'returned')
+  [IO.File]::WriteAllBytes((Join-Path $returned $definitions[0].cipher.fileName),$sourceBytes[$definitions[0].cipher.fileName])
+  Reject {In-Module {param($a) $p=Read-L12BaiduManifest $a.path $a.sha $a.original;try{Complete-L12BaiduVolumeReturn $p $a.returned $a.directory ([DateTime]::MaxValue)}finally{$p.stream.Dispose()}} @{path=$envelopeOnly;sha=$preparedVolumes.manifestSha256;original=$manifestSha;returned=$returned;directory=$directory}} 'L12_BAIDU_UNTRACKED_RETURNED'
+ }
+ Check 'volumes-untracked-receipt-is-never-overwritten' {
+  $bad=$volumeRestore.Clone();$bad.TransferDirectory=Join-Path $root 'volume-untracked-receipt';$mock.downloadShort=123
+  Reject {Invoke-L12BaiduArchiveRestore @bad} 'L12_BAIDU_DOWNLOAD_INCOMPLETE'
+  $receipt=Join-Path $bad.TransferDirectory 'restore-receipt.json';[IO.File]::WriteAllText($receipt,'unknown receipt')
+  Reject {Invoke-L12BaiduArchiveRestore @bad} 'L12_BAIDU_VOLUME_RECEIPT';Assert ([IO.File]::ReadAllText($receipt) -ceq 'unknown receipt')
+ }
+ Check 'volumes-duplicate-content-retains-each-reference-occurrence' {
+  $first=[byte[]]::new(65536);$random.NextBytes($first);[Text.Encoding]::ASCII.GetBytes("age-encryption.org/v1`n").CopyTo($first,0)
+  $directory=In-Module {param($p) New-L12BaiduPrivateDirectory $p} (Join-Path $root 'volume-identical-content')
+  $digest=In-Module {param($b) Get-L12BaiduSha $b} $first;[IO.File]::WriteAllBytes((Join-Path $directory ($digest+'.volume')),$first)
+  $all=[byte[]]::new(131072);$first.CopyTo($all,0);$first.CopyTo($all,65536);$whole=In-Module {param($b) Get-L12BaiduSha $b} $all
+  $cipher=[pscustomobject]@{bytes=131072;sha256=$whole;volumes=@(@{name=($digest+'.volume');sha256=$digest;bytes=65536;index=0;offset=0},@{name=($digest+'.volume');sha256=$digest;bytes=65536;index=1;offset=65536})}
+  In-Module {param($a) Copy-L12BaiduVolumeCipher $a.cipher $a.directory $null ([DateTime]::MaxValue)} @{cipher=$cipher;directory=$directory}
+ }
+ $volumeCheckCount=$checks.Count-$volumeStart;Assert ($volumeCheckCount -eq 32) 'volume check count changed'
 }catch{
  $failure=$_.Exception.Message
 }finally{
@@ -183,7 +339,7 @@ try{
  $result|ConvertTo-Json -Depth 12|Set-Content -LiteralPath (Join-Path $OutputRoot 'result.json') -Encoding utf8
  [pscustomobject]$result|Select-Object passed,failed,fixtureRoot|ConvertTo-Json -Compress
 }
-if($result.failed -gt 0 -or $result.Contains('failure') -or $result.passed -ne 69){throw ('L12_BAIDU_TEST_FAILURE: '+$(if($result.Contains('failure')){$result.failure}else{'incomplete check count'}))}
+if($result.failed -gt 0 -or $result.Contains('failure') -or $result.passed -ne 101){throw ('L12_BAIDU_TEST_FAILURE: '+$(if($result.Contains('failure')){$result.failure}else{'incomplete check count'}))}
 $physical=Assert-L12GeneratedPath -Path $root
 if($physical -cnotmatch '^E:\\Legion12-ColdStorage\\l12-baidu-offline-tests-[0-9a-f]{32}$'){throw 'L12_BAIDU_FIXTURE_CLEANUP_SCOPE'}
 $children=@(Get-ChildItem -LiteralPath $physical -Recurse -Force)

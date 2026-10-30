@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261031-BAIDU-TRANSPORT-VOLUMES｜保留原age/V2字节的大文件显式分卷
+
+- 新367停服归档略大于4GiB，不能提高旧传输guard冒作可恢复。只扩既有冷归档端口：离线PrepareVolumes产生具名`l12-baidu-transport-volumes-v1`清单，默认1GiB/卷、组64GiB/128引用上限；原V2清单字节及age密文不变。Upload/Download/Restore统一复用旧动态HTTPS、固定应用、源锁、分片和DPAPI进度；新格式必须同时固定分卷及原V2两个SHA，不影响旧V2的4GiB拒绝。
+- 新清单严格类型/字段/重复JSON键/索引/连续偏移/长度/每卷SHA与整cipher SHA，重复内容仅复用云对象而保留每个顺序引用；完整重组后交原VerifyReturned，不自造业务解密或数据库证明。新目录拒未知文件、reassembly DPAPI绑定拥有的partial，Move后回执丢失可核原文件恢复，既有不同回执拒绝且成功重复不覆盖首回执。缺/坏/乱序、伪整文件、跨组/路径、容量和中断均有反例。
+- 四叶最终固定CLI BD07D9B1/模块5EC9C4A1/helper83EEC46F/QA6BB1F8DF；原CloudArchive D419CC1B不改。来源Focused101/101（旧69＋新32）及独立审查Clear，Main实际4295032832B文件分卷并原生产流重组，全SHA及2/3/4GiB偏移标记通过，原V2仍拒超限，12.89GB自有合成夹具已清。`transport-volumes-20261031/large-filesystem-r1/result.json`明确非有效age/业务库恢复；不拿它冒实际大文件云回环。
+- 另真实age三件263342B、64KiB分卷7引用，原stream重组/整SHA后用未改VerifyReturned真实解密、completion/raw evidence绑定通过；原r1因夹具原manifest位于返回目录祖先而被正常拒绝，保留失败，仅将可信原清单置兄弟目录续验成功，不改独立性保护。唯一`transport-volumes-20261031/age-compatibility-r2/result.json`；新格式真实小组云回环独立记录，不混本地证据或真实业务数据库恢复。当前11组旧档执行用冻结原V2副本，不依赖本片新源。
+- 同一263342B纯合成组实际上传9云文件，全新Restore目录初始仅可信分卷清单、没有age/volume/旧传输状态；原生产恢复/重组后用原校验器真实解密全SHA通过，30.739秒，小组周转1346270B清理。`cloud-synthetic-r1/result.json`绑定全部原回执与四源；未统计精确HTTP请求数，不把9文件写成9次GET。无业务key/业务库/授权刷新/token输出，非真实>4GiB云运输或物理新机演练；实际>4GiB证明仍仅上一条本地文件系统层。
+- 回退只移除新格式路由/helper/QA，原V2及旧可信清单/密文不变；已经使用新格式的组必须保留新恢复工具及双SHA，不能删工具后称仍可用旧端直接恢复。无应用/卡效/库格式/发布门槛修改，不运行游戏全量Release/部署或改维护；最新367两快照仍留服务器，不据本片资格删最近两组。
+
 ## QA-20261031-WINDOWS-UNREACHABLE-LEASE｜本地测试清理的不可达句柄释放机会
 
 - 第二轮原Release规则8773过、平台3137/3138，唯一报告错误为TutorialResponseLesson显式付费用例Dispose删合成matches.db时sharing violation；原锁owner未知，不能由teardown堆栈推断原正文已过，也不认定正式产品故障。原日志/TRX及466944B合成库保留，host退出后只读独占成功；785→f79全部CS/csproj/Build/global差异为空，但未拼接Release。

@@ -6,6 +6,7 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Security.Cryptography.ProtectedData
 $script:L12BaiduEntropy=[Text.Encoding]::UTF8.GetBytes('L12-Baidu-124583157-v1')
 $script:L12BaiduPartBytes=4MB
+. (Join-Path $PSScriptRoot 'L12BaiduTransportVolumes.ps1')
 
 function Assert-L12BaiduLocal([string]$Path,[switch]$Exists,[switch]$Private){
  if($Path -notmatch '^[DE]:[\\/]' -or $Path.Substring(2).Contains(':') -or $Path -match '(^|[\\/])\.{1,2}([\\/]|$)|[*?"<>|]' -or $Path -match '(?i)(^|[\\/])(BaiduSyncdisk|BaiduNetdisk|OneDrive[^\\/]*|Dropbox)([\\/]|$)'){throw 'L12_BAIDU_LOCAL_PATH'}
@@ -158,7 +159,8 @@ function Update-L12BaiduAuthorization {
  Update-L12BaiduAuthorization -CredentialPath $CredentialPath -TimeBudgetSeconds $TimeBudgetSeconds
 }
 
-function Read-L12BaiduManifest([string]$ManifestPath,[string]$ExpectedManifestSha256){
+function Read-L12BaiduManifest([string]$ManifestPath,[string]$ExpectedManifestSha256,[string]$ExpectedOriginalManifestSha256=''){
+ if([IO.Path]::GetFileName($ManifestPath) -cmatch '^[a-f0-9]{64}\.volumes\.json$'){return Read-L12BaiduVolumeEnvelope $ManifestPath $ExpectedManifestSha256 $ExpectedOriginalManifestSha256}
  $manifestStream=$null
  try{
  $manifestFile=Assert-L12BaiduLocal $ManifestPath -Exists -Private
@@ -179,15 +181,15 @@ function Read-L12BaiduManifest([string]$ManifestPath,[string]$ExpectedManifestSh
  return [pscustomobject]@{manifestFile=$manifestFile;stream=$manifestStream;definitions=$definitions;manifestSha256=$ExpectedManifestSha256;remoteRoot=('/apps/十二军团私有备份/l12-'+$ExpectedManifestSha256)}
  }catch{if($manifestStream){$manifestStream.Dispose()};throw}
 }
-function Get-L12BaiduGroupPlan([string]$ManifestPath,[string]$ExpectedManifestSha256,[DateTime]$Deadline=[DateTime]::MaxValue){
+function Get-L12BaiduGroupPlan([string]$ManifestPath,[string]$ExpectedManifestSha256,[DateTime]$Deadline=[DateTime]::MaxValue,[string]$ExpectedOriginalManifestSha256=''){
  $files=[Collections.Generic.List[object]]::new();$trusted=$null
  try{
-  $trusted=Read-L12BaiduManifest $ManifestPath $ExpectedManifestSha256
+  $trusted=Read-L12BaiduManifest $ManifestPath $ExpectedManifestSha256 $ExpectedOriginalManifestSha256
   $manifestFile=$trusted.manifestFile;$manifestStream=$trusted.stream
   $definitions=$trusted.definitions
   foreach($definition in $definitions){
    $path=Assert-L12BaiduLocal (Join-Path (Split-Path -Parent $manifestFile) $definition.name) -Exists -Private
-   $stream=if($definition.age){[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}else{$manifestStream}
+   $stream=if($path -ceq $manifestFile){$manifestStream}else{[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
    $file=[pscustomobject]@{name=$definition.name;sha256=$definition.sha256;bytes=$definition.bytes;parts=@();stream=$stream};$files.Add($file)
    if($stream.Length -ne $definition.bytes){throw 'L12_BAIDU_SOURCE_LENGTH'}
    if($definition.age){$header=[byte[]]::new(22);$stream.ReadExactly($header);if([Text.Encoding]::ASCII.GetString($header) -cne "age-encryption.org/v1`n"){throw 'L12_BAIDU_CIPHER_HEADER'};$stream.Position=0}
@@ -198,11 +200,12 @@ function Get-L12BaiduGroupPlan([string]$ManifestPath,[string]$ExpectedManifestSh
    }finally{$sha.Dispose();$md5.Dispose();[Array]::Clear($buffer,0,$buffer.Length)}
    $stream.Position=0
   }
-  return [pscustomobject]@{manifestSha256=$ExpectedManifestSha256;remoteRoot=('/apps/十二军团私有备份/l12-'+$ExpectedManifestSha256);files=$files}
+  if($trusted.PSObject.Properties['volumeCiphers']){foreach($cipher in $trusted.volumeCiphers){Copy-L12BaiduVolumeCipher $cipher (Split-Path -Parent $manifestFile) $null $Deadline}}
+  return [pscustomobject]@{manifestSha256=$ExpectedManifestSha256;remoteRoot=$trusted.remoteRoot;files=$files;transport=$trusted}
  }catch{foreach($file in $files){$file.stream.Dispose()};if($trusted){$trusted.stream.Dispose()};throw}
 }
 function Close-L12BaiduPlan($Plan){foreach($file in $Plan.files){$file.stream.Dispose()}}
-function Assert-L12BaiduRemotePath([string]$Path,[string]$Root,[string]$Name){if($Path -cne ($Root+'/'+$Name) -or $Name -cnotmatch '^[a-f0-9]{64}\.(age|manifest\.json)$'){throw 'L12_BAIDU_REMOTE_PATH'}}
+function Assert-L12BaiduRemotePath([string]$Path,[string]$Root,[string]$Name){if($Path -cne ($Root+'/'+$Name) -or $Name -cnotmatch '^[a-f0-9]{64}\.(age|manifest\.json|volume|volumes\.json)$'){throw 'L12_BAIDU_REMOTE_PATH'}}
 function Get-L12BaiduMetadata($Context,[string]$Path,[switch]$AllowMissing){
  $body=New-L12BaiduForm @{target=('['+($Path|ConvertTo-Json -Compress)+']');blocks=1;dlink=1}
  $url=New-L12BaiduUrl 'https://pan.baidu.com/rest/2.0/xpan/file' @{method='filemetas';access_token=$Context.credential.accessToken}
@@ -244,12 +247,12 @@ function Get-L12BaiduUploadLocation($Context,[string]$Path,[string]$UploadId){
  [pscustomobject]@{origin=$origin;expiresUtc=[DateTime]::UtcNow.AddSeconds([Math]::Min(60,$lifetime))}
 }
 function Invoke-L12BaiduArchiveUpload {
- param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$ExpectedManifestSha256,[Parameter(Mandatory)][string]$TransferDirectory,[string]$CredentialPath='E:/Legion12-ColdStorage/private-baidu-api-124583157/oauth.dpapi',[ValidateRange(5,3600)][int]$TimeBudgetSeconds=300,[ValidateRange(5,300)][int]$RequestTimeoutSeconds=120)
+ param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$ExpectedManifestSha256,[Parameter(Mandatory)][string]$TransferDirectory,[string]$CredentialPath='E:/Legion12-ColdStorage/private-baidu-api-124583157/oauth.dpapi',[ValidateRange(5,3600)][int]$TimeBudgetSeconds=300,[ValidateRange(5,300)][int]$RequestTimeoutSeconds=120,[string]$ExpectedOriginalManifestSha256='')
  $directory=New-L12BaiduPrivateDirectory $TransferDirectory;$leasePath=Assert-L12BaiduLocal (Join-Path $directory 'transfer.lock') -Private
  $lease=[IO.File]::Open($leasePath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$context=$null;$plan=$null
  try{
   $context=New-L12BaiduContext $CredentialPath $TimeBudgetSeconds $RequestTimeoutSeconds;Assert-L12BaiduCredentialUsable $context
-  $plan=Get-L12BaiduGroupPlan $ManifestPath $ExpectedManifestSha256 $context.deadline;$statePath=Join-Path $directory 'transfer.dpapi';$state=Read-L12BaiduTransferState $plan $statePath
+  $plan=Get-L12BaiduGroupPlan $ManifestPath $ExpectedManifestSha256 $context.deadline $ExpectedOriginalManifestSha256;$statePath=Join-Path $directory 'transfer.dpapi';$state=Read-L12BaiduTransferState $plan $statePath
   Write-L12BaiduProtected $statePath $state
   for($index=0;$index -lt $plan.files.Count;$index++){
    $file=$plan.files[$index];$entry=$state.files[$index];$path=$plan.remoteRoot+'/'+$file.name;Assert-L12BaiduRemotePath $path $plan.remoteRoot $file.name
@@ -301,7 +304,9 @@ function Invoke-L12BaiduArchiveUpload {
    $entry.fsId=[string]$created.fs_id;$entry.phase='created';Write-L12BaiduProtected $statePath $state
   }
   $state.uploadCompleted=$true;Write-L12BaiduProtected $statePath $state
-  [pscustomobject]@{status='uploaded-awaiting-independent-download';manifestSha256=$plan.manifestSha256;remoteRoot=$plan.remoteRoot;fileCount=$plan.files.Count;sourceDeleted=$false}
+  if($plan.transport.PSObject.Properties['volumeCiphers']){
+   [pscustomobject]@{status='transport-volumes-uploaded-awaiting-independent-download';manifestSha256=$plan.manifestSha256;originalManifestSha256=$plan.transport.originalManifestSha256;transportFormat=$plan.transport.transportFormat;remoteRoot=$plan.remoteRoot;fileCount=$plan.files.Count;sourceDeleted=$false}
+  }else{[pscustomobject]@{status='uploaded-awaiting-independent-download';manifestSha256=$plan.manifestSha256;remoteRoot=$plan.remoteRoot;fileCount=$plan.files.Count;sourceDeleted=$false}}
  }finally{if($plan){Close-L12BaiduPlan $plan};if($context){Close-L12BaiduContext $context};$lease.Dispose()}
 }
 
@@ -380,20 +385,24 @@ function Receive-L12BaiduTrackedFile($Context,$File,$Entry,[string]$Path,[string
  $progress.complete=$true;Write-L12BaiduProtected $StatePath $State
 }
 function Invoke-L12BaiduArchiveDownload {
- param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$ExpectedManifestSha256,[Parameter(Mandatory)][string]$TransferDirectory,[string]$CredentialPath='E:/Legion12-ColdStorage/private-baidu-api-124583157/oauth.dpapi',[ValidateRange(5,3600)][int]$TimeBudgetSeconds=300,[ValidateRange(5,300)][int]$RequestTimeoutSeconds=120)
+ param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$ExpectedManifestSha256,[Parameter(Mandatory)][string]$TransferDirectory,[string]$CredentialPath='E:/Legion12-ColdStorage/private-baidu-api-124583157/oauth.dpapi',[ValidateRange(5,3600)][int]$TimeBudgetSeconds=300,[ValidateRange(5,300)][int]$RequestTimeoutSeconds=120,[string]$ExpectedOriginalManifestSha256='')
  $directory=New-L12BaiduPrivateDirectory $TransferDirectory;$lease=[IO.File]::Open((Assert-L12BaiduLocal (Join-Path $directory 'transfer.lock') -Private),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$context=$null;$plan=$null
  try{
   $context=New-L12BaiduContext $CredentialPath $TimeBudgetSeconds $RequestTimeoutSeconds;Assert-L12BaiduCredentialUsable $context
-  $plan=Get-L12BaiduGroupPlan $ManifestPath $ExpectedManifestSha256 $context.deadline;$statePath=Join-Path $directory 'transfer.dpapi';$state=Read-L12BaiduTransferState $plan $statePath
+  $plan=Get-L12BaiduGroupPlan $ManifestPath $ExpectedManifestSha256 $context.deadline $ExpectedOriginalManifestSha256;$statePath=Join-Path $directory 'transfer.dpapi';$state=Read-L12BaiduTransferState $plan $statePath
   if(!$state.uploadCompleted -or @($state.files|Where-Object{$_.phase -cne 'created' -or !$_.fsId}).Count){throw 'L12_BAIDU_UPLOAD_NOT_COMPLETE'}
   $returned=New-L12BaiduPrivateDirectory (Join-Path $directory 'returned')
+  Assert-L12BaiduVolumeReturnCapacity $plan.transport $returned
   for($i=0;$i -lt $plan.files.Count;$i++){
    $file=$plan.files[$i];$entry=$state.files[$i];$path=$plan.remoteRoot+'/'+$file.name
    Receive-L12BaiduTrackedFile $context $file $entry $path $returned $statePath $state
   }
+  $volumeReturn=Complete-L12BaiduVolumeReturn $plan.transport $returned $directory $context.deadline
   $state.downloadCompleted=$true;Write-L12BaiduProtected $statePath $state
   $receipt=[ordered]@{schema=1;status='cloud-cipher-roundtrip-verified';completedUtc=[DateTime]::UtcNow.ToString('o');manifestSha256=$plan.manifestSha256;remoteRoot=$plan.remoteRoot;returnedDirectory=$returned;files=@($state.files|Select-Object name,bytes,sha256,fsId);cloudProvenanceVerified=$true;plaintextRecoveryVerified=$false;sourceDeleted=$false}
-  $receipt|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $directory 'cloud-receipt.json') -Encoding utf8
+  Add-L12BaiduVolumeReceipt $receipt $volumeReturn
+  if($volumeReturn){$receipt=Write-L12BaiduVolumeReceipt (Join-Path $directory 'cloud-receipt.json') $receipt}
+  else{$receipt|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $directory 'cloud-receipt.json') -Encoding utf8}
   [pscustomobject]$receipt
  }finally{if($plan){Close-L12BaiduPlan $plan};if($context){Close-L12BaiduContext $context};$lease.Dispose()}
 }
@@ -411,11 +420,11 @@ function Read-L12BaiduRestoreState($Plan,[string]$Path){
  return $state
 }
 function Invoke-L12BaiduArchiveRestore {
- param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$ExpectedManifestSha256,[Parameter(Mandatory)][string]$TransferDirectory,[string]$CredentialPath='E:/Legion12-ColdStorage/private-baidu-api-124583157/oauth.dpapi',[ValidateRange(5,3600)][int]$TimeBudgetSeconds=300,[ValidateRange(5,300)][int]$RequestTimeoutSeconds=120)
+ param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$ExpectedManifestSha256,[Parameter(Mandatory)][string]$TransferDirectory,[string]$CredentialPath='E:/Legion12-ColdStorage/private-baidu-api-124583157/oauth.dpapi',[ValidateRange(5,3600)][int]$TimeBudgetSeconds=300,[ValidateRange(5,300)][int]$RequestTimeoutSeconds=120,[string]$ExpectedOriginalManifestSha256='')
  $trusted=$null;$lease=$null;$context=$null
  try{
   # Only this trusted, locked manifest is needed; neither source ciphers nor old-machine state is read.
-  $trusted=Read-L12BaiduManifest $ManifestPath $ExpectedManifestSha256
+  $trusted=Read-L12BaiduManifest $ManifestPath $ExpectedManifestSha256 $ExpectedOriginalManifestSha256
   $directory=New-L12BaiduPrivateDirectory $TransferDirectory
   $lease=[IO.File]::Open((Assert-L12BaiduLocal (Join-Path $directory 'restore.lock') -Private),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
   $statePath=Join-Path $directory 'restore.dpapi'
@@ -423,15 +432,19 @@ function Invoke-L12BaiduArchiveRestore {
   $state=Read-L12BaiduRestoreState $trusted $statePath;Write-L12BaiduProtected $statePath $state
   $context=New-L12BaiduContext $CredentialPath $TimeBudgetSeconds $RequestTimeoutSeconds;Assert-L12BaiduCredentialUsable $context
   $returned=New-L12BaiduPrivateDirectory (Join-Path $directory 'returned')
+  Assert-L12BaiduVolumeReturnCapacity $trusted $returned
   for($i=0;$i -lt $trusted.definitions.Count;$i++){
    $file=$trusted.definitions[$i];$entry=$state.files[$i];$path=$trusted.remoteRoot+'/'+$file.name
    Assert-L12BaiduRemotePath $path $trusted.remoteRoot $file.name
    Receive-L12BaiduTrackedFile $context $file $entry $path $returned $statePath $state -ManifestOnly
   }
+  $volumeReturn=Complete-L12BaiduVolumeReturn $trusted $returned $directory $context.deadline
   $state.downloadCompleted=$true;Write-L12BaiduProtected $statePath $state
   $receipt=[ordered]@{schema=1;status='cloud-cipher-restore-verified';completedUtc=[DateTime]::UtcNow.ToString('o');manifestSha256=$trusted.manifestSha256;remoteRoot=$trusted.remoteRoot;returnedDirectory=$returned;files=@($state.files|Select-Object name,bytes,sha256,fsId);cloudProvenanceVerified=$true;plaintextRecoveryVerified=$false;sourceCipherRequired=$false;oldTransferStateRequired=$false;sourceDeleted=$false}
-  $receipt|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $directory 'restore-receipt.json') -Encoding utf8
+  Add-L12BaiduVolumeReceipt $receipt $volumeReturn
+  if($volumeReturn){$receipt=Write-L12BaiduVolumeReceipt (Join-Path $directory 'restore-receipt.json') $receipt}
+  else{$receipt|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $directory 'restore-receipt.json') -Encoding utf8}
   [pscustomobject]$receipt
  }finally{if($context){Close-L12BaiduContext $context};if($lease){$lease.Dispose()};if($trusted){$trusted.stream.Dispose()}}
 }
-Export-ModuleMember -Function Get-L12BaiduCredentialStatus,Update-L12BaiduAuthorization,Invoke-L12BaiduArchiveUpload,Invoke-L12BaiduArchiveDownload,Invoke-L12BaiduArchiveRestore
+Export-ModuleMember -Function Get-L12BaiduCredentialStatus,Update-L12BaiduAuthorization,Invoke-L12BaiduArchiveUpload,Invoke-L12BaiduArchiveDownload,Invoke-L12BaiduArchiveRestore,New-L12BaiduTransportVolumes
