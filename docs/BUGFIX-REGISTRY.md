@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261031-TITLE-EXCLUSION-LOOKUP｜主宰称号排除避免重复裁定扫描（本地验收）
+
+- P3既有投影内限定优化，不改变判罚或榜单规则。普通Save的已提交身份和锁内主宰榜共用helper；原每distinct事实ID重新扫全部有效整场裁定并排序，现仅为本代非waived事实键单遍建立最新裁定map，不排序/跨代缓存。严格更大Revision才替换，保同rev首条；大小写、精确match scope、撤销、全部waived（含事实外ID）、held及个人处罚独立语义保留。Statistics/Gameplay同类已有索引，不机械混改。
+- 原真实合法Save/称号/重启先通过，RED仅重复扫描分配断言失败；首r1夹具缺裁定元数据失败另保。512事实/128裁定、5次helper原970304B，最终635640B（降34.49%）；时间13.354→2.702ms为不同执行时点合成观测、不是稳定门槛。整Save1115144→978872B另列，不全归此helper，不冒线上收益/原故障根因。空/稀疏分配略增，只有未建无关历史大map的边界证明，非所有形态都更快。
+- 独审补核发现恢复validator未拒TitleFact.MatchId=null、原eligibility会忽略；原map会新抛key异常，Main主动中断首完整验证（无最终TRX），保原started监督/自有temp及interruption，不冒通过。新10场null真RED为9失败/1waived正控；只对null事实沿原匹配单次回退，null/空字符串/空白不归并，正常导入仍拒null、不改格式/validator/真实数据。真实Commit→GallerySave→restart及两消费者可读，null裁定元素仅helper等价，不冒其他投影支持。
+- 最终23/23专项通过，独审null修正Clear，Main再核去捕获closure/非空断言仅移除新增分配与警告。产品A14AC7BF/QA0AA13506、DLL38CAEB23/598CC98F固定；同程序集无过滤完整Platform-r2实际3124/3124、0失败跳过、13m59s，源及两DLL前后未变，监督临时树自动回收。`demand-driven-resources-20261030/title-exclusions/acceptance.json`保全部原RED/中间GREEN/中断与最终证据，源码仅本地提交、公开推送仍待直接确认；无前端/卡效变更，不重复其全链，无部署/线上关单。回退只恢复此helper旧扫描，不动库/镜像/历史或权限保护。
+
 ## FIX-20261030-GALLERY-PRODUCT-ISOLATION｜画廊资料与商品分离、展示对象隔离（本地验收）
 
 - 沿人类已批准的原画廊专项及本轮“都解决、并行处理”，保原独立产品管理/发布顺序与选填联动卡资料功能。画廊产品不再借商品文章发布或合并归档商品；历史已管理site引用按确定alias兼容、无关商品不引入，商品字段不改。原三件商品恢复早已完成，本轮没有重放或线上写入。

@@ -258,17 +258,33 @@ public sealed partial class L12PlatformStore
         var held = data.RankedHeldRewards.Select(row => row.MatchId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var excluded = new HashSet<string>(waived, StringComparer.OrdinalIgnoreCase);
-        foreach (var matchId in facts.Select(row => row.MatchId)
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        var matchIds = facts.Select(row => row.MatchId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        matchIds.ExceptWith(waived);
+        var latestByMatch = new Dictionary<string, RankedIntegrityDecisionRow>(StringComparer.OrdinalIgnoreCase);
+        // Rebuild only this generation's relevant matches. Strictly greater revision retains
+        // the original first source row on ties, as the previous stable descending sort did.
+        if (matchIds.Count > 0)
+            foreach (var decision in activeDecisions)
+                foreach (var matchId in decision.MatchIds)
+                    if (matchId is not null && matchIds.Contains(matchId)
+                        && (!latestByMatch.TryGetValue(matchId, out var previous)
+                            || decision.Revision > previous.Revision))
+                        latestByMatch[matchId] = decision;
+        foreach (var matchId in matchIds)
         {
-            if (excluded.Contains(matchId)) continue;
-            var latest = activeDecisions.Where(row => row.MatchIds.Contains(matchId,
-                    StringComparer.OrdinalIgnoreCase))
-                .OrderByDescending(row => row.Revision).FirstOrDefault();
-            var isHeld = held.Contains(matchId);
+            // Recovery historically permits a null fact ID even though normal import
+            // rejects it. Preserve that exceptional key's original matching semantics.
+            RankedIntegrityDecisionRow? latest;
+            if (matchId is null)
+                latest = activeDecisions.Where(row => row.MatchIds.Contains(null!,
+                        StringComparer.OrdinalIgnoreCase))
+                    .OrderByDescending(row => row.Revision).FirstOrDefault();
+            else
+                latestByMatch.TryGetValue(matchId, out latest);
+            var isHeld = held.Contains(matchId!);
             if (latest is null ? isHeld : latest.Disposition is "confirmed" or "system-error"
                 || latest.Disposition == "review" && isHeld)
-                excluded.Add(matchId);
+                excluded.Add(matchId!);
         }
         return excluded.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
