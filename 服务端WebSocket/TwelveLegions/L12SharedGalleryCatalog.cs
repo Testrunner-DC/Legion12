@@ -225,7 +225,11 @@ public sealed class L12SharedGalleryCatalog : IAsyncDisposable
                 if (rarity is null) throw new InvalidDataException("共享图库罕贵为空");
                 Text(rarity.Id, 160, true); Text(rarity.Code, 40, true); Text(rarity.Name, 80, true);
             }
-            result.Add(art with { Products = Array.AsReadOnly(products.ToArray()), Rarities = Array.AsReadOnly(rarities.ToArray()) });
+            var information = art.CardInformation is { } details
+                ? details with { Traits = details.Traits is { } traits ? Array.AsReadOnly(traits.ToArray()) : null }
+                : null;
+            result.Add(art with { Products = Array.AsReadOnly(products.ToArray()),
+                Rarities = Array.AsReadOnly(rarities.ToArray()), CardInformation = information });
         }
         return result.AsReadOnly();
     }

@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
-import { cardArchiveProducts, displayCardNumber, filterableCardCost, loadCardArchiveCatalog, type DeckCard } from './decks'
+import { displayCardNumber, filterableCardCost, loadCardArchiveCatalog, type DeckCard } from './decks'
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import MobileDeferredCardImage from './MobileDeferredCardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
@@ -76,13 +76,21 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
       id: `GALLERY-${art.id}`,
       number: art.artCode || `GALLERY-${art.id.slice(0, 8)}`,
       nameZh: art.displayName,
-      cardType: 'gallery-card',
+      cardType: art.cardInformation?.cardType || 'gallery-card',
       product: '',
-      faction: '',
+      faction: art.cardInformation?.faction || '',
+      cost: art.cardInformation?.cost ?? undefined,
+      troops: art.cardInformation?.troops ?? undefined,
+      hp: art.cardInformation?.hp ?? undefined,
+      disasterLevel: art.cardInformation?.disasterLevel ?? undefined,
+      trialValue: art.cardInformation?.trialValue ?? undefined,
+      deckLimit: art.cardInformation?.deckLimit ?? undefined,
+      profession: art.cardInformation?.profession || undefined,
+      isCounterTactic: art.cardInformation?.isCounterTactic ?? undefined,
       imageUrl: art.imageUrl,
       thumbnailUrl: art.thumbnailUrl,
       rarity: art.rarities?.map(item => item.name).join(' / ') || undefined,
-      traits: [],
+      traits: art.cardInformation?.traits ?? [],
       effect: art.effect || '',
       artist: art.artist || undefined,
       collaboration: art.collaboration || undefined,
@@ -160,18 +168,16 @@ function archiveListImageUrl(card: DeckCard) {
   return /^\/api\/site\/media\/[a-f0-9]{32}\/thumbnail\/[a-f0-9]{64}\.webp$/.test(thumbnail)
     ? thumbnail : card.imageUrl
 }
-const productOptions = computed(() => {
-  const visibleNames = new Set(galleryFilterProducts.value
-    .filter(item => item.showInGalleryFilter !== false)
-    .map(item => item.name))
-  const ordered = [
-    ...cardArchiveProducts.filter(name => visibleNames.has(name)),
-    ...galleryFilterProducts.value.map(item => item.name)
-      .filter(name => visibleNames.has(name) && !cardArchiveProducts.includes(name)),
-  ]
-  return [...new Set(ordered)].filter(value => regularDisplayCards.value.some(card => card.products?.includes(value))
-    || galleryCards.value.some(card => card.products?.includes(value)))
-})
+// The public gallery registry is the sole product configuration for both
+// filter choices and default artwork ordering. Product article publication is
+// a separate system and must not supply another client-side visibility gate.
+const displayedGalleryProducts = computed(() => galleryFilterProducts.value
+  .map((item, index) => ({ item, index }))
+  .filter(({ item }) => item.active !== false && item.showInGalleryFilter !== false)
+  .sort((left, right) => (left.item.releaseOrder ?? 0) - (right.item.releaseOrder ?? 0)
+    || left.index - right.index)
+  .map(({ item }) => item))
+const productOptions = computed(() => [...new Set(displayedGalleryProducts.value.map(item => item.name))])
 
 onMounted(async () => {
   window.addEventListener('keydown', onWindowKeydown)
@@ -233,7 +239,7 @@ function matchesFilters(card: CatalogCard, keyword: string) {
 
 const galleryProductRanks = computed(() => {
   const ranks = new Map<string, number>()
-  galleryFilterProducts.value.forEach((item, index) => { if (!ranks.has(item.name)) ranks.set(item.name, index) })
+  displayedGalleryProducts.value.forEach((item, index) => { if (!ranks.has(item.name)) ranks.set(item.name, index) })
   return ranks
 })
 function compareVisibleCards(left: CatalogCard, right: CatalogCard) {
@@ -286,7 +292,7 @@ const activeFilterSummary = computed(() => {
     product.value !== 'all' ? product.value : '',
     cost.value !== 'all' ? `费用 ${cost.value}` : '',
     disaster.value !== 'all' ? `天灾 ${disaster.value}` : '',
-    sort.value !== 'number' ? `按${sort.value === 'cost' ? '费用' : sort.value === 'troops' ? '兵力' : '名称'}排序` : '',
+    sort.value !== 'number' ? `按${sort.value === 'product' ? '产品' : sort.value === 'cost' ? '费用' : sort.value === 'troops' ? '兵力' : '名称'}排序` : '',
   ].filter(Boolean)
   return parts.length > 3 ? `${parts.slice(0, 3).join(' · ')} · +${parts.length - 3}` : parts.join(' · ')
 })

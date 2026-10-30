@@ -17,6 +17,7 @@ const hash = text => crypto.createHash('sha256').update(text).digest('hex')
 // The original eleven declarations are a closed, type-only compatibility boundary.
 // Intentional schema evolution must update this fingerprint with its own regression.
 const originalDeclarationsSha256 = '9023ed8519ad5a1ad3e2af72f6b48ada88f00ba2a084d8de460d9a2a872f0f2b'
+const optionalInformationDeclarationsSha256 = '5792ab48db74963cdbedf56105bef3f5d870cd698aa0424a7737053dc096edc9'
 function validate(contracts, platform) {
   const tree = parse(contracts), root = parse(platform)
   assert.equal(tree.parseDiagnostics.length, 0)
@@ -24,8 +25,13 @@ function validate(contracts, platform) {
   assert(tree.statements.every(node => ts.isInterfaceDeclaration(node)
     && node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)))
   assert.deepEqual(tree.statements.map(node => node.name.text), names)
-  assert.equal(hash(tree.statements.map(node => node.getText(tree)).join('\n')), originalDeclarationsSha256,
-    'preserve every field, nullable union, optional marker and source-kind variant')
+  assert.equal(hash(tree.statements.map(node => node.getText(tree)).join('\n')), optionalInformationDeclarationsSha256,
+    'pin the intentional optional display-information extension')
+  const restored = contracts.replace(/\n  cardInformation\?: \{[^\n]*\} \| null\n\}/, ' }')
+  assert.notEqual(restored, contracts, 'the new object is optional and nullable')
+  const original = parse(restored)
+  assert.equal(hash(original.statements.map(node => node.getText(original)).join('\n')), originalDeclarationsSha256,
+    'removing only the display-information extension restores every original field byte-for-byte')
   const visit = node => {
     if (ts.isTypeReferenceNode(node)) {
       assert(ts.isIdentifier(node.typeName) && names.includes(node.typeName.text),
@@ -57,6 +63,8 @@ const negatives = [
   () => validate(source.replace('AlternateArtProduct[] | null', 'AlternateArtProduct[]'), entry),
   () => validate(source.replace(" | 'ranked-participants'", ''), entry),
   () => validate(source.replace('export interface AlternateArtSearchPage', 'interface AlternateArtSearchPage'), entry),
+  () => validate(source.replace('cardInformation?:', 'cardInformation:'), entry),
+  () => validate(source.replace('cost?: number | null', 'cost: number'), entry),
   () => validate(source + '\nexport const runtime = 1', entry),
   () => validate(source, entry.replace('import type { AlternateArt,', 'import { AlternateArt,')),
   () => validate(source, entry.replace('export type { AlternateArt,', 'export { AlternateArt,')),

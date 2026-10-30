@@ -91,7 +91,7 @@ const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMa
 await router.push('/');const app=createApp({render:()=>h('main',{style:'max-width:1200px;margin:20px auto'},[
  h(view==='admin'?AdminPanel:CardArchive,{onNotice:message=>{document.getElementById('notice').textContent=message}})])});
 app.use(router);await router.isReady();app.mount('#app');
-window.__galleryHttpQa={readPublic:()=>alternateArtApi.gallery(),readAdminProducts:()=>adminApi.alternateArtProducts(),readPublicProducts:()=>articleApi.list({kind:'product'}),ready:true};
+window.__galleryHttpQa={readPublic:()=>alternateArtApi.gallery(),readAdminProducts:()=>adminApi.alternateArtProducts(),readPublicProducts:()=>articleApi.list({kind:'product'}),readAdminMerchandise:()=>adminApi.articles({kind:'product'}),ready:true};
 `
 async function open(page, view = 'admin') {
   await page.goto(vite.resolvedUrls.local[0] + '__gallery_real_http__?view=' + view)
@@ -232,6 +232,7 @@ try {
       ...displayedImage, backendSha256: owner.backendSha256 })
   } else if (flow === 'product-draft') {
     stage = 'product-open-existing-card'
+    const merchandiseBefore = await page.evaluate(() => window.__galleryHttpQa.readAdminMerchandise())
     const baseline = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.builtIn)
     assert(baseline, 'A real built-in gallery entry must exist')
     const code = baseline.artCode
@@ -241,19 +242,18 @@ try {
     await row.getByRole('button', { name: '编辑资料', exact: true }).click()
     const editor = page.locator('.art-editor')
     await editor.getByRole('button', { name: '新建产品', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: '新建产品', exact: true })
+    const dialog = page.getByRole('dialog', { name: '新建画廊收录产品', exact: true })
     const title = '隔离合成产品-' + crypto.randomUUID().slice(0, 8)
-    await dialog.getByLabel('产品名称', { exact: true }).fill(title)
-    const category = dialog.getByRole('combobox')
-    assert(await category.inputValue(), 'Real server must supply the product category')
-    stage = 'product-create-draft-through-ui'
-    const savedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/articles' && response.request().method() === 'POST')
-    await dialog.getByRole('button', { name: '保存草稿并选用', exact: true }).click()
+    await dialog.getByLabel('收录产品名称', { exact: true }).fill(title)
+    assert.equal(await dialog.getByRole('combobox').count(), 0, 'Gallery metadata has no merchandise category')
+    stage = 'product-create-gallery-metadata-through-ui'
+    const savedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/alternate-art-products' && response.request().method() === 'PUT')
+    await dialog.getByRole('button', { name: '保存并选用', exact: true }).click()
     const saved = await savedResponse
     assert.equal(saved.status(), 200)
     const product = await saved.json()
-    assert.equal(product.kind, 'product'); assert.equal(product.status, 'draft'); assert.equal(product.title, title)
-    const productId = 'site:' + product.id
+    assert.equal(product.source, 'legacy'); assert.equal(product.status, 'active'); assert.equal(product.name, title)
+    const productId = product.id
     await dialog.waitFor({ state: 'hidden' })
     const selected = editor.locator('.metadata-choice label').filter({ hasText: title }).locator('input[type=checkbox]')
     assert.equal(await selected.isChecked(), true, 'Created product must be selected in the current card editor')
@@ -263,7 +263,8 @@ try {
     stage = 'product-reload-and-restart-persistence'
     await restartBackend(); await open(page)
     const products = await page.evaluate(() => window.__galleryHttpQa.readAdminProducts())
-    assert.equal(products.find(item => item.id === productId)?.status, 'draft')
+    assert.deepEqual(await page.evaluate(() => window.__galleryHttpQa.readAdminMerchandise()), merchandiseBefore, 'Gallery creation changed merchandise drafts or publication')
+    assert.equal(products.find(item => item.id === productId)?.status, 'active')
     await page.getByLabel('编号', { exact: true }).fill(code)
     await page.getByRole('button', { name: '查询', exact: true }).click()
     const persistedRow = page.locator('.gallery-list article').filter({ hasText: code })
@@ -276,16 +277,16 @@ try {
     publicPage.on('pageerror', error => errors.push(error.message))
     await open(publicPage, 'gallery')
     const publicProducts = await publicPage.evaluate(() => window.__galleryHttpQa.readPublicProducts())
-    assert.equal(publicProducts.some(item => item.id === product.id), false, 'Draft cannot be published as a product')
+    assert.equal(publicProducts.some(item => item.title === title), false, 'Gallery metadata cannot create merchandise')
     const publicArt = (await publicPage.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.id === baseline.id)
     assert(publicArt)
-    assert.equal(publicArt.products.some(item => item.id === productId), false, 'Draft attribution must remain hidden')
-    assert.deepEqual(publicArt.products, baseline.products, 'Existing public product attribution must stay intact')
+    assert.equal(publicArt.products.some(item => item.id === productId), true, 'Gallery attribution is independent of merchandise publishing')
+    assert.deepEqual(publicArt.products.filter(item => item.id !== productId), baseline.products, 'Existing public product attribution must stay intact')
     assert.deepEqual(errors, [])
     await page.screenshot({ path: path.join(output, 'product-draft-persisted-selection.png'), fullPage: true })
-    Object.assign(report, { status: 'passed', actualProductDraftCreates: 1, actualMultipartUploads: 0,
+    Object.assign(report, { status: 'passed', actualGalleryProductCreates: 1, actualMerchandiseCreates: 0, actualMultipartUploads: 0,
       selectedInCurrentEditor: true, persistedAfterOwnedRestart: true, publicProductAbsent: true,
-      publicGalleryAttributionAbsent: true, originalPublicAttributionUnchanged: true, backendSha256: owner.backendSha256 })
+      publicGalleryAttributionPresent: true, originalPublicAttributionUnchanged: true, backendSha256: owner.backendSha256 })
   } else {
   stage = 'create-through-ui'
   await page.getByRole('button', { name: '上传新卡 / 异画' }).click()

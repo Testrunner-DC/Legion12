@@ -13,6 +13,111 @@ public sealed class AlternateArtGalleryWorkflowHttpTests
 {
     private const string ImageEndpoint = "/api/admin/alternate-arts/image";
 
+    [Theory]
+    [InlineData("save")]
+    [InlineData("public")]
+    [InlineData("admin")]
+    [InlineData("search")]
+    public async Task StandaloneCardInformationViewsCannotMutateStoredTraits(string consumer)
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var actor = f.Store.AuthenticateTokenSession(f.AdminToken)!.Account;
+        var media = Upload(f.Store, actor, "card-art");
+        var inputTraits = new[] { "人类", "英雄" };
+        var saved = f.Store.SaveAlternateArt(actor, new(null, "COLLAB-ISOLATION", "", "资料隔离卡", media.Id,
+            Kind: "gallery-card", CardInformation: new(CardType: "legion", Traits: inputTraits)));
+        inputTraits[0] = "外部输入变更";
+        var sibling = f.Store.AlternateArts().Single(row => row.Id == saved.Id);
+        var mirror = File.ReadAllBytes(f.MirrorPath);
+        Assert.Equal(new[] { "人类", "英雄" }, sibling.CardInformation!.Traits);
+        var exposed = consumer switch
+        {
+            "save" => saved,
+            "public" => f.Store.AlternateArts().Single(row => row.Id == saved.Id),
+            "admin" => f.Store.AdminAlternateArts().Single(row => row.Id == saved.Id),
+            _ => Assert.Single(f.Store.SearchAlternateArts(null, "COLLAB-ISOLATION", null).Items),
+        };
+        // Arrays advertise a fixed-size ICollection as read-only but still allow
+        // index replacement, so do not mistake IsReadOnly for immutability.
+        if (exposed.CardInformation!.Traits is string[] array) array[0] = "输出副本变更";
+        else if (exposed.CardInformation.Traits is IList<string> { IsReadOnly: false } mutable)
+            mutable[0] = "输出副本变更";
+        Assert.Equal(new[] { "人类", "英雄" }, sibling.CardInformation.Traits);
+        Assert.Equal(new[] { "人类", "英雄" }, f.Store.AlternateArts().Single(row => row.Id == saved.Id).CardInformation!.Traits);
+        Assert.Equal(mirror, File.ReadAllBytes(f.MirrorPath));
+        // A later unrelated legitimate save must not persist a caller's mutation.
+        f.Store.SaveAlternateArtProduct(actor, new(null, "无关产品保存"));
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+        var reopened = new L12PlatformStore(f.MirrorPath, catalog.PresetDecks, officialCards: catalog.Cards,
+            officialAlternateArts: catalog.OfficialAlternateArts);
+        Assert.Equal(new[] { "人类", "英雄" }, reopened.AlternateArts().Single(row => row.Id == saved.Id).CardInformation!.Traits);
+    }
+
+    [Fact]
+    public async Task StandaloneCardInformationIsOptionalRoundTripsAndCanBeCleared()
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var actor = f.Store.AuthenticateTokenSession(f.AdminToken)!.Account;
+        var media = Upload(f.Store, actor, "card-art");
+        var information = new { cardType = "legion", faction = "联动阵营", cost = 0, troops = 5432, hp = 9,
+            disasterLevel = 2, trialValue = 3, profession = "战士", traits = new[] { "人类", "英雄" }, deckLimit = 2, isCounterTactic = false };
+        var body = new { artCode = "COLLAB-OPTIONAL", baseCardId = "", displayName = "选填联动卡", mediaAssetId = media.Id,
+            kind = "gallery-card", effect = "", cardInformation = information };
+        using var denied = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts", f.PlayerToken, body);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        using var created = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts", f.AdminToken, body);
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var json = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = json.RootElement.GetProperty("id").GetString()!;
+        Assert.True(JsonElement.DeepEquals(JsonSerializer.SerializeToElement(information), json.RootElement.GetProperty("cardInformation")));
+        using var publicly = JsonDocument.Parse(await f.Client.GetStringAsync("/api/alternate-arts"));
+        Assert.All(publicly.RootElement.EnumerateArray().Where(row => row.GetProperty("builtIn").GetBoolean()),
+            row => Assert.False(row.TryGetProperty("cardInformation", out _)));
+        Assert.True(JsonElement.DeepEquals(JsonSerializer.SerializeToElement(information), publicly.RootElement.EnumerateArray().Single(row => row.GetProperty("id").GetString() == id).GetProperty("cardInformation")));
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+        var reopened = new L12PlatformStore(f.MirrorPath, catalog.PresetDecks, officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+        Assert.Equal(5432, reopened.AlternateArts().Single(row => row.Id == id).CardInformation!.Troops);
+        Assert.Equal(0, reopened.AlternateArts().Single(row => row.Id == id).CardInformation!.Cost);
+        // A legacy client omitting the new object must preserve previously entered information.
+        using var legacy = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts", f.AdminToken,
+            new { id, artCode = body.artCode, baseCardId = "", body.displayName, mediaAssetId = media.Id, kind = "gallery-card", effect = "" });
+        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+        using var legacyJson = JsonDocument.Parse(await legacy.Content.ReadAsStringAsync());
+        Assert.True(JsonElement.DeepEquals(JsonSerializer.SerializeToElement(information), legacyJson.RootElement.GetProperty("cardInformation")));
+        using var cleared = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts", f.AdminToken,
+            new { id, artCode = body.artCode, baseCardId = "", body.displayName, mediaAssetId = media.Id, kind = "gallery-card", effect = "", cardInformation = new { } });
+        Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+        using var clearJson = JsonDocument.Parse(await cleared.Content.ReadAsStringAsync());
+        Assert.False(clearJson.RootElement.TryGetProperty("cardInformation", out _));
+        // No optional information, effect, product, rarity, artist or collaboration is required.
+        using var blank = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts", f.AdminToken,
+            new { artCode = "COLLAB-BLANK", baseCardId = "", displayName = "空白资料", mediaAssetId = media.Id, kind = "gallery-card" });
+        Assert.Equal(HttpStatusCode.OK, blank.StatusCode);
+        using var blankJson = JsonDocument.Parse(await blank.Content.ReadAsStringAsync());
+        Assert.False(blankJson.RootElement.TryGetProperty("cardInformation", out _));
+        Assert.DoesNotContain(f.Store.OwnedAlternateArts(actor.Id), row => row.Id == id);
+    }
+
+    [Theory]
+    [InlineData("cost")]
+    [InlineData("troops")]
+    [InlineData("hp")]
+    [InlineData("disasterLevel")]
+    [InlineData("trialValue")]
+    [InlineData("deckLimit")]
+    public async Task InvalidOptionalCardNumbersRejectWithoutCreatingEntries(string field)
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var actor = f.Store.AuthenticateTokenSession(f.AdminToken)!.Account;
+        var media = Upload(f.Store, actor, "card-art");
+        var before = JsonSerializer.Serialize(f.Store.AdminAlternateArts());
+        using var response = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts", f.AdminToken,
+            new { artCode = "COLLAB-INVALID", baseCardId = "", displayName = "无效数值", mediaAssetId = media.Id,
+                kind = "gallery-card", cardInformation = new Dictionary<string, int> { [field] = -1 } });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(before, JsonSerializer.Serialize(f.Store.AdminAlternateArts()));
+    }
+
     [Fact]
     public async Task ProductManagementAndOrderUseAuthenticatedRoutesAndKeepMetadataIndependent()
     {
@@ -146,27 +251,26 @@ public sealed class AlternateArtGalleryWorkflowHttpTests
     }
 
     [Fact]
-    public async Task NewProductUsesTheExistingDraftRouteAndRemainsHiddenFromThePublicGallery()
+    public async Task NewGalleryProductUsesIndependentMetadataRouteAndAppearsWithoutMerchandisePublishing()
     {
         await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
-        var category = f.Store.AdminSiteCategories("product").First(row => row.Active);
         var art = f.Store.AlternateArts().First(row => row.BuiltIn);
-        var body = new { kind = "product", title = "合成画廊产品", categoryId = category.Id,
-            summary = "", body = "", coverUrl = "", link = "", slug = "synthetic-gallery-product", pinned = false };
-        using var denied = await Send(f, HttpMethod.Post, "/api/admin/articles", f.PlayerToken, body);
+        var articles = JsonSerializer.Serialize(f.Store.AdminArticles(kind: "product"));
+        var body = new { name = "合成画廊产品", active = true };
+        using var denied = await Send(f, HttpMethod.Put, "/api/admin/alternate-art-products", f.PlayerToken, body);
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
-        using var created = await Send(f, HttpMethod.Post, "/api/admin/articles", f.AdminToken, body);
+        using var created = await Send(f, HttpMethod.Put, "/api/admin/alternate-art-products", f.AdminToken, body);
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         using var createdJson = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
-        var productId = "site:" + createdJson.RootElement.GetProperty("id").GetString();
-        Assert.Equal("product", createdJson.RootElement.GetProperty("kind").GetString());
-        Assert.Equal("draft", createdJson.RootElement.GetProperty("status").GetString());
+        var productId = createdJson.RootElement.GetProperty("id").GetString();
+        Assert.StartsWith("legacy:", productId);
+        Assert.Equal("active", createdJson.RootElement.GetProperty("status").GetString());
 
         using var products = await Send(f, HttpMethod.Get, "/api/admin/alternate-art-products", f.AdminToken);
         Assert.Equal(HttpStatusCode.OK, products.StatusCode);
         using var productsJson = JsonDocument.Parse(await products.Content.ReadAsStringAsync());
         var choice = productsJson.RootElement.EnumerateArray().Single(row => row.GetProperty("id").GetString() == productId);
-        Assert.Equal("draft", choice.GetProperty("status").GetString());
+        Assert.Equal("active", choice.GetProperty("status").GetString());
         using var associated = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts/metadata", f.AdminToken,
             new { alternateArtId = art.Id, productIds = new[] { productId }, rarityIds = Array.Empty<string>() });
         Assert.Equal(HttpStatusCode.OK, associated.StatusCode);
@@ -177,27 +281,26 @@ public sealed class AlternateArtGalleryWorkflowHttpTests
         Assert.Equal(HttpStatusCode.OK, publicly.StatusCode);
         using var publicJson = JsonDocument.Parse(await publicly.Content.ReadAsStringAsync());
         var current = publicJson.RootElement.EnumerateArray().Single(row => row.GetProperty("id").GetString() == art.Id);
-        Assert.DoesNotContain(current.GetProperty("products").EnumerateArray(), row => row.GetProperty("id").GetString() == productId);
-        Assert.Equal("draft", f.Store.AdminArticles(kind: "product").Single(row => "site:" + row.Id == productId).Status);
+        Assert.Contains(current.GetProperty("products").EnumerateArray(), row => row.GetProperty("id").GetString() == productId);
+        Assert.Equal(articles, JsonSerializer.Serialize(f.Store.AdminArticles(kind: "product")));
     }
 
     [Fact]
-    public async Task ProductMergeRequiresAdminAndArchivesTheDuplicateSource()
+    public async Task GalleryProductMergeRequiresAdminAndLeavesMerchandiseUntouched()
     {
         await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
-        var category = f.Store.AdminSiteCategories("product").First(row => row.Active);
-        async Task<string> Create(string title, string slug)
+        var articles = JsonSerializer.Serialize(f.Store.AdminArticles(kind: "product"));
+        async Task<string> Create(string title)
         {
-            using var response = await Send(f, HttpMethod.Post, "/api/admin/articles", f.AdminToken,
-                new { kind = "product", title, categoryId = category.Id, summary = "", body = "",
-                    coverUrl = "", link = "", slug, pinned = false });
+            using var response = await Send(f, HttpMethod.Put, "/api/admin/alternate-art-products", f.AdminToken,
+                new { name = title, active = true });
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            return "site:" + json.RootElement.GetProperty("id").GetString();
+            return json.RootElement.GetProperty("id").GetString()!;
         }
 
-        var targetId = await Create("正式产品", "merge-target");
-        var sourceId = await Create("误建产品", "merge-source");
+        var targetId = await Create("保留画廊产品");
+        var sourceId = await Create("重复画廊产品");
         var body = new { targetProductId = targetId, sourceProductIds = new[] { sourceId } };
         using var denied = await Send(f, HttpMethod.Post, "/api/admin/alternate-art-products/merge", f.PlayerToken, body);
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
@@ -205,7 +308,8 @@ public sealed class AlternateArtGalleryWorkflowHttpTests
         Assert.Equal(HttpStatusCode.OK, merged.StatusCode);
         using var result = JsonDocument.Parse(await merged.Content.ReadAsStringAsync());
         Assert.Equal(targetId, result.RootElement.GetProperty("target").GetProperty("id").GetString());
-        Assert.Equal(1, result.RootElement.GetProperty("archivedSiteProducts").GetInt32());
+        Assert.Equal(0, result.RootElement.GetProperty("archivedSiteProducts").GetInt32());
+        Assert.Equal(articles, JsonSerializer.Serialize(f.Store.AdminArticles(kind: "product")));
         using var products = await Send(f, HttpMethod.Get, "/api/admin/alternate-art-products", f.AdminToken);
         using var productsJson = JsonDocument.Parse(await products.Content.ReadAsStringAsync());
         Assert.Contains(productsJson.RootElement.EnumerateArray(), row => row.GetProperty("id").GetString() == targetId);

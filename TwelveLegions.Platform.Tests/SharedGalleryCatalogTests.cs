@@ -19,6 +19,34 @@ public sealed class SharedGalleryCatalogTests
     private const string Password = "synthetic-password-123";
 
     [Theory]
+    [InlineData("snapshot")]
+    [InlineData("public")]
+    [InlineData("admin")]
+    [InlineData("search")]
+    public async Task StandaloneTraitsAreImmutableAcrossSharedConsumers(string consumer)
+    {
+        var art = Art() with { Id = "shared-standalone", Kind = "gallery-card", BaseCardId = "",
+            CardInformation = new(CardType: "legion", Traits: new[] { "人类", "英雄" }) };
+        var transport = new Transport { Response = () => Response(art) };
+        await using var source = new L12SharedGalleryCatalog(transport);
+        Assert.True(await source.RefreshAsync());
+        var store = NewStore(source: source);
+        var original = JsonSerializer.Serialize(source.RequireCurrent().Arts, Wire);
+        var exposed = consumer switch
+        {
+            "snapshot" => Assert.Single(source.RequireCurrent().Arts),
+            "public" => Assert.Single(store.AlternateArts()),
+            "admin" => Assert.Single(store.AdminAlternateArts()),
+            _ => Assert.Single(store.SearchAlternateArts(null, null, null).Items),
+        };
+        var traits = Assert.IsAssignableFrom<IList<string>>(exposed.CardInformation!.Traits);
+        Assert.Throws<NotSupportedException>(() => traits[0] = "不应改写共享快照");
+        Assert.Equal(new[] { "人类", "英雄" }, Assert.Single(store.AlternateArts()).CardInformation!.Traits);
+        Assert.Equal(original, JsonSerializer.Serialize(source.RequireCurrent().Arts, Wire));
+        Assert.Equal(1, transport.Calls);
+    }
+
+    [Theory]
     [InlineData(null, null, null, 8083, false)]
     [InlineData("", "ephemeral", "https://legion-12.com/testrun", 8084, false)]
     [InlineData("production-public-v1", "ephemeral", "https://legion-12.com/testrun", 8084, true)]

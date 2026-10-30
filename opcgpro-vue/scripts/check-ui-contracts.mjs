@@ -2014,4 +2014,6 @@ if (failures.length) {
 }
 
 await import('./test-platform-alternate-art-contracts.mjs')
+await import('./test-gallery-product-order-20261030.mjs')
+await import('./test-gallery-card-information-20261030.mjs')
 console.log(`UI 契约检查通过（${contracts.length} 项）`)

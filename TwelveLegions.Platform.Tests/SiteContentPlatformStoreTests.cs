@@ -460,14 +460,21 @@ public sealed class SiteContentPlatformStoreTests
             var draft = store.SaveArticleDraft(admin, new L12ArticleDraft(null, "私有产品草稿", "摘要", "正文",
                 category.Name, "", "", "gp-private", false, null, Kind: "product", CategoryId: category.Id));
             var before = JsonSerializer.Serialize(store.AdminArticle(draft.Id));
-            var productId = "site:" + draft.Id;
+            var siteId = "site:" + draft.Id;
+            Assert.Throws<ArgumentException>(() => store.SaveAlternateArtProduct(admin, new(siteId, "不得修改商品", true)));
+            Assert.Equal(before, JsonSerializer.Serialize(store.AdminArticle(draft.Id)));
+            var gallery = store.SaveAlternateArtProduct(admin, new(null, "独立画廊标签", false));
+            var productId = gallery.Id;
             store.SaveAlternateArtProduct(admin, new(productId, "新的画廊标签", true));
             var art = store.AdminAlternateArts().First();
             store.SaveAlternateArtMetadata(admin, new(art.Id, [productId], []));
-            Assert.Empty(store.AlternateArts().Single(item => item.Id == art.Id).Products!);
-            Assert.DoesNotContain(store.GalleryPresentationCatalog().FilterProducts, item => item.Id == productId);
+            Assert.Contains(store.AlternateArts().Single(item => item.Id == art.Id).Products!,
+                item => item.Id == productId && item.Name == "新的画廊标签" && item.Active);
+            Assert.Contains(store.GalleryPresentationCatalog().FilterProducts, item => item.Id == productId);
+            Assert.DoesNotContain(store.GalleryPresentationCatalog().FilterProducts, item => item.Id == siteId);
             Assert.Equal("新的画廊标签", store.AdminAlternateArts().Single(item => item.Id == art.Id).Products![0].Name);
             Assert.Equal(before, JsonSerializer.Serialize(store.AdminArticle(draft.Id)));
+            Assert.DoesNotContain(store.PublicArticles(kind: "product"), item => item.Id == draft.Id);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
@@ -496,7 +503,7 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
-    public void AlternateArtProductMergeMigratesReferencesArchivesDuplicateAndPersistsCatalogAlias()
+    public void AlternateArtProductMergeMigratesReferencesKeepsMerchandiseAndPersistsCatalogAlias()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-product-merge-{Guid.NewGuid():N}");
         try
@@ -515,8 +522,9 @@ public sealed class SiteContentPlatformStoreTests
             var duplicate = store.SaveArticleDraft(admin, new(null, "黄金的理想乡", "", "误建草稿",
                 category.Name, "", "", "golden-paradise-draft", false, null,
                 Kind: "product", CategoryId: category.Id));
-            var targetId = $"site:{target.Id}";
-            var duplicateId = $"site:{duplicate.Id}";
+            var targetId = store.SaveAlternateArtProduct(admin, new(null, "画廊黄金的理想乡")).Id;
+            var duplicateId = store.SaveAlternateArtProduct(admin, new(null, "画廊误建归属")).Id;
+            var merchandiseBefore = JsonSerializer.Serialize(store.AdminArticles(kind: "product"));
             const string catalogId = "catalog:黄金的理想乡";
             Assert.Contains(store.AlternateArtProducts(true), item => item.Id == targetId);
             Assert.Contains(store.AlternateArtProducts(true), item => item.Id == duplicateId);
@@ -533,8 +541,9 @@ public sealed class SiteContentPlatformStoreTests
 
             Assert.Equal(targetId, merged.Target.Id);
             Assert.Equal(1, merged.MigratedMetadataRows);
-            Assert.Equal(1, merged.ArchivedSiteProducts);
-            Assert.Equal("archived", store.AdminArticle(duplicate.Id)!.Status);
+            Assert.Equal(0, merged.ArchivedSiteProducts);
+            Assert.Equal("draft", store.AdminArticle(duplicate.Id)!.Status);
+            Assert.Equal(merchandiseBefore, JsonSerializer.Serialize(store.AdminArticles(kind: "product")));
             Assert.DoesNotContain(store.AlternateArtProducts(true), item => item.Id == catalogId || item.Id == duplicateId);
             Assert.Equal([targetId], store.AdminAlternateArts().Single(item => item.Id == art.Id).Products.Select(item => item.Id));
 
@@ -877,15 +886,16 @@ public sealed class SiteContentPlatformStoreTests
                 "不可公开正文", category.Name, "", "/cards", "private-alt-product", false, null,
                 Kind: "product", CategoryId: category.Id));
             var products = store.AlternateArtProducts(includeInactive: true);
-            var siteProduct = Assert.Single(products, item => item.Id == $"site:{draftProduct.Id}");
+            Assert.DoesNotContain(products, item => item.Id == $"site:{draftProduct.Id}");
+            var galleryProduct = store.SaveAlternateArtProduct(admin, new(null, "独立联动收录"));
             var catalogProduct = products.First(item => item.Id == "catalog:ST01|天廷阵营预组");
-            Assert.Equal(category.Name, siteProduct.CategoryName);
-            Assert.Equal("draft", siteProduct.Status);
+            Assert.Equal("legacy", galleryProduct.Source);
+            Assert.Equal("active", galleryProduct.Status);
 
             var foil = store.SaveAlternateArtRarity(admin, new L12AlternateArtRarityDraft(null, "FOIL", "闪卡"));
             var normal = store.AlternateArtRarities(includeInactive: true).Single(item => item.Code == "N");
             var saved = store.SaveAlternateArtMetadata(admin, new L12AlternateArtMetadataDraft(art.Id,
-                [catalogProduct.Id, siteProduct.Id], [normal.Id, foil.Id]));
+                [catalogProduct.Id, galleryProduct.Id], [normal.Id, foil.Id]));
             Assert.Equal(2, saved.Products.Count);
             Assert.Equal(2, saved.Rarities.Count);
 
@@ -905,10 +915,10 @@ public sealed class SiteContentPlatformStoreTests
             var reloadedAdminArt = reloaded.AdminAlternateArts().Single(item => item.Id == art.Id);
             Assert.Equal(2, reloadedAdminArt.Products.Count);
             Assert.Equal(2, reloadedAdminArt.Rarities.Count);
-            Assert.DoesNotContain(reloaded.AlternateArts().Single(item => item.Id == art.Id).Products,
-                item => item.Id == siteProduct.Id || item.Name.Contains("未发布", StringComparison.Ordinal));
-            Assert.DoesNotContain(reloaded.OwnedAlternateArts(player.Id).Single(item => item.Id == art.Id).Products,
-                item => item.Id == siteProduct.Id || item.Name.Contains("未发布", StringComparison.Ordinal));
+            Assert.Contains(reloaded.AlternateArts().Single(item => item.Id == art.Id).Products!, item => item.Id == galleryProduct.Id);
+            Assert.Contains(reloaded.OwnedAlternateArts(player.Id).Single(item => item.Id == art.Id).Products!, item => item.Id == galleryProduct.Id);
+            Assert.Equal("draft", reloaded.AdminArticle(draftProduct.Id)!.Status);
+            Assert.DoesNotContain(reloaded.AlternateArts().Single(item => item.Id == art.Id).Products!, item => item.Name.Contains("未发布", StringComparison.Ordinal));
             Assert.Equal(grant.Id, reloaded.AlternateArtGrants().Single(item => item.Id == grant.Id).Id);
             Assert.Equal($"l12-card-id:{art.CardImageId}",
                 reloaded.ResolveOwnedAlternateArtUrls(player.Id, storedDeck.AlternateArtSelections)[art.BaseCardId]);

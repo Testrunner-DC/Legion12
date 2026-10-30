@@ -1,12 +1,20 @@
 namespace TwelveLegions.Server;
 
+// Display-only information for independent gallery cards; never a rules/catalog identity.
+public sealed record L12GalleryCardInformation(string? CardType = null, string? Faction = null,
+    int? Cost = null, int? Troops = null, int? Hp = null, int? DisasterLevel = null,
+    int? TrialValue = null, string? Profession = null, IReadOnlyList<string>? Traits = null,
+    int? DeckLimit = null, bool? IsCounterTactic = null);
+
 public sealed record L12AlternateArtView(string Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
     string ImageUrl, string ThumbnailUrl, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     string ProductId = "", string ProductName = "", string CardImageId = "", bool BuiltIn = false,
     string BaseCardName = "", DateTimeOffset? GrantedAt = null, string GrantReason = "",
     IReadOnlyList<L12AlternateArtProductView>? Products = null,
     IReadOnlyList<L12AlternateArtRarityView>? Rarities = null, string Kind = "alternate-art",
-    string Effect = "", string Artist = "", string Collaboration = "");
+    string Effect = "", string Artist = "", string Collaboration = "",
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    L12GalleryCardInformation? CardInformation = null);
 public sealed record L12AlternateArtSearchPage(IReadOnlyList<L12AlternateArtView> Items, int Total, int Page, int PageSize);
 public sealed record L12AlternateArtGrantNotificationView(string Id, string AlternateArtId, string DisplayName,
     string ArtCode, string BaseCardId, string BaseCardName, string Reason, DateTimeOffset GrantedAt,
@@ -21,7 +29,8 @@ public sealed record L12AlternateArtGrantView(string Id, string AccountId, strin
 public sealed record L12AlternateArtGrantSearchPage(IReadOnlyList<L12AlternateArtGrantView> Items, int Total,
     int Page, int PageSize);
 public sealed record L12AlternateArtDraft(string? Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
-    bool Active = true, string ProductId = "", string Kind = "alternate-art", string Effect = "");
+    bool Active = true, string ProductId = "", string Kind = "alternate-art", string Effect = "",
+    L12GalleryCardInformation? CardInformation = null);
 public sealed record L12AlternateArtProductDraft(string? Id, string Name, bool Active = true);
 public sealed record L12AlternateArtProductMergeDraft(string TargetProductId, IReadOnlyList<string> SourceProductIds);
 public sealed record L12AlternateArtProductMergeResult(L12AlternateArtProductView Target,
@@ -172,28 +181,10 @@ public sealed partial class L12PlatformStore
                 migrated++;
             }
 
-            var archivedSiteProducts = 0;
             var disabledLegacyProducts = 0;
             foreach (var sourceId in sourceIds)
             {
-                if (sourceId.StartsWith("site:", StringComparison.Ordinal))
-                {
-                    var articleId = RemoveProductSourcePrefix(sourceId, "site:");
-                    var article = _data.Articles.FirstOrDefault(row => row.Id == articleId && row.Kind == "product");
-                    if (article is not null && article.Status != "archived")
-                    {
-                        var previous = article.Status;
-                        article.Status = "archived";
-                        article.UpdatedAt = now;
-                        article.UpdatedByAccountId = actor.Id;
-                        article.Revision++;
-                        AppendArticleRevision(article, actor.Id, "archive-product-merge");
-                        AddAdminAudit(actor, "article", "archive-product-merge", article.Id, previous,
-                            article.Status, null, context);
-                        archivedSiteProducts++;
-                    }
-                }
-                else if (sourceId.StartsWith("legacy:", StringComparison.Ordinal))
+                if (sourceId.StartsWith("legacy:", StringComparison.Ordinal))
                 {
                     var legacyId = RemoveProductSourcePrefix(sourceId, "legacy:");
                     var legacy = _data.AlternateArtProducts.FirstOrDefault(row => row.Id == legacyId);
@@ -207,7 +198,7 @@ public sealed partial class L12PlatformStore
             }
 
             var result = new L12AlternateArtProductMergeResult(target, sources, migrated,
-                archivedSiteProducts, disabledLegacyProducts);
+                0, disabledLegacyProducts);
             AddAdminAudit(actor, "alternate-art-product", "merge", targetId,
                 System.Text.Json.JsonSerializer.Serialize(sources.Select(item => item.Id)),
                 System.Text.Json.JsonSerializer.Serialize(result), null, context);
@@ -475,6 +466,8 @@ public sealed partial class L12PlatformStore
             var displayName = kind == "alternate-art" ? LimitSiteText(baseCard!.NameZh, 100)
                 : LimitSiteText(draft.DisplayName, 100);
             if (string.IsNullOrWhiteSpace(displayName)) throw new ArgumentException("独立联动卡必须填写名称");
+            var information = kind == "gallery-card" && draft.CardInformation is not null
+                ? NormalizeGalleryCardInformation(draft.CardInformation) : existing?.CardInformation;
             var productId = RemoveProductSourcePrefix(draft.ProductId, "legacy:");
             if (!string.IsNullOrWhiteSpace(productId) && !_data.AlternateArtProducts.Any(item => item.Id == productId && item.Active))
                 throw new ArgumentException("异画归属产品不存在或已停用");
@@ -490,6 +483,7 @@ public sealed partial class L12PlatformStore
             row.DisplayName = displayName;
             row.Kind = kind;
             row.Effect = LimitSiteText(draft.Effect, 2000);
+            if (kind == "gallery-card") row.CardInformation = information;
             row.MediaAssetId = media.Id;
             row.ProductId = productId;
             row.Active = draft.Active;
@@ -512,6 +506,23 @@ public sealed partial class L12PlatformStore
             Save();
             return view;
         }
+    }
+
+    private static L12GalleryCardInformation? NormalizeGalleryCardInformation(L12GalleryCardInformation information)
+    {
+        if (new[] { information.Cost, information.Troops, information.Hp, information.DisasterLevel,
+                information.TrialValue, information.DeckLimit }.Any(value => value < 0))
+            throw new ArgumentException("卡牌展示数值不能为负数；不填写时请留空");
+        string? Text(string? value, int length) => string.IsNullOrWhiteSpace(value) ? null : LimitSiteText(value, length);
+        var traits = information.Traits?.Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => LimitSiteText(value, 80)).Distinct(StringComparer.Ordinal).ToArray();
+        if (traits is { Length: > 32 }) throw new ArgumentException("卡牌特征最多填写32项");
+        var normalized = information with
+        {
+            CardType = Text(information.CardType, 80), Faction = Text(information.Faction, 120),
+            Profession = Text(information.Profession, 120), Traits = traits is { Length: > 0 } ? traits : null,
+        };
+        return normalized == new L12GalleryCardInformation() ? null : normalized;
     }
 
     public L12AlternateArtGrantView GrantAlternateArt(L12AccountView actor, L12AlternateArtGrantDraft draft,
@@ -1018,8 +1029,57 @@ public sealed partial class L12PlatformStore
                 });
                 changed = true;
             }
+            changed |= SeparateExistingGalleryProductsLocked();
             if (changed) Save();
         }
+    }
+
+    // Constructor compatibility only; public reads never migrate or save. The
+    // exact-source guard makes each alias single-use, including across restarts.
+    // GalleryProductSeparationRegressionTests covers restart and existing targets.
+    private bool SeparateExistingGalleryProductsLocked()
+    {
+        var references = _data.AlternateArtMetadata.SelectMany(row => row.ProductIds)
+            .Concat(_data.AlternateArtProductPreferences.Select(row => row.ProductId))
+            .Concat(_data.AlternateArtProductMerges.SelectMany(row => new[] { row.SourceProductId, row.TargetProductId }))
+            .Distinct(StringComparer.Ordinal).Where(id => id.StartsWith("site:", StringComparison.Ordinal)).ToArray();
+        var changed = false;
+        foreach (var sourceId in references)
+        {
+            // Preserve existing merges and cycles. Never append a duplicate edge.
+            if (_data.AlternateArtProductMerges.Any(row => row.SourceProductId == sourceId)) continue;
+            var articleId = RemoveProductSourcePrefix(sourceId, "site:");
+            var article = _data.Articles.FirstOrDefault(row => row.Id == articleId && row.Kind == "product");
+            if (article is null) continue;
+            var rowId = "gallery-site-" + articleId;
+            var targetId = "legacy:" + rowId;
+            var preference = _data.AlternateArtProductPreferences.FirstOrDefault(row => row.ProductId == sourceId);
+            // An existing deterministic target is retained, not overwritten or
+            // skipped: the historical reference still receives its missing alias.
+            if (!_data.AlternateArtProducts.Any(row => row.Id == rowId))
+                _data.AlternateArtProducts.Add(new AlternateArtProductRow
+                {
+                    Id = rowId, Name = string.IsNullOrWhiteSpace(preference?.DisplayName) ? article.Title : preference.DisplayName,
+                    Active = preference?.ActiveOverride ?? true, CreatedByAccountId = "gallery-separation",
+                    CreatedAt = article.CreatedAt, UpdatedAt = preference?.UpdatedAt ?? article.UpdatedAt,
+                });
+            if (preference is not null && !_data.AlternateArtProductPreferences.Any(row => row.ProductId == targetId))
+                _data.AlternateArtProductPreferences.Add(new AlternateArtProductPreferenceRow
+                {
+                    ProductId = targetId, ShowInGalleryFilter = preference.ShowInGalleryFilter,
+                    // Name/availability were materialized into the independent row.
+                    // Do not keep an override that would mask later gallery edits.
+                    ReleaseOrder = preference.ReleaseOrder, UpdatedByAccountId = preference.UpdatedByAccountId,
+                    UpdatedAt = preference.UpdatedAt,
+                });
+            _data.AlternateArtProductMerges.Add(new AlternateArtProductMergeRow
+            {
+                SourceProductId = sourceId, TargetProductId = targetId, CreatedByAccountId = "gallery-separation",
+                CreatedAt = article.CreatedAt, UpdatedAt = article.UpdatedAt,
+            });
+            changed = true;
+        }
+        return changed;
     }
 
     private IReadOnlyList<L12AlternateArtProductView> RawAlternateArtProductsLocked()
@@ -1029,16 +1089,12 @@ public sealed partial class L12PlatformStore
             .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal)
             .Select(value =>
             {
-                var category = CatalogProductCategoryLocked(value);
                 return new L12AlternateArtProductView($"catalog:{value}", value, true,
-                    DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, category?.Id ?? "",
-                    category?.Name ?? "", "catalog", "active");
+                    DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, "",
+                    "卡牌产品", "catalog", "active");
             });
-        var site = _data.Articles.Where(row => row.Kind == "product").Select(row =>
-            new L12AlternateArtProductView($"site:{row.Id}", row.Title, row.Status != "archived",
-                row.CreatedAt, row.UpdatedAt, row.CategoryId ?? "", row.Category, "site", row.Status));
         var legacy = _data.AlternateArtProducts.Select(ToAlternateArtProductView);
-        return catalog.Concat(site).Concat(legacy).ToArray();
+        return catalog.Concat(legacy).ToArray();
     }
 
     private IReadOnlyList<L12AlternateArtProductView> AllAlternateArtProductsLocked()
@@ -1062,12 +1118,6 @@ public sealed partial class L12PlatformStore
         return id;
     }
 
-    private SiteCategoryRow? CatalogProductCategoryLocked(string product)
-    {
-        var slug = product.StartsWith("ST", StringComparison.OrdinalIgnoreCase) ? "starter-decks" : "card-series";
-        return _data.SiteCategories.FirstOrDefault(item => item.Kind == "product" && item.Slug == slug);
-    }
-
     private IReadOnlyList<L12AlternateArtProductView> ResolveProductsLocked(IReadOnlyList<string> ids, bool admin)
     {
         var all = RawAlternateArtProductsLocked().ToDictionary(item => item.Id, StringComparer.Ordinal);
@@ -1076,20 +1126,6 @@ public sealed partial class L12PlatformStore
         {
             if (!all.TryGetValue(id, out var item)) continue;
             if (admin) { result.Add(item); continue; }
-            if (item.Source == "site")
-            {
-                var articleId = RemoveProductSourcePrefix(item.Id, "site:");
-                var article = _data.Articles.FirstOrDefault(row => row.Id == articleId && row.Kind == "product");
-                if (article?.Status != "published" || article.Published is null) continue;
-                result.Add(item with
-                {
-                    Name = article.Published.Title,
-                    CategoryId = article.Published.CategoryId ?? "",
-                    CategoryName = article.Published.Category,
-                    Status = "published",
-                });
-                continue;
-            }
             if (item.Active) result.Add(item);
         }
         return result.Select(WithGalleryFilterPreferenceLocked)
@@ -1126,12 +1162,17 @@ public sealed partial class L12PlatformStore
         var metadata = EffectiveMetadataLocked(row.Id, defaults, []);
         var products = ResolveProductsLocked(metadata.Products, admin);
         var rarities = ResolveRaritiesLocked(metadata.Rarities);
+        // A display DTO may be held or modified by its consumer. Its collection
+        // must not alias storage or another read, even though the record is immutable.
+        var information = row.Kind == "gallery-card" && row.CardInformation is { } stored
+            ? stored with { Traits = stored.Traits?.ToArray() } : null;
         return new(row.Id, row.ArtCode, row.BaseCardId, row.DisplayName,
             row.MediaAssetId, SiteMediaUrl(row.MediaAssetId), SiteMediaUrl(row.MediaAssetId, "thumbnail"), row.Active,
             row.CreatedAt, row.UpdatedAt, products.FirstOrDefault()?.Id ?? "",
             products.FirstOrDefault()?.Name ?? "", "", false,
             _officialCards.TryGetValue(row.BaseCardId, out var baseCard) ? baseCard.NameZh : "",
-            null, "", products, rarities, row.Kind, row.Effect, metadata.Artist, metadata.Collaboration);
+            null, "", products, rarities, row.Kind, row.Effect, metadata.Artist, metadata.Collaboration,
+            information);
     }
 
     private L12AlternateArtView ToAlternateArtView(L12OfficialAlternateArtDefinition row, bool admin)

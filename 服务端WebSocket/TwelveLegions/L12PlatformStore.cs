@@ -399,6 +399,7 @@ public sealed partial class L12PlatformStore
         public string DisplayName { get; set; } = string.Empty;
         public string Kind { get; set; } = "alternate-art";
         public string Effect { get; set; } = string.Empty;
+        public L12GalleryCardInformation? CardInformation { get; set; }
         public string MediaAssetId { get; set; } = string.Empty;
         public string ProductId { get; set; } = string.Empty;
         public bool Active { get; set; } = true;

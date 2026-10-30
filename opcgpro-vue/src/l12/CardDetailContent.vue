@@ -20,7 +20,7 @@ const products = computed(() => props.card.products ?? [])
 const standalone = computed(() => props.card.galleryStandalone === true)
 
 function hasCostDimension(card: DeckCard) {
-  return card.cardType !== 'master' && card.cost !== undefined
+  return (standalone.value || card.cardType !== 'master') && card.cost !== undefined
 }
 </script>
 
@@ -37,18 +37,21 @@ function hasCostDimension(card: DeckCard) {
     <h2 :id="titleId">{{ card.nameZh }}</h2>
     <div class="archive-tags">
       <span v-for="trait in card.traits" :key="trait">{{ trait }}</span>
-      <span>{{ standalone ? '联动卡' : cardTypeLabel(card.cardType, card.isCounterTactic) }}</span>
+      <span v-if="standalone">联动卡</span>
+      <span v-if="!standalone || card.cardType !== 'gallery-card'">{{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</span>
+      <span v-if="standalone && card.faction">{{ card.faction }}</span>
       <span v-if="card.profession">{{ card.profession }}</span>
       <span v-if="card.rarity">{{ card.rarity }}</span>
     </div>
     <p v-if="card.artist" class="archive-artist" data-gallery-artist><b>画师</b><span>{{ card.artist }}</span></p>
     <p v-if="card.collaboration" class="archive-artist" data-gallery-collaboration><b>联动</b><span>{{ card.collaboration }}</span></p>
-    <dl v-if="!standalone">
+    <dl v-if="!standalone || [card.cost, card.troops, card.hp, card.disasterLevel, card.trialValue, card.deckLimit].some(value => value !== undefined)">
       <template v-if="hasCostDimension(card)"><dt>费用</dt><dd>{{ card.cost }}</dd></template>
       <template v-if="card.troops !== undefined"><dt>兵力</dt><dd>{{ card.troops }}</dd></template>
       <template v-if="card.hp !== undefined"><dt>血量</dt><dd>{{ card.hp }}</dd></template>
       <template v-if="card.disasterLevel !== undefined"><dt>天灾等级</dt><dd>{{ card.disasterLevel }}</dd></template>
       <template v-if="card.trialValue !== undefined"><dt>试炼值</dt><dd>{{ card.trialValue }}</dd></template>
+      <template v-if="standalone && card.deckLimit !== undefined"><dt>同名卡上限</dt><dd>{{ card.deckLimit }}</dd></template>
     </dl>
     <section class="archive-effect" :data-gallery-card-effect="standalone ? '' : undefined"><b>效果</b><p class="l12-effect-body">{{ card.effect || '无效果文字' }}</p></section>
     <template v-if="showCatalogOnly">

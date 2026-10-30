@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261030-GALLERY-PRODUCT-ISOLATION｜画廊资料与商品分离、展示对象隔离（本地验收）
+
+- 沿人类已批准的原画廊专项及本轮“都解决、并行处理”，保原独立产品管理/发布顺序与选填联动卡资料功能。画廊产品不再借商品文章发布或合并归档商品；历史已管理site引用按确定alias兼容、无关商品不引入，商品字段不改。原三件商品恢复早已完成，本轮没有重放或线上写入。
+- Main独审又证新CardInformation.Traits通过本地Save/public/admin/search直接返回存储数组；四真实RED失败，统一ToAlternateArtView创建新record/Traits数组，保输入规范化与所有显示字段/null。独审继续发现共享TEST绕开本地构造器，Parse新字段仍List可改；snapshot/public/admin/search四真实RED失败后，沿原Products/Rarities的不可变边界复制并只读包装。不是HTTP用户直接修改内存的攻击证明，不改权限、网络、时效、数据库格式或事实权威。
+- 原22专项保为来源旧资格；最终本地/共享/产品83/83，完整平台3101/3101、失败跳过0，83个testId全在完整结果内。两个只读审查Clear，全部原失败保留（首local数组IsReadOnly夹具假阳性、首shared字段名编译失败不冒真RED）。前端51排序/15实际SFC与11原接口合同已接正常入口，整条正常前端一次通过、类型与双631模块通过。headless浏览器账户三尺寸前段过，旧产品标签定位失败保留；QA修正后仅续Admin三尺寸/Gallery通过，6缩略图完整contain、pageErrors0/cardImageFailures0，保本地媒体拒连与中止请求。合成API不冒真实持久化/真机/单轮全链。原件`gallery-product-order-20261030/main/final-acceptance.json`及`trait-isolation`，无正式部署/Bug关单。
+
 ## PERF-20261030-TOURNAMENT-VISIBLE-READ｜赛事隐藏页面避免自动完整读取（本地验收）
 
 - 沿人类系统检测并处理无谓占用的直接授权，P4扩既有通知消费而不延后可靠保存、鉴权撤销或报名时限。原四页资源事件及公开定时器隐藏仍取完整数据，实际回调RED各1读。共同helper合并可见需求，立即使旧代失效、隐藏不GET、在途先结束再读新代；失败无自动循环，卸载/current变化退休等待。

@@ -8,6 +8,8 @@ import { createServer } from 'vite'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const output = process.env.L12_QA_OUT || path.resolve(root, '../artifacts/alternate-art-admin-closeout')
+assert.ok([undefined, '0', '1'].includes(process.env.L12_QA_RESUME_AFTER_ACCOUNTS), 'invalid account-prefix resume flag')
+const resumeAfterAccounts = process.env.L12_QA_RESUME_AFTER_ACCOUNTS === '1'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
@@ -76,7 +78,7 @@ import {adminApi,authState,platformState} from '@/l12/platform'
 const now=new Date().toISOString()
 let products=[
  {id:'catalog:qa-a',name:'同名产品',active:true,createdAt:now,updatedAt:now,categoryName:'卡牌系列',source:'catalog',status:'active'},
- {id:'site:qa-b',name:'同名产品',active:true,createdAt:now,updatedAt:now,categoryName:'联动产品',source:'site',status:'published'},
+ {id:'legacy:qa-b',name:'同名产品',active:true,createdAt:now,updatedAt:now,categoryName:'联动产品',source:'legacy',status:'active'},
 ]
 const rarities=[
  {id:'rarity-ur',code:'UR',name:'终极罕贵',active:true,createdAt:now,updatedAt:now},
@@ -88,7 +90,7 @@ let uploadedAlt={id:'uploaded-alt',artCode:'ALT-QA-UPLOADED',baseCardId:'S01-010
 let regularCard={id:'S01-0101',artCode:'S01-0101',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'常规卡原画师',mediaAssetId:'',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0101',builtIn:true,kind:'regular-card',products:[products[0]],rarities:[rarities[0]],effect:'常规卡规则文本'}
 const imageUrl='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22%3E%3Crect width=%22500%22 height=%22700%22 fill=%22%234c6d82%22/%3E%3C/svg%3E'
 const media={id:'media-gallery',kind:'card-art',altText:'联动卡图',focalX:.5,focalY:.5,originalFormat:'png',contentHash:'abcdef1234567890',desktopUrl:imageUrl,mobileUrl:imageUrl,thumbnailUrl:imageUrl,desktopWidth:500,desktopHeight:700,mobileWidth:500,mobileHeight:700,thumbnailWidth:250,thumbnailHeight:350,originalBytes:1,deliveryBytes:1,createdBy:'admin',createdAt:now,referenceCount:0,desktopAltText:'',mobileAltText:'',thumbnailAltText:'',independentVariants:false}
-const calls={metadata:[],regularMetadata:[],saveArt:[],saveImage:[],saveRegularImage:[],filterVisibility:[],saveArticle:[],publishArticle:[],grant:[],saveRarity:[],search:0,regularSearch:0}
+const calls={metadata:[],regularMetadata:[],saveArt:[],saveImage:[],saveRegularImage:[],filterVisibility:[],saveArticle:[],saveProduct:[],publishArticle:[],grant:[],saveRarity:[],search:0,regularSearch:0}
 let failNextGalleryMetadata=false
 let failNextProductsRefresh=false
 let delayNextProductSave=false
@@ -108,7 +110,8 @@ adminApi.saveAlternateArtImage=async draft=>{calls.saveImage.push(structuredClon
 adminApi.saveRegularGalleryCardMetadata=async draft=>{calls.regularMetadata.push(structuredClone(draft));regularCard={...regularCard,artist:draft.artist,collaboration:draft.collaboration,products:draft.productIds.map(id=>products.find(item=>item.id===id)).filter(Boolean),rarities:draft.rarityIds.map(id=>rarities.find(item=>item.id===id)).filter(Boolean)};return regularCard}
 adminApi.saveRegularGalleryCardImage=async draft=>{calls.saveRegularImage.push(structuredClone(draft));regularCard={...regularCard,mediaAssetId:draft.mediaAssetId,imageUrl:draft.mediaAssetId?imageUrl:'',thumbnailUrl:draft.mediaAssetId?imageUrl:''};return regularCard}
 adminApi.saveGalleryProductFilterVisibility=async draft=>{calls.filterVisibility.push(structuredClone(draft));const current=products.find(item=>item.id===draft.productId);const saved={...current,showInGalleryFilter:draft.showInGalleryFilter};products=products.map(item=>item.id===draft.productId?saved:item);return saved}
-adminApi.saveArticle=async draft=>{calls.saveArticle.push(structuredClone(draft));if(delayNextProductSave){delayNextProductSave=false;await new Promise(resolve=>setTimeout(resolve,120))}const saved={...draft,id:'product-new',status:'draft',revision:1,createdAt:now,updatedAt:now,author:'AdminA',updatedBy:'AdminA',hasUnpublishedChanges:true,sortOrder:0};products=[...products,{id:'site:product-new',name:draft.title,active:true,createdAt:now,updatedAt:now,categoryName:draft.category,categoryId:draft.categoryId,source:'site',status:'draft'}];return saved}
+adminApi.saveArticle=async draft=>{calls.saveArticle.push(structuredClone(draft));throw new Error('Gallery cannot create merchandise')}
+adminApi.saveAlternateArtProduct=async draft=>{calls.saveProduct.push(structuredClone(draft));if(delayNextProductSave){delayNextProductSave=false;await new Promise(resolve=>setTimeout(resolve,120))}const saved={...draft,id:'legacy:product-new',createdAt:now,updatedAt:now,source:'legacy',status:'active'};products=[...products,saved];return saved}
 adminApi.publishArticle=async id=>{calls.publishArticle.push(id);throw new Error('画廊流程不应发布产品')}
 adminApi.saveAlternateArtRarity=async draft=>{calls.saveRarity.push(structuredClone(draft));return {...draft,id:'unexpected',createdAt:now,updatedAt:now}}
 adminApi.grantAlternateArt=async draft=>{calls.grant.push(structuredClone(draft));throw new Error('gallery card must not grant')}
@@ -188,7 +191,7 @@ try {
   }))
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   const report = []
-  for (const viewport of viewports) {
+  for (const viewport of resumeAfterAccounts ? [] : viewports) {
     await page.setViewportSize(viewport)
     await page.goto(`http://127.0.0.1:${port}/__alternate_art_admin_closeout__`)
     const input = page.locator('input[role="combobox"]').nth(0)
@@ -285,23 +288,24 @@ try {
     if (viewport.width === 1440) {
       await editor.getByRole('button', { name: '新建产品' }).click()
       const productDialog = page.locator('.product-dialog')
-      await productDialog.getByLabel('产品名称').fill('新建联动产品')
-      await productDialog.getByLabel('产品分类').selectOption('product-category')
+      await productDialog.getByLabel('收录产品名称').fill('新建联动产品')
+      assert.equal(await productDialog.getByLabel('产品分类').count(), 0, 'gallery product must not require a merchandise category')
       await page.evaluate(() => { window.__panelQa.failNextProductsRefresh(); window.__panelQa.delayNextProductSave() })
-      await productDialog.getByRole('button', { name: '保存草稿并选用' }).click()
-      await page.waitForFunction(() => window.__panelQa.calls.saveArticle.length === 1)
+      await productDialog.getByRole('button', { name: '保存并选用' }).click()
+      await page.waitForFunction(() => window.__panelQa.calls.saveProduct.length === 1)
       await productDialog.getByRole('button', { name: '关闭' }).click()
       await page.waitForTimeout(160)
-      assert.equal(await editor.locator('input[type="checkbox"][value="site:product-new"]').count(), 0, 'late product response mutated the closed editor')
+      assert.equal(await editor.locator('input[type="checkbox"][value="legacy:product-new"]').count(), 0, 'late product response mutated the closed editor')
       await editor.getByRole('button', { name: '新建产品' }).click()
-      await productDialog.getByText(/草稿已创建：site:product-new/).waitFor()
-      await productDialog.getByRole('button', { name: '重试回选已建草稿' }).click()
-      await productDialog.getByRole('button', { name: '重试回选已建草稿' }).click()
+      await productDialog.getByText(/收录产品已创建/).waitFor()
+      await productDialog.getByRole('button', { name: '重试回选已建产品' }).click()
+      await productDialog.getByRole('button', { name: '重试回选已建产品' }).click()
       assert.equal(await page.evaluate(() => window.__panelQa.calls.publishArticle.length), 0, 'product draft was published from gallery workflow')
-      assert.equal(await page.evaluate(() => window.__panelQa.calls.saveArticle.length), 1, 'product refresh retry created a duplicate draft')
-      assert.equal(await editor.locator('input[type="checkbox"][value="site:product-new"]').isChecked(), true, 'new product draft was not selected by exact site id')
+      assert.equal(await page.evaluate(() => window.__panelQa.calls.saveArticle.length), 0, 'gallery workflow created merchandise')
+      assert.equal(await page.evaluate(() => window.__panelQa.calls.saveProduct.length), 1, 'product refresh retry created a duplicate gallery product')
+      assert.equal(await editor.locator('input[type="checkbox"][value="legacy:product-new"]').isChecked(), true, 'new product draft was not selected by exact site id')
     }
-    const secondProduct = editor.locator('input[type="checkbox"][value="site:qa-b"]')
+    const secondProduct = editor.locator('input[type="checkbox"][value="legacy:qa-b"]')
     const secondRarity = editor.locator('input[type="checkbox"][value="rarity-sp"]')
     await secondProduct.check()
     await secondRarity.check()
@@ -310,7 +314,7 @@ try {
     await confirm.getByRole('button', { name: '保存并同步画廊' }).click()
     await page.waitForFunction(() => window.__panelQa.calls.metadata.length === 1)
     const metadata = await page.evaluate(() => window.__panelQa.calls.metadata[0])
-    assert.deepEqual(metadata, { alternateArtId: 'catalog-alt:S01-0101b', productIds: viewport.width === 1440 ? ['catalog:qa-a', 'site:product-new', 'site:qa-b'] : ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: `内建画师-${viewport.width}`, collaboration: `联动-${viewport.width}` }, `built-in metadata request mismatch at ${suffix(viewport)}`)
+    assert.deepEqual(metadata, { alternateArtId: 'catalog-alt:S01-0101b', productIds: viewport.width === 1440 ? ['catalog:qa-a', 'legacy:product-new', 'legacy:qa-b'] : ['catalog:qa-a', 'legacy:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: `内建画师-${viewport.width}`, collaboration: `联动-${viewport.width}` }, `built-in metadata request mismatch at ${suffix(viewport)}`)
     const registryText = await page.locator('.gallery-list').innerText()
     assert.match(registryText, /同名产品[\s\S]*同名产品/, `same-name cross-source products were merged at ${suffix(viewport)}`)
     assert.match(registryText, /UR[\s\S]*SP/, `reused rarities were not re-read at ${suffix(viewport)}`)
@@ -347,7 +351,7 @@ try {
       await editor.getByLabel('画师').fill('联动画师更新')
       await editor.getByLabel('联动卡卡效').fill('仅展示但不接入结算的联动卡效。')
       await editor.locator('input[type="checkbox"][value="catalog:qa-a"]').check()
-      await editor.locator('input[type="checkbox"][value="site:qa-b"]').check()
+      await editor.locator('input[type="checkbox"][value="legacy:qa-b"]').check()
       await editor.locator('input[type="checkbox"][value="rarity-ur"]').check()
       await editor.locator('input[type="checkbox"][value="rarity-sp"]').check()
       await editor.locator('.media-choice-trigger').click()
@@ -360,7 +364,7 @@ try {
       await page.waitForFunction(before => window.__panelQa.calls.saveArt.length === before.saveArt + 1 && window.__panelQa.calls.metadata.length === before.metadata + 1, callsBeforeGallery)
       await galleryConfirm.getByText('注入：元数据暂时保存失败').waitFor()
       assert.equal(await editor.locator('input[type="checkbox"][value="catalog:qa-a"]').isChecked(), true, 'product selection was lost after metadata failure')
-      assert.equal(await editor.locator('input[type="checkbox"][value="site:qa-b"]').isChecked(), true, 'second product selection was lost after metadata failure')
+      assert.equal(await editor.locator('input[type="checkbox"][value="legacy:qa-b"]').isChecked(), true, 'second product selection was lost after metadata failure')
       assert.equal(await editor.locator('input[type="checkbox"][value="rarity-ur"]').isChecked(), true, 'rarity selection was lost after metadata failure')
       assert.equal(await editor.locator('input[type="checkbox"][value="rarity-sp"]').isChecked(), true, 'second rarity selection was lost after metadata failure')
       await galleryConfirm.getByRole('button', { name: '保存并同步画廊' }).click()
@@ -373,7 +377,7 @@ try {
       assert.equal(createCalls[0].effect, '仅展示但不接入结算的联动卡效。')
       assert.equal(createCalls[0].id, undefined, 'first create unexpectedly had an id')
       assert.equal(createCalls[1].id, 'gallery-new', 'retry did not update the stable id returned by the first save')
-      assert.deepEqual(createMetadata[0], { alternateArtId: 'gallery-new', productIds: ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '联动画师更新', collaboration: '' })
+      assert.deepEqual(createMetadata[0], { alternateArtId: 'gallery-new', productIds: ['catalog:qa-a', 'legacy:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '联动画师更新', collaboration: '' })
       assert.deepEqual(createMetadata[1], createMetadata[0], 'retry lost the original product or rarity selections')
       assert.equal(createMetadata[0].artist, '联动画师更新', 'collaboration artist was not saved through metadata')
       assert.equal(calls.grant.length, 0, 'gallery card unexpectedly called grant API')
@@ -384,17 +388,17 @@ try {
       await regularRow.getByRole('button', { name: '编辑资料' }).click()
       const regularEditor = page.getByRole('dialog', { name: '编辑常规卡画廊资料' })
       await regularEditor.getByLabel('画师').fill('常规卡画师更新')
-      await regularEditor.locator('input[type="checkbox"][value="site:qa-b"]').check()
+      await regularEditor.locator('input[type="checkbox"][value="legacy:qa-b"]').check()
       await regularEditor.locator('input[type="checkbox"][value="rarity-sp"]').check()
       await regularEditor.getByRole('button', { name: '保存画廊资料' }).click()
       await confirm.getByRole('button', { name: '保存画廊资料' }).click()
       await page.waitForFunction(() => window.__panelQa.calls.regularMetadata.length === 1)
-      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.regularMetadata[0]), { cardId: 'S01-0101', productIds: ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '常规卡画师更新', collaboration: '' })
+      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.regularMetadata[0]), { cardId: 'S01-0101', productIds: ['catalog:qa-a', 'legacy:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '常规卡画师更新', collaboration: '' })
       assert.equal(await page.evaluate(() => window.__panelQa.calls.metadata.length), callsBeforeGallery.metadata + 2, 'regular-card save leaked into alternate-art metadata API')
       assert.match(await regularRow.innerText(), /画师：常规卡画师更新/, 'regular-card metadata was not re-read in its separate list')
       await page.getByRole('button', { name: '管理收录产品' }).click()
       const filterDialog = page.getByRole('dialog', { name: '管理收录产品' })
-      await filterDialog.getByRole('checkbox', { name: /同名产品 卡牌系列 · 卡牌产品/ }).uncheck()
+      await filterDialog.getByRole('checkbox', { name: /同名产品 卡牌系列 · 卡牌目录/ }).uncheck()
       await page.waitForFunction(() => window.__panelQa.calls.filterVisibility.length === 1)
       assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.filterVisibility[0]), { productId: 'catalog:qa-a', showInGalleryFilter: false, releaseOrder: undefined })
       await filterDialog.getByRole('button', { name: '完成' }).click()
@@ -463,7 +467,7 @@ try {
   assert.equal(thumbnailEvidence.length, 6, 'thumbnail evidence must cover two sources across three viewports')
   const afterSourceHashes = sourceHashes()
   assert.deepEqual(afterSourceHashes, beforeSourceHashes, 'verification mutated its source inputs')
-  finalPayload = { status: 'passed', report, thumbnailEvidence, pageErrors, consoleProblems, failedRequests,
+  finalPayload = { status: 'passed', resumedAfterAccounts: resumeAfterAccounts, report, thumbnailEvidence, pageErrors, consoleProblems, failedRequests,
     expectedInjectedBusinessFailures: ['product refresh retry', 'gallery metadata retry'], cardImageAborts, cardImageFailures,
     beforeSourceHashes, afterSourceHashes, apiMode: 'in-memory synthetic adminApi methods; no real HTTP persistence' }
 } finally {
