@@ -468,7 +468,8 @@ public sealed partial class L12PlatformStore
         Action<long>? BeforeCommit = null);
 
     private T ExecuteSeasonFinalizationStorageMutation<T>(
-        Func<SqliteConnection, SqliteTransaction, SeasonFinalizationStorageMutation<T>> action)
+        Func<SqliteConnection, SqliteTransaction, SeasonFinalizationStorageMutation<T>> action,
+        Func<DataFile, SeasonFinalizationStorageMutation<T>?>? unchangedCoreRead = null)
     {
         var operationMetric = L12PlatformOperationMetrics.Begin();
         var waitMetric = default(L12PlatformMetricMeasurement);
@@ -498,6 +499,23 @@ public sealed partial class L12PlatformStore
                 using var connection = OpenDatabase(_databasePath, readOnly: false);
                 InitializeStorageSchema(connection);
                 using var transaction = connection.BeginTransaction(deferred: false);
+                // Only a pure core-state no-op may reuse the existing authority. The
+                // shared anchor verifies every core byte in this held SQL transaction;
+                // it does not turn a revision match into permission to use stale auth.
+                // Do not run the general mutation callback against the live cache.
+                if (unchangedCoreRead is not null
+                    // This is only a negative prefilter: stale data can choose the
+                    // full path, never authorize a return. Due work must not pay
+                    // for a second whole-core scan before its ordinary refresh.
+                    && unchangedCoreRead(previous) is { Changed: false }
+                    && TryReadUnchangedRankedBroadcastProjection(connection, transaction, out var unchanged)
+                    && unchangedCoreRead(unchanged) is { Changed: false } noOp)
+                {
+                    transaction.Rollback();
+                    _storageIssue = null;
+                    operationSucceeded = true;
+                    return noOp.Result;
+                }
                 var stored = ReadSnapshot(connection, transaction)
                     ?? throw new InvalidDataException("事务存储缺少平台快照");
                 if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
@@ -523,9 +541,12 @@ public sealed partial class L12PlatformStore
                     var unchangedRollbackSnapshot = SerializeRollbackState(_data);
                     var unchangedSessionActivity = PrepareCommittedSessionActivityMeasured(
                         _data, unchangedRollbackSnapshot);
+                    var unchangedReadAnchor = PrepareRankedBroadcastReadAnchor(
+                        _data, unchangedRollbackSnapshot, stored.Checksum);
                     transaction.Rollback();
                     _lastCommittedSnapshot = unchangedRollbackSnapshot;
                     PublishCommittedSessionActivity(unchangedSessionActivity);
+                    _rankedBroadcastReadAnchor = unchangedReadAnchor;
                     _storageIssue = null;
                     operationSucceeded = true;
                     return mutation.Result;

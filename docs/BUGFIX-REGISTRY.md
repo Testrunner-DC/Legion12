@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261030-SEASON-VERIFIED-NOOP｜赛季纯空检查避免重建完整平台（本地已验收）
+
+- 原因：ExecuteSeasonFinalizationStorageMutation在尚无到期工作时也完整ReadSnapshot/checksum、反序列化、牌库/广播水合、审计合并、gzip完整回滚缓存和所有提交索引。4MiB随机合成内容无持久变化仍分配约25.7MB；这是真实事务成本，不是原线上首次异常或物理OOM证明。人类明确批准限定本地修复与验收，不部署。
+- 全调用族检索该方法与别名：Seasons的TryClaim/Waiting/Finalize及SeasonIdentityMigration的Preview/Claim/Commit/Verify共7族；仅TryClaim未截止/无截止/已结算的纯core判定可选快路。到期的协调租约可能独立变化，绝不按缓存推测；其他6族和嵌套事务不走快路。不引入独立authority、版本旁路或旧DB恢复。
+- 同SQL事务复用既有TryReadUnchangedRankedBroadcastProjection：Available、同DataFile/Revision、两处完整回滚buffer精确引用、UTF8/header及逐字节SHA全部保留。pure callback先作否定预筛选，只有强校验及再次确认才返回；不执行通用mutation、不发布/覆盖其他域。完整no-op成功在Rollback/发布前准备原锚；未知数据、缺库、损坏或新代走完整原路/失败关闭。
+- 新SeasonRefreshIncidentRegressionTests真实RED为暖态仍进入session索引；最终重点56/56含15新项。同包4MiB/4次真实事务冷68321040B、暖428832B，core修订/摘要、镜像/协调lease及会话事实不变；两向跨实例deadline、撤销、body/hash/缺库、same/newer三处OOM注入及重读恢复覆盖。注入不冒物理OOM，EffectiveOperationsPolicy/session方法不冒真实HTTP。既有Replay同revision用例仅清锚进入真实冷路，原修订/业务版本/换bundle/重试/单审计断言保留。
+- 独审发现到期分支先核锚会重复整core扫描，已在最终源码以纯否定预筛选消除；被取消旧顺序完整运行不能当最终通过。最终同DLL无过滤平台3017/3017、0失败跳过，受监督临时树实际回收；原性能架构链/P0—P4/P1边界及Git差异检查通过，组合Batch合格，不是Release。真实记录与源码同步见`server-health-20261029/offline-season-20261030`，不关线上Bug、不冒故障根治。回退仅本片纯读快路与暖锚准备，保所有原完整校验/鉴权/恢复保护。
+
 ## FIX-20261030-LOG-SOURCE-MILL｜状态限制来源与牌库顶弃置同条明细（本地已验收）
 
 - 人类在既有Bug专项明确要求修改伊丽莎白一世及瓦尔基里日志并覆盖同类，Main已独立读原文/两图，不另问实施权限。伊丽莎白旧每目标一条无卡/无语义的effect，投影仅匹配“转为活跃”，把“无法”限制误写成已执行；瓦尔基里mill已有公开卡，turn-start及普通效果组只合数量，丢了卡片。

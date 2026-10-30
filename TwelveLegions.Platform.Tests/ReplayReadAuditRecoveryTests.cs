@@ -259,8 +259,12 @@ public sealed class ReplayReadAuditRecoveryTests
         f.Store.StorageFailureInjector = stage =>
         {
             if (stage != "before-read-audit-attempt" || ++attempts != 1) return;
-            // This is the real no-op season-claim path: it rehydrates and republishes
-            // committed authority at the same database revision, without a fake field swap.
+            // Force the real cold-anchor path, not a fake authority replacement.
+            // Verified warm no-ops now deliberately preserve the committed identity.
+            typeof(L12PlatformStore).GetField("_rankedBroadcastReadAnchor",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .SetValue(f.Store, null);
+            // A cold no-op still rehydrates and republishes the same SQL revision.
             Assert.Null(f.Store.TryClaimDueSeasonFinalization("synthetic-read-worker",
                 DateTimeOffset.MinValue, TimeSpan.FromMinutes(1)));
             Assert.Equal(revision, StorageRevision(f.Store));

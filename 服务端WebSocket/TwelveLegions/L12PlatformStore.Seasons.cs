@@ -985,6 +985,14 @@ public sealed partial class L12PlatformStore
             var claim = new L12SeasonFinalizationClaim(current.DefinitionId, current.SeasonId,
                 workerId, leaseExpiresAt);
             return new SeasonFinalizationStorageMutation<L12SeasonFinalizationClaim?>(true, claim);
+        }, unchangedCoreRead: data =>
+        {
+            var current = data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            // Coordination leases are independent SQL facts: never infer their state
+            // from the core anchor, and keep all due/claim/write paths unchanged.
+            return current.FinalizedAt is not null || current.EndsAt is not { } endsAt || endsAt > now
+                ? new SeasonFinalizationStorageMutation<L12SeasonFinalizationClaim?>(false, null)
+                : null;
         });
 
     internal void RecordSeasonFinalizationWaiting(L12SeasonFinalizationClaim claim,
