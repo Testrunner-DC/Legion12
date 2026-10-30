@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-30 Bug续办：无新增、箱子仍未证根因；正式广播已按人类新指令恢复
+
+- 11:54正常专用管理读取：正式af/维护false、历史943、非终态2（new2/其余0），新增ID0；原文与唯一清单绑定一致、会话已撤销。`bug-closeout-remaining-20261027/resume-intake-20261030-qualified.json`保原收据；原公共广播数组包装的returned/events派生字段无效，明确弃用，不影响完整Bug快照或独立配置对象。
+- 521箱子：原子对话已交回冻结。原报告仅证seq18/rev13时卡诺匹斯箱heal-discard＋authority-event仍在栈/0提示，不是首异常证明。正常详情和分页首页各一次503、均撤会话，未取回命令或私牌。Main复用a267原DLL AA90A120…作双方×自动让过×隐藏可响应提示×default/valid-only共16组纯合成，检索、回血、弃置及清栈全过；recover=false，不冒原局/恢复验收。对应读取时间窗两条安全日志均storage_unavailable/phase=lock/SQLite5、约1秒；仅为取证阻碍的时间关联，未绑定原请求关联ID，不当箱子成因。唯一`chest-local-probe-20261030/matrix-r2.json`和`safe-503-log-r4.json`；首探针内部API编译拒绝、旧日志提取失败保留。仍reproduce，不盲修或关单；865d戒指仍待正式部署，不重交已成功四单。
+- 广播专项正常管理GET证BroadcastEnabled=false、子项全true；当前关闭会在正式af的BuildBroadcasts直接阻断新生成，不证明何时/谁关闭。人类在“L12-后台优化实施”直接回复“恢复”（消息01a18aff-7bcb-70e0-98cc-0db91b25bf86），Main核实后一次正常PUT仅false→true，独立GET核其余完整配置一致、会话撤销。真实`ranked-broadcast-restoration-20261030.json`completed=true/writeAttempts1；未改维护/两服版本、未补写广播或造结算，不冒下一条真实播报已送达。已向来源回真实回执，不二次恢复。
+
 ## 2026-10-30 实际发布收尾：TEST已a267，正式af开放；阻碍已定位到原生5秒读库预算
 
 - 最终干净/远端同`a267d32c6842a960ea290aea517c55089e59dfd7`完整标准R3九阶段通过，原包SHA`6378d829b48667887fef1bb7a72544729718fa05c9e1da7f180d996858f5758f`。TEST先因程序预算在停服前拒绝；双锁/原诊断验证下只退休无引用旧测试程序d557（251553782B），保当前/较新回滚/被诊断引用的2eda及全部数据库/备份/失败资料。同包第二次TEST标准部署与完整独验PASS，PID122400；不重部署TEST或重跑完整Release。

@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## CHECK-20261030-CANOPIC-READ-BOUNDARY｜箱子原反馈仍未收口，补响应矩阵与读取阻碍证据
+
+- BUG-20261029-521883f4新鲜原文未变；原诊断Main/round2/turn1/rev13/seq18，后续canopic-box-heal-discard及入手authority-event两项/0提示，只是反馈时观测，不是首个异常。原子对话只读任务交回冻结，正常管理元信息和分页首页各503、0命令返回、两会话均撤销；没有raw库/游标绕过/私牌导出。
+- 现有CanopicWholeEffectRegressionTests明确autoPass=false/conceal=false。Main另以完整R3 a267原DLL AA90A120BA37D7B12CC18FBD67FAB531422313A538845F8A74D42765039EA625检查双方×autoPass真假×conceal真假×default/valid-only，16纯合成全部正确检索入手、回血、弃置、清栈。独立探针不改产品，recover=false；初轮误用内部恢复API编译拒绝保留，不能说恢复32场通过或原局重放。
+- 正常503时间窗的既有服务日志有两条storage_unavailable/phase=lock/SQLite5、耗时1010/1005ms；未取得原请求关联ID，仅时间关联，不把它当玩家卡死原因。安全解析先因关联标识假设漏匹配，原空结果保留，r4按固定数值字段解析正确，不导出任意日志正文。
+- 唯一`D:/GPT/Legion12/artifacts/bug-closeout-remaining-20261027/chest-local-probe-20261030`及子对话`chest-521883f4-20261030/investigation-status.json`。保持reproduce；下一需要正常管理读取可用后的17—18附近命令/前后权威状态，或有独立真RED的新场景，不重跑本轮同配置来冒进展。无产品修复、部署、维护或Bug写入。
+
+## OPS-20261030-RANKED-BROADCAST-RESTORE｜只恢复已关闭的正式广播总开关
+
+- 正常管理GET确认正式af的BroadcastEnabled=false，虽然所有子开关开启、连胜阈值3。正式同SHA代码的BuildBroadcasts会在总开关false直接返回；公共settings只返回子项，不能据它推断总开关已开。未证明关闭日期/操作者，也未从区间榜猜近期不存在合格触发。
+- 人类在“L12-后台优化实施”明确“恢复”（消息01a18aff-7bcb-70e0-98cc-0db91b25bf86）；Main直接核实后用正常管理API最新完整GET、邻接GET一致、一次PUT仅false→true、独立GET逐项核其余配置不变，临时会话实际撤销。现行接口没有CAS字段，如实记录，不伪造预演/版本许可；写前intent与完成收据禁止未知状态重复写。
+- `bug-closeout-remaining-20261027/ranked-broadcast-restoration-20261030.json`completed=true/writeAttempts1；原before/after完整配置保存。未改代码/规则/维护/服务/测试服，不造结算、不补写历史广播；真实下一合格播报送达仍未验。原intake的公共数组派生字段无效已在qualified收据明确弃用，配置对象和Bug快照未受影响，不修改原收据或重复登录补采样。此专项不是原943清单新增关单。
+
 ## QA-20261030-DECK-PORT-MOCKS｜大厅真实组件的牌库端口夹具同步
 
 - 完整Release R2的后端与排空消费者通过，前端真实BattleHubPage因旧mock缺少hasSavedDeckSelection而中断；无完整合格包，不切服。全量检索同组件牌库mock，仅另有好友偏好和最近播报浏览器夹具同类遗漏，一并补initializeDeckCache/loadSavedDecks/hasSavedDeckSelection及按scope选择保存。
