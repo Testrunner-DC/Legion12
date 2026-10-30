@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-31 公开同步已恢复，正文重复编码四叶完整验收完成
+
+- 人类最新“持续允许同类权限需求”已实记AGENTS，五批及授权文档已非强推/独立远端同32d9f3b；真实`parallel-closeout/synchronization-resumed.json`替代下方旧blocked阶段，原失败不改但不能复活旧授权询问/五批提交/部署。新同类已验收源码同步复用这一直接长期授权，不含部署/凭据/私有业务数据或新目标。当前正式/TEST及维护不动。
+- 下一P3四叶仅去掉同次完整Decode/Ordinal规范比较/完整SHA之后再次Encode紧凑串：私有readonly载体由原读端口验证成功后产生，原两参接口/Normalized返回及Private末尾Verify仍完整保留；SQL/格式/创建时间、每引用master、事务local去重/跨事务重验与失败回滚不变。真实RED8项7过/1分配失败，首green-r1仅Private后继类型契约编译失败留原件、没有测试；修正后86/86通过，peer完整Private后继补审Clear。
+- 同次8次末段旧Encode+SQL151168→新16624B，不含必要Decode/SHA；完整独立牌库域240/4为865296→790736B（74560B，不是来源口头7.5KB），240/240为15631208→11101320B，SQL10/246均不变、页载荷0，不冒整Save/线上收益。四叶DS34A3A111/PrivateFD32727B/Refs6E71B907/QAECA0FC04，DLL95CCA4D9/321F93FE固定；Main同程序集无过滤完整Platform实际3132/3132、0失败跳过、13m55s，四源及DLL前后不变，自有temp监督自动回收。唯一`demand-driven-resources-20261031/validated-payload/acceptance.json`与同步回执；原失败不改，不重跑规则/前端/9299矩阵，不冒Release/部署。
+- Main从已完成3124全套直接提取镜像16/192两例，新增运行0；13.61MB变载荷Create107.8906ms/24995728B、原子写34.2715ms/67424B，非峰值/线上/纯磁盘成本。`mirror-current-evidence/assessment.json`绑定原TRX及源，不再拿旧DLL或重跑总段。独立新QA叶PreparedMirrorPhaseAttributionTests不包含在上述4叶/原3132程序集资格；Main full退出后明确GO、唯一槽已交回原agent，只用BuildProjectReferences=false编QA，产品主件/测试复制件95CC前后哈希守卫。新同包计数空流/原hash空流/真实原子写结果未回前不称通过，另线验收，不删SHA或改产品。
+
 ## 2026-10-31 人类直接确认本批公开源码推送及同类长期授权
 
 - 人类针对Main明确询问的五批公开发布（画廊、赛事草稿、弃库终局、开局倒计时、称号投影；公开`Testrunner-DC/Legion12`，不含部署/数据库/凭据）回复“持续允许同类权限需求”。本批及未来同类已验收源码/QA/文档本地提交、非强制origin/main推送复用该直接授权，不再按commit/叶数反复询问。AGENTS已记录准确边界；新目标/信任/凭据或私有业务数据外发、部署等不由此扩权，不绕安全拒绝。

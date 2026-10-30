@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261031-VALIDATED-PAYLOAD-ENCODE｜同事务已验证牌库正文不重复编码（本地验收）
+
+- P3同次调用链的重复计算：ReadReferencedDeckPayload→Codec.Decode原先已Encode并Ordinal逐字确认原PayloadJson，再完整ValidateHash；末段PersistPayload又Encode同三段。仅新增私有readonly验证载体，原读成功才交出同次hash/master/current format/原紧凑串，INSERT仅消费它，没有任意string或跳校验flag、跨代缓存/新权威。全域与Private两caller统一，原两参返回及Private Verify的Normalized后继用途保留，SQL文本/事务/created_utc、每引用master/格式、首次时间和失败保护未改；Codec不变。
+- 真实RED8项7过/1实际分配断言失败；首green-r1被Private末尾Verify仍需Normalized的编译契约拦截，未运行测试，原件留。修正同叶仅Persist用out载体、Verify保原返回后86/86关联专项通过；Main读完整新QA/产品diff、peer原校验和Private完整后继独审Clear，未知format/坏JSON/非规范/hash/master五类均拒绝且恢复可读。
+- 同次8次末段旧Encode+SQL151168B、新真实Persist16624B，必要解码/规范化/SHA在该测量之前，不把该幅度当整次保存。独立240/4域865296→790736B（差74560B），240/240域15631208→11101320B（差4529888B），SQL10/246不变、页载荷0，全部hash/master/format/json/created_utc逐字一致。是小合成持久化域，非峰值/正式目标机/线上延迟，不重跑旧9299或声称减少SQL。
+- 四叶DS34A3A111/PrivateFD32727B/Refs6E71B907/QAECA0FC04和产品95CCA4D9/QA321F93FE固定，Main同程序集无过滤完整Platform实际3132/3132、0失败跳过、13m55s，源/DLL前后未变，监督自有temp自动回收。原件`demand-driven-resources-20261031/validated-payload/acceptance.json`及同步回执；仅本地Batch资格，不冒Release/部署。原元数据no-op、事务内去重、私有CAS/历史/点赞/墓碑/回滚镜像保护和迁移回归保留。回退仅恢复旧末次Encode及2caller参数，不改库/格式/历史。
+
 ## PERF-20261031-TITLE-EXCLUSION-LOOKUP｜主宰称号排除避免重复裁定扫描（本地验收）
 
 - P3既有投影内限定优化，不改变判罚或榜单规则。普通Save的已提交身份和锁内主宰榜共用helper；原每distinct事实ID重新扫全部有效整场裁定并排序，现仅为本代非waived事实键单遍建立最新裁定map，不排序/跨代缓存。严格更大Revision才替换，保同rev首条；大小写、精确match scope、撤销、全部waived（含事实外ID）、held及个人处罚独立语义保留。Statistics/Gameplay同类已有索引，不机械混改。

@@ -8,6 +8,11 @@ public sealed partial class L12PlatformStore
     // One immutable compact body per hash belongs to the complete committed
     // generation. Resolving a body never reaches a potentially newer database.
     private sealed record CompactDeckPayloadFact(string MasterId, int Format, string PayloadJson);
+    // Only the complete read below produces this same-call persistence value.
+    // It carries the exact canonical bytes already checked by Decode and ValidateHash;
+    // it is never retained between transactions or used to authorize a later read.
+    private readonly record struct ValidatedCompactDeckPayload(string Hash, string MasterId,
+        int Format, string PayloadJson);
     internal Action<string>? DeckPayloadExpansionObserver { get; set; }
 
     private static CompactDeckPayloadFact RequireDeckPayload(DataFile data, string hash, string master)
@@ -151,11 +156,16 @@ public sealed partial class L12PlatformStore
     }
 
     private static NormalizedDeckPayload ReadReferencedDeckPayload(DataFile data, string hash)
+        => ReadReferencedDeckPayload(data, hash, out _);
+
+    private static NormalizedDeckPayload ReadReferencedDeckPayload(DataFile data, string hash,
+        out ValidatedCompactDeckPayload validated)
     {
         if (!data.DeckPayloads.TryGetValue(hash, out var fact))
             throw new InvalidDataException("完整状态缺少引用的牌库正文");
         var decoded = L12DeckPayloadCodec.Decode(fact.Format, fact.PayloadJson);
         L12DeckPayloadCodec.ValidateHash(hash, fact.MasterId, decoded);
+        validated = new(hash, fact.MasterId, fact.Format, fact.PayloadJson);
         return new(hash, fact.MasterId, decoded.MainJson, decoded.MoraleJson, decoded.SpecialJson, [], [], []);
     }
 

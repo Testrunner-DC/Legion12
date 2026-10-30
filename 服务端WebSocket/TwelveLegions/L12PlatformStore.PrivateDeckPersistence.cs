@@ -148,9 +148,9 @@ public sealed partial class L12PlatformStore
         DeckRow deck, string? storedNameKey)
     {
         var nameKey = DeckNameKey(deck.Name);
-        var payload = ReadReferencedDeckPayload(_data, CaptureDeckPayload(_data, deck));
+        var payload = ReadReferencedDeckPayload(_data, CaptureDeckPayload(_data, deck), out var validated);
         StorageFailureInjector?.Invoke("before-private-deck-payload");
-        PersistPayload(connection, transaction, payload, deck.UpdatedAt);
+        PersistPayload(connection, transaction, validated, deck.UpdatedAt);
         StorageFailureInjector?.Invoke("after-private-deck-payload");
         StorageFailureInjector?.Invoke("before-private-deck-row");
 

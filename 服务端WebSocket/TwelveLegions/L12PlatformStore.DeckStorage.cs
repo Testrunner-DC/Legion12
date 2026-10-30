@@ -479,10 +479,8 @@ public sealed partial class L12PlatformStore
     }
 
     private static void PersistPayload(SqliteConnection connection, SqliteTransaction transaction,
-        NormalizedDeckPayload payload, DateTimeOffset createdAt)
+        ValidatedCompactDeckPayload payload, DateTimeOffset createdAt)
     {
-        var compact = L12DeckPayloadCodec.EncodeLegacyJson(
-            payload.MainJson, payload.MoraleJson, payload.SpecialJson);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -492,8 +490,8 @@ public sealed partial class L12PlatformStore
             """;
         command.Parameters.AddWithValue("$hash", payload.Hash);
         command.Parameters.AddWithValue("$master", payload.MasterId);
-        command.Parameters.AddWithValue("$format", L12DeckPayloadCodec.CurrentFormat);
-        command.Parameters.AddWithValue("$payload", compact);
+        command.Parameters.AddWithValue("$format", payload.Format);
+        command.Parameters.AddWithValue("$payload", payload.PayloadJson);
         command.Parameters.AddWithValue("$created", createdAt.ToString("O"));
         command.ExecuteNonQuery();
     }
@@ -526,7 +524,8 @@ public sealed partial class L12PlatformStore
         {
             if (!persistedPayloads.Contains(hash))
             {
-                PersistPayload(connection, transaction, ReadReferencedDeckPayload(data, hash), createdAt);
+                _ = ReadReferencedDeckPayload(data, hash, out var validated);
+                PersistPayload(connection, transaction, validated, createdAt);
                 persistedPayloads.Add(hash);
             }
             return hash;
