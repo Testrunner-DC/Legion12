@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261030-SEASON-EXACT-READ｜到期事务精确UTF8读取（本地验收，不部署）
+
+- 人类明确批准限定本地实现与验收。归因已排除“SHA另造整份UTF8”假设：原SHA为增量编码；GetString、对象还原及gzip分配较大。只改ExecuteSeasonFinalizationStorageMutation完整刷新读取，7调用族同事务不变；0c532暖空检查、普通Save、启动/迁移及回滚入口不改。
+- UTF8/TEXT只读一次精确SQLite Blob字节，完整SHA先于任何解析；失败不降级吞错。非UTF8/非TEXT保原字符串读取与校验。提取既有ValidateDeserializedData共享主体，6894字符断言逐字不变；Normalize/JSON选项、所有领域验证和原Hydration计量边界保留。短生存期私有输入非缓存/权威，成功、损坏、对象验证失败和重复Dispose均清零字节，不把缓冲带到后续牌库水合/保存/回滚。
+- 同类扫描7调用族及完整read/normalize/validate/fallback路径；源码逆变换逐字还原80314字符旧源。真实完整读取分配RED保留；Unicode/空白/BOM/损坏/UTF16LE/BE/非TEXT、撤销same/newer会话/失败恢复等65专项、95原邻接全过。完整平台3078项3077通过，仅旧Gallery混同夹具失败；Main按新的独立产品边界加强草稿不发布/不改写与非法site入口断言后，同产品DLL B5263F6A补验相同testId通过，不能冒单轮3078全绿。
+- 同输入完整解析、规范化、验证及事实等价3次对照50819136→38009792B（约25.2%），仅合成分配收益，不承诺整体事务耗时、实际堆峰值或正式断服务根治。完整性能、P0—P4/P1、任务路由与差异检查按原件记录；`server-health-20261029/offline-season-due-20261030/acceptance.json`绑定源码、DLL、原TRX/失败和监督回执。无新部署、线上取样、维护或Bug关单。回退限本片读取与验证抽取，不删除原保护。
+
 ## FIX-20261030-SEASON-VERIFIED-NOOP｜赛季纯空检查避免重建完整平台（本地已验收）
 
 - 原因：ExecuteSeasonFinalizationStorageMutation在尚无到期工作时也完整ReadSnapshot/checksum、反序列化、牌库/广播水合、审计合并、gzip完整回滚缓存和所有提交索引。4MiB随机合成内容无持久变化仍分配约25.7MB；这是真实事务成本，不是原线上首次异常或物理OOM证明。人类明确批准限定本地修复与验收，不部署。

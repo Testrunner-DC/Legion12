@@ -516,15 +516,11 @@ public sealed partial class L12PlatformStore
                     operationSucceeded = true;
                     return noOp.Result;
                 }
-                var stored = ReadSnapshot(connection, transaction)
-                    ?? throw new InvalidDataException("事务存储缺少平台快照");
-                if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
-                    throw new InvalidDataException("SQLite 平台快照校验和不匹配");
-
+                using var stored = PrepareSeasonSnapshotInput(connection, transaction);
                 DataFile latest;
                 using (L12PlatformOperationMetrics.Measure(L12PlatformOperationPhase.Hydration))
                 {
-                    latest = DeserializeDataAndValidate(stored.Json);
+                    latest = stored.DeserializeAndValidate();
                     var committedSessionActivity = Volatile.Read(ref _committedSessionActivity);
                     sessionAuthorityRequiresRefresh = !committedSessionActivity.Available
                         || committedSessionActivity.Revision != latest.Version;
@@ -1096,6 +1092,89 @@ public sealed partial class L12PlatformStore
         return reader.Read() ? (reader.GetString(0), reader.GetString(1)) : null;
     }
 
+    // Scoped encoding input only: never an authority/cache, and only used by
+    // the season transaction's full refresh. Read/SHA stay outside Hydration.
+    private sealed class SeasonSnapshotInput(string checksum, byte[]? utf8 = null, string? json = null) : IDisposable
+    {
+        private byte[]? _utf8 = utf8;
+        private string? _json = json;
+        private bool _disposed;
+        public string Checksum { get; } = checksum;
+
+        public DataFile DeserializeAndValidate()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            try
+            {
+                if (_utf8 is null) return DeserializeDataAndValidate(_json!);
+                ReadOnlySpan<byte> remaining = _utf8;
+                while (!remaining.IsEmpty
+                    && Rune.DecodeFromUtf8(remaining, out var rune, out var consumed) == System.Buffers.OperationStatus.Done
+                    && Rune.IsWhiteSpace(rune)) remaining = remaining[consumed..];
+                if (remaining.IsEmpty) throw new InvalidDataException("平台快照为空");
+                return ValidateDeserializedData(NormalizeDeserializedData(
+                    JsonSerializer.Deserialize<DataFile>(_utf8.AsSpan(), PlatformSnapshotJsonOptions) ?? new DataFile()));
+            }
+            finally { Dispose(); } // Clear before deck/broadcast hydration, Save or rollback.
+        }
+
+        public void Dispose()
+        {
+            if (_utf8 is { } bytes) CryptographicOperations.ZeroMemory(bytes);
+            _utf8 = null;
+            _json = null;
+            _disposed = true;
+        }
+    }
+
+    private static SeasonSnapshotInput PrepareSeasonSnapshotInput(SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        using var header = connection.CreateCommand();
+        header.Transaction = transaction;
+        header.CommandText = "PRAGMA encoding;";
+        var encoding = header.ExecuteScalar() as string;
+        if (string.Equals(encoding, "UTF-8", StringComparison.Ordinal))
+        {
+            header.CommandText = "SELECT snapshot_sha256,typeof(snapshot_json) FROM platform_state WHERE singleton_id=1;";
+            string checksum;
+            bool text;
+            using (var row = header.ExecuteReader())
+            {
+                if (!row.Read()) throw new InvalidDataException("事务存储缺少平台快照");
+                checksum = row.GetString(0);
+                text = row.GetString(1) == "text";
+            }
+            if (text)
+            {
+                byte[]? bytes = null;
+                try
+                {
+                    using (var blob = new SqliteBlob(connection, "platform_state", "snapshot_json", 1, readOnly: true))
+                    {
+                        bytes = new byte[checked((int)blob.Length)];
+                        blob.ReadExactly(bytes);
+                    }
+                    if (!FixedEquals(checksum, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()))
+                        throw new InvalidDataException("SQLite 平台快照校验和不匹配");
+                    return new SeasonSnapshotInput(checksum, utf8: bytes);
+                }
+                catch
+                {
+                    if (bytes is not null) CryptographicOperations.ZeroMemory(bytes);
+                    throw;
+                }
+            }
+        }
+        // Preserve SQLite's original TEXT decoding and UTF-8 checksum semantics
+        // for UTF-16 databases and unsupported storage representations.
+        var stored = ReadSnapshot(connection, transaction)
+            ?? throw new InvalidDataException("事务存储缺少平台快照");
+        if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
+            throw new InvalidDataException("SQLite 平台快照校验和不匹配");
+        return new SeasonSnapshotInput(stored.Checksum, json: stored.Json);
+    }
+
     private static long ReadLatestSeasonFinalizationRevision(SqliteConnection connection,
         SqliteTransaction transaction)
     {
@@ -1262,6 +1341,11 @@ public sealed partial class L12PlatformStore
     {
         if (string.IsNullOrWhiteSpace(json)) throw new InvalidDataException("平台快照为空");
         var data = DeserializeData(json);
+        return ValidateDeserializedData(data);
+    }
+
+    private static DataFile ValidateDeserializedData(DataFile data)
+    {
         if (data.Version < 0 || data.BusinessVersion < 0 || data.BusinessVersion > data.Version)
             throw new InvalidDataException("平台版本字段无效");
         if (data.Accounts.GroupBy(row => row.Id).Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1))
