@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-30 无谓占用第一片：对战详情按需读取公开异画（本地验收）
+
+- 人类要求当前读取批后检测并处理未查看用户的无谓更新；读取批已实际同步44a99c48ca0d7829c6e834bc5cd8177ec5a5eab9，不重做。Main源追踪确认Gallery编辑HTTP无全员图库正文广播，真正新增确认的是GameBoard mounted无条件整库GET，只供详情画师/联动匹配；实际mounted真RED为未看详情也1请求。
+- 本片仅GameBoard、battleGalleryRead及正常resource合同父入口/新QA四叶：布局ready后且详情实际可见、卡非隐藏才读，手机折叠/仅自动焦点不读；单板成功缓存/并发合并、失败无后台循环、卸载不启动未开始GET也不应用晚包。原baseCard＋image精确匹配、画师/联动字段和权益边界保留，无全局缓存或新协议。独审曾发现手机初始false误判桌面，已加mounted ready并用真实Vue pre-flush两场覆盖，终审Clear。
+- 最终正常前端分段通过：r1到UI尾因旧response夹具缺opening新setupRoleLabels失败，Main只令QA读取真实函数/初始化式；r2已过UI等前段，stage旧字面要求gallery()失败，产品改为等价延迟闭包保该断言；仅续原stage后段和类型/双Vite，最终630模块两构建退出0。原失败不抹、不称单次npm全绿；QA真实组件回调/调度非原生浏览器或真机，合成0网络不冒线上流量收益。旧opening四叶及这项Main兼容QA继续保留，未混本片源码提交。
+- 唯一`demand-driven-resources-20261030/acceptance.json`与inventory.json。下一共享成本已静态确认：画廊Save每次PrepareCommittedSessionActivity扇出所有索引，赛事历史桌先准备assignment并重复读验/解码报名正文，再筛running。需用现有TournamentDeckPayloadReadObserver补本地真实保存计数/分配，再限定不可变正文复用；账号/会话撤销、参赛/房间/可见性等安全事实仍每代及时发布，不先做整bundle懒更新。其他子任务冻结资料不遗漏，两服/维护变化0。
+
 ## 2026-10-30 到期读取修复本地验收完成，未部署
 
 - P3同一事务内精确读取UTF8字节并先完整SHA再解析，原规范化/6894字符完整验证主体、UTF16/非TEXT退路及恢复保护保留；私有短生存期缓冲在解析成功或失败后清零，进入牌库/广播水合前释放，不引入缓存或第二权威。两叶源码逆变换逐字还原0c532原文件，Main独审无阻断。

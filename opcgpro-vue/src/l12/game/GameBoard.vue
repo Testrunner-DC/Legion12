@@ -40,6 +40,7 @@ import CardDetailContent from '../CardDetailContent.vue'
 import type { DeckCard } from '../decks'
 import { getFactionPresentation } from '../factionPresentation'
 import { alternateArtApi, type AlternateArt } from '../platform'
+import { battleGalleryDetailDemand, createBattleGalleryReader } from './battleGalleryRead'
 import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
 import { useBattleViewportLayout } from './battleViewportLayout'
 import { createPresentationSequenceCoordinator, type PresentationReservation } from './presentationSequenceCoordinator'
@@ -109,6 +110,13 @@ const focusCard = ref<Card | null>(null)
 const promptAutoFocusCard = ref<Card | null>(null)
 const inspectorFocusCard = computed(() => focusCard.value ?? promptAutoFocusCard.value)
 const publicAlternateArts = ref<AlternateArt[]>([])
+const galleryViewportReady = ref(false)
+const publicGalleryRead = createBattleGalleryReader(() => alternateArtApi.gallery(),
+  arts => { publicAlternateArts.value = arts })
+watch(() => galleryViewportReady.value ? battleGalleryDetailDemand(mobileLandscapeViewport.value, mobileInspectorOpen.value,
+  focusCard.value, inspectorFocusCard.value) : null, card => {
+  if (card) void publicGalleryRead.read()
+}, { immediate: true })
 type BattleDetailCard = DeckCard & { artist?: string }
 function presentationImageIdentity(value?: string | null) {
   const normalized = value?.trim() ?? ''
@@ -1249,12 +1257,14 @@ const supportReady = computed(() => {
 })
 
 onMounted(() => {
+  // useBattleViewportLayout's earlier mounted hook has now identified mobile mode.
+  galleryViewportReady.value = true
   lastHiddenRevealSequence.value = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
   lastPublicRevealSequence.value = lastHiddenRevealSequence.value
   lastDiceSequence.value = lastHiddenRevealSequence.value
-  void alternateArtApi.gallery().then(arts => { publicAlternateArts.value = arts }).catch(() => {})
 })
 onBeforeUnmount(() => {
+  publicGalleryRead.dispose()
   resetCardPresentations()
   emit('replayPresentationChange', false)
 })

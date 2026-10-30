@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import './test-battle-gallery-demand.mjs'
 
 const frontendRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = join(frontendRoot, '..')

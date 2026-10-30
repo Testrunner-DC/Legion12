@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261030-BATTLE-GALLERY-DEMAND｜对战详情公开异画按需读取（本地验收）
+
+- 人类直接要求检测并处理未查看玩家的无谓更新。源追踪Gallery编辑HTTP无全员正文广播，不作虚假成因；真实GameBoard mounted总发整库GET，唯一消费者是可见详情画师/联动与图片身份匹配。新QA执行原mounted，未查看仍1请求的真RED保留；首轮提取器严格模式语法错误不冒RED。
+- 沿原公共API/同源/匿名GET，不改服务端、卡效、私密牌、权益或持久化。实际可见非隐藏详情才触发，手机折叠或仅prompt-auto不触发；单组件成功缓存/共享在途，失败不循环、后续新需求可重试；卸载忽略晚包且微任务前已退场不发GET。不是全局内容缓存，不扩大私人牌库资料范围，原baseCard/active/kind/image匹配及artist/collaboration一字不改。
+- 独审指出初始mobile=false到mounted之间的提前读取；新增布局ready门并补真实Vue pre-flush两场：初始回放focus/提示focus、手机收起、展开才1次。新QA提取实际mounted/watch/初始化及实际helper，已纳正常check-resource-change-sync父入口；保存原始断言，不替换其余资源/隐私守卫。终审Clear，非完整浏览器/真机或实传收益。
+- 正常前端r1旧opening标签夹具失败、r2旧gallery()字面约束失败均保留；只兼容QA真实标签和等价延迟闭包，正常有效前段＋r3原后段、完整类型/双630模块构建退出0，不说单次全npm绿。后端未改，不重复3078/规则。`demand-driven-resources-20261030/acceptance.json`绑定4叶与原日志；0网络合成请求计数不能作线上百分比或原故障根治证明，无部署/维护/Bug关单。
+
 ## PERF-20261030-SEASON-EXACT-READ｜到期事务精确UTF8读取（本地验收，不部署）
 
 - 人类明确批准限定本地实现与验收。归因已排除“SHA另造整份UTF8”假设：原SHA为增量编码；GetString、对象还原及gzip分配较大。只改ExecuteSeasonFinalizationStorageMutation完整刷新读取，7调用族同事务不变；0c532暖空检查、普通Save、启动/迁移及回滚入口不改。
