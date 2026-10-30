@@ -11,6 +11,7 @@ import { gameAction, l12State, sandboxAction } from '../net'
 import CardImage from '../CardImage.vue'
 import PromptCardCandidate from './PromptCardCandidate.vue'
 import SetupDecisionClock from './SetupDecisionClock.vue'
+import { openingDiceLayout } from './openingDiceLayout'
 import { landscapeTeleportTarget } from '../mobileViewport'
 import { battlefieldTargetIds, battlefieldTargetLabel, findBattlefieldTarget } from './battlefieldTargetPresentation'
 import { mulliganCopy, promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
@@ -120,6 +121,20 @@ const diceAnimationReadyToSettle = ref(false)
 const openingIntroSkipped = ref(false)
 const initiativeResolutionMessage = ref('')
 const openingStage = ref<HTMLElement | null>(null)
+const openingLayout = ref(openingDiceLayout(1280, 720))
+let openingResizeObserver: ResizeObserver | undefined
+function measureOpeningLayout() {
+  const stage = openingStage.value
+  if (stage && stage.clientWidth > 0 && stage.clientHeight > 0)
+    openingLayout.value = openingDiceLayout(stage.clientWidth, stage.clientHeight, window.innerWidth)
+}
+watch(openingStage, stage => {
+  openingResizeObserver?.disconnect()
+  if (!stage) return
+  measureOpeningLayout()
+  openingResizeObserver = new ResizeObserver(measureOpeningLayout)
+  openingResizeObserver.observe(stage)
+}, { flush: 'post' })
 const openingIntroDurationMs = 4000
 const masterTargetOffsets = ref<Record<number, { x: number; y: number; scale: number }>>({})
 let diceTimer: ReturnType<typeof setInterval> | null = null
@@ -176,6 +191,8 @@ function initiativeCardStyle(player: GameState['players'][number]) {
   const mine = player.playerIndex === props.game.you
   const target = masterTargetOffsets.value[player.playerIndex]
   return {
+    width: !diceSettled.value ? `${openingLayout.value.masterWidth}px` : undefined,
+    translate: !diceSettled.value ? `${(mine ? 1 : -1) * openingLayout.value.shift}px 0` : undefined,
     '--opening-start-x': mine ? '140px' : '-140px',
     '--opening-side-x': mine ? 'clamp(150px, 22vw, 360px)' : 'clamp(-360px, -22vw, -150px)',
     '--opening-side-y': mine ? 'clamp(40px, 5vh, 64px)' : 'clamp(-64px, -5vh, -40px)',
@@ -312,13 +329,18 @@ watch(() => props.game.initiativeRolls.join(','), () => {
   else if (diceSettled.value && hasAuthoritativeInitiativeRolls()) animatedRolls.value = [...props.game.initiativeRolls]
 })
 onBeforeUnmount(() => {
+  openingResizeObserver?.disconnect()
   emit('autoFocusCard', null)
   stopInitiativeDice()
   initiativeLifecycle.dispose()
   if (autoCloseTimer) clearTimeout(autoCloseTimer)
   window.removeEventListener('resize', syncMasterTargets)
+  window.removeEventListener('resize', measureOpeningLayout)
 })
-onMounted(() => window.addEventListener('resize', syncMasterTargets))
+onMounted(() => {
+  window.addEventListener('resize', syncMasterTargets)
+  window.addEventListener('resize', measureOpeningLayout)
+})
 
 watch(() => JSON.stringify([
   prompt.value?.promptId ?? '',
@@ -860,6 +882,8 @@ function keepAllMulligan() {
   if (!props.busy) emit('mulliganKeepAll')
 }
 const setupClockPlayerIndex = computed(() => {
+  if (isInitiative.value) return prompt.value?.playerIndex ?? waitingPrompt.value?.playerIndex
+    ?? l12State.rankedClock?.players.find(player => player.acting)?.playerIndex ?? null
   if (isMulliganPhase.value)
     return isMulligan.value ? me.value.playerIndex : props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? null
   if (isDisasterChoice.value || prompt.value?.kind === 'disaster-reveal') return prompt.value?.playerIndex ?? null
@@ -869,8 +893,10 @@ const setupClockPlayerIndex = computed(() => {
 })
 function setupRoleLabel(playerIndex: number | null) {
   if (playerIndex == null) return '准备步骤'
+  if (isInitiative.value) return !diceSettled.value ? '先后手选择' : playerIndex === props.game.you ? '你正在选择先后手' : '对手正在选择先后手'
   return `${props.game.firstPlayer === playerIndex ? '先攻' : '后攻'}玩家准备`
 }
+const setupRoleLabels = computed(() => Object.fromEntries(props.game.players.map(player => [player.playerIndex, setupRoleLabel(player.playerIndex)])))
 const decisionEffectText = computed(() => {
   return prompt.value ? promptSituationCopy(prompt.value) : ''
 })
@@ -1054,12 +1080,12 @@ function kindLabel() {
         <span id="prompt-minimized-task" class="prompt-minimized-task">{{ minimizedTask }}</span>
         <span v-if="autoCloseMessage" class="prompt-auto-close" role="timer" :aria-label="autoCloseMessage" :title="autoCloseMessage">{{ mobileLayout ? `${autoCloseSeconds}秒` : autoCloseMessage }}</span>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
-          :role-label="setupRoleLabel(setupClockPlayerIndex)" />
+          :role-label="setupRoleLabel(setupClockPlayerIndex)" :show-all-acting="isDisasterPreparation" :player-labels="setupRoleLabels" />
       </section>
 
       <section v-else-if="isInitiative" ref="openingStage" class="opening-presentation" data-ui-contract="match-opening-stage"
-        :style="{ '--opening-duration': `${openingIntroDurationMs}ms` }"
-        :class="{ settled: diceSettled, skipped: openingIntroSkipped }" role="region" aria-label="对局开场">
+        :style="{ '--opening-duration': `${openingIntroDurationMs}ms`, '--opening-dice-width': `${openingLayout.diceRowWidth}px`, '--opening-dice-font': `${openingLayout.diceFont}px`, '--opening-dice-gap': `${openingLayout.gap}px`, '--opening-dice-padding': `${openingLayout.dicePadding}px` }"
+        :class="{ settled: diceSettled, skipped: openingIntroSkipped, 'compact-opening': openingLayout.compact }" role="region" aria-label="对局开场">
         <article v-for="player in initiativePlayers" :key="player.playerIndex" class="opening-master-card"
           :class="{ mine: player.playerIndex === game.you, opponent: player.playerIndex !== game.you }"
           :data-opening-player="player.playerIndex" :style="initiativeCardStyle(player)">
@@ -1081,10 +1107,12 @@ function kindLabel() {
             :aria-label="`${openingPlayerIdentity(player)}掷出${animatedRolls[player.playerIndex] ?? 1}点`"
             :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b>
-            <em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
+            <em :title="openingPlayerIdentity(player)">{{ animatedRolls[player.playerIndex] ?? 1 }} 点 · {{ openingPlayerIdentity(player) }}</em>
           </div>
         </div>
         <div class="opening-action" role="status" aria-live="polite">
+          <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
+            :role-label="setupRoleLabel(setupClockPlayerIndex)" />
           <template v-if="!readOnly && prompt && diceSettled">
             <strong>你取得先后手选择权</strong>
             <span>请选择本局的行动顺序</span>
@@ -1107,7 +1135,7 @@ function kindLabel() {
           <button class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
-          :role-label="setupRoleLabel(setupClockPlayerIndex)" />
+          :role-label="setupRoleLabel(setupClockPlayerIndex)" :show-all-acting="isDisasterPreparation" :player-labels="setupRoleLabels" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body"
           @touchstart.passive="onChoiceBodyTouchStart" @touchmove="onChoiceBodyTouchMove" @touchend="onChoiceBodyTouchEnd" @touchcancel="onChoiceBodyTouchEnd">
         <p v-if="promptSituation && !isInitiative" class="prompt-situation effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
@@ -1294,7 +1322,7 @@ function kindLabel() {
           <small>{{ game.firstPlayer === me.playerIndex ? '你是先手' : '你是后手' }}</small>
           <h2>请确认调度的手牌</h2>
           <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
-            :role-label="setupRoleLabel(setupClockPlayerIndex)" />
+            :role-label="setupRoleLabel(setupClockPlayerIndex)" :show-all-acting="isDisasterPreparation" :player-labels="setupRoleLabels" />
         </header>
         <p class="mulligan-instruction">{{ mulliganInstruction }}</p>
         <div v-horizontal-scroll-arrows="'换牌候选'" class="mulligan-card-row prompt-card-strip" data-ui-contract="mobile-choice-scroll-body">
@@ -1328,12 +1356,30 @@ function kindLabel() {
         <small>{{ isMulliganPhase ? '调度' : waitingDefense ? '进攻结算' : '对手操作' }}</small>
         <h2>{{ isMulliganPhase ? overlayTitle : waitingText() }}</h2>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
-          :role-label="setupRoleLabel(setupClockPlayerIndex)" />
+          :role-label="setupRoleLabel(setupClockPlayerIndex)" :show-all-acting="isDisasterPreparation" :player-labels="setupRoleLabels" />
         <i/><i/><i/>
       </section>
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.opening-presentation .opening-dice-row{width:var(--opening-dice-width,360px);grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--opening-dice-gap,20px)}
+.opening-presentation .opening-die{min-width:0;padding:5px var(--opening-dice-padding,8px)}
+.opening-presentation .opening-die b{font-size:var(--opening-dice-font,120px)}
+.opening-presentation .opening-die em{box-sizing:border-box;max-width:100%;padding:4px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opening-presentation .opening-master-card{transition:translate calc(280ms * var(--l12-animation-scale,1)) ease,width calc(280ms * var(--l12-animation-scale,1)) ease}
+.opening-presentation:not(.settled):not(.skipped) .opening-versus,.opening-presentation:not(.settled):not(.skipped) .opening-versus-player{animation-name:opening-versus-dice-clear}
+@keyframes opening-versus-dice-clear{0%,30%{opacity:0;transform:translate(-50%,-50%) scale(.72)}42%,52%{opacity:1;transform:translate(-50%,-50%) scale(1)}65%,100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}
+.opening-presentation.settled .opening-dice-row,.opening-presentation.skipped .opening-dice-row{top:12%;width:min(240px,46%);gap:12px}
+.opening-presentation.settled .opening-die b,.opening-presentation.skipped .opening-die b{font-size:clamp(28px,3.6vw,48px)}
+.opening-action>.setup-decision-clock{display:flex;width:auto;max-width:100%;grid-template-columns:none;margin:4px 0}
+.opening-presentation.compact-opening .opening-action{bottom:8px;gap:2px}
+.opening-presentation.compact-opening .opening-action>strong{font-size:17px}
+.opening-presentation.compact-opening .opening-action>.setup-decision-clock{padding:4px 8px;margin:0}
+@media(max-width:900px){.opening-presentation.settled .opening-dice-row,.opening-presentation.skipped .opening-dice-row{width:72px;gap:8px}.opening-presentation.settled .opening-die,.opening-presentation.skipped .opening-die{padding:0}.opening-presentation.settled .opening-die b,.opening-presentation.skipped .opening-die b{font-size:28px}.opening-presentation.settled .opening-die em,.opening-presentation.skipped .opening-die em{font-size:9px;padding:2px}}
+@media(max-height:500px){.opening-presentation .opening-action{gap:2px}.opening-action>.setup-decision-clock{padding:4px 8px;margin:0}.opening-presentation.settled .opening-dice-row,.opening-presentation.skipped .opening-dice-row{top:10%}}
+</style>
 
 <style scoped>
 .prompt-choices.response-target-list{display:flex;flex-direction:column;align-items:stretch;gap:8px;overflow:auto}

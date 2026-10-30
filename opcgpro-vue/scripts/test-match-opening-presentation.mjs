@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { parse } from '@vue/compiler-sfc'
+import './test-opening-setup-countdown.mjs'
 
 const path = new URL('../src/l12/game/PromptOverlay.vue', import.meta.url)
 const gameBoardPath = new URL('../src/l12/game/GameBoard.vue', import.meta.url)

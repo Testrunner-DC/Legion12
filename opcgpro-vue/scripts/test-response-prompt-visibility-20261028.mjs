@@ -292,8 +292,12 @@ function fixture({ owner = 0, mobile = false, initial = frame(1, [], owner) } = 
     run(watchCall('overlay', "emit('minimizedChange', value)"), overlay)
     watch(board.modalPresentationPaused, zoneCallback)
   })
+  const setupRoleLabel = actualFunction('overlay', 'setupRoleLabel', {
+    props: overlayProps, isInitiative: ref(false), diceSettled: ref(true),
+  })
+  const setupRoleLabels = value('overlay', 'setupRoleLabels', { computed, props: overlayProps, setupRoleLabel })
   const view = { ...overlay, primaryChoices: computed(() => overlay.prompt.value?.validChoices ?? []),
-    game: computed(() => props.game), setupClockPlayerIndex: owner, setupRoleLabel: () => '我方',
+    game: computed(() => props.game), setupClockPlayerIndex: owner, setupRoleLabel, setupRoleLabels,
     promptTitle: '合成响应', overlayTitle: '合成响应', minimizedTask: '展开响应', minimizedButtonText: '展开',
     autoCloseMessage: '', isPreparation: false, isInitiative: false, isDisasterChoice: false,
     isInfoConfirm: false, isMulligan: false, inspectorVisible: false, reservePlacementDetailSpace: false,
