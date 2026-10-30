@@ -1,5 +1,6 @@
 *.sh text eol=lf
 *.ps1 text eol=crlf
+/opcgpro-vue/src/l12/platformAlternateArtContracts.ts text eol=lf
 /ops/qa/testrun-frozen-resource-guard.py -text
 /ops/qa/testrun-normal-resource-guard.py -text
 /ops/qa/ledger/account-ledger-sink-r2.ps1 -text

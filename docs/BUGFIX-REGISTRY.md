@@ -2,6 +2,7 @@
 
 ## DEPLOY-20261031-REQUEST-COVER｜部署完整检查的请求元数据覆盖索引
 
+- 干净Release首轮8773规则、3138平台和排空消费者真实通过，前端在异画声明指纹处失败：Git默认CRLF使新多行声明内部字节改变；LF规范化后整文件DF335298与已验源完全相同，既有哈希/原声明还原断言不改。仅`.gitattributes`为该声明源固定LF，避免每次干净Windows检出复发。未获接受的分段续验方案不执行、不拼接为Release；首轮原日志/TRX保留，修正后用原入口重新完整验收。维护不解除。
 - P3仅在既有Journal schema初始化后幂等建立`ix_match_action_requests_readiness_cover(match_id,command_sequence,accepted)`，不改查询SQL、检测语义、39查询完整性或5秒原生预算。全类检索：四个journal分支中只有requests缺accepted而回表；其余已有match_id首列覆盖索引。没有删除、改写或重算业务行，不授予StopPermit。
 - 原始计划`SCAN r`真实RED；新增4项及既有39项共43/43通过，含重复初始化、7条异常保持、负序/非法accepted/多重异常只计一次、未知或缺失schema拒绝。原RED夹具错误和最终真正RED分别保留。`formal-release-20261031-maintained/index-source/green-r1/request-cover-green-r1.trx`，固定产品5B107090/QA F9589F5B；完整Release尚待本批统一执行。
 - 独立在线一致副本（不改活库）完整性通过，7→7，新增索引约47.7MB；冷完整查询12.438→9.442秒，预热后4.285/4.933秒，仅副本观察，不等于旧服原生39项已通过。不得用外部计数或本地测试伪造原生许可；当前部署保持维护，实际切换仍要求现场完整检查、最新两库/WAL持久proof和独立验收。回退仅移除源码初始化索引声明，既有无害索引无需删除，不回写旧库。
