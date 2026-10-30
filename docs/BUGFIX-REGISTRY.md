@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## DEPLOY-20261031-REQUEST-COVER｜部署完整检查的请求元数据覆盖索引
+
+- P3仅在既有Journal schema初始化后幂等建立`ix_match_action_requests_readiness_cover(match_id,command_sequence,accepted)`，不改查询SQL、检测语义、39查询完整性或5秒原生预算。全类检索：四个journal分支中只有requests缺accepted而回表；其余已有match_id首列覆盖索引。没有删除、改写或重算业务行，不授予StopPermit。
+- 原始计划`SCAN r`真实RED；新增4项及既有39项共43/43通过，含重复初始化、7条异常保持、负序/非法accepted/多重异常只计一次、未知或缺失schema拒绝。原RED夹具错误和最终真正RED分别保留。`formal-release-20261031-maintained/index-source/green-r1/request-cover-green-r1.trx`，固定产品5B107090/QA F9589F5B；完整Release尚待本批统一执行。
+- 独立在线一致副本（不改活库）完整性通过，7→7，新增索引约47.7MB；冷完整查询12.438→9.442秒，预热后4.285/4.933秒，仅副本观察，不等于旧服原生39项已通过。不得用外部计数或本地测试伪造原生许可；当前部署保持维护，实际切换仍要求现场完整检查、最新两库/WAL持久proof和独立验收。回退仅移除源码初始化索引声明，既有无害索引无需删除，不回写旧库。
+
 ## QA-20261031-MIRROR-PHASE-ATTRIBUTION｜同包镜像准备、解压、原哈希及原子写归因（本地验收）
 
 - 仅新QA叶，原产品/现有QA不变。当前3132完整产品95CC不重编，BuildProjectReferences=false仅编测试后2/2具名通过，主server与test复制件前后95CC一致，QA043E；原3132与新2分别有真实证明，不冒一次3134全套。正常测试项目自动发现，不造第二套测试工程或新生产诊断开关。

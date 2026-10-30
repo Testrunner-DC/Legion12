@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "20261031-accepted-player-changes",
+  "date": "2026-10-31",
+  "audience": "players",
+  "title": "开局计时、弃库结算与记录展示修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "瓦尔基里等一次弃置多张牌库顶卡牌时，先完成整次弃置，再提供合法的后续发动机会；牌库不足时立即结束对局，不再继续选牌、支付或结算后续效果。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs", "服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/L12GmCommands.cs", "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs", "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs", "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs", "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs"]
+    },
+    {
+      "category": "battle",
+      "text": "先后手、调度和天灾准备阶段正确显示当前操作方的剩余时间；双方确认天灾时各自显示自己的倒计时，开场骰子避开主宰卡片。",
+      "paths": ["opcgpro-vue/src/l12/game/PromptOverlay.vue", "opcgpro-vue/src/l12/game/SetupDecisionClock.vue", "opcgpro-vue/src/l12/game/openingDiceLayout.ts"]
+    },
+    {
+      "category": "battle",
+      "text": "伊丽莎白一世、瘟疫感染等士气活跃限制的记录补齐卡牌来源；瓦尔基里、贝奥武夫、密米尔之泉等牌库顶弃置在同条记录中展示公开的弃牌明细。",
+      "paths": ["opcgpro-vue/src/l12/game/logViewModel.ts", "服务端WebSocket/TwelveLegions/L12CardEffects.cs", "服务端WebSocket/TwelveLegions/L12MoraleReturns.cs", "服务端WebSocket/TwelveLegions/L12NextResetLocks.cs", "服务端WebSocket/TwelveLegions/L12StarterTargetedEffectPlans.cs"]
+    },
+    {
+      "category": "content",
+      "text": "画廊展示卡按对应收录产品筛选，并可在详情查看已经填写的卡牌资料；未填写的资料不再用错误默认值补齐。",
+      "paths": ["opcgpro-vue/src/l12/CardArchive.vue", "opcgpro-vue/src/l12/CardDetailContent.vue", "opcgpro-vue/src/l12/platformAlternateArtContracts.ts", "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs", "服务端WebSocket/TwelveLegions/L12SharedGalleryCatalog.cs"]
+    },
+    {
+      "category": "tournaments",
+      "text": "赛事内容自动刷新时保留尚未保存的公开范围和报名时间选择；切换赛事或账号后，不再让旧操作回复覆盖当前表单。",
+      "paths": ["opcgpro-vue/src/l12/site/TournamentManagementPanel.vue"]
+    }
+  ]
+}

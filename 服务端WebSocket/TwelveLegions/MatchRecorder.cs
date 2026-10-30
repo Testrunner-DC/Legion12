@@ -129,6 +129,11 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await EnsureColumnAsync(connection, "matches", "identity_scrubbed", "INTEGER NOT NULL DEFAULT 0");
         await EnsureColumnAsync(connection, "match_events", "request_id", "TEXT");
         await InitializeJournalSchemaAsync(connection);
+        command.CommandText = """
+            CREATE INDEX IF NOT EXISTS ix_match_action_requests_readiness_cover
+                ON match_action_requests(match_id, command_sequence, accepted);
+            """;
+        await command.ExecuteNonQueryAsync();
         await InitializeAnalyticsSchemaAsync(connection);
         await InitializeDisasterFactsAsync(connection);
         await InitializeRankedPersistenceSchemaAsync(connection);

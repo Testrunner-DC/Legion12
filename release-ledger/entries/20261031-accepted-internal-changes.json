@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "20261031-accepted-internal-changes",
+  "date": "2026-10-31",
+  "audience": "internal",
+  "reason": "画廊独立产品与显示对象隔离；公开异画按可见需求读取，赛事隐藏页面合并读取并保留写后新鲜读取与即时权限；精确复用已验证赛事正文、赛季空检查与UTF8读取，称号排除本代索引及同次紧凑正文不重复编码。均保留完整校验与恢复边界，不把合成分配收益宣传为正式故障根治。对局请求元数据覆盖索引用于原完整排空查询，原SQL、5秒预算和完整计数不变；管理及实现细节不进入玩家日志。",
+  "paths": [
+    "opcgpro-vue/src/l12/game/battleGalleryRead.ts",
+    "opcgpro-vue/src/l12/game/GameBoard.vue",
+    "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue",
+    "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue",
+    "opcgpro-vue/src/l12/site/TournamentHubPage.vue",
+    "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue",
+    "opcgpro-vue/src/l12/visibleResourceRead.ts",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedTournamentReads.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckPayloadReferences.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PrivateDeckPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedMasterTitles.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+  ]
+}
