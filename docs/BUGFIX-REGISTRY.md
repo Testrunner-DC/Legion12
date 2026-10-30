@@ -6,6 +6,12 @@
 - Main独审又证新CardInformation.Traits通过本地Save/public/admin/search直接返回存储数组；四真实RED失败，统一ToAlternateArtView创建新record/Traits数组，保输入规范化与所有显示字段/null。独审继续发现共享TEST绕开本地构造器，Parse新字段仍List可改；snapshot/public/admin/search四真实RED失败后，沿原Products/Rarities的不可变边界复制并只读包装。不是HTTP用户直接修改内存的攻击证明，不改权限、网络、时效、数据库格式或事实权威。
 - 原22专项保为来源旧资格；最终本地/共享/产品83/83，完整平台3101/3101、失败跳过0，83个testId全在完整结果内。两个只读审查Clear，全部原失败保留（首local数组IsReadOnly夹具假阳性、首shared字段名编译失败不冒真RED）。前端51排序/15实际SFC与11原接口合同已接正常入口，整条正常前端一次通过、类型与双631模块通过。headless浏览器账户三尺寸前段过，旧产品标签定位失败保留；QA修正后仅续Admin三尺寸/Gallery通过，6缩略图完整contain、pageErrors0/cardImageFailures0，保本地媒体拒连与中止请求。合成API不冒真实持久化/真机/单轮全链。原件`gallery-product-order-20261030/main/final-acceptance.json`及`trait-isolation`，无正式部署/Bug关单。
 
+## FIX-20261030-TOURNAMENT-MANAGEMENT-DRAFTS｜同值赛事刷新不覆盖主办草稿（本地验收）
+
+- 共因是监听整个DTO或新建数组getter：同actor/同赛事对象替换、无关version/公告更新也重置公开范围两选择和报名时间两输入。本轮以稳定owner＋本组原服务端字段key监听，真实字段变更仍回填对应组；没有原地变异权威DTO或保留不再合法的旧权限。
+- owner/账号/token/路由/赛事/管理资格变化同步清理由、延期和交接等敏感输入，单调epoch及卸载守卫阻止旧写回执覆盖新owner/busy；已经发出合法写不取消/重放。原CAS、未编辑时间的毫秒/offset精度、公告/预检与模板保留。
+- 三真实RED＋三正控，最终19/19实际编译SFC setup/Vue生命周期，原错误夹具保留；已接正常赛事父入口，整条正常前端一次通过、types及双631模块通过。`demand-driven-resources-20261030/management-drafts/acceptance.json`；不是原生浏览器/真机或线上收益，不部署。
+
 ## PERF-20261030-TOURNAMENT-VISIBLE-READ｜赛事隐藏页面避免自动完整读取（本地验收）
 
 - 沿人类系统检测并处理无谓占用的直接授权，P4扩既有通知消费而不延后可靠保存、鉴权撤销或报名时限。原四页资源事件及公开定时器隐藏仍取完整数据，实际回调RED各1读。共同helper合并可见需求，立即使旧代失效、隐藏不GET、在途先结束再读新代；失败无自动循环，卸载/current变化退休等待。

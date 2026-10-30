@@ -30,6 +30,13 @@ async function saveAnnouncement(input: { tournamentId: string; version: number; 
 
 const busy = ref(false)
 const reason = ref('')
+let draftOwnerEpoch = 0
+let panelAlive = true
+// Stable existing ownership facts, not the incoming DTO's object identity.
+const draftOwnerKey = () => JSON.stringify([props.tournament.id, props.accountId,
+  platformState.account?.id, platformState.token, route.fullPath, props.canOrganize])
+const draftSourceKey = (...values: unknown[]) => JSON.stringify([draftOwnerKey(), ...values])
+onBeforeUnmount(() => { panelAlive = false; draftOwnerEpoch++ })
 const localDate = (value?: string | null) => {
   if (!value) return ''
   const date = new Date(value)
@@ -37,10 +44,10 @@ const localDate = (value?: string | null) => {
 }
 const registrationOpensLocal = ref(localDate(props.tournament.registrationOpensAt))
 const registrationClosesLocal = ref(localDate(props.tournament.registrationClosesAt))
-watch(() => [props.tournament.id, props.tournament.registrationOpensAt, props.tournament.registrationClosesAt], () => {
+watch(() => draftSourceKey(props.tournament.registrationOpensAt, props.tournament.registrationClosesAt), () => {
   registrationOpensLocal.value = localDate(props.tournament.registrationOpensAt)
   registrationClosesLocal.value = localDate(props.tournament.registrationClosesAt)
-})
+}, { flush: 'sync' })
 function saveRegistrationWindow() {
   const submittedTime = (local: string, original?: string | null) => local === localDate(original)
     ? original ?? null : local ? new Date(local).toISOString() : null
@@ -76,7 +83,16 @@ const friends = ref<PlatformFriend[]>([])
 const cancelArmed = ref(false)
 const visibility = ref(props.tournament.visibility)
 const registrationVisibility = ref(props.tournament.registrationVisibility)
-watch(() => props.tournament, value => { visibility.value = value.visibility; registrationVisibility.value = value.registrationVisibility })
+watch(() => draftSourceKey(props.tournament.visibility, props.tournament.registrationVisibility), () => {
+  visibility.value = props.tournament.visibility
+  registrationVisibility.value = props.tournament.registrationVisibility
+}, { flush: 'sync' })
+watch(draftOwnerKey, () => {
+  draftOwnerEpoch++
+  busy.value = false
+  reason.value = ''; postponeAt.value = ''; transferAccountId.value = ''; transferReason.value = ''
+  cancelArmed.value = false
+}, { flush: 'sync' })
 function saveVisibility() {
   if (!props.canOrganize) return
   void mutate(item => tournamentApi.setVisibility(item.id, item.version, visibility.value, registrationVisibility.value, reason.value.trim() || '主办者调整公开范围'), '公开范围已保存')
@@ -89,10 +105,15 @@ const transferCandidates = computed(() => {
 
 async function mutate(work: (item: Tournament) => Promise<Tournament>, success: string) {
   if (busy.value) return
+  const epoch = draftOwnerEpoch
+  const current = () => panelAlive && epoch === draftOwnerEpoch
   busy.value = true
-  try { emit('updated', await work(props.tournament)); emit('notice', success) }
-  catch (error) { emit('notice', error instanceof Error ? error.message : '操作失败') }
-  finally { busy.value = false }
+  try {
+    const result = await work(props.tournament)
+    if (current()) { emit('updated', result); emit('notice', success) }
+  }
+  catch (error) { if (current()) emit('notice', error instanceof Error ? error.message : '操作失败') }
+  finally { if (current()) busy.value = false }
 }
 const operationReason = () => reason.value.trim() || '主办者调整赛事阶段'
 function setPhase(phase: 'registration-open' | 'registration-closed' | 'pre-check-in' | 'result-confirmation' | 'running', success: string) {
