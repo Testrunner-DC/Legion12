@@ -84,19 +84,23 @@ public sealed partial class L12GameEngine
     /// 是否由效果造成；牌库弃置无论是效果还是支付费用，均符合〈信仰狂热者〉文本。
     /// </summary>
     private void NotifyCardDiscarded(L12PlayerState player, L12CardInstance card, string originZone, bool causedByEffect)
+        => NotifyCardsDiscarded(player, [card], originZone, causedByEffect);
+
+    private void NotifyCardsDiscarded(L12PlayerState player, IEnumerable<L12CardInstance> cards,
+        string originZone, bool causedByEffect)
     {
-        // 裁定（2026-09-23）：天灾导致的弃置不触发弃置时效果。
-        if (IsDisasterAuthorityActive()) return;
-        if (card.CardId != "S02-0006" || State.ActivePlayer != player.PlayerIndex) return;
+        // A completed bulk operation offers its collected triggers together.
+        // Defeat has priority over every pending discard-trigger interaction.
+        if (State.Phase == L12Phase.GameOver || IsDisasterAuthorityActive()) return;
+        if (State.ActivePlayer != player.PlayerIndex) return;
         if (originZone != "library" && !(originZone == "hand" && causedByEffect)) return;
 
         // 候选不占次数：同一弃牌批次的其他同名卡仍可在前者拒绝后发动。
-        if (L12CardNameUsageRules.HasUsed(player, card.CardId)) return;
-        QueueTriggerCandidates(
-        [
-            CreateTriggerCandidate(player.PlayerIndex, card, "discard-trigger", "弃置时效果",
-                new Dictionary<string, string> { ["originZone"] = originZone })
-        ]);
+        var candidates = cards.Where(card => card.CardId == "S02-0006"
+                && !L12CardNameUsageRules.HasUsed(player, card.CardId))
+            .Select(card => CreateTriggerCandidate(player.PlayerIndex, card, "discard-trigger", "弃置时效果",
+                new Dictionary<string, string> { ["originZone"] = originZone })).ToArray();
+        if (candidates.Length > 0) QueueTriggerCandidates(candidates);
     }
 
     private void ResolveS2DiscardTrigger(L12StackItem item)

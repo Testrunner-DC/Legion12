@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`056240784a139797a60fe8d29fb3aa8bb6978f89efaee2aaa56e9abb4c6cfbd2`。
+内容指纹：`193af077dd6248bc9ecfa8123bbe0c4fd2b4ad054e32e44009a95681976069d2`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1004,7 +1004,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-03D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.EveryDivinitySetupMoraleIsAppliedOnceAndRestoredAsCurrentResourceState / S01-03D1 | normal, presentation-consumers, reconnect |
 | S01-03M1:ability:static:794dd14bacd363d7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.ValkyrieDrawPhaseSegmentBindsToTheTurnStartOutlet / S01-03M1 | authoritative-consumer |
 | S01-03M1:ability:static:794dd14bacd363d7 | TwelveLegions.Tests.ValkyrieDrawPhaseLifecycleProfileTests.FirstTurnDrawPhaseMillsTwoSequentialCardsAndRestoresWithoutRepeating / S01-03M1 | normal, presentation-consumers, reconnect |
-| S01-03M1:ability:static:794dd14bacd363d7 | TwelveLegions.Tests.ValkyrieDrawPhaseLifecycleProfileTests.OneCardLibraryDiscardsItsAvailableTopCardWithoutInventingASecondCard / S01-03M1 | short-library-sequential |
+| S01-03M1:ability:static:794dd14bacd363d7 | TwelveLegions.Tests.ValkyrieDrawPhaseLifecycleProfileTests.OneCardLibraryKeepsTheCompletedDiscardAndImmediatelyLosesBeforeAnyLaterEffect / S01-03M1 | short-library-sequential |
 | S01-03M1:ability:static:d047647f18d541e4 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03M1 | authoritative-consumer, per-card-branch |
 | S01-03M2:ability:static:ab4daf32452349c5 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03M2 | authoritative-consumer, per-card-branch |
 | S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentDoesNotReplaceItsDeclaredHandCounterAfterResponse / S01-0403 | target-invalidated |

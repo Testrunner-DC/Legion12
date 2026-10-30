@@ -1692,6 +1692,11 @@ public sealed partial class L12GameEngine
         L12PromptNarrativeInput narrative, string targetConsequence, string? skipLabel = null,
         int? row = null, Func<L12CardInstance, bool>? predicate = null)
     {
+        if (State.Phase == L12Phase.GameOver)
+        {
+            FinishStackItem(item);
+            return;
+        }
         var enemy = State.Players[1 - item.Controller];
         var choices = PublicLegions(enemy).Where(target => target.Troops <= maxTroops
                 && (predicate?.Invoke(target) ?? true)
@@ -1817,18 +1822,17 @@ public sealed partial class L12GameEngine
     {
         if (State.Phase == L12Phase.GameOver) return;
         var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
-        var result = L12LibraryOps.Mill(player, count, card =>
-        {
-            ResetCardForPrivateZone(card);
-            NotifyCardDiscarded(player, card, "library", causedByEffect: true);
-        });
+        // Each real move/reset is retained, but its trigger cannot interrupt
+        // this one requested operation or rescue a failed remaining move.
+        var result = L12LibraryOps.Mill(player, count, ResetCardForPrivateZone);
         if (result.Cards.Count > 0)
             AddPlayerLogEvent("mill", player.PlayerIndex,
                 $"{source}弃置牌库顶部{result.Cards.Count}张牌",
                 playerLogGroupId ?? origin?.Data.GetValueOrDefault("playerLogGroupId"),
                 playerLogTiming ?? origin?.Data.GetValueOrDefault("playerLogTiming") ?? origin?.Trigger,
                 cards: result.Cards.ToArray());
-        CompleteLibrarySequence(player, result, count, origin, source);
+        if (!CompleteLibrarySequence(player, result, count, origin, source)) return;
+        NotifyCardsDiscarded(player, result.Cards, "library", causedByEffect: true);
     }
 
     private void MoveGraveToLibraryBottom(L12PlayerState player, IEnumerable<L12CardInstance> cards)

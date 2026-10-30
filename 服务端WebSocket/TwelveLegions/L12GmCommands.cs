@@ -601,6 +601,7 @@ public sealed partial class L12GameEngine
                 {
                     MillWithPlayerLog(player, 2, "瓦尔基里的抽牌阶段替代效果",
                         playerLogGroupId, "turn-start");
+                    if (State.Phase == L12Phase.GameOver) return CommandResult.Ok();
                     AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
                 }
                 else if (State.Round == 1 && playerIndex == State.FirstPlayer)

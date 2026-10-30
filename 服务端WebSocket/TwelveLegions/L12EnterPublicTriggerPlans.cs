@@ -452,7 +452,11 @@ public sealed partial class L12GameEngine
             }
             if (plan is "oddr" or "egil"
                 && !PayMasterDamageCostAndCanContinue(candidate.Controller, 1, $"{candidate.SourceName}登场效果费用")) return true;
-            if (plan is "egil" or "gram") Mill(player, 2, $"{candidate.SourceName}登场效果费用");
+            if (plan is "egil" or "gram")
+            {
+                Mill(player, 2, $"{candidate.SourceName}登场效果费用");
+                if (State.Phase == L12Phase.GameOver) return true;
+            }
         }
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);

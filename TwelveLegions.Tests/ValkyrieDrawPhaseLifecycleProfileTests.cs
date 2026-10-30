@@ -48,7 +48,7 @@ public sealed class ValkyrieDrawPhaseLifecycleProfileTests
 
     [Fact]
     [L12AbilityEvidence(AbilityId, "short-library-sequential")]
-    public void OneCardLibraryDiscardsItsAvailableTopCardWithoutInventingASecondCard()
+    public void OneCardLibraryKeepsTheCompletedDiscardAndImmediatelyLosesBeforeAnyLaterEffect()
     {
         var game = Create(72481);
         game.State.FirstPlayer = 0;
@@ -66,7 +66,10 @@ public sealed class ValkyrieDrawPhaseLifecycleProfileTests
         Assert.Empty(player.Library);
         Assert.Contains(onlyCard, player.Graveyard);
         Assert.Equal(graveBefore + 1, player.Graveyard.Count);
-        Assert.NotEqual(L12Phase.GameOver, game.State.Phase);
+        Assert.Equal(L12Phase.GameOver, game.State.Phase);
+        Assert.Equal(1, game.State.Winner);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
     }
 
     private static JsonElement GraveyardProjection(L12GameEngine game)

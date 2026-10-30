@@ -2762,6 +2762,17 @@ public sealed partial class L12GameEngine
 
     private void FinishStackItem(L12StackItem item)
     {
+        if (State.Phase == L12Phase.GameOver)
+        {
+            // Close only this operation's committed result/fact once. Victory
+            // must not run successors, move its source, or reopen interaction.
+            if (item.Data.TryAdd("terminalCompletionRecorded", "true"))
+            {
+                AddEffectResultEvent(item, TrackStackCompletion(item));
+                CloseRemainingCompositeSegmentsAtGameOver(item, FindSource(item) ?? item.SourceSnapshot);
+            }
+            return;
+        }
         if (item.Data.GetValueOrDefault("pendingEffectKillPromptId") is { Length: > 0 } promptId
             && State.PendingPrompts.Any(prompt => prompt.PromptId == promptId))
             return;

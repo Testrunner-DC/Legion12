@@ -2214,6 +2214,26 @@ public sealed partial class L12GameEngine
         return false;
     }
 
+    private void CloseRemainingCompositeSegmentsAtGameOver(L12StackItem item, L12CardInstance? source)
+    {
+        if (State.Phase != L12Phase.GameOver || source is null) return;
+        var planId = item.Data.GetValueOrDefault("compositePlan");
+        if (string.IsNullOrWhiteSpace(planId)
+            || !int.TryParse(item.Data.GetValueOrDefault("compositeSegment"), out var current)) return;
+        var segments = L12CompositeEffectPlans.Segments(planId);
+        if (current < 0 || current >= segments.Count
+            || item.Negated && CompositeUsesSingleSettlementWindow(item, planId)) return;
+        for (var index = current + 1; index < segments.Count; index++)
+        {
+            var segment = segments[index];
+            // A disabled/undecided optional branch has no established segment
+            // to close. Never choose a branch, targets or costs after victory.
+            if (segment.RequiredMode is not null && !CompositeSegmentEnabled(segment, item)) continue;
+            QueueSkippedCompositeSettlementSegment(item, source, index, segment,
+                "对局已经结束，不执行本段", "对局已经结束，本段未执行");
+        }
+    }
+
     private bool QueueFailedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
         int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
         => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "failed", reason, playerReason);
@@ -2250,6 +2270,21 @@ public sealed partial class L12GameEngine
         if (CompositeUsesSingleSettlementWindow(item))
             data["sameStackContinuation"] = "true";
         var trigger = item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger;
+        if (State.Phase == L12Phase.GameOver)
+        {
+            // Reuse the terminal result protocol without queueing or executing
+            // any gameplay. This isolated carrier is never added to state.
+            var terminal = new L12StackItem
+            {
+                StackItemId = $"{item.StackItemId}:terminal:{segmentIndex}",
+                Controller = item.Controller, SourceInstanceId = item.SourceInstanceId,
+                SourceCardId = item.SourceCardId, SourceName = source.Name,
+                SourceSnapshot = CaptureLastKnownSourceSnapshot(source), Trigger = trigger, Text = segment.Text,
+            };
+            foreach (var pair in data) terminal.Data[pair.Key] = pair.Value;
+            AddEffectResultEvent(terminal, TrackStackCompletion(terminal));
+            return false;
+        }
         PushEffect(item.Controller, source, trigger, segment.Text,
             CompositeSegmentTargets(segment, item.Data.Where(pair => pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase))
                 .ToDictionary(pair => pair.Key["declared:".Length..], pair => pair.Value
