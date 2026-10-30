@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## QA-20261031-MIRROR-PHASE-ATTRIBUTION｜同包镜像准备、解压、原哈希及原子写归因（本地验收）
+
+- 仅新QA叶，原产品/现有QA不变。当前3132完整产品95CC不重编，BuildProjectReferences=false仅编测试后2/2具名通过，主server与test复制件前后95CC一致，QA043E；原3132与新2分别有真实证明，不冒一次3134全套。正常测试项目自动发现，不造第二套测试工程或新生产诊断开关。
+- 16/192合成字典（不同于原DataFile）各只建一个prepared包，同一原压缩数组无复制：计数空流、反射原HashingWriteStream(Stream.Null,max=ByteCount)+CompleteHash、真实WriteAtomically。独立预期UTF8/长度/SHA、三路计数、落盘、输入前后及tmp清理均通过；小warmup不计量，没有时延硬门槛或安全豁免，主分配/时间不含事后正确性检查。
+- 大包13569849B/压缩12708149B：Create121.0172ms/25377760B，GZip计数25.9075ms/400B、原hash空流31.5563ms/6192B、真实原子写34.2606ms/66888B。是单次本地合成/当前线程分配，hash控制含反射，不作差冒纯磁盘时间/峰值/正式故障根因或收益。没有删后验SHA、长度上限、临时文件所有权/原子替换/失败恢复。现可优先研究准备段分配，但无新增产品修复承诺。
+- Main读完整单叶、绑定912ED67F与产品95CC、原TRXE6E38D88及监督success；唯一`demand-driven-resources-20261031/mirror-phase-attribution/acceptance.json`。来源无独立原日志就如实记录，不后造raw；原既有警告保留不抑制。回退只移除此诊断QA，不改任何运行代码或数据；未部署/未关线上Bug。
+
 ## PERF-20261031-VALIDATED-PAYLOAD-ENCODE｜同事务已验证牌库正文不重复编码（本地验收）
 
 - P3同次调用链的重复计算：ReadReferencedDeckPayload→Codec.Decode原先已Encode并Ordinal逐字确认原PayloadJson，再完整ValidateHash；末段PersistPayload又Encode同三段。仅新增私有readonly验证载体，原读成功才交出同次hash/master/current format/原紧凑串，INSERT仅消费它，没有任意string或跳校验flag、跨代缓存/新权威。全域与Private两caller统一，原两参返回及Private Verify的Normalized后继用途保留，SQL文本/事务/created_utc、每引用master/格式、首次时间和失败保护未改；Codec不变。
