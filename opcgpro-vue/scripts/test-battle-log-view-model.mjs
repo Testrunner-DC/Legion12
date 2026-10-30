@@ -4,6 +4,7 @@ import './test-library-return-log.mjs'
 import './test-battle-troops-modifier.mjs'
 import './test-battle-selected-targets.mjs'
 import './test-battle-disaster-value.mjs'
+import './test-log-source-mill-20261030.mjs'
 import { PLAYER_LOG_REDLINE_TERMS, playerLogContainsForbiddenTerms, projectLog } from '../src/l12/game/logViewModel.ts'
 import { replayGameAt } from '../src/l12/replayModel.ts'
 

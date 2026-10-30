@@ -458,22 +458,14 @@ public sealed partial class L12GameEngine
             {
                 var opponent = State.Players[1 - item.Controller];
                 var declared = Many("moraleTargets");
-                var resolved = 0;
-                foreach (var targetId in declared)
-                {
-                    var morale = opponent.Morale.FirstOrDefault(card => card.InstanceId == targetId && card.Tapped);
-                    if (morale is null) continue;
-                    LockUntilNextReset(morale);
-                    AddEvent("effect", item.Controller,
-                        "所选士气下个重置阶段无法转为活跃");
-                    resolved++;
-                }
+                var actual = declared.Select(targetId => opponent.Morale
+                        .FirstOrDefault(card => card.InstanceId == targetId && card.Tapped))
+                    .OfType<L12MoraleCard>().ToArray();
+                LockMoraleUntilNextResetByEffect(item, actual, declared.Length - actual.Length);
+                var resolved = actual.Length;
                 if (resolved == 0 && declared.Length > 0)
                     RecordTargetSettlementFailure(item, string.Join('|', declared),
                         "伊丽莎白一世选择的士气已不再休整，本次限制未生效");
-                else if (resolved < declared.Length)
-                    AddEvent("effect", item.Controller,
-                        $"〈{item.SourceName}〉有{declared.Length - resolved}张已声明士气在逆结算后失效；其余对象继续结算");
                 break;
             }
             case "mordred-enter-choice":

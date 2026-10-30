@@ -2489,7 +2489,7 @@ public sealed partial class L12GameEngine
                 if (chosen[0] != "skip")
                 {
                     var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
-                    if (target is { Tapped: true }) LockUntilNextReset(target);
+                    if (target is { Tapped: true }) LockUntilNextResetByEffect(item, target);
                 }
                 FinishStackItem(item);
                 return true;

@@ -377,6 +377,27 @@ function publicPaidCostReceipt(event: ActionEvent, source: Card): string | null 
   return paid ? `已支付费用：${paid}` : null
 }
 
+// Keep public card references in the same row as their actual library discard.
+// Neither audit prose nor another event may supply missing identities.
+function appendLogParts(parts: LogPart[], incoming: LogPart[]) {
+  for (const part of incoming) {
+    const last = parts.at(-1)
+    if (last && !last.card && !part.card) last.text += part.text
+    else parts.push({ ...part })
+  }
+}
+
+function millLogParts(event: ActionEvent, you: number, neutralView: boolean, contextActor: number | undefined): LogPart[] {
+  const cards = publicCards(event)
+  const count = numberAfter(event.text, /牌库顶部\s*(\d+)\s*张/, countFrom(event.text, cards.length))
+  const amount = Number.isSafeInteger(count) && count >= 0 ? count : null
+  const actor = event.playerIndex !== contextActor ? side(event.playerIndex, you, neutralView) : null
+  // A contradictory count cannot establish which of the supplied identities moved.
+  const knownCards = amount != null && cards.length <= amount ? cards : []
+  return [{ text: `${actor ?? ''}弃置牌库顶部${amount == null ? '卡牌（数量未记录）' : `${amount}张牌`}${knownCards.length ? '：' : ''}` },
+    ...cardParts(knownCards)]
+}
+
 function projectGroupedAction(events: ActionEvent[], indexes: number[], you: number, neutralView: boolean): LogLineRow | null {
   const group = indexes.map(index => events[index])
   const play = group.find(event => event.type === 'play')
@@ -386,26 +407,26 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     return projectSelectedTargets(first, you, neutralView)
 
   if (first.playerLogTiming === 'turn-start' || first.playerLogGroupId?.startsWith('turn:')) {
-    const changes: string[] = []
+    const changes: LogPart[] = [{ text: '回合开始' }]
+    const addChange = (parts: LogPart[]) => appendLogParts(changes, [{ text: '，' }, ...parts])
     const draw = group.filter(event => event.type === 'draw')
       .reduce((sum, event) => sum + numberAfter(event.text, /抽取\s*(\d+)\s*张/, countFrom(event.text)), 0)
     const morale = group.filter(event => event.type === 'morale')
       .reduce((sum, event) => sum + Math.abs(numberAfter(event.text, /追加\s*(\d+)\s*张/, countFrom(event.text))), 0)
-    const milled = group.filter(event => event.type === 'mill')
-      .reduce((sum, event) => sum + numberAfter(event.text, /牌库顶部\s*(\d+)\s*张/, countFrom(event.text)), 0)
-    if (group.some(event => event.type === 'draw-skipped')) changes.push('先手首回合不抽牌')
-    if (draw) changes.push(`抽取${draw}张牌`)
-    if (milled) changes.push(`弃置牌库顶部${milled}张牌`)
-    if (morale) changes.push(`追加${morale}张士气`)
+    if (group.some(event => event.type === 'draw-skipped')) addChange([{ text: '先手首回合不抽牌' }])
+    if (draw) addChange([{ text: `抽取${draw}张牌` }])
+    for (const event of group.filter(event => event.type === 'mill'))
+      addChange(millLogParts(event, you, neutralView, first.playerIndex))
+    if (morale) addChange([{ text: `追加${morale}张士气` }])
     for (const event of group) {
       const value = disasterValueText(event)
-      if (value) changes.push(value)
-      else if (event.type === 'disaster-value') changes.push('天灾值变化（详情未记录）')
+      if (value) addChange([{ text: value }])
+      else if (event.type === 'disaster-value') addChange([{ text: '天灾值变化（详情未记录）' }])
     }
-    if (!changes.length) return null
+    if (changes.length === 1 && changes[0].text === '回合开始') return null
     const changeSequence = group.find(event => event.type !== 'turn-start')?.sequence ?? first.sequence
     return line(changeSequence, 'info', side(first.playerIndex, you, neutralView),
-      [{ text: `回合开始，${changes.join('，')}` }])
+      changes)
   }
 
   const source = firstPublicCard(play ?? first)
@@ -445,9 +466,10 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     if (amount) suffix += `，${eventSide}抽取${amount}张牌`
   }
 
-  const milled = group.filter(event => event.type === 'mill')
-    .reduce((sum, event) => sum + numberAfter(event.text, /牌库顶部\s*(\d+)\s*张/, countFrom(event.text)), 0)
-  if (milled) suffix += `，弃置牌库顶部${milled}张牌`
+  const summary: LogPart[] = suffix ? [{ text: suffix }] : []
+  suffix = ''
+  for (const event of group.filter(event => event.type === 'mill'))
+    appendLogParts(summary, [{ text: '，' }, ...millLogParts(event, you, neutralView, first.playerIndex)])
 
   for (const disaster of group.filter(event => event.type === 'disaster-value')) {
     const progress = disasterValueText(disaster)
@@ -487,7 +509,8 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
     if (counts.size) suffix += `；效果段：${[...counts].map(([status, count]) => `${count}段${resultLabels[status]}`).join('、')}`
   }
 
-  if (suffix) parts.push({ text: suffix })
+  if (suffix) appendLogParts(summary, [{ text: suffix }])
+  parts.push(...summary)
   const negatedAfterPayment = results.length === 1 && result?.effectResultStatus === 'negated'
     && publicPaidCostReceipt(result, source)
   const row = line(first.sequence, play ? 'play' : 'effect', side(first.playerIndex, you, neutralView),
@@ -496,7 +519,7 @@ function projectGroupedAction(events: ActionEvent[], indexes: number[], you: num
   const detail = group.flatMap(event => {
     const resultDetail = groupedResultDetail(event, you, source, event === lastPaidResult, neutralView)
     if (resultDetail) return singleDecline && resultDetail.parts.length === 1 ? [] : [resultDetail]
-    if (event.type === 'effect-result' || event.type === 'cost'
+    if (event.type === 'effect-result' || event.type === 'cost' || event.type === 'mill'
       || (event === first && event.type !== 'target-selected')) return []
     const projected = event.type === 'target-selected'
       ? projectSelectedTargets(event, you, neutralView, false)
@@ -549,13 +572,25 @@ function effectOutcomeBadges(event: ActionEvent) {
     if (value) addUniqueBadge(badges, badge(value, unit))
   }
   for (const [pattern, value] of [
-    [/转为活跃/, '转为活跃'],
-    [/转为休整|横置/, '转为休整'],
     [/获得冲锋/, '获得冲锋'],
     [/获得强攻/, '获得强攻'],
     [/获得震击/, '获得震击'],
   ] as const) {
     if (pattern.test(event.text)) addUniqueBadge(badges, { value, tone: 'info' })
+  }
+  if (event.text.split(/[，,。；;：:]/).some(clause => {
+    const restriction = /下个(?:对方)?重置阶段(?:无法|不能)转为活跃/.exec(clause)
+    return restriction && !/(?:未能|失败|未生效|被无效|未受到限制)/.test(clause)
+      && !/(?:无法|不能)/.test(clause.slice(0, restriction.index))
+  })) addUniqueBadge(badges, { value: '下个重置阶段无法转为活跃', tone: 'info' })
+  for (const [state, phrase] of [['转为活跃', /转为活跃/], ['转为休整', /转为休整|横置/]] as const) {
+    // Legacy events have no state receipt. Only a completed positive clause can
+    // support this badge; restrictions, failed actions and future grants cannot.
+    const completed = event.text.split(/[，,。；;：:]/).some(clause => phrase.test(clause)
+      && !/(?:无法|不能|不可|未能|未|不再|失败|没有|不允许|阻止|防止|禁止|被无效)/.test(clause)
+      && !/(?:下次|下一次|下个|下一个|可|能够|允许|将会)/.test(clause)
+      && !/(?:转为活跃|转为休整|横置)(?:时|后)/.test(clause))
+    if (completed) addUniqueBadge(badges, { value: state, tone: 'info' })
   }
   return badges
 }
@@ -803,11 +838,8 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
     case 'counter-replaced': return line(event.sequence, 'info', actor, [cardPart(card), { text: '离开盖伏区并进入墓地' }])
     case 'grave':
     case 'leave': return line(event.sequence, 'info', actor, [cardPart(card), { text: event.type === 'grave' ? '进入墓地' : '离场' }])
-    case 'mill': {
-      const cards = publicCards(event)
-      return line(event.sequence, 'info', actor, [{ text: '牌库顶弃置：' }, ...cardParts(cards)],
-        [{ value: `${countFrom(event.text, cards.length)}张`, tone: 'info' }])
-    }
+    case 'mill': return line(event.sequence, 'info', actor,
+      millLogParts(event, you, neutralView, event.playerIndex))
     case 'library': return line(event.sequence, 'info', actor,
       [cardPart(card), { text: event.text.includes('底部') ? '返回牌库底部'
         : event.text.includes('顶部') ? '返回牌库顶部' : '返回牌库（位置未记录）' }])

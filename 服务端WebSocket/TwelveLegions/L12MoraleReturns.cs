@@ -181,7 +181,7 @@ public sealed partial class L12GameEngine
                 {
                     var lockTarget = FindOnField(State.Players[1 - item.Controller], id, out _, out _);
                     if (lockTarget is null || !IsFieldLegion(lockTarget) || lockTarget.Hidden) continue;
-                    LockUntilNextReset(lockTarget);
+                    LockUntilNextResetByEffect(item, lockTarget);
                     locked++;
                 }
                 if (locked == 0)

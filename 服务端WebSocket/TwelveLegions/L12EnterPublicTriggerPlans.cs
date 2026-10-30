@@ -596,7 +596,7 @@ public sealed partial class L12GameEngine
                 break;
             case "wuzetian":
                 ResolveDeclaredEnemyTargets(item, Many("targets"), card => card.Tapped,
-                    (_, target) => LockUntilNextReset(target),
+                    (_, target) => LockUntilNextResetByEffect(item, target),
                     "发动时没有选择休整的对方军团", "所选军团已离场、被覆盖、不再是军团或已转为活跃");
                 break;
             case "lijing": BeginLiJingEffect(item); return true;
@@ -878,7 +878,7 @@ public sealed partial class L12GameEngine
                 break;
             case "perseus-promotion":
                 if (ResolveDeclaredEntryEnemyLegion(item, One("target"), card => card.Tapped, "休整状态") is { } perseusTarget)
-                    LockUntilNextReset(perseusTarget);
+                    LockUntilNextResetByEffect(item, perseusTarget);
                 break;
             case "richard":
                 AdvanceTrial(item.Controller, 2, source);
