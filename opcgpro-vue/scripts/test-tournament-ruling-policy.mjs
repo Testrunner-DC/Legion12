@@ -52,6 +52,7 @@ function fixture(key, actor = 'actor-A', item = tournament()) {
   const api = new Proxy({}, { get: (_, name) => async (...args) => { calls.push({ name, args }); return item } })
   const scope = { ...policy, Error, console, computed: work => ({ get value() { return work() } }), componentAlive: true, disposed: false, actorEpoch: 0, platformState,
     route: { fullPath: '/synthetic/tournament' }, tournament: { value: item }, busy, notice, dropArmed: { value: true },
+    readModelCurrent: { value: true }, tournamentLoadEpoch: 0,
     accountId: { get value() { return platformState.account?.id ?? '' } },
     rulingReasons: { 'synthetic-match': ' synthetic reason ' }, participantReasons: { 'actor-A': ' synthetic reason ', 'actor-B': ' synthetic reason ', 'actor-C': ' synthetic reason ' },
     matchReasons: { 'synthetic-match': ' synthetic reason ' }, tournamentApi: api,
@@ -85,6 +86,16 @@ function templateButtons(key, callees) {
 function disabled(button, context) { return !!(button.disabled && vm.runInNewContext(button.disabled, { ...policy, ...context })) }
 const results = []
 async function test(name, run) { try { await run(); results.push({ name, passed: true }) } catch (error) { results.push({ name, passed: false, error: error.message.split('\n').slice(0, 3).join(' ') }) } }
+
+await test('invalidated read models cannot start a new ruling or removal', async () => {
+  for (const key of ['workbench', 'detail']) {
+    const f = fixture(key, 'actor-C')
+    f.scope.readModelCurrent.value = false
+    await f.invoke(key === 'workbench' ? 'removeParticipant' : 'remove', ...(key === 'workbench'
+      ? [tournament(), { accountId: 'actor-B' }, false] : [{ accountId: 'actor-B' }, false]))
+    assert.equal(f.calls.length, 0)
+  }
+})
 
 await test('pure policy fails closed on unknown actor or match identity and is not authorization', () => {
   assert.ok(sources.policy, 'shared policy must exist')

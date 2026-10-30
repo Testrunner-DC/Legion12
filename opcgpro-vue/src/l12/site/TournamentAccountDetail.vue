@@ -5,6 +5,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { loadDeckCatalog, type DeckCard, type PrivateDeckSummary, type SavedL12Deck } from '@/l12/decks'
 import { connect, enterTournamentMatch, l12State, spectateTournamentMatch } from '@/l12/net'
 import { hasPermission, platformState, tournamentApi, type Tournament, type TournamentMatch, type TournamentParticipant } from '@/l12/platform'
+import { createVisibleResourceRead } from '../visibleResourceRead'
+import { landscapeTeleportTarget } from '../mobileViewport'
 import { tournamentDeckVisibilityText, tournamentDisasterModeText, tournamentFormatText, tournamentMatchStatusText, tournamentPhaseText, tournamentResultText, tournamentRoundStatusText, tournamentStatusText } from '@/l12/tournamentLabels'
 import { tournamentTimeControlLabel } from '@/l12/tournamentTime'
 import { canManageParticipantRemovalWithoutSelfRuling, tournamentSelfRulingMessage } from '@/l12/tournamentRulingPolicy'
@@ -20,6 +22,9 @@ import TournamentReputationPanel from './TournamentReputationPanel.vue'
 type Tab = 'overview'|'schedule'|'standings'|'participants'|'rules'|'judge'|'manage'
 const route = useRoute(); const router = useRouter(); const tournament = ref<Tournament | null>(null)
 const tab = ref<Tab>('overview'); const loading = ref(true); const busy = ref(false); const notice = ref('')
+const readModelCurrent = ref(false)
+const readModelOwner = ref(0)
+const deckSelectorHost = ref<HTMLElement | null>(null)
 const deckId = ref(''); const dropArmed = ref(false)
 const catalog = ref<DeckCard[]>([]); const deckLoading = ref(false); const deckError = ref('')
 const deckSelectorOpen = ref(false)
@@ -58,12 +63,13 @@ async function load() {
   try {
     const value = await tournamentApi.getByCode(code)
     if (!current()) return
-    tournament.value = value; document.title = `${value.name} · 赛事中心`
+    tournament.value = value; readModelCurrent.value = true; document.title = `${value.name} · 赛事中心`
   } catch (error) { if (current()) notice.value = error instanceof Error ? error.message : '赛事不存在' }
   finally { if (current()) loading.value = false }
 }
 async function mutate(work: (item: Tournament) => Promise<Tournament>, success: string, extraCurrent: () => boolean = () => true) {
-  if (!tournament.value || busy.value) return
+  if (!readModelCurrent.value || !tournament.value || busy.value) return
+  const readEpoch = tournamentLoadEpoch
   const item = tournament.value, account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
   const current = () => !disposed && account === platformState.account?.id && token === platformState.token
     && path === route.fullPath && actor === actorEpoch && tournament.value?.id === item.id && extraCurrent()
@@ -71,7 +77,9 @@ async function mutate(work: (item: Tournament) => Promise<Tournament>, success: 
   try {
     const result = await work(item)
     if (!current()) return
-    tournament.value = result; notice.value = success
+    if (readModelCurrent.value && readEpoch === tournamentLoadEpoch) tournament.value = result
+    else visibleTournamentRead.request()
+    notice.value = success
   } catch (error) { if (current()) notice.value = error instanceof Error ? error.message : '操作失败' }
   finally { if (actor === actorEpoch) busy.value = false }
 }
@@ -89,10 +97,12 @@ function pauseRound(number: number, paused: boolean) { void mutate(item => tourn
 function pauseMatch(match: TournamentMatch) { const reason = matchReasons[match.id]?.trim(); if (!reason) { notice.value = '请先填写暂停或恢复本桌的理由'; return } void mutate(item => tournamentApi.pauseMatch(item.id, match.id, item.version, !match.paused, reason), match.paused ? '本桌已恢复' : '本桌已暂停') }
 function roundCheckIn(roundNumber: number, ready: boolean) { if (!activeRegistration.value) { notice.value = '当前报名状态不能签到'; return }; void mutate(item => tournamentApi.checkIn(item.id, roundNumber, item.version, undefined, ready), ready ? '本轮到场已确认' : '已取消本轮到场状态') }
 async function room(match: TournamentMatch, spectate: boolean) {
-  if (!tournament.value) return
+  if (!readModelCurrent.value || !tournament.value) return
+  const readEpoch = tournamentLoadEpoch
   const item = tournament.value, account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
   const current = () => !disposed && actor === actorEpoch && account === platformState.account?.id
     && token === platformState.token && path === route.fullPath && tournament.value?.id === item.id
+    && readModelCurrent.value && readEpoch === tournamentLoadEpoch
   try {
     await connect(); if (!current()) return
     spectate ? spectateTournamentMatch(item.id, match.id) : enterTournamentMatch(item.id, match.id)
@@ -107,7 +117,16 @@ async function room(match: TournamentMatch, spectate: boolean) {
   } catch (error) { if (current()) notice.value = error instanceof Error ? error.message : '无法进入房间' }
 }
 async function copyLink() { const actor = actorEpoch, path = route.fullPath; await navigator.clipboard.writeText(location.href); if (!disposed && actor === actorEpoch && path === route.fullPath) notice.value = '稳定赛事链接已复制' }
-async function exportCsv() { if (!tournament.value) return; const item = tournament.value, actor = actorEpoch, path = route.fullPath; try { const blob = await tournamentApi.exportCsv(item.id); if (disposed || actor !== actorEpoch || path !== route.fullPath || tournament.value?.id !== item.id) return; const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `tournament-${item.code}.csv`; link.click(); URL.revokeObjectURL(link.href) } catch (error) { if (!disposed && actor === actorEpoch && path === route.fullPath) notice.value = error instanceof Error ? error.message : '导出失败' } }
+async function exportCsv() { if (!readModelCurrent.value || !tournament.value) return; const item = tournament.value, actor = actorEpoch, path = route.fullPath, readEpoch = tournamentLoadEpoch; try { const blob = await tournamentApi.exportCsv(item.id); if (!readModelCurrent.value || readEpoch !== tournamentLoadEpoch || disposed || actor !== actorEpoch || path !== route.fullPath || tournament.value?.id !== item.id) return; const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `tournament-${item.code}.csv`; link.click(); URL.revokeObjectURL(link.href) } catch (error) { if (!disposed && actor === actorEpoch && path === route.fullPath) notice.value = error instanceof Error ? error.message : '导出失败' } }
+let catalogDemand = true
+function invalidateTournamentRead() { ++tournamentLoadEpoch; readModelCurrent.value = false; loading.value = true; document.title = '赛事中心 · 十二军团' }
+const visibleTournamentRead = createVisibleResourceRead({
+  visible: () => document.visibilityState === 'visible', invalidate: invalidateTournamentRead,
+  load: async () => {
+    const readCatalog = catalogDemand; catalogDemand = false
+    await Promise.all([load(), readCatalog && platformState.account?.id && platformState.token ? loadCatalog() : Promise.resolve()])
+  },
+})
 let registrationBoundaryTimer: number | undefined
 watch(tournament, value => {
   window.clearTimeout(registrationBoundaryTimer)
@@ -118,9 +137,9 @@ watch(tournament, value => {
     .map(time => new Date(time).getTime())
     .filter(time => Number.isFinite(time) && time > now)
     .sort((a, b) => a - b)[0]
-  if (next !== undefined) registrationBoundaryTimer = window.setTimeout(() => void load(), Math.min(next - now + 100, 2_147_000_000))
+  if (next !== undefined) registrationBoundaryTimer = window.setTimeout(() => visibleTournamentRead.request(), Math.min(next - now + 100, 2_147_000_000))
 } )
-const onResource = () => { void load() }; const onVisibility = () => { if (document.visibilityState === 'visible') void load() }
+const onResource = () => { visibleTournamentRead.request() }; const onVisibility = () => { visibleTournamentRead.request() }
 let deckLoadEpoch = 0
 async function loadCatalog() {
   const epoch = ++deckLoadEpoch, account = platformState.account?.id, token = platformState.token, path = route.fullPath
@@ -135,31 +154,33 @@ async function loadCatalog() {
   } finally { if (current()) deckLoading.value = false }
 }
 function confirmDeckSelection(deck: PrivateDeckSummary | SavedL12Deck) {
+  if (!readModelCurrent.value) return
   if (!activeRegistration.value) { deckSelectorOpen.value = false; notice.value = '当前报名状态不能选择参赛牌库'; return }
   if (!('counts' in deck)) { deckSelectorOpen.value = false; notice.value = '登录状态已变化，请重新登录后选择牌库'; return }
   selectedDeckMetadata.value = deck; deckId.value = deck.id; deckSelectorOpen.value = false; deckError.value = ''
 }
-watch(() => [platformState.account?.id, platformState.token, route.fullPath], () => {
+watch(() => JSON.stringify([platformState.account?.id, platformState.token, route.fullPath]), () => {
   actorEpoch++; tournamentLoadEpoch++; loading.value = false; busy.value = false
   deckLoadEpoch++
   catalog.value = []; deckId.value = ''; selectedDeckMetadata.value = null; deckError.value = ''; deckLoading.value = false; deckSelectorOpen.value = false
-  if (platformState.account?.id && platformState.token) void loadCatalog()
-  void load()
+  readModelOwner.value++; catalogDemand = true
+  visibleTournamentRead.request()
 }, { flush: 'sync' })
+watch(() => JSON.stringify([platformState.account?.role, platformState.account?.permissionVersion,
+  platformState.account?.permissions ?? []]), () => visibleTournamentRead.request(), { flush: 'sync' })
 onMounted(() => {
   window.addEventListener('l12-resource-tournaments', onResource)
   document.addEventListener('visibilitychange', onVisibility)
-  void load()
-  if (platformState.account?.id && platformState.token) void loadCatalog()
+  visibleTournamentRead.request()
 })
-onBeforeUnmount(() => { window.clearTimeout(registrationBoundaryTimer); disposed = true; actorEpoch++; tournamentLoadEpoch++; deckLoadEpoch++; window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility) })
+onBeforeUnmount(() => { visibleTournamentRead.dispose(); window.clearTimeout(registrationBoundaryTimer); disposed = true; actorEpoch++; tournamentLoadEpoch++; deckLoadEpoch++; window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
 
 <template>
   <main class="detail-page">
     <button class="back" @click="router.push('/battle/tournaments')">← 返回赛事中心</button>
-    <p v-if="loading" class="state-panel" role="status">正在加载赛事…</p><p v-else-if="!tournament" class="notice" role="alert">{{ notice }}</p>
-    <template v-else>
+    <p v-if="loading" class="state-panel" role="status">正在加载赛事…</p><p v-else-if="!tournament || !readModelCurrent" class="notice" role="alert">{{ notice }}</p>
+    <div v-if="tournament" v-show="readModelCurrent" :key="readModelOwner" :inert="!readModelCurrent" class="tournament-read-model">
       <header class="detail-page-head"><div><span class="eyebrow"><small>{{ tournament.code }}</small><i>{{ tournamentStatusText(tournament.status) }}</i><i>{{ tournamentPhaseText(tournament.phase) }}</i></span><h1>{{ tournament.name }}</h1><p>{{ tournament.description || '暂无赛事简介' }}</p></div><div class="header-actions"><button @click="copyLink">复制链接</button><button @click="exportCsv">导出 CSV</button></div></header>
       <aside v-if="tournament.status === 'canceled'" class="alert" role="alert"><b>赛事已取消</b><span>{{ tournament.cancellationReason || '请联系主办者了解详情' }}</span></aside>
       <aside v-else-if="me" class="next"><span class="next-label">YOUR NEXT STEP</span><b>你的下一步</b><span v-if="me.removed">已被移出赛事，不能签到或选择参赛牌库。</span><span v-else-if="me.dropped">已退出赛事，本次报名不再参与签到。</span><span v-else-if="me.waitlisted"><span>当前候补第 {{ me.waitlistPosition }} 位，正式席位释放后会自动递补。</span><template v-if="tournament.status === 'registration'"><template v-if="me.deck">已完成签到并锁定牌库。</template><template v-else>可提前签到并锁定本人牌库。</template></template></span><span v-else-if="tournament.status === 'registration' && !me.deck">开赛前请完成签到并锁定牌组。</span><span v-else-if="tournament.status === 'registration'">赛前签到已完成，请等待主办者开赛。</span><span v-else>查看下方赛程，进入自己的桌次。</span></aside>
@@ -177,20 +198,22 @@ onBeforeUnmount(() => { window.clearTimeout(registrationBoundaryTimer); disposed
         <div class="ranking-method-heading"><h3>瑞士轮排名顺序</h3><p>依次比较，前一项分出高低后不再比较下一项。负场和平局仅展示，不参与以下排序。</p></div>
         <ol><li v-for="step in rankingOrder" :key="step.name"><strong>{{ step.name }}</strong><span>{{ step.explanation }}</span></li></ol>
       </div><RulesCardSummary :cards="catalog" :disaster-card-ids="tournament.rules.disasterCardIds" :card-restrictions="tournament.rules.cardRestrictions" :disaster-mode="tournament.rules.disasterMode"/><p v-if="tournament.rules.banList">补充规则：{{ tournament.rules.banList }}</p></section>
-      <section v-else-if="tab === 'judge'" class="panel"><TournamentJudgeDesk :tournament="tournament" :can-judge="canJudge" @updated="value => tournament = value" @notice="value => notice = value" /></section>
-      <section v-else-if="tab === 'manage'" class="panel"><TournamentManagementPanel :tournament="tournament" :account-id="accountId" :can-organize="canOrganize" @updated="value => tournament = value" @notice="value => notice = value" /></section>
-    </template>
+      <section v-else-if="tab === 'judge'" class="panel"><TournamentJudgeDesk :tournament="tournament" :can-judge="canJudge" @updated="visibleTournamentRead.request()" @notice="value => notice = value" /></section>
+      <section v-else-if="tab === 'manage'" class="panel"><TournamentManagementPanel :tournament="tournament" :account-id="accountId" :can-organize="canOrganize" @updated="visibleTournamentRead.request()" @notice="value => notice = value" /></section>
     <TournamentReputationPanel v-if="tournament && tab === 'overview'" />
     <TournamentDisasterSummary v-if="tournament && tab === 'schedule'" :code="tournament.code" :rounds="tournament.rounds" />
-    <SavedDeckSelector v-if="tournament" :open="deckSelectorOpen" mode="tournament" :catalog="catalog"
+    <SavedDeckSelector v-if="tournament && deckSelectorHost" :open="deckSelectorOpen" :teleport-target="deckSelectorHost" mode="tournament" :catalog="catalog"
       :current-deck-id="selectedDeck?.id" :current-deck-revision="selectedDeck?.revision"
       :current-deck-name="selectedDeck?.name" :restrictions="tournament.rules.cardRestrictions"
-      uses-season-restrictions :loading="deckLoading" :disabled="busy" :action-error="deckError"
+      uses-season-restrictions :loading="deckLoading" :disabled="busy || !readModelCurrent" :action-error="deckError"
       @cancel="deckSelectorOpen = false" @confirm="confirmDeckSelection"/>
+    </div>
+    <Teleport :to="landscapeTeleportTarget()"><div ref="deckSelectorHost" v-show="readModelCurrent" :inert="!readModelCurrent" class="tournament-read-model" /></Teleport>
   </main>
 </template>
 
 <style scoped>
+.tournament-read-model{display:contents}
 .detail-page{box-sizing:border-box;max-width:1320px;margin:0 auto;padding:24px clamp(18px,3vw,42px) 64px;display:grid;gap:16px;font-family:'Microsoft YaHei','微软雅黑',sans-serif;color:var(--l12-ui-text)}.detail-page button{min-height:40px;padding:0 13px;border:1px solid var(--l12-ui-line-strong);border-radius:var(--l12-ui-radius-sm);background:var(--l12-ui-control);color:var(--l12-ui-text-soft);font-weight:800;cursor:pointer}.detail-page button:disabled{cursor:not-allowed;opacity:.45}.back{justify-self:start;border-color:transparent!important;background:transparent!important;color:var(--l12-ui-info)!important;padding-left:0!important}.detail-page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:18px;border-bottom:1px solid var(--l12-ui-line)}.detail-page-head h1{margin:7px 0;font-size:clamp(26px,3vw,36px);line-height:1.18}.detail-page-head p{max-width:760px;margin:0;color:var(--l12-ui-text-muted);font-size:14px}.eyebrow{display:flex;align-items:center;flex-wrap:wrap;gap:7px}.eyebrow small,.section-title small,.round header small,.personal header small{color:var(--l12-ui-info);font:900 11px ui-monospace,monospace;letter-spacing:.14em}.eyebrow i{padding:4px 7px;border:1px solid var(--l12-ui-line-strong);border-radius:999px;background:var(--l12-ui-control);color:var(--l12-ui-text-soft);font-size:11px;font-style:normal;font-weight:800}.header-actions{display:flex;flex:0 0 auto;gap:8px}.alert,.next{padding:14px 16px;border:1px solid var(--l12-ui-line);border-radius:var(--l12-ui-radius-sm)}.alert{display:grid;gap:4px;border-left:3px solid var(--l12-ui-danger);background:#281218}.alert span{color:#efb1b7;font-size:13px}.next{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:4px 16px;border-left:3px solid var(--l12-ui-accent);background:linear-gradient(90deg,#25200f,var(--l12-ui-panel))}.next-label{grid-row:1/3;color:var(--l12-ui-accent);font:900 11px ui-monospace,monospace;letter-spacing:.12em}.next>b{font-size:14px}.next>span:last-child{color:var(--l12-ui-text-soft);font-size:13px}.tabs{display:flex;gap:4px;padding:5px;border:1px solid var(--l12-ui-line);border-radius:var(--l12-ui-radius-md);overflow:auto;background:rgba(7,13,18,.86);scrollbar-width:thin}.tabs button{flex:1 0 auto;min-width:84px;border-color:transparent;background:transparent;white-space:nowrap}.tabs .active{border-color:var(--l12-ui-accent-line);background:#302713;color:#f2d779}.panel,.state-panel{padding:20px;border:1px solid var(--l12-ui-line);border-radius:var(--l12-ui-radius-md);background:linear-gradient(145deg,var(--l12-ui-panel-raised),var(--l12-ui-panel));box-shadow:var(--l12-ui-shadow-panel)}.state-panel{min-height:180px;display:grid;place-items:center;color:var(--l12-ui-text-muted)}.notice{margin:0;padding:12px 14px;border-left:3px solid var(--l12-ui-info);background:#0b2025;color:var(--l12-ui-text-soft)}.overview{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.overview>p,.rule-grid>p{display:grid;align-content:start;gap:6px;margin:0;padding:14px;border:1px solid var(--l12-ui-line);background:var(--l12-ui-control)}.overview>p small,.rule-grid small{color:var(--l12-ui-text-muted);font-size:11px;font-weight:800}.overview>p b,.rule-grid b{overflow-wrap:anywhere;color:var(--l12-ui-text-soft);font-size:14px}.overview>p b span{display:block;margin-top:3px;color:var(--l12-ui-text-muted);font-size:11px}.wide{grid-column:1/-1}.timeline,.personal,.rule-details{padding-top:16px;border-top:1px solid var(--l12-ui-line)}.timeline h2,.personal h2,.section-title h2,.rule-details h2{margin:3px 0;font-size:17px}.timeline>p{display:grid;grid-template-columns:200px 1fr;gap:12px;margin:8px 0;color:var(--l12-ui-text-soft);font-size:13px}.timeline time{color:var(--l12-ui-accent)}.personal{display:grid;grid-template-columns:minmax(190px,.55fr) 1fr;align-items:end;gap:20px}.personal header p{margin:5px 0 0;color:var(--l12-ui-text-muted);font-size:12px}.personal-actions{display:flex;align-items:end;justify-content:flex-end;flex-wrap:wrap;gap:8px}.deck-directory{display:grid;min-width:min(100%,390px);max-width:100%;gap:7px}.deck-directory form,.deck-pages{display:flex;min-width:0;align-items:center;gap:7px}.deck-directory input,.deck-directory select{box-sizing:border-box;min-width:0;min-height:40px;padding:8px;border:1px solid var(--l12-ui-line-strong);border-radius:var(--l12-ui-radius-sm);background:var(--l12-ui-control);color:var(--l12-ui-text-soft)}.deck-directory form input{flex:1}.deck-directory select{width:100%}.deck-directory span{min-width:0;color:var(--l12-ui-text-muted);font-size:12px;overflow-wrap:anywhere}.deck-pages{justify-content:space-between}.deck-pages span{text-align:center}.deck-pages button{flex:0 0 auto}.deck-directory .deck-error{color:#efb1b7}.schedule{display:grid;gap:14px}.round{border:1px solid var(--l12-ui-line);background:rgba(7,13,18,.48)}.round>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px;border-bottom:1px solid var(--l12-ui-line)}.round header h2{margin:3px 0;font-size:18px}.round header span{display:flex;align-items:center;gap:7px;color:var(--l12-ui-text-muted);font-size:12px}.round header i{padding:3px 6px;border:1px solid #8f4049;border-radius:999px;color:#efb1b7;font-style:normal}.round-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.match-list{display:grid}.match{display:grid;grid-template-columns:100px minmax(210px,1fr) minmax(260px,auto);align-items:center;gap:14px;padding:13px 14px;border-bottom:1px solid var(--l12-ui-line)}.match:last-child{border-bottom:0}.match-table,.match-players{display:grid;gap:3px}.match-table small{color:var(--l12-ui-text-muted);font:800 10px ui-monospace,monospace}.match-players>b{overflow-wrap:anywhere}.match-players>b span{padding:0 5px;color:var(--l12-ui-text-muted);font-size:11px;font-weight:700}.match-players>span{display:flex;flex-wrap:wrap;gap:7px;color:var(--l12-ui-text-muted);font-size:12px}.match em{padding:2px 6px;border:1px solid #8f4049;border-radius:999px;color:#efb1b7;font-style:normal}.match-actions{display:flex;min-width:0;justify-content:flex-end;flex-wrap:wrap;gap:7px}.match-actions input{min-width:160px;min-height:40px;padding:8px}.section-title{margin-bottom:16px}.section-title p{margin:5px 0 0;color:var(--l12-ui-text-muted);font-size:13px}.standings-table{border:1px solid var(--l12-ui-line)}.standings-table .thead,.standings-table>article{display:grid;grid-template-columns:90px minmax(160px,1fr) 130px 120px;align-items:center;gap:12px;min-height:48px;padding:0 14px;border-bottom:1px solid var(--l12-ui-line)}.standings-table .thead{min-height:38px;color:var(--l12-ui-text-muted);font-size:11px;font-weight:900}.standings-table>article:last-of-type{border-bottom:0}.standings-table>article>b{color:var(--l12-ui-accent)}.standings-table>article>span{color:var(--l12-ui-text-soft)}.participants{display:grid;gap:8px}.person{display:grid;grid-template-columns:minmax(180px,.45fr) 1fr;align-items:center;gap:16px;padding:13px;border:1px solid var(--l12-ui-line);background:rgba(7,13,18,.48)}.person-info{display:grid;gap:7px}.person-tags{display:flex;flex-wrap:wrap;gap:5px}.person-tags small{padding:3px 6px;border:1px solid var(--l12-ui-line-strong);border-radius:999px;color:var(--l12-ui-text-muted);font-size:11px}.person-actions{display:flex;min-width:0;align-items:end;justify-content:flex-end;flex-wrap:wrap;gap:7px}.person-actions label{display:grid;min-width:190px;flex:1;gap:4px}.person-actions label span{color:var(--l12-ui-text-muted);font-size:10px;font-weight:800}.person-actions input{width:100%;min-height:40px;padding:8px}.rules{display:grid;gap:18px}.rule-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.rule-details{display:grid;grid-template-columns:1fr 1fr;gap:12px}.rule-details article{padding:14px;border:1px solid var(--l12-ui-line);background:var(--l12-ui-control)}.rule-details p{margin:7px 0;color:var(--l12-ui-text-soft);font-size:13px;overflow-wrap:anywhere}.empty-state{display:grid;min-height:150px;place-items:center;align-content:center;gap:6px;color:var(--l12-ui-text-muted);text-align:center}.empty-state b{color:var(--l12-ui-text-soft)}
 .personal-actions>.deck-error{color:#efb1b7;font-size:12px}
 @media(max-width:1000px){.overview{grid-template-columns:repeat(3,minmax(0,1fr))}.match{grid-template-columns:80px 1fr}.match-actions{grid-column:1/-1;justify-content:flex-start}.rule-grid{grid-template-columns:1fr 1fr}}

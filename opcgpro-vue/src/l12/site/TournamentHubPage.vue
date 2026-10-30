@@ -7,6 +7,7 @@ import { tournamentFormatText, tournamentStatusText } from '@/l12/tournamentLabe
 import TournamentCreateWizard from './TournamentCreateWizard.vue'
 import TournamentSummaryList from './TournamentSummaryList.vue'
 import { tournamentHubSection, type TournamentHubSection as Section } from './tournamentHubNavigation'
+import { createVisibleResourceRead } from '../visibleResourceRead'
 
 const route = useRoute(); const router = useRouter()
 const section = ref<Section>(tournamentHubSection(route.query.section)); const search = ref(''); const format = ref(''); const timeRange = ref('')
@@ -19,8 +20,8 @@ const career = ref<TournamentCareer | null>(null)
 const careerPage = ref(1)
 let searchTimer: number | undefined
 let generation = 0; let careerGeneration = 0; let disposed = false
-const onResource = () => { void load() }
-const onVisibility = () => { if (document.visibilityState === 'visible') void load() }
+const onResource = () => { visibleTournamentRead.request() }
+const onVisibility = () => { visibleTournamentRead.request(); visibleCareerRead.wake() }
 
 async function load() {
   const current = ++generation; const requestedIdentity = identity.value
@@ -42,6 +43,16 @@ async function loadCareer() {
   catch (error) { if (!disposed && current === careerGeneration) notice.value = error instanceof Error ? error.message : '赛事履历加载失败' }
 }
 function login(value: Section = section.value) { void router.push({ name: 'me', query: { redirect: router.resolve({ path: '/battle/tournaments', query: { ...route.query, section: value } }).fullPath } }) }
+function invalidateTournamentRead() {
+  ++generation; result.value = emptyResult(); loading.value = true
+}
+const visibleTournamentRead = createVisibleResourceRead({
+  visible: () => document.visibilityState === 'visible', invalidate: invalidateTournamentRead, load,
+})
+const visibleCareerRead = createVisibleResourceRead({
+  visible: () => document.visibilityState === 'visible',
+  invalidate: () => { ++careerGeneration; career.value = null }, load: loadCareer,
+})
 function switchSection(value: Section) {
   if (!identity.value && value !== 'discover' && value !== 'history') { login(value); return }
   section.value = value; page.value = 1
@@ -53,20 +64,24 @@ watch(() => route.query.section, value => {
   const next = tournamentHubSection(value)
   if (section.value !== next) { section.value = next; page.value = 1 }
 })
-watch([section, format, timeRange, page], () => { void load(); if (section.value === 'mine') void loadCareer() })
+watch([section, format, timeRange, page], () => { visibleTournamentRead.request(); if (section.value === 'mine') visibleCareerRead.request() })
 watch(identity, () => {
   ++generation; ++careerGeneration; result.value = emptyResult(); career.value = null; notice.value = ''; loading.value = false
   if (!identity.value && section.value !== 'discover' && section.value !== 'history') { section.value = 'discover'; void router.replace({ query: { ...route.query, section: 'discover' } }) }
-  void load(); void loadCareer()
+  visibleTournamentRead.request()
+  visibleCareerRead.request()
 }, { flush: 'sync' })
-watch(careerPage, loadCareer)
-watch(search, () => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { page.value = 1; void load() }, 250) })
+watch(() => JSON.stringify([platformState.account?.role, platformState.account?.permissionVersion, platformState.account?.permissions ?? []]),
+  () => { visibleTournamentRead.request(); visibleCareerRead.request() }, { flush: 'sync' })
+watch(careerPage, () => visibleCareerRead.request())
+watch(search, () => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { page.value = 1; visibleTournamentRead.request() }, 250) })
 onMounted(async () => {
   window.addEventListener('l12-resource-tournaments', onResource); document.addEventListener('visibilitychange', onVisibility)
   if (typeof route.query.code === 'string' && route.query.code) { open(route.query.code); return }
-  await Promise.all([load(), loadCareer()])
+  visibleTournamentRead.request()
+  visibleCareerRead.request()
 })
-onBeforeUnmount(() => { disposed = true; ++generation; ++careerGeneration; window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility); window.clearTimeout(searchTimer) })
+onBeforeUnmount(() => { visibleTournamentRead.dispose(); visibleCareerRead.dispose(); disposed = true; ++generation; ++careerGeneration; window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility); window.clearTimeout(searchTimer) })
 </script>
 
 <template>

@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261030-TOURNAMENT-VISIBLE-READ｜赛事隐藏页面避免自动完整读取（本地验收）
+
+- 沿人类系统检测并处理无谓占用的直接授权，P4扩既有通知消费而不延后可靠保存、鉴权撤销或报名时限。原四页资源事件及公开定时器隐藏仍取完整数据，实际回调RED各1读。共同helper合并可见需求，立即使旧代失效、隐藏不GET、在途先结束再读新代；失败无自动循环，卸载/current变化退休等待。
+- 同类四页PublicDetail/Hub/AccountDetail/AdminWorkbench全部迁移；Hub摘要/履历各保原触发边界。Account/Admin保已挂载父选牌草稿/组件，用v-show/inert及选牌Portal宿主遮蔽不可用模型，不把私人旧DTO重新视为授权。新动作先核当前读代，已发写保原结果归属，不重放。Admin单一真实读取函数统一自动与写后重读，实际原共享GET协调器的两个方向均证旧pending不满足fresh等待。
+- green-r2及Main最终回调/真实Vue/原协调器专项通过；Main恢复原loading/alert分支，并让旧裁判、17谓词/5组通知及信誉/牌库夹具接真实新依赖，旧负例不删，额外hidden/style/未知bind仍拒。正常前端分段完成而非单轮npm全绿，最后原私有牌库30/30、types及双631模块构建退出0；所有原失败保留。`tournament-visibility/acceptance.json`绑定最终12源与分段原件，非浏览器/真机或线上收益。无C#、数据库格式、对局/计时或线上变化，不重跑已合格b21平台3093。
+- 不涵盖原ManagementPanel whole-prop watcher的两个公开范围草稿重置；不冒“所有草稿”或“整个赛事零请求”。回退仅恢复四页原触发及移除本片helper/回归接入，原权限/失败保护和业务事实不变。
+
 ## PERF-20261030-TOURNAMENT-PAYLOAD-REUSE｜无关保存避免重复解码赛事正文（本地验收）
 
 - 沿人类直接要求系统检测并处理无谓占用，P3保持既有提交bundle唯一体系。真实SaveAlternateArtProduct旧实现同1hash两参赛者仍ReadExport/解码2次，保存前后完整assignment/全部紧凑事实、版本+1及裁判权限均正确，仅目标0次断言失败；原真RED保留，非编译/夹具失败。此observer是内存正文解码，不是SQL读次数。相同根普通画廊/站点/其他Save都触发统一赛事索引，不能只修某张卡或后台按钮。

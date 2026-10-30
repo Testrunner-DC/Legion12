@@ -22,6 +22,7 @@ import {
   type TournamentLegacyImport, type TournamentMatch, type TournamentParticipant, type TournamentRound,
   type TournamentStatus,
 } from '@/l12/platform'
+import { createVisibleResourceRead } from '../visibleResourceRead'
 
 const props = withDefaults(defineProps<{ adminMode?: boolean; embedded?: boolean }>(), {
   adminMode: false,
@@ -36,6 +37,9 @@ const detailId = ref<string | null>(null)
 const notice = ref('')
 const { pending: actionBusy, isPending: actionPending, run: runGatedAction } = useActionGate()
 const loading = ref(false)
+const readModelCurrent = ref(false)
+const readModelOwner = ref(0)
+let initialResourcesPending = true
 const platformVersion = ref(0)
 const tournaments = ref<Tournament[]>([])
 const friends = ref<PlatformFriend[]>([])
@@ -127,16 +131,17 @@ function selectDeckDraft(tournamentId: string) {
   const selected = savedDecks.value.find(deck => deck.id === deckDrafts[tournamentId]?.id)
   if (selected) selectedDeckMetadata[tournamentId] = selected
 }
-function hydrateDrafts(items: Tournament[]) {
+function hydrateDrafts(items: Tournament[], preserveDrafts = false) {
   for (const item of items) {
     const own = item.participants.find(person => person.accountId === accountId.value)
     if (own?.deck) {
+      if (preserveDrafts && deckDrafts[item.id]?.id) continue
       deckDrafts[item.id] = { id: '' }
       delete selectedDeckMetadata[item.id]
     } else if (!deckDrafts[item.id]) deckDrafts[item.id] = { id: '' }
   }
 }
-async function refreshTournaments(extraCurrent: () => boolean = () => true) {
+async function readTournamentSnapshot(extraCurrent: () => boolean = () => true, preserveDrafts = false, unlock = true) {
   if (!platformState.account) return
   const requestEpoch = ++tournamentLoadEpoch, account = platformState.account.id, token = platformState.token
   const path = route.fullPath, actor = actorEpoch
@@ -149,12 +154,21 @@ async function refreshTournaments(extraCurrent: () => boolean = () => true) {
     if (!current()) return
     platformVersion.value = Math.max(platformVersion.value, result.platformVersion)
     tournaments.value = mergeTournamentSnapshot(result.items, tournaments.value, baselineVersions)
-    hydrateDrafts(tournaments.value)
+    hydrateDrafts(tournaments.value, preserveDrafts)
     if (detailId.value && !tournaments.value.some(item => item.id === detailId.value)) detailId.value = null
+    if (unlock) readModelCurrent.value = true
   } finally { if (baseCurrent()) loading.value = false }
+}
+async function refreshTournaments(extraCurrent: () => boolean = () => true) {
+  const account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
+  const current = () => actorIsCurrent(account, token, path, actor) && extraCurrent()
+  const refreshed = await visibleTournamentRead.refresh(current)
+  if (refreshed && current() && readModelCurrent.value) hydrateDrafts(tournaments.value)
 }
 async function syncAfterWrite(result: Tournament, success: string, current: () => boolean = () => true) {
   if (!current()) return
+  // A successful write is not authority to redisplay a possibly revoked read model.
+  invalidateTournamentRead()
   const index = tournaments.value.findIndex(item => item.id === result.id)
   if (index >= 0) tournaments.value[index] = result
   else tournaments.value.push(result)
@@ -172,6 +186,7 @@ const transferCandidates = computed(() => {
   return [...candidates].map(([accountId, username]) => ({ accountId, username }))
 })
 async function runAction(key: string, work: (isCurrent: () => boolean) => Promise<void>) {
+  if (!readModelCurrent.value) return
   const account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
   const current = () => actorIsCurrent(account, token, path, actor)
   await runGatedAction(key, async () => {
@@ -186,12 +201,15 @@ async function loadFriends() {
   catch (error) { if (current()) notice.value = errorText(error) }
 }
 async function openDetail(item: Tournament) {
+  if (!readModelCurrent.value) return
+  const readEpoch = tournamentLoadEpoch
   detailId.value = item.id
   staffDraft.value = item.referees.map(person => person.accountId)
   staffReason.value = ''
   roundReason.value = ''
   const account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
   const currentView = () => actorIsCurrent(account, token, path, actor) && detailId.value === item.id
+    && readModelCurrent.value && readEpoch === tournamentLoadEpoch
   try {
     const current = await tournamentApi.getByCode(item.code)
     if (!currentView()) return
@@ -404,13 +422,16 @@ async function copyShareLink(item: Tournament) {
   await navigator.clipboard.writeText(link.toString())
   notice.value = '赛事分享链接已复制；登录后会自动打开该赛事'
 }
-function enterMatch(item: Tournament, match: TournamentMatch, spectate = false) { void runAction(tournamentActionKey(item), async () => {
+function enterMatch(item: Tournament, match: TournamentMatch, spectate = false) { void runAction(tournamentActionKey(item), async current => {
+  const readEpoch = tournamentLoadEpoch
   await connect()
+  if (!current() || !readModelCurrent.value || readEpoch !== tournamentLoadEpoch) return
   if (spectate) spectateTournamentMatch(item.id, match.id)
   else enterTournamentMatch(item.id, match.id)
   await new Promise<void>((resolve, reject) => {
     const started = Date.now()
     const check = () => {
+      if (!current() || !readModelCurrent.value || readEpoch !== tournamentLoadEpoch) return reject(new Error('赛事状态已失效，请重新核验'))
       if (l12State.game?.tournamentMatchId === match.id || l12State.room?.roomCode === match.roomCode)
         return resolve()
       if (l12State.notice) return reject(new Error(l12State.notice))
@@ -419,51 +440,62 @@ function enterMatch(item: Tournament, match: TournamentMatch, spectate = false) 
     }
     check()
   })
-  await router.push('/game')
+  if (current() && readModelCurrent.value && readEpoch === tournamentLoadEpoch) await router.push('/game')
 }) }
 
 watch(() => l12State.notice, value => { if (value) notice.value = value })
-watch(() => [platformState.account?.id, platformState.token], () => {
+watch(() => JSON.stringify([platformState.account?.id, platformState.token]), () => {
   actorEpoch++; tournamentLoadEpoch++; deckLoadEpoch++
   loading.value = false; deckLoading.value = false; savedDecks.value = []; deckDirectory.value = null
   deckPage.value = 1; deckSearch.value = ''; deckSearchInput.value = ''; deckError.value = ''
   for (const key of Object.keys(deckDrafts)) delete deckDrafts[key]
   for (const key of Object.keys(selectedDeckMetadata)) delete selectedDeckMetadata[key]
-  if (!platformState.account) return
-  const actor = actorEpoch
-  void refreshTournaments().catch(error => { if (componentAlive && actor === actorEpoch) notice.value = errorText(error) })
-  if (!props.adminMode && platformState.token) void loadDeckDirectory(1)
+  readModelOwner.value++; initialResourcesPending = true
+  tournaments.value = []; friends.value = []
+  visibleTournamentRead.request()
 }, { flush: 'sync' })
 watch(() => route.fullPath, () => {
   actorEpoch++; tournamentLoadEpoch++; deckLoadEpoch++
   loading.value = false; deckLoading.value = false
+  readModelOwner.value++; visibleTournamentRead.request()
 }, { flush: 'sync' })
-const onTournamentResource = () => {
-  const actor = actorEpoch
-  void refreshTournaments().catch(error => { if (componentAlive && actor === actorEpoch) notice.value = errorText(error) })
-}
-const onVisibility = () => { if (document.visibilityState === 'visible') onTournamentResource() }
+function invalidateTournamentRead() { ++tournamentLoadEpoch; readModelCurrent.value = false; loading.value = true }
+const visibleTournamentRead = createVisibleResourceRead({
+  visible: () => document.visibilityState === 'visible', invalidate: invalidateTournamentRead,
+  load: loadVisibleTournamentResources,
+})
+const onTournamentResource = () => { visibleTournamentRead.request() }
+const onVisibility = () => { visibleTournamentRead.request() }
+watch(() => JSON.stringify([platformState.account?.role, platformState.account?.permissionVersion,
+  platformState.account?.permissions ?? []]), () => visibleTournamentRead.request(), { flush: 'sync' })
 
-onMounted(async () => {
-  window.addEventListener('l12-resource-tournaments', onTournamentResource)
-  document.addEventListener('visibilitychange', onVisibility)
+async function loadVisibleTournamentResources() {
   if (!platformState.account) { notice.value = '请先登录账号后使用赛事中心'; return }
   const account = platformState.account.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
-  const current = () => actorIsCurrent(account, token, path, actor)
+  const expectedReadEpoch = tournamentLoadEpoch + 1
+  const current = () => actorIsCurrent(account, token, path, actor) && expectedReadEpoch === tournamentLoadEpoch
+  if (!initialResourcesPending) {
+    try { await readTournamentSnapshot(current, true) }
+    catch (error) { if (current()) notice.value = errorText(error); throw error }
+    return
+  }
   if (props.adminMode) {
-    try { await refreshTournaments() } catch (error) { if (current()) notice.value = errorText(error) }
+    try { await readTournamentSnapshot(current, true, false); if (current()) { initialResourcesPending = false; readModelCurrent.value = true } }
+    catch (error) { if (current()) notice.value = errorText(error); throw error }
     return
   }
   legacyCandidates.value = readLegacyCandidates()
   try {
-    const [, cards] = await Promise.all([refreshTournaments(), loadDeckCatalog(), loadDeckDirectory(1)])
+    const [, cards] = await Promise.all([readTournamentSnapshot(current, true, false), loadDeckCatalog(), loadDeckDirectory(1)])
     if (!current()) return
     const [, policy] = await Promise.all([loadFriends(), getEffectiveOperationsPolicy()])
     if (!current()) return
     catalog.value = cards
-    hydrateDrafts(tournaments.value)
+    hydrateDrafts(tournaments.value, true)
     form.disasterCardIds = [...policy.disasterCardIds]
     form.cardRestrictions = policy.cardRestrictions.map(item => ({ ...item }))
+    initialResourcesPending = false
+    readModelCurrent.value = true
     const sharedCode = typeof route.query.code === 'string' ? route.query.code.trim() : ''
     if (sharedCode) {
       const shared = await tournamentApi.getByCode(sharedCode)
@@ -472,9 +504,15 @@ onMounted(async () => {
       if (index >= 0) tournaments.value[index] = shared; else tournaments.value.unshift(shared)
       await openDetail(shared)
     }
-  } catch (error) { if (current()) notice.value = errorText(error) }
+  } catch (error) { if (current()) notice.value = errorText(error); throw error }
+}
+onMounted(() => {
+  window.addEventListener('l12-resource-tournaments', onTournamentResource)
+  document.addEventListener('visibilitychange', onVisibility)
+  visibleTournamentRead.request()
 })
 onBeforeUnmount(() => {
+  visibleTournamentRead.dispose()
   componentAlive = false; actorEpoch++; tournamentLoadEpoch++; deckLoadEpoch++
   window.removeEventListener('l12-resource-tournaments', onTournamentResource)
   document.removeEventListener('visibilitychange', onVisibility)
@@ -483,6 +521,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="tournament-page" :class="{ embedded: props.embedded }" :aria-busy="actionBusy">
+    <p v-if="!readModelCurrent" role="status">{{ notice || '正在重新核验赛事…' }}</p>
+    <div v-show="readModelCurrent" :key="readModelOwner" :inert="!readModelCurrent" class="tournament-read-model">
     <header class="page-head"><div><small>TOURNAMENT OPERATIONS</small><h1>{{ props.adminMode ? '赛事管理' : '赛事中心' }}</h1><p>{{ props.adminMode ? '查看并管理玩家创建的全部赛事；全局管理操作保留版本校验、理由与审计记录。' : '在这里报名、完成赛前签到、查看配对并进入比赛；参赛牌库会在赛前签到时锁定。' }}</p></div><button v-if="!props.adminMode && hasPermission('tournaments.create')" class="gold" @click="tab = 'create'">举办赛事</button></header>
     <section v-if="!props.adminMode && legacyCandidates.length" class="migration"><div><b>检测到 {{ legacyCandidates.length }} 个本机旧赛事</b><p>旧 localStorage 仅作为待导入来源，不再参与赛事展示或写入。必须先预览，再明确确认导入。</p></div><button v-if="canImportLegacy" :disabled="actionPending('tournament:legacy-import')" @click="previewLegacyImport">预览导入（dry-run）</button><button v-if="legacyPreview" class="gold" :disabled="actionPending('tournament:legacy-import')" @click="confirmLegacyImport">确认导入 {{ legacyPreview.tournaments.length }} 个赛事</button><span v-else-if="!canImportLegacy">当前账号没有旧赛事导入权限</span></section>
     <section v-if="!props.adminMode && legacyPreview" class="migration-preview"><b>导入预览未写入</b><span>摘要 {{ legacyPreview.previewHash }}</span><span v-for="item in legacyPreview.tournaments" :key="item.id">{{ item.code }} · {{ item.name }} · {{ item.participants.length }} 人</span></section>
@@ -513,10 +553,12 @@ onBeforeUnmount(() => {
         <div class="matches"><article v-for="match in currentRound.matches" :key="match.id"><header><b>桌 {{ match.table }}</b><span>规则 {{ match.rulesHash.slice(0,10) }} · 重赛 {{ match.replayNumber }}</span><button v-if="match.canEnter" class="gold" :disabled="busy" @click="enterMatch(detail,match)">进入我的对局</button><button v-if="match.canSpectate" :disabled="busy" @click="enterMatch(detail,match,true)">工作人员观战</button></header><div><button :class="{ready:match.readyA}" :disabled="busy||currentRound.status!=='checkin'&&(match.status!=='waiting')||(match.playerAAccountId!==accountId&&!canManageTournament(detail))" @click="toggleReady(detail,currentRound,match,'A')">{{ match.playerAName }} · {{ match.readyA?'已准备':'准备' }}</button><i>VS</i><button :class="{ready:match.readyB}" :disabled="busy||!match.playerBAccountId||currentRound.status!=='checkin'&&(match.status!=='waiting')||(match.playerBAccountId!==accountId&&!canManageTournament(detail))" @click="toggleReady(detail,currentRound,match,'B')">{{ match.playerBName }} · {{ match.readyB?'已准备':'准备' }}</button></div><p v-if="match.deadline">本桌截止 {{ new Date(match.deadline).toLocaleTimeString() }} · 补时 {{ match.timeExtensionMinutes }} 分钟</p><p v-else-if="match.graceDeadline">未到齐；宽限至 {{ new Date(match.graceDeadline).toLocaleTimeString() }}，不阻塞其他桌</p><p v-if="match.result">{{ resultText(match.result) }}<span v-if="match.recordedMatchId"> · 权威记录 {{ match.recordedMatchId.slice(0,12) }}</span></p><ul v-if="match.rulings.length"><li v-for="ruling in match.rulings" :key="ruling.id">{{ ruling.actorName }}：{{ ruling.reason }}（{{ ruling.decision }}）</li></ul><ul v-if="match.events.length"><li v-for="event in match.events" :key="event.id">{{ new Date(event.createdAt).toLocaleTimeString() }} · {{ event.detail }}</li></ul><template v-if="(canManageTournament(detail)||canRuleTournament(detail))&&detail.status!=='completed'"><p v-if="!canDirectlyRuleTournamentMatch(accountId,match)" role="status">{{ tournamentSelfRulingMessage }}补时和重赛仍按原权限提供。</p><textarea v-model="rulingReasons[match.id]" placeholder="裁判理由（补时、赛果、判罚或重赛必填）"/><footer v-if="match.status!=='completed'"><button v-if="canManageTournament(detail)" :disabled="busy" @click="addTime(detail,match,5)">补时 5 分钟</button><button v-if="canRuleTournament(detail)" :disabled="busy||!canDirectlyRuleTournamentMatch(accountId,match)" @click="noShowLoss(detail,match)">宽限期后未入场判负</button><button v-if="canRuleTournament(detail)" :disabled="busy||!canDirectlyRuleTournamentMatch(accountId,match)" @click="ruleMatch(detail,match,'result','player-a')">A 胜</button><button v-if="canRuleTournament(detail)" :disabled="busy||!canDirectlyRuleTournamentMatch(accountId,match)||!match.playerBAccountId" @click="ruleMatch(detail,match,'result','player-b')">B 胜</button><button v-if="canRuleTournament(detail)&&currentRound.stage==='swiss'" :disabled="busy||!canDirectlyRuleTournamentMatch(accountId,match)||!match.playerBAccountId" @click="ruleMatch(detail,match,'result','draw')">平局</button><button v-if="canRuleTournament(detail)" :disabled="busy||!canDirectlyRuleTournamentMatch(accountId,match)" @click="ruleMatch(detail,match,'penalty','warning',match.playerAAccountId)">警告 A</button><button v-if="canRuleTournament(detail)" :disabled="busy||!canDirectlyRuleTournamentMatch(accountId,match)||!match.playerBAccountId" @click="ruleMatch(detail,match,'penalty','warning',match.playerBAccountId)">警告 B</button></footer><footer v-else-if="match.playerBAccountId&&canRuleTournament(detail)"><button :disabled="busy" @click="requestRematch(detail,match)">裁判发起重赛</button></footer></template></article></div>
       </template><footer class="detail-actions"><button v-if="!props.adminMode&&detail.status==='registration'&&!isParticipant(detail)" class="gold" :disabled="busy" @click="join(detail)">报名参赛（暂不提交牌库）</button><button @click="copyShareLink(detail)">复制稳定分享链接</button><button v-if="!props.adminMode&&detail.status!=='completed'&&isParticipant(detail)&&!isOrganizer(detail)" class="danger" :disabled="busy" @click="dropRegistration(detail)">{{ detail.status==='running'?'退赛':'退出赛事' }}</button><button v-if="(isOrganizer(detail)||canGloballyManage)&&detail.status==='registration'" class="gold" :disabled="busy||detail.counts.checkedIn<2" @click="startTournament(detail)">正式开启赛事</button><button v-if="(isOrganizer(detail)||canGloballyManage)&&detail.status==='running'" class="danger" :disabled="busy" @click="finishTournament(detail)">结束并归档赛事</button></footer>
     </section></div><button v-if="notice" class="site-toast" @click="notice=''">{{ notice }}</button>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.tournament-read-model{display:contents}
 .tournament-page.embedded{box-sizing:border-box;width:100%;margin:0;padding:0}
 .tabs.admin-tabs{grid-template-columns:repeat(2,1fr)}
 .tournament-page{width:min(1320px,calc(100% - 40px));min-height:100%;margin:auto;padding:32px 0 70px;font-family:'Microsoft YaHei',sans-serif}.page-head{display:flex;justify-content:space-between;gap:20px;padding-bottom:20px;border-bottom:1px solid #54482b}.page-head small,.create-panel small,.registry small,.detail small{color:#d6b55e;font:900 14px monospace;letter-spacing:.16em}.page-head h1{margin:5px 0;font-size:31px}.page-head p,.create-panel p,.migration p,.pending p{margin:0;color:#85877f;font-size:14px}.gold{border-color:#d0ad54!important;background:#d0ad54!important;color:#0c0c0a!important}.page-head button,.create-action{padding:12px 22px}.migration,.migration-preview{display:flex;align-items:center;gap:10px;margin-top:14px;padding:14px;border:1px solid #8a743e;background:#211b0d}.migration>div{margin-right:auto}.migration button{padding:9px;border:1px solid #66552c;background:#11120f;color:#ead69b}.migration-preview{align-items:flex-start;flex-direction:column;font-size:14px}.migration-preview>span:first-of-type{font-family:monospace;color:#8d856f}.tabs{display:grid;grid-template-columns:repeat(4,1fr);margin-top:14px;border:1px solid #3d392d}.tabs button{padding:13px;border:0;background:#0e100f;color:#817c70;font-weight:900}.tabs button.active{background:#292315;color:#f2dda2}.registry,.create-panel{margin-top:14px;border:1px solid #3d392d;background:#11120f}.registry>input{box-sizing:border-box;width:calc(100% - 24px);margin:12px;padding:12px;border:1px solid #4b483d;background:#090b0b;color:#fff}.registry>article{display:grid;grid-template-columns:1.3fr 1fr auto;align-items:center;gap:20px;padding:17px;border-top:1px solid #302e26}.registry h2{margin:4px 0}.registry p{margin:0;color:#777;font-size:14px}.registry dl{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.registry dt{color:#777;font-size:14px}.registry dd{margin:4px 0;font-size:14px;font-weight:900}.actions{display:flex;align-items:center;gap:6px}.actions select,.participants select{padding:9px;border:1px solid #4b483d;background:#080a0a;color:#fff}.actions button,.detail button,.round-controls button,.staff-editor button,.pending button{padding:9px 11px;border:1px solid #585342;background:#181913;color:#f1ead8;font-weight:900}.empty{display:grid;min-height:250px;place-items:center;color:#777}.create-panel{padding:24px}.create-panel>header{padding-bottom:16px;border-bottom:1px solid #353229}.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px;margin-top:18px}.form-grid label{font-size:14px;font-weight:900;color:#b2aa98}.form-grid input,.form-grid select,.form-grid textarea,.participants input,.matches textarea,.round-controls input,.staff-editor input,.pending input,.reference input{box-sizing:border-box;width:100%;margin-top:6px;padding:10px;border:1px solid #4b483d;background:#080a0a;color:#fff}.wide{grid-column:1/-1}.form-grid fieldset{display:flex;flex-wrap:wrap;gap:7px;border:1px solid #4b483d}.form-grid fieldset button,.staff-editor button{padding:8px;border:1px solid #514b3b;background:#12130f;color:#aaa}.form-grid fieldset button.selected,.staff-editor button.selected{border-color:#d1af55;color:#efd888}.form-grid fieldset span{color:#777;font-size:14px}.create-action{display:block;margin:18px 0 0 auto;border:1px solid;font-weight:900}.mask{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:18px;background:rgba(1,2,2,.84);backdrop-filter:blur(7px)}.detail{width:min(1040px,96vw);max-height:92vh;overflow:auto;border:1px solid #8a743e;background:#11120f;box-shadow:0 20px 80px #000}.detail>header{display:flex;align-items:center;justify-content:space-between;padding:18px;border-bottom:1px solid #3d392d}.detail h2{margin:4px 0}.detail>header button{font-size:20px}.summary,.chips{display:flex;flex-wrap:wrap;gap:7px;padding:14px 18px}.summary span,.chips span{padding:6px 9px;border:1px solid #494436;color:#ddca96;font-size:14px}.detail>p,.detail>h3,.rules,.participants,.round-controls,.matches,.staff-editor,.pending,.standing-snapshot,.bracket{margin-right:18px;margin-left:18px}.detail>p{color:#999;font-size:14px}.detail>h3{margin-top:22px}.rules{display:flex;flex-wrap:wrap;gap:10px;padding:11px;background:#1a1912;font-size:14px}.rules span{color:#aaa}.staff-editor{display:flex;flex-wrap:wrap;gap:7px;padding:10px;border:1px solid #343229}.staff-editor input{flex:1 1 260px;margin:0}.pending{margin-top:16px;padding:12px;border:1px solid #5a4b29;background:#18150d}.pending h3{margin:0}.pending article{display:grid;grid-template-columns:1.4fr 1fr auto auto;align-items:center;gap:7px;margin-top:8px}.pending input{margin:0}.participants{display:grid;gap:6px}.participants>div{display:grid;grid-template-columns:170px 70px 1fr 1fr auto;align-items:center;gap:8px;padding:8px;border:1px solid #343229}.participants span{color:#68c9a3;font-size:14px}.participants input{margin:0}.participants em{color:#777;font-size:14px}.participants>div>em{grid-column:3/6}.participants code{overflow:hidden;color:#aaa;text-overflow:ellipsis}.standing-snapshot{margin-top:7px;border:1px solid #3a372e}.standing-snapshot summary{padding:9px;color:#d5b55d;cursor:pointer}.standing-snapshot .standings{margin:0;border-width:1px 0 0}.standings>div{display:grid;grid-template-columns:60px 1.4fr repeat(4,1fr);gap:8px;padding:8px;border-top:1px solid #2d2b24;font-size:14px}.standings>div:first-child{border-top:0;background:#1b1912;color:#d5b55d}.standings small{color:#8e846c}.bracket{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px}.bracket>section{min-width:230px;padding:10px;border:1px solid #3a372e;background:#0c0e0d}.bracket article{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;margin-top:8px;padding:7px;border:1px solid #2c2b25;font-size:14px}.bracket article em{grid-column:1/-1;color:#d5b55d}.round-controls{display:flex;gap:7px;margin-bottom:10px}.round-controls input{flex:1;margin:0}.matches{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.matches>article{padding:11px;border:1px solid #3a372e;background:#0c0e0d}.matches article>header{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.matches article>header span{margin-left:auto;color:#d5b55d;font-size:14px}.matches article>div{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin-top:10px}.matches article>div button{min-width:0}.matches button.ready{border-color:#4fbc91;background:#123325;color:#8de0bd}.matches i{color:#8d7540;font-style:normal}.matches p,.matches li{color:#b8ae91;font-size:14px}.matches textarea{min-height:54px;resize:vertical}.matches footer{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.reference{display:flex!important;grid-template-columns:none!important;gap:6px!important}.reference input{margin:0}.detail-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:22px;padding:15px 18px;border-top:1px solid #3d392d}.detail-actions .danger{border-color:#8e343d;background:#321319;color:#f3b3ba}.site-toast{position:fixed;z-index:130;top:auto;right:22px;bottom:22px;left:auto;transform:none;max-width:min(560px,calc(100vw - 44px));padding:11px 16px;border:1px solid #d1ad54;background:#251e0e;color:#f2d98b;font-weight:900}button:disabled{cursor:not-allowed;opacity:.45}

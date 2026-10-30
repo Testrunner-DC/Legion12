@@ -61,6 +61,19 @@ function hasOnlyDirective(node, name, argument, expected) {
 
 const hasNoVisibilityDirective = node => !(node.props || []).some(prop => prop.type === 7 && visibilityDirectives.has(prop.name))
 
+function currentReadModelContainer(node) {
+  const visibility = (node.props || []).filter(prop => prop.type === 7 && visibilityDirectives.has(prop.name))
+  return node.tag === 'div' && hasClass(node, 'tournament-read-model') && node.props.length === 5 && visibility.length === 2
+    && matchingDirectives(node, 'if').length === 1
+    && expressionIs(matchingDirectives(node, 'if')[0].exp?.content, 'tournament')
+    && matchingDirectives(node, 'show').length === 1
+    && expressionIs(matchingDirectives(node, 'show')[0].exp?.content, 'readModelCurrent')
+    && matchingDirectives(node, 'bind', 'inert').length === 1
+    && expressionIs(matchingDirectives(node, 'bind', 'inert')[0].exp?.content, '!readModelCurrent')
+    && matchingDirectives(node, 'bind', 'key').length === 1
+    && expressionIs(matchingDirectives(node, 'bind', 'key')[0].exp?.content, 'readModelOwner')
+}
+
 function staticAttribute(node, name, expected) {
   if (hasUnknownOverride(node, [name])) return false
   const matches = (node.props || []).filter(prop => prop.type === 6 && prop.name === name)
@@ -153,12 +166,12 @@ function templateBranch(host, parsed, tag, directive, condition) {
     const path = parsed.parents.get(node), hostIndex = path.indexOf(host)
     if (hostIndex < 0) return false
     const wrappers = path.slice(hostIndex + 1).filter(parent => parent.type === 1)
-    if (!wrappers.every(parent => parent.tag === 'template')) return false
+    if (!wrappers.every(parent => parent.tag === 'template' || currentReadModelContainer(parent))) return false
     const branchWrappers = wrappers.filter(parent => !transparentTemplate(parent))
     return branchWrappers.length === 1
-      && branchWrappers[0].props.length === 1
+      && (currentReadModelContainer(branchWrappers[0]) || branchWrappers[0].props.length === 1
       && matchingDirectives(branchWrappers[0], 'else', undefined).length === 1
-      && (branchWrappers[0].props || []).filter(prop => prop.type === 7 && visibilityDirectives.has(prop.name)).length === 1
+      && (branchWrappers[0].props || []).filter(prop => prop.type === 7 && visibilityDirectives.has(prop.name)).length === 1)
   })
 }
 
@@ -201,7 +214,7 @@ export function tournamentNoticeTemplateContract(accountSource, judgeSource) {
 
   const accountChildren = renderedChildren(accountHost)
   const loading = directBranch(accountHost, 'p', 'if', 'loading')
-  const failure = directBranch(accountHost, 'p', 'else-if', '!tournament')
+  const failure = directBranch(accountHost, 'p', 'else-if', '!tournament || !readModelCurrent')
   const notice = templateBranch(accountHost, account, 'p', 'if', 'notice')
   const loadingIndex = accountChildren.indexOf(loading)
   const failureIndex = accountChildren.indexOf(failure)

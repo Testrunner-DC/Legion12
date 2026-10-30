@@ -8,6 +8,7 @@ import TournamentDisasterSummary from './TournamentDisasterSummary.vue'
 import RulesCardSummary from './RulesCardSummary.vue'
 import TournamentParticipantCounts from './TournamentParticipantCounts.vue'
 import TournamentAnnouncement from './TournamentAnnouncement.vue'
+import { createVisibleResourceRead } from '../visibleResourceRead'
 
 const route = useRoute(); const router = useRouter()
 const tournament = ref<PublicTournamentDetail | null>(null)
@@ -26,6 +27,10 @@ async function load() {
   } catch (error) { if (!disposed && generation === current) notice.value = error instanceof Error ? error.message : '赛事暂未公开或不存在' }
   finally { if (!disposed && generation === current) loading.value = false }
 }
+function invalidateTournamentRead() { ++generation; tournament.value = null; loading.value = true; document.title = '赛事中心 · 十二军团' }
+const visibleTournamentRead = createVisibleResourceRead({
+  visible: () => document.visibilityState === 'visible', invalidate: invalidateTournamentRead, load,
+})
 function login() { void router.push({ name: 'me', query: { redirect: route.fullPath } }) }
 async function copyLink() {
   try { await navigator.clipboard.writeText(location.href); notice.value = '赛事链接已复制' }
@@ -41,14 +46,14 @@ watch(tournament, value => {
     .map(time => new Date(time).getTime())
     .filter(time => Number.isFinite(time) && time > now)
     .sort((a, b) => a - b)[0]
-  if (next !== undefined) registrationBoundaryTimer = window.setTimeout(() => void load(), Math.min(next - now + 100, 2_147_000_000))
+  if (next !== undefined) registrationBoundaryTimer = window.setTimeout(() => visibleTournamentRead.request(), Math.min(next - now + 100, 2_147_000_000))
 } )
-const onResource = () => { void load() }
-const onVisibility = () => { if (document.visibilityState === 'visible') void load() }
+const onResource = () => { visibleTournamentRead.request() }
+const onVisibility = () => { visibleTournamentRead.request() }
 let refreshTimer: number | undefined
-function refresh() { void load(); refreshTimer = window.setTimeout(refresh, 60_000) }
-onMounted(() => { void load(); refreshTimer = window.setTimeout(refresh, 60_000); window.addEventListener('l12-resource-tournaments', onResource); document.addEventListener('visibilitychange', onVisibility) })
-onBeforeUnmount(() => { window.clearTimeout(registrationBoundaryTimer); disposed = true; ++generation; window.clearTimeout(refreshTimer); window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility) })
+function refresh() { visibleTournamentRead.request(); refreshTimer = window.setTimeout(refresh, 60_000) }
+onMounted(() => { visibleTournamentRead.request(); refreshTimer = window.setTimeout(refresh, 60_000); window.addEventListener('l12-resource-tournaments', onResource); document.addEventListener('visibilitychange', onVisibility) })
+onBeforeUnmount(() => { visibleTournamentRead.dispose(); window.clearTimeout(registrationBoundaryTimer); disposed = true; ++generation; window.clearTimeout(refreshTimer); window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
 
 <template>

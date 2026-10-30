@@ -126,6 +126,7 @@ const isNormalOpeningHandCard = card => Boolean(card && NORMAL_OPENING_HAND_CARD
 const normalOpeningHandCopies = (copies, cardForCopy) => copies.filter(copy => isNormalOpeningHandCard(cardForCopy(copy)))`)
 const decks = await import(productionModuleUrl(executableDeckSource))
 const tournamentRulingPolicy = await import(productionModuleUrl(sources['src/l12/tournamentRulingPolicy.ts']))
+const visibleResourceRead = await import(productionModuleUrl(read('src/l12/visibleResourceRead.ts')))
 
 function importedBindings(compiled, modules, filename) {
   const file = ts.createSourceFile(filename, compiled, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
@@ -404,6 +405,8 @@ const profileDeckModule = { ensureOfficialPrebuiltDecks: decks.ensureOfficialPre
 
 function tournamentDetailComponent() {
   return compileComponent('src/l12/site/TournamentAccountDetail.vue', {
+    '../visibleResourceRead': visibleResourceRead,
+    '../mobileViewport': { landscapeTeleportTarget: () => teleportRoot },
     '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     vue, 'vue-router': routeModule, '@/l12/decks': deckModule, '@/l12/net': netModule,
     '@/l12/platform': platformModule, '@/l12/tournamentLabels': noopLabels,
@@ -424,6 +427,7 @@ function tournamentDetailComponent() {
 }
 function tournamentWorkbenchComponent() {
   return compileComponent('src/l12/site/AdminTournamentWorkbench.vue', {
+    '../visibleResourceRead': visibleResourceRead,
     '../horizontalScrollArrows': { vHorizontalScrollArrows: {} },
     vue, 'vue-router': routeModule, '@/l12/decks': deckModule, '@/l12/net': netModule,
     './ConstructionRuleEditor.vue': componentModule, './DisasterPoolPicker.vue': componentModule,
@@ -609,16 +613,26 @@ await check('both tournament surfaces keep only the newest same-token A-B-A dire
     }
     platformState.account = { id: 'account-A', username: 'Account A', permissions: [] }; await flush(2)
     if (label === 'detail') { await flush(); await openSelector(mounted) }
-    assert.equal(pending.length, 3, `${label} should issue one bounded read per actor generation`)
+    if (label === 'workbench') {
+      assert.equal(pending.length, 1, 'the workbench waits for its old initialization to settle, coalescing the superseded B generation')
+      assert.equal(mounted.state.savedDecks.length, 0, 'neither retired actor may retain visible deck rows')
+      pending[0].gate.reject(Object.assign(new Error('old A 401'), { status: 401 }))
+      await flush()
+    }
+    const newestIndex = label === 'workbench' ? 1 : 2
+    assert.equal(pending.length, newestIndex + 1, `${label} must obtain a fresh read for the final A generation`)
     assert.equal(platformState.token, 'token-A', 'A-B-A keeps the same token')
-    assert.equal(summaryRequests(requests).length, 3)
+    assert.equal(summaryRequests(requests).length, newestIndex + 1)
     for (const request of requests) {
       assert.equal(request.init.cache, 'no-store')
       assert.equal(new URL(request.path, 'http://synthetic.invalid').searchParams.get('pageSize'), '30')
     }
-    pending[2].gate.resolve(summaryPage(pending[2].requestPath, [summary('newest')]))
-    pending[0].gate.reject(Object.assign(new Error('old A 401'), { status: 401 }))
-    pending[1].gate.reject(Object.assign(new Error('old B 403'), { status: 403 })); await flush()
+    pending[newestIndex].gate.resolve(summaryPage(pending[newestIndex].requestPath, [summary('newest')]))
+    if (label === 'detail') {
+      pending[0].gate.reject(Object.assign(new Error('old A 401'), { status: 401 }))
+      pending[1].gate.reject(Object.assign(new Error('old B 403'), { status: 403 }))
+    }
+    await flush()
     if (label === 'detail') {
       const selector = selectorInstance(mounted).setupState
       assert.equal(selector.rows[0]?.deck.id, 'newest'); assert.equal(selector.directoryError, '')

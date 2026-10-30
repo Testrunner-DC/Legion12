@@ -13,7 +13,7 @@ const startedAt = new Date().toISOString()
 const rootUrl = new URL('../src/l12/site/', import.meta.url)
 const flush = async () => { for (let i = 0; i < 12; i++) { await Promise.resolve(); await Vue.nextTick() } }
 const renderer = Vue.createRenderer({
-  createElement: tag => ({ tag, tagName: tag.toUpperCase(), children: [], props: {}, addEventListener() {}, removeEventListener() {}, getRootNode: () => ({ activeElement: null }) }), createText: text => ({ text }), createComment: () => ({}),
+  createElement: tag => ({ tag, tagName: tag.toUpperCase(), children: [], props: {}, style: {}, addEventListener() {}, removeEventListener() {}, getRootNode: () => ({ activeElement: null }) }), createText: text => ({ text }), createComment: () => ({}),
   insert(node, parent, anchor) { if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1); node.parent = parent; const i = anchor ? parent.children.indexOf(anchor) : -1; parent.children.splice(i < 0 ? parent.children.length : i, 0, node) },
   remove(node) { if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1) },
   setText: (node, text) => { node.text = text }, setElementText: (node, text) => { node.text = text; node.children = [] },
@@ -30,6 +30,7 @@ function environment() {
   const authState = Vue.reactive({ verified: true })
   const calls = [], entries = [], profileReads = [], previews = [], revocations = []
   const listeners = new Map()
+  const teleportTarget = { tag: 'teleport-host', children: [] }
   const permission = name => platformState.account?.permissions?.includes(name) ?? false
   const read = (mode, target, query) => new Promise((resolve, reject) => calls.push({ mode, target, query, resolve, reject }))
   const generic = new Proxy({}, { get: (_, key) => key === 'then' ? undefined : pending })
@@ -57,6 +58,14 @@ function environment() {
       if (id === 'vue') return Vue
       if (id === 'vue-router') return { useRoute: () => route, useRouter: () => ({ push: noop, replace: noop }) }
       if (id === '@/l12/platform') return api
+      if (id.endsWith('visibleResourceRead')) {
+        const module = { exports: {} }
+        vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../visibleResourceRead.ts', rootUrl), 'utf8'), {
+          compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        }).outputText, { module, exports: module.exports, Promise, Set })
+        return module.exports
+      }
+      if (id.endsWith('mobileViewport')) return { landscapeTeleportTarget: () => teleportTarget }
       if (id.endsWith('TournamentReputationPanel.vue')) return { __esModule: true, default: actualPanel ? component('TournamentReputationPanel.vue') : { props: ['mode', 'accountId'], setup(props) { const entry = { mode: props.mode ?? 'self', target: props.accountId, active: true }; entries.push(entry); Vue.onBeforeUnmount(() => { entry.active = false }); return () => null } } }
       if (id.endsWith('AdminRiskActionDialog.vue')) return { __esModule: true, default: { props: ['title', 'impact', 'busy', 'error'], emits: ['confirm', 'cancel'], setup(props, { emit }) { return () => Vue.h('div', { role: 'dialog' }, [props.title, props.impact, Vue.h('button', { onClick: () => emit('confirm') }, '确认撤销'), Vue.h('button', { onClick: () => emit('cancel') }, '取消')]) } } }
       if (id.endsWith('.vue')) return { __esModule: true, default: stub }
