@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## QA-20261031-WINDOWS-UNREACHABLE-LEASE｜本地测试清理的不可达句柄释放机会
+
+- 第二轮原Release规则8773过、平台3137/3138，唯一报告错误为TutorialResponseLesson显式付费用例Dispose删合成matches.db时sharing violation；原锁owner未知，不能由teardown堆栈推断原正文已过，也不认定正式产品故障。原日志/TRX及466944B合成库保留，host退出后只读独占成功；785→f79全部CS/csproj/Build/global差异为空，但未拼接Release。
+- 共享QA清理helper原8尝试、7个50*i退避只ClearAllPools，不给不可达native/file句柄finalization机会；真实不可达FileShare-no-delete句柄及确定性时序RED2/2失败。仅原Windows且可重试IOException分支一次可注入GC机会，不WaitForPendingFinalizers、不新加尝试、不吞异常、不改产品Dispose或任何卡效断言。
+- 最终cleanup与真实Tutorial重点18/18、0失败跳过；原explicitPayment真/假正文及teardown均过，不可达句柄删除0.077秒，可达held锁仍第8次抛IOException；非Windows/非IO及callback异常仍原样拒绝。产品2426AB79/QA196254AE，叶E14F81EB/81D9B5EB；原件`formal-release-20261031-maintained/cleanup-source`，TRX27B26776、监督success/自有temp已清。仅Focused资格，随后原入口完整Release仍必需；回退只移除QA回收hook及相关回归，不改运行程序或线上数据。
+
 ## DEPLOY-20261031-REQUEST-COVER｜部署完整检查的请求元数据覆盖索引
 
 - 干净Release首轮8773规则、3138平台和排空消费者真实通过，前端在异画声明指纹处失败：Git默认CRLF使新多行声明内部字节改变；LF规范化后整文件DF335298与已验源完全相同，既有哈希/原声明还原断言不改。仅`.gitattributes`为该声明源固定LF，避免每次干净Windows检出复发。未获接受的分段续验方案不执行、不拼接为Release；首轮原日志/TRX保留，修正后用原入口重新完整验收。维护不解除。

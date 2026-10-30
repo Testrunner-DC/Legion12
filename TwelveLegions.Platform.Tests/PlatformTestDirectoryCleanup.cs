@@ -19,7 +19,7 @@ internal static class PlatformTestDirectoryCleanup
     }
 
     internal static void Retry(Action delete, bool windows, Action<int> delay,
-        Action? beforeDelete = null)
+        Action? beforeDelete = null, Action? releaseUnreachableHandles = null)
     {
         ArgumentNullException.ThrowIfNull(delete);
         ArgumentNullException.ThrowIfNull(delay);
@@ -33,6 +33,13 @@ internal static class PlatformTestDirectoryCleanup
             }
             catch (IOException) when (windows && attempt < 8)
             {
+                // Disposed pools cannot release a native handle whose managed owner is
+                // unreachable but not yet finalized. Give it one collection opportunity;
+                // the existing backoff yields to finalizers without an unbounded wait.
+                if (releaseUnreachableHandles is null)
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: false);
+                else
+                    releaseUnreachableHandles();
                 delay(50 * attempt);
             }
         }
