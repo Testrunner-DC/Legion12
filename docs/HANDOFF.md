@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-30 无关保存的赛事正文重读：本地验收完成
+
+- 沿人类“检测并处理无谓占用/持续推进”的本地授权，P3仅扩既有CommittedTournamentReads派生状态，不改库格式/权限或做部署。真实SaveAlternateArtProduct旧RED：同hash两参赛者解码2次；单次Save994280B/12.370ms、独立整个Prepare91800B/0.413ms，仅小合成夹具、不把整保存成本算赛事。原RED与监督失败证据保留。
+- 单产品叶CommittedTournamentReads.cs DCF72646…：当前RequireDeckPayload先核归属/format，hash键＋整个不可变Fact（MasterId/Format/完整JSON）相等才复用上一可用已提交代的验证结果；每代新map只留实际用到条目，失败不发布。账号/身份/参赛/桌绑定/可见性/裁判资格和新player视图仍逐次准备，inline/旧正文仍原校验。不是整个bundle懒更新或第二权威。
+- 原族及新同值新对象/坏事实/inline/失败重试/冷与Unavailable/未用缓存回收，36＋1＋最终旧重复桌次1均过，37唯一case/38次执行非一轮37；最终固定A0749625/D945CA22无过滤完整平台3093/3093、0失败跳过，37专项testId全部在内，监督临时166421032B已回收。实际画廊保存解码0，单次829856B/8.467ms、独立整个Prepare11944B/0.054ms，不冒峰值/目标机/长期稳定时延。源产品DCF72646、QA10752FFC冻结，Main参与资格前缀和6566字符读取/权限/物化后缀逐字未改，peer独审Clear；原架构/P1/性能/路由通过。
+- 证据根`demand-driven-resources-20261030/tournament-payload/acceptance.json`；源码同步只读同根synchronization，不冒Release、不部署/改两服/维护。上一按需图库片已同步01ce57d8，不能重做。Gallery独立14叶仍冻结；Main额外只读注意其新CardInformation.Traits可变返回别名，待独立核验再收该功能，不混本片。
+- 后续P4四个赛事页面的隐藏请求片已独立6叶租约并行；已核平台QA不引用这4个Vue，不改本片2个C#叶/固定DLL，仅Node focused，Main后接前端完整类型/构建。Account/Admin需立即遮蔽失效读模型并禁旧操作而保草稿，不把tournament直接清空触发选择watch；关键权限失效不延期。未完不冒随本片同步。
+
 ## 2026-10-30 无谓占用第一片：对战详情按需读取公开异画（本地验收）
 
 - 人类要求当前读取批后检测并处理未查看用户的无谓更新；读取批已实际同步44a99c48ca0d7829c6e834bc5cd8177ec5a5eab9，不重做。Main源追踪确认Gallery编辑HTTP无全员图库正文广播，真正新增确认的是GameBoard mounted无条件整库GET，只供详情画师/联动匹配；实际mounted真RED为未看详情也1请求。

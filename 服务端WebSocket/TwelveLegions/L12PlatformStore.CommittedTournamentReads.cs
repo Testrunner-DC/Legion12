@@ -38,6 +38,11 @@ public sealed partial class L12PlatformStore
         CommittedTournamentPlayer? Player,
         string? Failure);
 
+    // Immutable decoded content only. Eligibility, identity, permissions and
+    // assignments are always rebuilt from this preparation's current data.
+    private sealed record CommittedTournamentPayload(CompactDeckPayloadFact Fact,
+        NormalizedDeckPayload Payload, bool HasRequiredZones);
+
     private sealed record CommittedTournamentAssignment(
         string TournamentId,
         string TournamentCode,
@@ -68,7 +73,11 @@ public sealed partial class L12PlatformStore
         FrozenDictionary<string, CommittedTournamentLookup> TournamentsById,
         FrozenDictionary<string, CommittedTournamentLookup> TournamentsByCode,
         FrozenDictionary<(string TournamentId, string MatchId), CommittedRunningTournamentMatch> RunningMatches,
-        FrozenDictionary<string, CommittedTournamentAssignment> AssignmentsByRoom);
+        FrozenDictionary<string, CommittedTournamentAssignment> AssignmentsByRoom)
+    {
+        public FrozenDictionary<string, CommittedTournamentPayload> ValidatedPayloads { get; init; }
+            = FrozenDictionary<string, CommittedTournamentPayload>.Empty;
+    }
 
     private static readonly CommittedTournamentReads UnavailableTournamentReads = new(false,
         FrozenDictionary<string, CommittedTournamentAccount>.Empty,
@@ -110,6 +119,13 @@ public sealed partial class L12PlatformStore
         var playerCache = new Dictionary<(TournamentRow Tournament, string AccountId, string? ExpectedDeckHash),
             CommittedTournamentPlayerPreparation>();
         var payloadReadObserver = TournamentDeckPayloadReadObserver;
+        var previous = Volatile.Read(ref _committedSessionActivity);
+        var previousPayloads = previous.Available && previous.CommittedTournaments?.Available == true
+            ? previous.CommittedTournaments.ValidatedPayloads
+            : FrozenDictionary<string, CommittedTournamentPayload>.Empty;
+        // Only content actually used by this candidate generation is retained.
+        // A failed prepare never publishes this local dictionary.
+        var payloads = new Dictionary<string, CommittedTournamentPayload>(StringComparer.Ordinal);
 
         foreach (var (tournament, tournamentOrder) in data.Tournaments.Select((row, index) => (row, index)))
         {
@@ -138,7 +154,7 @@ public sealed partial class L12PlatformStore
                 // Keep the same winner for duplicate ids/codes instead of overwriting with the last.
                 var firstMatchById = matchIds.Add(match.Id);
                 var assignment = PrepareCommittedTournamentAssignment(data, accountRows, tournament,
-                    match, tournamentPolicy, playerCache, payloadReadObserver);
+                    match, tournamentPolicy, playerCache, previousPayloads, payloads, payloadReadObserver);
                 if (!string.IsNullOrWhiteSpace(assignment.RoomCode))
                     byRoom.TryAdd(assignment.RoomCode, assignment);
                 if (!firstMatchById || tournament.Status != "running" || round.Status != "running"
@@ -159,7 +175,10 @@ public sealed partial class L12PlatformStore
             accounts.ToFrozenDictionary(StringComparer.Ordinal),
             byId.ToFrozenDictionary(StringComparer.Ordinal),
             byCode.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
-            running.ToFrozenDictionary(), byRoom.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase));
+            running.ToFrozenDictionary(), byRoom.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase))
+        {
+            ValidatedPayloads = payloads.ToFrozenDictionary(StringComparer.Ordinal),
+        };
         StorageFailureInjector?.Invoke("after-tournament-read-index-build");
         return prepared;
     }
@@ -169,6 +188,8 @@ public sealed partial class L12PlatformStore
         L12OperationsPolicySnapshot policy,
         Dictionary<(TournamentRow Tournament, string AccountId, string? ExpectedDeckHash),
             CommittedTournamentPlayerPreparation> playerCache,
+        IReadOnlyDictionary<string, CommittedTournamentPayload> previousPayloads,
+        Dictionary<string, CommittedTournamentPayload> payloads,
         Action<string>? payloadReadObserver)
     {
         var timeControl = NormalizeRankedTimeControl(tournament.TimeControl);
@@ -186,7 +207,7 @@ public sealed partial class L12PlatformStore
         if (failure is null)
         {
             var prepared = PrepareCommittedTournamentPlayer(data, accounts, tournament,
-                match.PlayerAAccountId, match.PlayerADeckHash, playerCache, payloadReadObserver);
+                match.PlayerAAccountId, match.PlayerADeckHash, playerCache, previousPayloads, payloads, payloadReadObserver);
             playerA = prepared.Player;
             failure = prepared.Failure;
         }
@@ -195,7 +216,7 @@ public sealed partial class L12PlatformStore
         if (failure is null)
         {
             var prepared = PrepareCommittedTournamentPlayer(data, accounts, tournament,
-                match.PlayerBAccountId!, match.PlayerBDeckHash, playerCache, payloadReadObserver);
+                match.PlayerBAccountId!, match.PlayerBDeckHash, playerCache, previousPayloads, payloads, payloadReadObserver);
             playerB = prepared.Player;
             failure = prepared.Failure;
         }
@@ -210,6 +231,8 @@ public sealed partial class L12PlatformStore
         string? expectedDeckHash,
         Dictionary<(TournamentRow Tournament, string AccountId, string? ExpectedDeckHash),
             CommittedTournamentPlayerPreparation> playerCache,
+        IReadOnlyDictionary<string, CommittedTournamentPayload> previousPayloads,
+        Dictionary<string, CommittedTournamentPayload> payloads,
         Action<string>? payloadReadObserver)
     {
         var key = (tournament, accountId, expectedDeckHash);
@@ -231,17 +254,48 @@ public sealed partial class L12PlatformStore
             return Complete(null, "桌次绑定的牌库快照与报名快照不一致");
         if (!accounts.TryGetValue(accountId, out var account)) return Complete(null, "参赛账号不存在");
 
-        var payload = ReadExportDeckPayload(data, participant.Deck.MasterId, participant.Deck.PayloadHash,
-            participant.Deck.CardIds, participant.Deck.MoraleIds, participant.Deck.SpecialIds);
-        payloadReadObserver?.Invoke(payload.Hash);
-        if (CountRecoveryCards(ReadRecoveryCardCounts(payload.MainJson)) == 0
-            || CountRecoveryCards(ReadRecoveryCardCounts(payload.MoraleJson)) == 0)
+        var (payload, hasRequiredZones) = ReadCommittedTournamentPayload(data, participant.Deck,
+            previousPayloads, payloads, payloadReadObserver);
+        if (!hasRequiredZones)
             return Complete(null, "该报名使用旧版牌库快照，需在开赛前重新选择账号牌库");
         var player = new CommittedTournamentPlayer(participant.AccountId, PublicUsername(account),
             participant.Deck.Name, participant.Deck.MasterId, payload,
             participant.Deck.AlternateArtSelections.ToFrozenDictionary(StringComparer.Ordinal),
             participant.Deck.PublicationId, participant.Deck.PublicationVersion, participant.Deck.Hash);
         return Complete(player, null);
+    }
+
+    private static (NormalizedDeckPayload Payload, bool HasRequiredZones) ReadCommittedTournamentPayload(
+        DataFile data, TournamentDeckSnapshotRow deck,
+        IReadOnlyDictionary<string, CommittedTournamentPayload> previousPayloads,
+        Dictionary<string, CommittedTournamentPayload> payloads, Action<string>? payloadReadObserver)
+    {
+        // Inline/legacy bodies still follow the original normalization, hash
+        // validation and required-zone checks on every preparation.
+        var fact = !string.IsNullOrWhiteSpace(deck.PayloadHash) && deck.CardIds.Count == 0
+            && deck.MoraleIds.Count == 0 && deck.SpecialIds.Count == 0
+            ? RequireDeckPayload(data, deck.PayloadHash, deck.MasterId) : null;
+        if (fact is not null)
+        {
+            // Record equality checks MasterId, Format and every PayloadJson
+            // character, not just a hash/revision/reference/count shortcut.
+            if (payloads.TryGetValue(deck.PayloadHash, out var current) && current.Fact == fact)
+                return (current.Payload, current.HasRequiredZones);
+            if (previousPayloads.TryGetValue(deck.PayloadHash, out var prior) && prior.Fact == fact)
+            {
+                payloads[deck.PayloadHash] = prior;
+                return (prior.Payload, prior.HasRequiredZones);
+            }
+        }
+
+        var payload = ReadExportDeckPayload(data, deck.MasterId, deck.PayloadHash,
+            deck.CardIds, deck.MoraleIds, deck.SpecialIds);
+        payloadReadObserver?.Invoke(payload.Hash);
+        var hasRequiredZones = CountRecoveryCards(ReadRecoveryCardCounts(payload.MainJson)) != 0
+            && CountRecoveryCards(ReadRecoveryCardCounts(payload.MoraleJson)) != 0;
+        if (fact is not null)
+            payloads[deck.PayloadHash] = new(fact, payload, hasRequiredZones);
+        return (payload, hasRequiredZones);
     }
 
     private CommittedTournamentReads ReadCommittedTournamentReads()

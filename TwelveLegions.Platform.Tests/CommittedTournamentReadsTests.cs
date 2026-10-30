@@ -1,16 +1,262 @@
 using System.Collections;
 using System.Diagnostics;
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace TwelveLegions.Platform.Tests;
 
 [Collection("Platform environment")]
-public sealed class CommittedTournamentReadsTests
+public sealed class CommittedTournamentReadsTests(ITestOutputHelper output)
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+
+    [Fact]
+    public void CandidateWithoutRoomBindingsRetainsNoPreviouslyValidatedPayloads()
+    {
+        using var fixture = new Fixture();
+        var bundle = Bundle(fixture.Store);
+        var before = AssignmentJson(fixture);
+        var oldTournaments = bundle.GetType().GetProperty("CommittedTournaments")!.GetValue(bundle)!;
+        var oldCache = oldTournaments.GetType().GetProperty("ValidatedPayloads")!.GetValue(oldTournaments)!;
+        Assert.NotEmpty(((IEnumerable)oldCache).Cast<object>());
+        var rooms = ((IEnumerable)Data(fixture.Store).GetType().GetProperty("Tournaments")!.GetValue(Data(fixture.Store))!)
+            .Cast<object>().SelectMany(tournament => ((IEnumerable)tournament.GetType().GetProperty("Rounds")!
+                .GetValue(tournament)!).Cast<object>())
+            .SelectMany(round => ((IEnumerable)round.GetType().GetProperty("Matches")!.GetValue(round)!).Cast<object>())
+            .Select(match => (Match: match, Room: match.GetType().GetProperty("RoomCode")!.GetValue(match))).ToArray();
+        var reads = 0;
+        fixture.Store.TournamentDeckPayloadReadObserver = _ => reads++;
+        try
+        {
+            foreach (var (match, _) in rooms) match.GetType().GetProperty("RoomCode")!.SetValue(match, string.Empty);
+            var candidate = PrepareTournamentReads(fixture.Store);
+            var cache = candidate.GetType().GetProperty("ValidatedPayloads")!.GetValue(candidate)!;
+            Assert.Empty(((IEnumerable)cache).Cast<object>());
+            Assert.Equal(0, reads);
+            Assert.Same(bundle, Bundle(fixture.Store));
+            Assert.Same(oldCache, oldTournaments.GetType().GetProperty("ValidatedPayloads")!.GetValue(oldTournaments));
+            Assert.NotEmpty(((IEnumerable)oldCache).Cast<object>());
+            Assert.Equal(before, AssignmentJson(fixture));
+        }
+        finally
+        {
+            foreach (var (match, room) in rooms) match.GetType().GetProperty("RoomCode")!.SetValue(match, room);
+        }
+        Assert.Equal(before, AssignmentJson(fixture));
+    }
+
+    [Fact]
+    public void EqualCompactFactsInNewObjectsStillReuseValidatedTournamentPayloads()
+    {
+        using var fixture = new Fixture();
+        var before = AssignmentJson(fixture);
+        var facts = Payloads(fixture.Store);
+        foreach (var key in facts.Keys.Cast<string>().ToArray())
+        {
+            var original = facts[key]!;
+            facts[key] = NewFact(original);
+            Assert.NotSame(original, facts[key]);
+        }
+        var reads = 0;
+        fixture.Store.TournamentDeckPayloadReadObserver = _ => reads++;
+        fixture.Store.SaveAlternateArtProduct(fixture.Admin,
+            new(null, "synthetic equal-fact gallery save"));
+        Assert.Equal(0, reads);
+        Assert.Equal(before, AssignmentJson(fixture));
+    }
+
+    [Theory]
+    [InlineData("MasterId")]
+    [InlineData("Format")]
+    [InlineData("PayloadJson")]
+    [InlineData("missing")]
+    public void WarmTournamentPayloadCacheCannotHideChangedOrMissingCompactFacts(string fault)
+    {
+        using var fixture = new Fixture();
+        var bundle = Bundle(fixture.Store);
+        var before = AssignmentJson(fixture);
+        var facts = Payloads(fixture.Store);
+        var deck = ParticipantDeck(fixture, fixture.Organizer.Id);
+        var hash = (string)deck.GetType().GetProperty("PayloadHash")!.GetValue(deck)!;
+        var original = facts[hash]!;
+        try
+        {
+            if (fault == "missing") facts.Remove(hash);
+            else facts[hash] = NewFact(original, fault, fault switch
+            {
+                "MasterId" => "synthetic-wrong-master",
+                "Format" => int.MaxValue,
+                _ => "{}",
+            });
+            Assert.Throws<InvalidDataException>(() => PrepareTournamentReads(fixture.Store));
+            Assert.Same(bundle, Bundle(fixture.Store));
+        }
+        finally { facts[hash] = original; }
+        Assert.Equal(before, AssignmentJson(fixture));
+    }
+
+    [Theory]
+    [InlineData("valid")]
+    [InlineData("bad-hash")]
+    [InlineData("empty-main")]
+    [InlineData("empty-morale")]
+    public void InlineTournamentPayloadsKeepOriginalValidationOnEveryPrepare(string scenario)
+    {
+        using var fixture = new Fixture();
+        var assignment = fixture.Store.TournamentRoomAssignment(fixture.Organizer.Id,
+            fixture.Tournament.Id, fixture.Match.Id, spectate: false);
+        var source = assignment.PlayerA.AccountId == fixture.Organizer.Id ? assignment.PlayerA : assignment.PlayerB;
+        var deck = ParticipantDeck(fixture, fixture.Organizer.Id);
+        var originals = new Dictionary<string, object?>();
+        void Set(string property, object value)
+        {
+            originals[property] = deck.GetType().GetProperty(property)!.GetValue(deck);
+            deck.GetType().GetProperty(property)!.SetValue(deck, value);
+        }
+        Set("CardIds", scenario == "empty-main" ? new List<string>() : source.Deck.CardIds.ToList());
+        Set("MoraleIds", scenario == "empty-morale" ? new List<string>() : source.Deck.MoraleIds.ToList());
+        Set("SpecialIds", source.Deck.SpecialIds.ToList());
+        Set("PayloadHash", scenario == "bad-hash" ? "synthetic-bad-inline-hash"
+            : scenario.StartsWith("empty-", StringComparison.Ordinal) ? string.Empty
+            : (string)deck.GetType().GetProperty("PayloadHash")!.GetValue(deck)!);
+        var reads = 0;
+        fixture.Store.TournamentDeckPayloadReadObserver = _ => reads++;
+        try
+        {
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                if (scenario == "bad-hash")
+                    Assert.Throws<InvalidDataException>(() => PrepareTournamentReads(fixture.Store));
+                else
+                {
+                    var prepared = PrepareTournamentReads(fixture.Store);
+                    var rooms = prepared.GetType().GetProperty("AssignmentsByRoom")!.GetValue(prepared)!;
+                    var room = rooms.GetType().GetProperty("Item")!.GetValue(rooms, new object[] { fixture.Match.RoomCode })!;
+                    var failure = room.GetType().GetProperty("Failure")!.GetValue(room);
+                    if (scenario == "valid") Assert.Null(failure);
+                    else Assert.IsType<string>(failure);
+                    Assert.Equal(attempt + 1, reads); // The warm compact peer may reuse, inline never does.
+                }
+            }
+        }
+        finally
+        {
+            foreach (var (property, value) in originals) deck.GetType().GetProperty(property)!.SetValue(deck, value);
+        }
+    }
+
+    [Fact]
+    public void TournamentPayloadPreparationFailurePreservesCommittedBundleAndRetry()
+    {
+        using var fixture = new Fixture();
+        var bundle = Bundle(fixture.Store);
+        var before = AssignmentJson(fixture);
+        var durable = DurableCore(fixture.Store);
+        var reached = false;
+        fixture.Store.StorageFailureInjector = stage =>
+        {
+            if (stage != "after-tournament-read-index-build") return;
+            reached = true;
+            throw new OutOfMemoryException("synthetic bounded tournament projection failure");
+        };
+        try
+        {
+            var error = Assert.Throws<L12PlatformStorageUnavailableException>(() =>
+                fixture.Store.SaveAlternateArtProduct(fixture.Admin, new(null, "synthetic retry gallery product")));
+            Assert.IsType<OutOfMemoryException>(error.InnerException);
+        }
+        finally { fixture.Store.StorageFailureInjector = null; }
+        Assert.True(reached);
+        Assert.Same(bundle, Bundle(fixture.Store));
+        Assert.Equal(durable, DurableCore(fixture.Store));
+        Assert.Equal(before, AssignmentJson(fixture));
+        Assert.DoesNotContain(fixture.Store.AlternateArtProducts(), product => product.Name == "synthetic retry gallery product");
+        var reads = 0;
+        fixture.Store.TournamentDeckPayloadReadObserver = _ => reads++;
+        fixture.Store.SaveAlternateArtProduct(fixture.Admin, new(null, "synthetic retry gallery product"));
+        Assert.Equal(0, reads);
+        Assert.Equal(durable.Revision + 1, DurableCore(fixture.Store).Revision);
+        Assert.Equal(before, AssignmentJson(fixture));
+    }
+
+    [Theory]
+    [InlineData("empty-cache")]
+    [InlineData("unavailable-bundle")]
+    [InlineData("unavailable-tournaments")]
+    public void ColdOrUnavailablePreviousGenerationMustReadCurrentTournamentPayload(string state)
+    {
+        using var fixture = new Fixture();
+        var bundle = Bundle(fixture.Store);
+        var tournaments = bundle.GetType().GetProperty("CommittedTournaments")!.GetValue(bundle)!;
+        var target = state == "unavailable-bundle" ? bundle : tournaments;
+        var property = target.GetType().GetProperty(state == "empty-cache" ? "ValidatedPayloads" : "Available")!;
+        var original = property.GetValue(target);
+        property.SetValue(target, state == "empty-cache"
+            ? property.PropertyType.GetProperty("Empty", BindingFlags.Static | BindingFlags.Public)!.GetValue(null)
+            : false);
+        var reads = 0;
+        fixture.Store.TournamentDeckPayloadReadObserver = _ => reads++;
+        try
+        {
+            var prepared = PrepareTournamentReads(fixture.Store);
+            Assert.True((bool)prepared.GetType().GetProperty("Available")!.GetValue(prepared)!);
+            Assert.Equal(1, reads); // Two players share one hash: the current generation decodes it once.
+        }
+        finally { property.SetValue(target, original); }
+    }
+
+    [Fact]
+    public void UnrelatedGallerySaveReusesPreviouslyVerifiedUnchangedTournamentPayloads()
+    {
+        using var fixture = new Fixture();
+        var beforeAssignment = JsonSerializer.Serialize(fixture.Store.TournamentRoomAssignment(
+            fixture.Organizer.Id, fixture.Tournament.Id, fixture.Match.Id, spectate: false));
+        var beforePayloads = PayloadFacts();
+        var beforeVersion = fixture.Store.Version;
+        var payloadReads = new List<string>();
+        fixture.Store.TournamentDeckPayloadReadObserver = payloadReads.Add;
+
+        // Same-source isolated factory control; it does not publish or mutate authority.
+        // Its allocation is the whole tournament projection, not just payload decoding.
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var tick = Stopwatch.GetTimestamp();
+        var control = typeof(L12PlatformStore).GetMethod("PrepareCommittedTournamentReads", Private)!
+            .Invoke(fixture.Store, new[] { Data(fixture.Store) });
+        var controlElapsed = Stopwatch.GetElapsedTime(tick).TotalMilliseconds;
+        var controlAllocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+        var controlReads = payloadReads.Count;
+        GC.KeepAlive(control);
+        payloadReads.Clear();
+
+        allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        tick = Stopwatch.GetTimestamp();
+        var saved = fixture.Store.SaveAlternateArtProduct(fixture.Admin,
+            new L12AlternateArtProductDraft(null, "synthetic unrelated gallery product"),
+            new L12AdminAuditContext("synthetic-gallery-tournament-payload", "admin.content.draft",
+                RequestMethod: "TEST", RequestPath: "/test/committed-tournaments/gallery"));
+        var saveElapsed = Stopwatch.GetElapsedTime(tick).TotalMilliseconds;
+        var saveAllocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+        output.WriteLine("tournament_gallery_save payload_reads={0} distinct_payload_hashes={1} save_allocated_bytes={2} save_elapsed_ms={3:F3} isolated_prepare_payload_reads={4} isolated_prepare_allocated_bytes={5} isolated_prepare_elapsed_ms={6:F3}",
+            payloadReads.Count, payloadReads.Distinct(StringComparer.Ordinal).Count(), saveAllocated,
+            saveElapsed, controlReads, controlAllocated, controlElapsed);
+
+        Assert.Equal("synthetic unrelated gallery product", saved.Name);
+        Assert.Equal(beforeVersion + 1, fixture.Store.Version);
+        Assert.Equal(beforePayloads, PayloadFacts());
+        Assert.Equal(beforeAssignment, JsonSerializer.Serialize(fixture.Store.TournamentRoomAssignment(
+            fixture.Organizer.Id, fixture.Tournament.Id, fixture.Match.Id, spectate: false)));
+        Assert.True(fixture.Store.TournamentRoomAccess(fixture.Referee.Id,
+            fixture.Tournament.Id, fixture.Match.Id, spectate: true).CanRefereeView);
+        Assert.True(payloadReads.Count == 0,
+            $"An unrelated gallery save must reuse verified identical compact tournament bodies; observed {payloadReads.Count} repeated payload reads.");
+
+        string PayloadFacts() => JsonSerializer.Serialize(Data(fixture.Store).GetType()
+            .GetProperty("DeckPayloads")!.GetValue(Data(fixture.Store)));
+    }
 
     [Fact]
     public async Task TournamentAccessDoesNotWaitForAnUnrelatedSave()
@@ -334,6 +580,9 @@ public sealed class CommittedTournamentReadsTests
         using var fixture = new Fixture();
         var payloadReads = new List<string>();
         fixture.Store.TournamentDeckPayloadReadObserver = payloadReads.Add;
+        var tournaments = Bundle(fixture.Store).GetType().GetProperty("CommittedTournaments")!.GetValue(Bundle(fixture.Store))!;
+        var cache = tournaments.GetType().GetProperty("ValidatedPayloads")!;
+        cache.SetValue(tournaments, cache.PropertyType.GetProperty("Empty", BindingFlags.Static | BindingFlags.Public)!.GetValue(null));
         fixture.Store.ExecuteAdminTransaction(() =>
         {
             var tournament = TournamentRow(fixture.Store, fixture.Tournament.Id);
@@ -346,7 +595,10 @@ public sealed class CommittedTournamentReadsTests
             return true;
         });
 
-        Assert.Equal(2, payloadReads.Count);
+        Assert.Single(payloadReads); // Both participants and repeated tables share one immutable hash.
+        payloadReads.Clear();
+        fixture.Store.SaveAlternateArtProduct(fixture.Admin, new(null, "synthetic repeated-table warm save"));
+        Assert.Empty(payloadReads);
     }
 
     [Theory]
@@ -454,6 +706,47 @@ public sealed class CommittedTournamentReadsTests
 
     private static object Data(L12PlatformStore store)
         => typeof(L12PlatformStore).GetProperty("_data", Private)!.GetValue(store)!;
+
+    private static object Bundle(L12PlatformStore store)
+        => typeof(L12PlatformStore).GetField("_committedSessionActivity", Private)!.GetValue(store)!;
+
+    private static IDictionary Payloads(L12PlatformStore store)
+        => (IDictionary)Data(store).GetType().GetProperty("DeckPayloads")!.GetValue(Data(store))!;
+
+    private static object ParticipantDeck(Fixture fixture, string accountId)
+    {
+        var participant = ParticipantRow(TournamentRow(fixture.Store, fixture.Tournament.Id), accountId);
+        return participant.GetType().GetProperty("Deck")!.GetValue(participant)!;
+    }
+
+    private static object NewFact(object original, string? changed = null, object? replacement = null)
+        => Activator.CreateInstance(original.GetType(), new[] { "MasterId", "Format", "PayloadJson" }
+            .Select(property => property == changed ? replacement : original.GetType().GetProperty(property)!.GetValue(original)).ToArray())!;
+
+    private static object PrepareTournamentReads(L12PlatformStore store)
+    {
+        try { return typeof(L12PlatformStore).GetMethod("PrepareCommittedTournamentReads", Private)!.Invoke(store, new[] { Data(store) })!; }
+        catch (TargetInvocationException error) when (error.InnerException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error.InnerException).Throw();
+            throw;
+        }
+    }
+
+    private static string AssignmentJson(Fixture fixture)
+        => JsonSerializer.Serialize(fixture.Store.TournamentRoomAssignment(fixture.Organizer.Id,
+            fixture.Tournament.Id, fixture.Match.Id, spectate: false));
+
+    private static (long Revision, string Checksum) DurableCore(L12PlatformStore store)
+    {
+        using var connection = new SqliteConnection($"Data Source={store.TransactionalStoragePath};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT storage_revision,snapshot_sha256 FROM platform_state WHERE singleton_id=1;";
+        using var row = command.ExecuteReader();
+        Assert.True(row.Read());
+        return (row.GetInt64(0), row.GetString(1));
+    }
 
     private static object TournamentRow(L12PlatformStore store, string tournamentId)
         => ((IEnumerable)Data(store).GetType().GetProperty("Tournaments")!.GetValue(Data(store))!)

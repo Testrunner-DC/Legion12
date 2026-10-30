@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261030-TOURNAMENT-PAYLOAD-REUSE｜无关保存避免重复解码赛事正文（本地验收）
+
+- 沿人类直接要求系统检测并处理无谓占用，P3保持既有提交bundle唯一体系。真实SaveAlternateArtProduct旧实现同1hash两参赛者仍ReadExport/解码2次，保存前后完整assignment/全部紧凑事实、版本+1及裁判权限均正确，仅目标0次断言失败；原真RED保留，非编译/夹具失败。此observer是内存正文解码，不是SQL读次数。相同根普通画廊/站点/其他Save都触发统一赛事索引，不能只修某张卡或后台按钮。
+- 仅CommittedTournamentReads.cs：新代local map收集实际用到的紧凑正文已验证结果，按hash＋整个不可变Fact的MasterId/Format/PayloadJson精确匹配上一可用已提交代才复用；当前RequireDeckPayload先查存在/归属/格式。冷/失效代、变化/缺失事实走原读取与失败，inline/旧正文每次原规范化/哈希/必要区校验。无TTL、数量/版本捷径、schema/线上配置或独立长期authority；失败不发布，未用条目不累加。
+- 参赛/账号/期望DeckHash资格及每代新player/异画映射仍逐次准备；权限、运行态、可见性和物化预算保原路。Main逐字核参与资格前缀与6566字符所有读取/访问/物化后缀未变，peer独审Clear。新QA覆盖同值新对象复用、四坏事实、inline有效/坏hash/空必要区、冷/Unavailable、提交前OOM保护/恢复及未用缓存生命周期。旧重复桌次保明确冷1、暖0，不删原意；自身Count=1仅等价Assert.Single清警告。
+- 36＋1＋1共37唯一专项/38执行全通过；最终同A0749625产品/D945CA22 QA完整平台3093/3093、0失败跳过，37专项testId全部覆盖，自有临时166421032B受监督回收。原架构/P1/性能/路由通过，后端平台族按映射验，不重跑卡效/前端或旧30＋10。其他dirty子任务不因此Release合格；未部署/维护/业务/线上Bug关单。
+- 单次小合成样本：实际保存2→0解码、994280→829856B；独立整个赛事Prepare91800→11944B。是两个不同编译实现的局部合成观测，不将整体保存差全部归解码、不承诺线上时延/峰值内存或原断服务根治。真实`demand-driven-resources-20261030/tournament-payload/acceptance.json`绑定原RED/TRX/源码与原监督回执。回退仅移除本片私有派生map/辅助读取并恢复原路径，不改任何DB/回放/格式或保全规则。
+
 ## PERF-20261030-BATTLE-GALLERY-DEMAND｜对战详情公开异画按需读取（本地验收）
 
 - 人类直接要求检测并处理未查看玩家的无谓更新。源追踪Gallery编辑HTTP无全员正文广播，不作虚假成因；真实GameBoard mounted总发整库GET，唯一消费者是可见详情画师/联动与图片身份匹配。新QA执行原mounted，未查看仍1请求的真RED保留；首轮提取器严格模式语法错误不冒RED。
