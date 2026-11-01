@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "20261101-season-readiness-hotfix-internal",
+  "date": "2026-11-01",
+  "audience": "internal",
+  "reason": "赛季终结就绪判定将已应用结算记录的空错误字段误判为真实对账失败，造成后台每分钟重复终结、平台锁等待和页面请求超时。统一按非空错误文本判定，保留真实错误、隔离和待结算阻断；不改业务记录、结算结果或玩家展示。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/MatchRecorder.DeploymentReadiness.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.RankedPersistence.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.SeasonIdentityMigration.cs",
+    "TwelveLegions.Tests/RankedPersistenceRecoveryTests.cs"
+  ]
+}
