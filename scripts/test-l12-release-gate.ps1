@@ -269,6 +269,8 @@ Assert-True ($verifySource.Contains('LogFileName=rules.trx') -and $verifySource.
 Assert-True (([regex]::Matches($verifySource, [regex]::Escape('Invoke-External node (Join-Path $repoRoot ''scripts/test-release-status.mjs'')'))).Count -eq 1) "Commit-level verifier must validate release state source exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "frontend-npm-ci" \$npmExecutable ci')).Count -eq 1) "Commit-level verifier must install the isolated frontend exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "frontend-build" \$npmExecutable run build')).Count -eq 1) "Commit-level verifier must build the isolated frontend exactly once."
+Assert-True ($verifySource.Contains('stage-cache.json') -and $verifySource.Contains('Test-L12StageCacheEntry') -and
+    $verifySource.Contains('NoReuseSuccessfulStages')) "Commit-level verifier must bind and expose successful-stage reuse instead of rerunning unchanged long gates."
 Assert-True ($deploySource.Contains('$cardAssetsProbe = if ($ServerArtifactRoot -eq "/www/legion12")')) "Deployment must probe the server content-addressed card cache before upload."
 Assert-True (([regex]::Matches($deploySource, 'if \(\$cardAssetsCached\)')).Count -eq 1 -and $deploySource.Contains('$cardAssetsHash')) "Deployment must explicitly reuse a matching card asset hash."
 Assert-True ($deploySource.IndexOf('Invoke-External scp @sshOptions $cardAssetsArchive') -gt $deploySource.IndexOf('else {', $deploySource.IndexOf('if ($cardAssetsCached)'))) "Card asset upload must remain confined to the remote-cache-miss branch."

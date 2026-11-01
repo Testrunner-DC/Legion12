@@ -5,7 +5,8 @@ param(
     [string]$CardAssetDirectory = $(if ($env:L12_CARD_ASSET_ROOT) { $env:L12_CARD_ASSET_ROOT } else { "D:\L12-assets\published\current" }),
     [string]$ProductionBaseCommit = "",
     [ValidateRange(1L, 1099511627776L)][long]$EvidenceBudgetBytes = 480MB,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$NoReuseSuccessfulStages
 )
 
 $ErrorActionPreference = "Stop"
@@ -87,6 +88,104 @@ function Get-VerificationEvidenceBytes {
         }
     }
     return $bytes
+}
+
+function Get-L12StageCacheBinding {
+    param(
+        [Parameter(Mandatory = $true)][string]$Commit,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ProductionBaseCommit,
+        [Parameter(Mandatory = $true)][string]$CardAssetsHash,
+        [Parameter(Mandatory = $true)][string]$PlayerReleaseNotesSha256,
+        [Parameter(Mandatory = $true)][string]$VerifierSha256
+    )
+    return [ordered]@{
+        schema = 1
+        commit = $Commit
+        productionBaseCommit = $ProductionBaseCommit
+        cardAssetsHash = $CardAssetsHash
+        playerReleaseNotesSha256 = $PlayerReleaseNotesSha256
+        verifierSha256 = $VerifierSha256
+    }
+}
+
+function Read-L12StageCache {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    try {
+        $value = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json
+        if ($value.schema -ne 1 -or $null -eq $value.binding -or $null -eq $value.stages) { return $null }
+        return $value
+    }
+    catch { return $null }
+}
+
+function Test-L12StageEvidence {
+    param(
+        [Parameter(Mandatory = $true)][object]$Entry,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+    if ($null -eq $Entry -or $Entry.passed -ne $true -or [string]::IsNullOrWhiteSpace([string]$Entry.evidenceDirectory)) {
+        return $false
+    }
+    $evidenceDirectory = [string]$Entry.evidenceDirectory
+    if (-not (Test-Path -LiteralPath $evidenceDirectory -PathType Container)) { return $false }
+    $receipts = @(Get-ChildItem -LiteralPath $evidenceDirectory -Recurse -File -Filter 'receipt.json' -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            try { Get-Content -LiteralPath $_.FullName -Raw -Encoding utf8 | ConvertFrom-Json }
+            catch { $null }
+        })
+    return @($receipts | Where-Object { $_.label -eq $Label -and $_.status -eq 'success' -and $_.exitCode -eq 0 }).Count -gt 0
+}
+
+function Test-L12StageCacheEntry {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][object]$Cache,
+        [Parameter(Mandatory = $true)][string]$Stage,
+        [Parameter(Mandatory = $true)][object]$Binding,
+        [Parameter(Mandatory = $true)][string]$ReceiptLabel
+    )
+    if ($null -eq $Cache -or $null -eq $Cache.binding -or $null -eq $Cache.stages) { return $false }
+    foreach ($name in @('commit','productionBaseCommit','cardAssetsHash','playerReleaseNotesSha256','verifierSha256')) {
+        if ([string]$Cache.binding.$name -cne [string]$Binding.$name) { return $false }
+    }
+    $entry = $Cache.stages.PSObject.Properties[$Stage].Value
+    return Test-L12StageEvidence -Entry $entry -Label $ReceiptLabel
+}
+
+function Save-L12StageCache {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][object]$Binding,
+        [Parameter(Mandatory = $true)][string]$Stage,
+        [Parameter(Mandatory = $true)][string]$EvidenceDirectory
+    )
+    $current = Read-L12StageCache -Path $Path
+    $stages = [ordered]@{}
+    if ($null -ne $current -and $null -ne $current.stages) {
+        foreach ($property in $current.stages.PSObject.Properties) { $stages[$property.Name] = $property.Value }
+    }
+    $stages[$Stage] = [ordered]@{
+        passed = $true
+        evidenceDirectory = $EvidenceDirectory
+        passedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    }
+    [ordered]@{
+        schema = 1
+        binding = $Binding
+        stages = $stages
+        updatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding utf8
+}
+
+function Add-L12ReusedTiming {
+    param([Parameter(Mandatory = $true)][string]$Stage)
+    $script:verificationTimings.Add([ordered]@{
+        stage = $Stage
+        elapsedMilliseconds = 0
+        passed = $true
+        reused = $true
+    })
+    Write-Host "[L12 验证] 阶段 $Stage：复用同提交已通过回执；跳过重复全量测试。"
 }
 
 function Require-Command {
@@ -249,12 +348,25 @@ try {
     # A cached archive was fully checked at creation, but exception expiry is
     # time-dependent and must never be bypassed by an unchanged commit hash.
     Assert-PerformanceExceptionsCurrent -RepositoryRoot $repoRoot
-    if (-not $Force -and (Test-CachedArtifact $manifestPath)) {
+    $cachedArtifactValid = Test-CachedArtifact $manifestPath
+    if (-not $Force -and $cachedArtifactValid) {
         Assert-CleanCommit -ExpectedCommit $commit -Operation "复用发布包"
         Write-Host "[L12 验证] 复用已验证提交产物：$commit"
         Write-Output $manifestPath
         exit 0
     }
+
+    $verifierSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $stageCachePath = Join-Path $artifactDirectory "stage-cache.json"
+    $stageBinding = Get-L12StageCacheBinding -Commit $commit `
+        -ProductionBaseCommit $effectiveReleaseBaseCommit -CardAssetsHash $cardAssetsHash `
+        -PlayerReleaseNotesSha256 $playerReleaseNotesSha256 -VerifierSha256 $verifierSha256
+    # A present-but-invalid manifest is an explicit cache invalidation signal
+    # (for example card-assets/base-commit drift); do not let an older stage
+    # receipt turn that case back into a partial cache hit.
+    $stageCache = if ($Force -or $NoReuseSuccessfulStages -or ((Test-Path -LiteralPath $manifestPath -PathType Leaf) -and -not $cachedArtifactValid)) {
+        $null
+    } else { Read-L12StageCache -Path $stageCachePath }
 
     $evidenceRoot = Join-Path ([IO.Path]::GetFullPath($OutputDirectory)) "verification-evidence"
     $existingEvidenceBytes = Get-VerificationEvidenceBytes -EvidenceRoot $evidenceRoot
@@ -267,18 +379,31 @@ try {
     New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
     Write-Host "[L12 验证] 本次阶段计时与 TRX 证据：$evidenceDirectory"
 
-    Write-Host "[L12 验证] 运行 L12 规则测试..."
-    # Several collections intentionally exercise independent SQLite lifecycles and
-    # Windows junctions. Keep the release gate serial so their process-wide pools
-    # and temporary paths cannot race during teardown.
-    $ruleTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=rules.trx", "--results-directory", $evidenceDirectory) }
-    Invoke-TimedExternal "rules" dotnet test (Join-Path $repoRoot 'TwelveLegions.Tests/TwelveLegions.Tests.csproj') --configuration Release `
-        @ruleTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
-    Write-Host "[L12 验证] 运行平台持久化测试..."
-    # 退役邮箱测试由项目文件显式排除；有效账号与隐私测试仍在平台套件中全量运行。
-    $platformTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=platform.trx", "--results-directory", $evidenceDirectory) }
-    Invoke-TimedExternal "platform" dotnet test (Join-Path $repoRoot 'TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj') --configuration Release `
-        @platformTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
+    if (Test-L12StageCacheEntry -Cache $stageCache -Stage 'rules' -Binding $stageBinding -ReceiptLabel 'rules') {
+        Add-L12ReusedTiming -Stage 'rules'
+    }
+    else {
+        Write-Host "[L12 验证] 运行 L12 规则测试..."
+        # Several collections intentionally exercise independent SQLite lifecycles and
+        # Windows junctions. Keep the release gate serial so their process-wide pools
+        # and temporary paths cannot race during teardown.
+        $ruleTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=rules.trx", "--results-directory", $evidenceDirectory) }
+        Invoke-TimedExternal "rules" dotnet test (Join-Path $repoRoot 'TwelveLegions.Tests/TwelveLegions.Tests.csproj') --configuration Release `
+            @ruleTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
+        Save-L12StageCache -Path $stageCachePath -Binding $stageBinding -Stage 'rules' -EvidenceDirectory $evidenceDirectory
+        $stageCache = Read-L12StageCache -Path $stageCachePath
+    }
+    if (Test-L12StageCacheEntry -Cache $stageCache -Stage 'platform' -Binding $stageBinding -ReceiptLabel 'platform') {
+        Add-L12ReusedTiming -Stage 'platform'
+    }
+    else {
+        Write-Host "[L12 验证] 运行平台持久化测试..."
+        # 退役邮箱测试由项目文件显式排除；有效账号与隐私测试仍在平台套件中全量运行。
+        $platformTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=platform.trx", "--results-directory", $evidenceDirectory) }
+        Invoke-TimedExternal "platform" dotnet test (Join-Path $repoRoot 'TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj') --configuration Release `
+            @platformTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
+        Save-L12StageCache -Path $stageCachePath -Binding $stageBinding -Stage 'platform' -EvidenceDirectory $evidenceDirectory
+    }
     Invoke-TimedExternal "deployment-drain-consumer" $pythonExecutable -B (Join-Path $repoRoot 'scripts/test-l12-deployment-drain-consumer.py')
 
     Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
