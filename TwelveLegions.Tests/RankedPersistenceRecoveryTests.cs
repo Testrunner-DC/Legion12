@@ -723,6 +723,34 @@ public sealed class RankedPersistenceRecoveryTests
     }
 
     [Fact]
+    public async Task BlankAppliedOutboxErrorDoesNotBlockSeasonCutoverReadiness()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("blank-applied-error-readiness");
+        fixture.Manager.Disconnect(fixture.SessionFor(fixture.ActingPlayer));
+        fixture.Clock.UtcNow += TimeSpan.FromMinutes(4);
+        await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        Assert.Equal(0, await fixture.Recorder.CountPendingRankedSettlementsAsync());
+
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var update = connection.CreateCommand();
+            update.CommandText = "UPDATE ranked_settlement_outbox SET last_error='' WHERE match_id=$match;";
+            update.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+        }
+
+        var readiness = await fixture.Recorder.RankedSeasonCutoverReadinessAsync("S01");
+
+        Assert.Equal(0, readiness.ActiveMatches);
+        Assert.Equal(0, readiness.PendingSettlements);
+        Assert.Equal(0, readiness.AppliedReconciliationFailures);
+        Assert.Equal(0, readiness.QuarantinedSettlements);
+        Assert.True(readiness.Ready);
+    }
+
+    [Fact]
     public async Task FrozenRoomRebuildsFromRecorderAndUnfreezesOnlyAfterReconnectCheckpointCommits()
     {
         await using var fixture = await RankedFixture.CreateAsync("frozen-reconnect");

@@ -485,7 +485,8 @@ public sealed partial class MatchRecorder
             """);
         var reconciliation = await CountAsync("""
             SELECT COUNT(*) FROM ranked_settlement_outbox
-            WHERE status='applied' AND last_error IS NOT NULL;
+            WHERE status='applied'
+              AND NULLIF(TRIM(COALESCE(last_error,'')),'') IS NOT NULL;
             """);
         var quarantined = await CountAsync("""
             SELECT

@@ -57,14 +57,16 @@ public sealed partial class MatchRecorder
             // historical exclusion is inferred from a past manual release.
             ["ranked_settlement_unresolved"] = """
                 SELECT COUNT(*) FROM ranked_settlement_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
-                WHERE o.status IS NULL OR o.status<>'applied' OR o.last_error IS NOT NULL
+                WHERE o.status IS NULL OR o.status<>'applied'
+                  OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL
                   OR julianday(o.applied_utc) IS NULL OR m.match_id IS NULL
                   OR m.mode_id<>'ranked' OR m.ended_utc IS NULL OR trim(m.ended_utc)='';
                 """,
             ["quarantined_recovery"] = "SELECT COUNT(*) FROM ranked_recovery_quarantine;",
             ["tournament_settlement_unresolved"] = """
                 SELECT COUNT(*) FROM tournament_result_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
-                WHERE o.status IS NULL OR o.status<>'applied' OR o.last_error IS NOT NULL
+                WHERE o.status IS NULL OR o.status<>'applied'
+                  OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL
                   OR julianday(o.applied_utc) IS NULL OR m.match_id IS NULL
                   OR m.mode_id<>'tournament' OR m.ended_utc IS NULL OR trim(m.ended_utc)=''
                   OR trim(o.tournament_id)='' OR trim(o.tournament_match_id)=''
@@ -72,7 +74,8 @@ public sealed partial class MatchRecorder
                 """,
             ["response_outbox_unresolved"] = """
                 SELECT COUNT(*) FROM response_preference_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
-                WHERE o.status IS NULL OR o.status<>'applied' OR o.last_error IS NOT NULL
+                WHERE o.status IS NULL OR o.status<>'applied'
+                  OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL
                   OR julianday(o.applied_utc) IS NULL OR m.match_id IS NULL
                   OR o.journal_sequence IS NULL OR o.journal_sequence<0 OR (
                     NOT EXISTS(SELECT 1 FROM match_action_requests r WHERE r.match_id=o.match_id AND r.command_sequence=o.journal_sequence)

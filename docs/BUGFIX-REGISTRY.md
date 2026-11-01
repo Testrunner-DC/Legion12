@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261101-SEASON-EMPTY-ERROR｜空对账错误字段触发赛季终结重试
+
+- 正式服只读证据 `D:/GPT/Legion12/artifacts/server-health-20261101/formal-readonly-health-20261101.json`、`formal-season-state-20261101.json` 和 `formal-season-readiness-20261101.json` 显示：T01 已无活动排位、待结算为0、隔离为0，但 2874 条已应用结算的 `last_error` 为 `''`；赛季终结协调每分钟重复尝试，每次约15—23秒、平台镜像约650MB，并产生最高约10秒锁等待，导致多个后台接口超时；T02 切换因此一直停在 `season_finalization_not_ready`。服务未重启，未改线上数据。
+- 根因是 `IS NOT NULL` 把历史成功记录的空字符串误判为实际错误。共享修复统一以 `NULLIF(TRIM(COALESCE(last_error,'')),'') IS NOT NULL` 识别非空错误，覆盖赛季就绪、赛季身份迁移和部署就绪三条读取链；真实错误文本仍继续阻断。
+- 回归：新增 `BlankAppliedOutboxErrorDoesNotBlockSeasonCutoverReadiness`；该用例及赛季结算/恢复相关 43 项通过；全量 `TwelveLegions.Tests` 8774/8774 通过。证据位于 `D:/GPT/Legion12/artifacts/server-health-20261101/blank-applied-test/`、`season-regression-test/` 和 D 盘全量测试收据。尚未部署正式服；部署后需无统计副作用地读回 T01 readiness、终结任务不再循环、后台接口超时消失，再关闭本条。
+
 ## OPS-20261031-BAIDU-TRANSPORT-VOLUMES｜保留原age/V2字节的大文件显式分卷
 
 - 新367停服归档略大于4GiB，不能提高旧传输guard冒作可恢复。只扩既有冷归档端口：离线PrepareVolumes产生具名`l12-baidu-transport-volumes-v1`清单，默认1GiB/卷、组64GiB/128引用上限；原V2清单字节及age密文不变。Upload/Download/Restore统一复用旧动态HTTPS、固定应用、源锁、分片和DPAPI进度；新格式必须同时固定分卷及原V2两个SHA，不影响旧V2的4GiB拒绝。

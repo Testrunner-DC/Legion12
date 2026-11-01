@@ -291,7 +291,8 @@ public sealed partial class MatchRecorder
             "SELECT COUNT(*) FROM ranked_settlement_outbox WHERE status='pending';", cancellationToken);
         var reconciliation = await CountAsync(connection, transaction, """
             SELECT COUNT(*) FROM ranked_settlement_outbox
-            WHERE status='applied' AND last_error IS NOT NULL;
+            WHERE status='applied'
+              AND NULLIF(TRIM(COALESCE(last_error,'')),'') IS NOT NULL;
             """, cancellationToken);
         var quarantined = await CountAsync(connection, transaction, """
             SELECT
@@ -323,7 +324,8 @@ public sealed partial class MatchRecorder
             "SELECT COUNT(*) FROM ranked_settlement_outbox WHERE status='pending';", cancellationToken);
         reconciliation ??= await CountAsync(connection, transaction, """
             SELECT COUNT(*) FROM ranked_settlement_outbox
-            WHERE status='applied' AND last_error IS NOT NULL;
+            WHERE status='applied'
+              AND NULLIF(TRIM(COALESCE(last_error,'')),'') IS NOT NULL;
             """, cancellationToken);
         quarantined ??= await CountAsync(connection, transaction, """
             SELECT
