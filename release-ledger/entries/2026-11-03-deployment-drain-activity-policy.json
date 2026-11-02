@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-03-deployment-drain-activity-policy",
+  "date": "2026-11-03",
+  "audience": "internal",
+  "reason": "部署排空仅以准入租约、真实对局房间、持久化一致性和平台待处理命令作为停服门槛；在线 WebSocket 活动连接由正常停服流程收尾，不再单独阻止发布。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12DeploymentDrainCoordinator.cs",
+    "服务端WebSocket/TwelveLegions/L12DeploymentDrainController.cs",
+    "ops/server/l12-deployment-drain-consumer.py",
+    "TwelveLegions.Platform.Tests/DeploymentDrainControllerTests.cs"
+  ]
+}
