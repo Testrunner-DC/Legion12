@@ -506,6 +506,21 @@ try {
     $env:npm_config_script_shell = $null
     try {
         Invoke-TimedExternal "frontend-npm-ci" $npmExecutable ci --prefer-offline --no-audit
+        # Keep the source package scripts byte-for-byte unchanged for their
+        # contract checks. In the isolated copy only, prefix build with a
+        # PATH assignment so nested `npm run`/`node` commands survive a host
+        # cmd.exe that drops PATH while spawning child scripts.
+        $isolatedPackageJson = Join-Path $frontendBuildDirectory 'package.json'
+        $isolatedPackage = Get-Content -LiteralPath $isolatedPackageJson -Raw -Encoding utf8 | ConvertFrom-Json
+        if ($null -eq $isolatedPackage.scripts -or [string]::IsNullOrWhiteSpace([string]$isolatedPackage.scripts.build)) {
+            throw '隔离前端 package.json 缺少 build 脚本。'
+        }
+        $buildScript = [string]$isolatedPackage.scripts.build
+        $pathPrefix = 'set "PATH=' + $nodeDirectory + ';C:\Windows\System32;%PATH%" && '
+        if (-not $buildScript.StartsWith('set "PATH=', [StringComparison]::OrdinalIgnoreCase)) {
+            $isolatedPackage.scripts.build = $pathPrefix + $buildScript
+            $isolatedPackage | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $isolatedPackageJson -Encoding utf8
+        }
         $previousClientRelease = $env:VITE_APP_VERSION
         $previousQaSourceRepo = $env:L12_QA_SOURCE_REPO
         $previousQaSourceCommit = $env:L12_QA_SOURCE_COMMIT
