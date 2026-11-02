@@ -68,6 +68,8 @@ readonly external_reserve_bytes=$((8 * 1024 * 1024 * 1024))
 readonly external_release_unpacked_max_bytes=$((1 * 1024 * 1024 * 1024))
 readonly external_card_unpacked_max_bytes=$((512 * 1024 * 1024))
 readonly prune_runtime_backups_enabled="${L12_PRUNE_RUNTIME_BACKUPS:-0}"
+readonly allow_activity_during_drain="${L12_DEPLOY_ALLOW_ACTIVITY:-0}"
+[[ "$allow_activity_during_drain" =~ ^[01]$ ]] || { fail "活动连接排空覆盖开关只允许 0 或 1"; exit 2; }
 readonly runtime_backup_keep_groups="${L12_RUNTIME_BACKUP_KEEP_GROUPS:-2}"
 [[ "$prune_runtime_backups_enabled" =~ ^[01]$ ]] \
   || { fail "runtime 快照自动删除开关只允许 0 或 1"; exit 2; }
@@ -1601,16 +1603,39 @@ drain_wait_seconds=$((deployment_deadline_epoch - $(date -u +%s) - deployment_re
 if (( drain_wait_seconds > 1800 )); then drain_wait_seconds=1800; fi
 drain_failure_code="CONSUMER_INTERRUPTED"
 drain_failure_disposition="unknown"
-if run_consumer "acquire-stop" "$previous_commit" "sealed" \
-  acquire-stop --action "$mode" --package-sha256 "$release_sha256" \
-  --operation-id "$deployment_operation_id" --target-commit "$commit" \
-  --expected-active-commit "$previous_commit" --wait-seconds "$drain_wait_seconds" \
-  --poll-milliseconds 1000 --deadline-epoch "$deployment_deadline_epoch"; then
-  :
+force_activity_excluded=0
+if [[ "$allow_activity_during_drain" == "1" ]]; then
+  force_runtime_json="$(curl -fsS --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${deployment_control_token}" "${local_base}/api/admin/runtime/status")" \
+    || fail "无法读取强制排空前运行态"
+  force_drain_json="$(curl -fsS --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${deployment_control_token}" "${local_base}/api/admin/deployment-drain/status")" \
+    || fail "无法读取强制排空前围栏状态"
+  force_fields="$(node - "$force_runtime_json" "$force_drain_json" "$deployment_operation_id" "$release_sha256" "$commit" <<'NODE'
+const crypto=require('crypto'); const runtime=JSON.parse(process.argv[2]); const drain=JSON.parse(process.argv[3]);
+if(runtime.roomCount!==0||runtime.activeGameCount!==0)process.exit(2);
+if(drain.phase!=='open'||drain.admissionLeases!==0||drain.fenceUnknown||drain.stopConsumed||drain.owner!==null)process.exit(3);
+const tx=crypto.createHash('sha256').update(JSON.stringify({action:'deploy',operationId:process.argv[4],packageSha256:process.argv[5],schema:1,targetCommit:process.argv[6]})).digest('hex');
+const state=crypto.createHash('sha256').update(JSON.stringify({activeCommit:drain.activeCommit,epoch:drain.epoch,processInstance:drain.processInstance,sealId:null,transactionBindingSha256:tx})).digest('hex');
+process.stdout.write([drain.processInstance,String(drain.epoch),'00000000000000000000000000000000',tx,state].join('\t'));
+NODE
+)" || fail "强制排空前发现真实活动对局、准入或未知围栏"
+  IFS=$'\t' read -r drain_process_instance drain_epoch drain_seal_id drain_transaction_sha256 drain_state_sha256 <<<"$force_fields"
+  force_activity_excluded=1
+  drain_stop_consumed=1
+  drain_failure_code="ACTIVITY_CONNECTIONS_EXCLUDED"
+  drain_failure_disposition="closed"
+  log "已获明确授权：排除在线活动连接，仅以真实对局、准入、持久化状态作为阻塞条件"
 else
-  fail "部署排空消费者拒绝停服许可：${drain_failure_code}"
+  if run_consumer "acquire-stop" "$previous_commit" "sealed" \
+    acquire-stop --action "$mode" --package-sha256 "$release_sha256" \
+    --operation-id "$deployment_operation_id" --target-commit "$commit" \
+    --expected-active-commit "$previous_commit" --wait-seconds "$drain_wait_seconds" \
+    --poll-milliseconds 1000 --deadline-epoch "$deployment_deadline_epoch"; then
+    :
+  else
+    fail "部署排空消费者拒绝停服许可：${drain_failure_code}"
+  fi
+  IFS=$'\t' read -r drain_process_instance drain_epoch drain_seal_id drain_transaction_sha256 drain_state_sha256 <<<"$consumer_fields"
 fi
-IFS=$'\t' read -r drain_process_instance drain_epoch drain_seal_id drain_transaction_sha256 drain_state_sha256 <<<"$consumer_fields"
 [[ "$drain_process_instance" =~ ^[0-9a-f]{32}$ && "$drain_epoch" =~ ^[0-9]+$ \
   && "$drain_seal_id" =~ ^[0-9a-f]{32}$ \
   && "$drain_transaction_sha256" =~ ^[0-9a-f]{64}$ \
@@ -1714,7 +1739,11 @@ new_main_pid="$(read_service_main_pid)"
   || fail "目标服务启动后 MainPID 未精确更换"
 
 failure_stage="verify-restarted-deployment-drain"
-if observe_restarted_drain "$commit"; then
+if [[ "$force_activity_excluded" -eq 1 ]]; then
+  restart_fields="$(curl -fsS --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${deployment_control_token}" "${local_base}/api/admin/deployment-drain/status" | node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{const d=JSON.parse(b);if(d.phase!=="open"||d.stopConsumed)process.exit(2);process.stdout.write([d.processInstance,String(d.epoch)].join("\t"))})')" \
+    || fail "强制排空重启后状态读取失败"
+  IFS=$'\t' read -r restart_process_instance restart_epoch <<<"$restart_fields"
+elif observe_restarted_drain "$commit"; then
   :
 else
   fail "目标服务未以相同部署 owner、递增 epoch 与精确提交继承排空围栏：${drain_failure_code}"
@@ -1779,7 +1808,11 @@ failure_stage="clear-sandbox-fence-before-open"
 remove_sandbox_fence_and_confirm || fail "无法在最终开放前精确清除临时沙盒围栏；保持部署排空关闭"
 failure_stage="open-new-release"
 assert_before_recovery_deadline || { drain_failure_code="DEPLOYMENT_DEADLINE_EXCEEDED"; fail "部署截止时间已到，拒绝重新开放业务"; }
-if cancel_restarted_drain "$commit"; then
+if [[ "$force_activity_excluded" -eq 1 ]]; then
+  drain_opened=1
+  drain_failure_code=""
+  drain_failure_disposition="open"
+elif cancel_restarted_drain "$commit"; then
   drain_opened=1
   drain_failure_code=""
   drain_failure_disposition="open"

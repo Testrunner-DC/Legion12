@@ -9,6 +9,7 @@ param(
     # including actual upload and cutover after lengthy local preflight.
     [Nullable[DateTimeOffset]]$DeploymentDeadline = $null,
     [Security.SecureString]$DeploymentControlSessionToken = $null,
+    [switch]$AllowActivityDuringDrain,
     [ValidateSet("/opt", "/www/legion12")]
     [string]$ServerArtifactRoot = "/www/legion12",
     [switch]$DryRun,
@@ -582,8 +583,9 @@ try {
     }
     else {
         Write-Host "[L12 部署] 启用主页与资讯分享信息路由..."
+        $forcePrefix = if ($AllowActivityDuringDrain) { 'L12_DEPLOY_ALLOW_ACTIVITY=1 ' } else { '' }
         Invoke-External -NoRetry -SecureStandardInput $DeploymentControlSessionToken ssh @sshOptions $Server `
-            "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' $deploymentDeadlineEpoch && sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir' && curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'og:title'"
+            "${forcePrefix}/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' $deploymentDeadlineEpoch && sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir' && curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'og:title'"
         Write-Host "[L12 部署] $mode 成功：https://legion-12.com/"
     }
 }
