@@ -121,7 +121,7 @@ function Read-L12StageCache {
 
 function Test-L12StageEvidence {
     param(
-        [Parameter(Mandatory = $true)][object]$Entry,
+        [Parameter(Mandatory = $true)][AllowNull()][object]$Entry,
         [Parameter(Mandatory = $true)][string]$Label
     )
     if ($null -eq $Entry -or $Entry.passed -ne $true -or [string]::IsNullOrWhiteSpace([string]$Entry.evidenceDirectory)) {
@@ -148,7 +148,9 @@ function Test-L12StageCacheEntry {
     foreach ($name in @('commit','productionBaseCommit','cardAssetsHash','playerReleaseNotesSha256','verifierSha256')) {
         if ([string]$Cache.binding.$name -cne [string]$Binding.$name) { return $false }
     }
-    $entry = $Cache.stages.PSObject.Properties[$Stage].Value
+    $stageProperty = @($Cache.stages.PSObject.Properties | Where-Object { $_.Name -ceq $Stage }) | Select-Object -First 1
+    if ($null -eq $stageProperty) { return $false }
+    $entry = $stageProperty.Value
     return Test-L12StageEvidence -Entry $entry -Label $ReceiptLabel
 }
 
