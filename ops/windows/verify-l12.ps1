@@ -506,20 +506,6 @@ try {
     $env:npm_config_script_shell = $null
     try {
         Invoke-TimedExternal "frontend-npm-ci" $npmExecutable ci --prefer-offline --no-audit
-        # npm 10 on the managed Windows host can resolve npm.cmd for the
-        # top-level call but lose PATH while recursively running `npm run` and
-        # `node` entries from package.json.  Rewrite only the isolated build
-        # copy to absolute local tool paths; source/package-lock bytes and the
-        # resulting browser assets remain unchanged.
-        $isolatedPackageJson = Join-Path $frontendBuildDirectory 'package.json'
-        $isolatedPackageText = Get-Content -LiteralPath $isolatedPackageJson -Raw -Encoding utf8
-        # package.json is JSON: use forward-slash absolute paths so Windows
-        # backslashes cannot become escape sequences such as `\n`.
-        $npmScriptPath = $npmExecutable.Replace('\', '/')
-        $nodeScriptPath = $nodeCommand.Source.Replace('\', '/')
-        $isolatedPackageText = $isolatedPackageText.Replace('npm run', "$npmScriptPath run")
-        $isolatedPackageText = $isolatedPackageText.Replace('node ', "$nodeScriptPath ")
-        [IO.File]::WriteAllText($isolatedPackageJson, $isolatedPackageText, [Text.UTF8Encoding]::new($false))
         $previousClientRelease = $env:VITE_APP_VERSION
         $previousQaSourceRepo = $env:L12_QA_SOURCE_REPO
         $previousQaSourceCommit = $env:L12_QA_SOURCE_COMMIT
