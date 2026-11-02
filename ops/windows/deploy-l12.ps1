@@ -155,11 +155,20 @@ function Invoke-GitFetchWithRetry {
 }
 
 function Resolve-L12ProductionBaseCommit {
-    try {
-        $health = Invoke-RestMethod -Uri "https://legion-12.com/health" -Method Get -TimeoutSec 15
+    $health = $null
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        try {
+            $health = Invoke-RestMethod -Uri "https://legion-12.com/health" -Method Get -TimeoutSec 15
+            break
+        }
+        catch {
+            $lastError = $_.Exception.Message
+            if ($attempt -lt 5) { Start-Sleep -Seconds (2 * $attempt) }
+        }
     }
-    catch {
-        throw "无法读取当前正式服版本，不能确定玩家更新日志区间：$($_.Exception.Message)"
+    if ($null -eq $health) {
+        throw "无法读取当前正式服版本，不能确定玩家更新日志区间：$lastError"
     }
     $baseCommit = [string]$health.serverVersion
     if ($baseCommit -notmatch '^[0-9a-f]{40}$') {
