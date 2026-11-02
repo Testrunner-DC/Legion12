@@ -493,6 +493,14 @@ try {
     Get-ChildItem -LiteralPath (Join-Path $repoRoot "服务端WebSocket\TwelveLegions") -File -Filter "*.cs" |
         Copy-Item -Destination $isolatedServerSourceRoot -Force
     Push-Location $frontendBuildDirectory
+    $previousNpmScriptShell = $env:npm_config_script_shell
+    $npmScriptShell = Join-Path $frontendWorkspaceDirectory 'l12-npm-script-shell.cmd'
+    $scriptShellText = "@echo off`r`nset `"PATH=$nodeDirectory;$env:PATH`"`r`ncall `"$env:ComSpec`" /d /s /c %*`r`nexit /b %ERRORLEVEL%`r`n"
+    [IO.File]::WriteAllText($npmScriptShell, $scriptShellText, [Text.Encoding]::ASCII)
+    # npm run invokes child commands through cmd.exe.  Keep the real Node
+    # directory in that child environment even when the host shell shortens
+    # PATH while invoking a managed PowerShell process.
+    $env:npm_config_script_shell = $npmScriptShell
     try {
         Invoke-TimedExternal "frontend-npm-ci" $npmExecutable ci --prefer-offline --no-audit
         $previousClientRelease = $env:VITE_APP_VERSION
@@ -510,7 +518,11 @@ try {
             $env:L12_QA_SOURCE_COMMIT = $previousQaSourceCommit
         }
     }
-    finally { Pop-Location }
+    finally {
+        $env:npm_config_script_shell = $previousNpmScriptShell
+        if (Test-Path -LiteralPath $npmScriptShell) { Remove-Item -LiteralPath $npmScriptShell -Force }
+        Pop-Location
+    }
 
     $stagingDirectory = Join-Path $artifactDirectory "staging-$([Guid]::NewGuid().ToString('N'))"
     $releaseRoot = Join-Path $stagingDirectory "release"
