@@ -510,8 +510,12 @@ try {
         # resulting browser assets remain unchanged.
         $isolatedPackageJson = Join-Path $frontendBuildDirectory 'package.json'
         $isolatedPackageText = Get-Content -LiteralPath $isolatedPackageJson -Raw -Encoding utf8
-        $isolatedPackageText = $isolatedPackageText.Replace('npm run', "$npmExecutable run")
-        $isolatedPackageText = $isolatedPackageText.Replace('node ', "$($nodeCommand.Source) ")
+        # package.json is JSON: use forward-slash absolute paths so Windows
+        # backslashes cannot become escape sequences such as `\n`.
+        $npmScriptPath = $npmExecutable.Replace('\', '/')
+        $nodeScriptPath = $nodeCommand.Source.Replace('\', '/')
+        $isolatedPackageText = $isolatedPackageText.Replace('npm run', "$npmScriptPath run")
+        $isolatedPackageText = $isolatedPackageText.Replace('node ', "$nodeScriptPath ")
         [IO.File]::WriteAllText($isolatedPackageJson, $isolatedPackageText, [Text.UTF8Encoding]::new($false))
         $previousClientRelease = $env:VITE_APP_VERSION
         $previousQaSourceRepo = $env:L12_QA_SOURCE_REPO
