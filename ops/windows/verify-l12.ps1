@@ -494,13 +494,10 @@ try {
         Copy-Item -Destination $isolatedServerSourceRoot -Force
     Push-Location $frontendBuildDirectory
     $previousNpmScriptShell = $env:npm_config_script_shell
-    $npmScriptShell = Join-Path $frontendWorkspaceDirectory 'l12-npm-script-shell.cmd'
-    $scriptShellText = "@echo off`r`nset `"PATH=$nodeDirectory;$env:PATH`"`r`ncall `"$env:ComSpec`" /d /s /c %*`r`nexit /b %ERRORLEVEL%`r`n"
-    [IO.File]::WriteAllText($npmScriptShell, $scriptShellText, [Text.Encoding]::ASCII)
-    # npm run invokes child commands through cmd.exe.  Keep the real Node
-    # directory in that child environment even when the host shell shortens
-    # PATH while invoking a managed PowerShell process.
-    $env:npm_config_script_shell = $npmScriptShell
+    # The isolated package below uses absolute npm/node paths. Do not inherit
+    # a host-provided npm_config_script_shell: managed shells may point it at a
+    # wrapper that exits with a non-Windows status before the first script.
+    $env:npm_config_script_shell = $null
     try {
         Invoke-TimedExternal "frontend-npm-ci" $npmExecutable ci --prefer-offline --no-audit
         # npm 10 on the managed Windows host can resolve npm.cmd for the
@@ -534,7 +531,6 @@ try {
     }
     finally {
         $env:npm_config_script_shell = $previousNpmScriptShell
-        if (Test-Path -LiteralPath $npmScriptShell) { Remove-Item -LiteralPath $npmScriptShell -Force }
         Pop-Location
     }
 
