@@ -311,6 +311,14 @@ try {
     $pythonExecutable = $pythonCommand.Source
     $npmCommand = Get-Command "npm.cmd" -ErrorAction SilentlyContinue
     $npmExecutable = if ($null -ne $npmCommand) { $npmCommand.Source } else { "npm" }
+    # npm lifecycle scripts are launched by cmd.exe and need the real Node
+    # installation on PATH, not only the PowerShell command shim.  Some
+    # managed shells resolve npm.cmd but pass a shortened child PATH, which
+    # makes `npm ci` pass while `npm run build` cannot find node/npm.
+    $nodeCommand = Get-Command "node.exe" -CommandType Application -ErrorAction Stop
+    $nodeDirectory = [IO.Path]::GetDirectoryName($nodeCommand.Source)
+    if ([string]::IsNullOrWhiteSpace($nodeDirectory)) { throw '无法确定 Node.js 安装目录。' }
+    $env:PATH = $nodeDirectory + [IO.Path]::PathSeparator + $env:PATH
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "无法读取当前提交" }
     Assert-CleanCommit -ExpectedCommit $commit -Operation "验证或复用发布包"
