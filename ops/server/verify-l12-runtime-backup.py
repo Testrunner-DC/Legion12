@@ -1,5 +1,6 @@
 """Read-only stopped-runtime proof. No checkpoints, repairs or private output."""
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import json
 import os
@@ -43,6 +44,69 @@ def canonical_facts(facts):
 def empty_wal_transitions(before, after):
     return sum(name.endswith("-wal") and (name in before) != (name in after)
                for name in PERSISTENT_NAMES)
+
+
+def timed_call(name, callback):
+    started = time.monotonic()
+    try:
+        value = callback()
+        error = None
+    except Exception as exc:  # preserve the original fixed proof error
+        value = None
+        error = exc
+    return value, error, {
+        "stage": name,
+        "elapsedMilliseconds": round((time.monotonic() - started) * 1000, 3),
+    }
+
+
+def snapshot_facts(backup, start):
+    archived = {}
+    with tarfile.open(backup, mode="r|gz") as snapshot:
+        for member in snapshot:
+            if time.monotonic() - start > LIMIT_SECONDS:
+                raise ProofError("TIME_BUDGET_EXCEEDED")
+            name = PurePosixPath(member.name)
+            if name.is_absolute() or ".." in name.parts:
+                raise ProofError("UNSAFE_PATH_OR_FILE_SET")
+            normalized = str(name)
+            if len(name.parts) == 1 and (normalized.endswith('.db') or normalized.endswith('.db-wal')) and normalized not in PERSISTENT_NAMES:
+                raise ProofError("UNSAFE_PATH_OR_FILE_SET")
+            if normalized not in PERSISTENT_NAMES:
+                continue
+            if normalized in archived or not member.isfile():
+                raise ProofError("UNSAFE_PATH_OR_FILE_SET")
+            stream = snapshot.extractfile(member)
+            if stream is None:
+                raise ProofError("UNSAFE_PATH_OR_FILE_SET")
+            with stream:
+                archived[normalized] = digest(stream, start)
+    return archived
+
+
+def sqlite_contract(runtime, name, required_table, start):
+    # Read the real WAL view. Never use immutable, perform checkpoints,
+    # delete bookkeeping files or repair a damaged database.
+    uri = (runtime / name).resolve().as_uri() + "?mode=ro"
+    connection = sqlite3.connect(uri, uri=True, timeout=1)
+    try:
+        connection.execute("PRAGMA query_only=ON")
+        connection.set_progress_handler(lambda: int(time.monotonic() - start > LIMIT_SECONDS), 1000)
+        connection.execute("BEGIN")
+        if connection.execute("PRAGMA quick_check(1)").fetchall() != [("ok",)]:
+            raise ProofError("SQLITE_INTEGRITY_REJECTED")
+        if connection.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name=?", (required_table,)).fetchone() != (1,):
+            raise ProofError("SCHEMA_CONTRACT_REJECTED")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info('" + required_table + "')")}
+        if not SCHEMA_ANCHORS[name].issubset(columns):
+            raise ProofError("SCHEMA_CONTRACT_REJECTED")
+    finally:
+        connection.close()
+
+
+def backup_digest(backup, start):
+    with backup.open("rb") as source:
+        return digest(source, start)
 
 
 def digest(stream, start):
@@ -112,55 +176,45 @@ def verify(runtime, backup, expected_sha, *, test_only=False):
                 journal = runtime / (name + '-journal')
                 if journal.is_symlink() or journal.exists() and journal.stat().st_size:
                     raise ProofError("UNSAFE_PATH_OR_FILE_SET")
-        with phase("backup_hash_before"):
-            with backup.open("rb") as source:
-                _, actual_sha = digest(source, start)
-            if actual_sha != expected_sha:
-                raise ProofError("BACKUP_CHECKSUM_CHANGED")
-        with phase("database_hash_before"):
-            before = persistent_facts(runtime, start)
-        with phase("snapshot_stream"):
-            archived = {}
-            with tarfile.open(backup, mode="r|gz") as snapshot:
-                for member in snapshot:
-                    if time.monotonic() - start > LIMIT_SECONDS:
-                        raise ProofError("TIME_BUDGET_EXCEEDED")
-                    name = PurePosixPath(member.name)
-                    if name.is_absolute() or ".." in name.parts:
-                        raise ProofError("UNSAFE_PATH_OR_FILE_SET")
-                    normalized = str(name)
-                    if len(name.parts) == 1 and (normalized.endswith('.db') or normalized.endswith('.db-wal')) and normalized not in PERSISTENT_NAMES:
-                        raise ProofError("UNSAFE_PATH_OR_FILE_SET")
-                    if normalized not in PERSISTENT_NAMES:
-                        continue
-                    if normalized in archived or not member.isfile():
-                        raise ProofError("UNSAFE_PATH_OR_FILE_SET")
-                    stream = snapshot.extractfile(member)
-                    if stream is None:
-                        raise ProofError("UNSAFE_PATH_OR_FILE_SET")
-                    with stream:
-                        archived[normalized] = digest(stream, start)
-            if canonical_facts(before) != canonical_facts(archived):
-                raise ProofError("SNAPSHOT_NOT_LATEST")
-        for name, required_table in DATABASES.items():
-            with phase("sqlite_platform" if name == "platform.db" else "sqlite_matches"):
-                # Read the real WAL view. Never use immutable, perform checkpoints,
-                # delete bookkeeping files or repair a damaged database.
-                uri = (runtime / name).resolve().as_uri() + "?mode=ro"
-                connection = sqlite3.connect(uri, uri=True, timeout=1)
-                try:
-                    connection.execute("PRAGMA query_only=ON")
-                    connection.set_progress_handler(lambda: int(time.monotonic() - start > LIMIT_SECONDS), 1000)
-                    connection.execute("BEGIN")
-                    if connection.execute("PRAGMA quick_check(1)").fetchall() != [("ok",)]:
-                        raise ProofError("SQLITE_INTEGRITY_REJECTED")
-                    if connection.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name=?", (required_table,)).fetchone() != (1,):
-                        raise ProofError("SCHEMA_CONTRACT_REJECTED")
-                    columns = {row[1] for row in connection.execute("PRAGMA table_info('" + required_table + "')")}
-                    if not SCHEMA_ANCHORS[name].issubset(columns):
-                        raise ProofError("SCHEMA_CONTRACT_REJECTED")
-                finally:
-                    connection.close()
+        # These checks are independent read-only observations of the stopped
+        # runtime. Run them concurrently so a large valid snapshot does not
+        # spend the entire bounded proof budget serially rereading the same
+        # bytes. The individual checks and their exact contracts are unchanged.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            before_future = pool.submit(timed_call, "database_hash_before", lambda: persistent_facts(runtime, start))
+            backup_future = pool.submit(timed_call, "backup_hash_before", lambda: backup_digest(backup, start))
+            before, before_error, before_timing = before_future.result()
+            backup_result, backup_error, backup_timing = backup_future.result()
+        timings.extend([backup_timing, before_timing])
+        if backup_error is not None:
+            current_stage = "backup_hash_before"
+            raise backup_error
+        if before_error is not None:
+            current_stage = "database_hash_before"
+            raise before_error
+        if backup_result[1] != expected_sha:
+            current_stage = "backup_hash_before"
+            raise ProofError("BACKUP_CHECKSUM_CHANGED")
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            snapshot_future = pool.submit(timed_call, "snapshot_stream", lambda: snapshot_facts(backup, start))
+            platform_future = pool.submit(timed_call, "sqlite_platform", lambda: sqlite_contract(runtime, "platform.db", "platform_state", start))
+            matches_future = pool.submit(timed_call, "sqlite_matches", lambda: sqlite_contract(runtime, "matches.db", "matches", start))
+            archived, snapshot_error, snapshot_timing = snapshot_future.result()
+            _, platform_error, platform_timing = platform_future.result()
+            _, matches_error, matches_timing = matches_future.result()
+        timings.extend([snapshot_timing, platform_timing, matches_timing])
+        if snapshot_error is not None:
+            current_stage = "snapshot_stream"
+            raise snapshot_error
+        if platform_error is not None:
+            current_stage = "sqlite_platform"
+            raise platform_error
+        if matches_error is not None:
+            current_stage = "sqlite_matches"
+            raise matches_error
+        if canonical_facts(before) != canonical_facts(archived):
+            current_stage = "snapshot_stream"
+            raise ProofError("SNAPSHOT_NOT_LATEST")
         with phase("database_hash_after"):
             after = persistent_facts(runtime, start)
             if canonical_facts(before) != canonical_facts(after):
