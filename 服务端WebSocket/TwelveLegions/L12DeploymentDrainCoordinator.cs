@@ -410,7 +410,9 @@ internal sealed class L12DeploymentDrainCoordinator
                     return TransitionLocked(L12DeploymentDrainTransitionCode.WrongPhase);
                 if (!_fenceSynchronized)
                     return TransitionLocked(L12DeploymentDrainTransitionCode.FenceFailure);
-                if (_admissionLeases != 0 || _activityLeases != 0)
+                // Existing activity connections are closed by the normal stop
+                // sequence; only admission must be empty before sealing.
+                if (_admissionLeases != 0)
                     return TransitionLocked(L12DeploymentDrainTransitionCode.OutstandingLeases);
 
                 _phase = L12DeploymentDrainPhase.Sealing;
@@ -452,7 +454,7 @@ internal sealed class L12DeploymentDrainCoordinator
                     return TransitionLocked(L12DeploymentDrainTransitionCode.OwnerMismatch);
                 if (_epoch != expectedSealingEpoch)
                     return TransitionLocked(L12DeploymentDrainTransitionCode.StaleEpoch);
-                if (_admissionLeases != 0 || _activityLeases != 0)
+                if (_admissionLeases != 0)
                     return FailSealLocked(L12DeploymentDrainTransitionCode.OutstandingLeases);
                 if (externalReadiness != L12DeploymentExternalReadiness.Clear)
                 {

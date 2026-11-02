@@ -467,8 +467,7 @@ class DeploymentDrainConsumer:
                 if status == 200 and seal["code"] in ("Applied", "Idempotent") \
                         and seal["phase"] == "sealed" and seal["permit"] is not None \
                         and seal["sealReady"] and not seal["stopPermitted"] \
-                        and not seal["stopConsumed"] and seal["admissionLeases"] == 0 \
-                        and seal["activityLeases"] == 0:
+                        and not seal["stopConsumed"] and seal["admissionLeases"] == 0:
                     if seal["code"] == "Applied" and not _all_readiness_clear(seal["readiness"]):
                         raise ConsumerFailure("READINESS_CONTRACT_REJECTED", "seal", "closed")
                     permit = seal["permit"]
