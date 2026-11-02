@@ -21,9 +21,16 @@ function Resolve-L12PhysicalPath {
         catch [System.Management.Automation.ItemNotFoundException] { }
         # Permission/drive/provider failures are not proof of a plain non-C path: fail closed.
         if($null -ne $item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){
-            $target=$item.ResolveLinkTarget($true)
-            if($null -eq $target){throw 'L12_OUTPUT_UNKNOWN_LINK: cannot establish physical target'}
-            $current=Resolve-L12PhysicalPath -Path $target.FullName -LinkDepth ($LinkDepth+1)
+            # Windows PowerShell 5.1 has Target/LinkType but no ResolveLinkTarget().
+            # Use the provider's resolved target so the same physical-path guard
+            # works on both Windows PowerShell and pwsh without accepting unknown links.
+            $targetValue=$item.Target
+            if($null -eq $targetValue -or [string]::IsNullOrWhiteSpace([string]$targetValue)){
+                throw 'L12_OUTPUT_UNKNOWN_LINK: cannot establish physical target'
+            }
+            $targetPath=[string]$targetValue
+            if(-not [IO.Path]::IsPathRooted($targetPath)){$targetPath=Join-Path $item.DirectoryName $targetPath}
+            $current=Resolve-L12PhysicalPath -Path $targetPath -LinkDepth ($LinkDepth+1)
         }else{$current=$next}
     }
     return [IO.Path]::GetFullPath($current)
