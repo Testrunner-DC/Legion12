@@ -196,7 +196,7 @@ function Test-L12AcceptedApplicationBinding {
     $nonPayloadPaths = @(
         'docs/HANDOFF.md', 'docs/TASK-LEDGER.md', 'docs/BUGFIX-REGISTRY.md',
         'docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md',
-        'ops/windows/deploy-l12.ps1', 'scripts/test-l12-deploy-behavior.ps1'
+        'ops/windows/deploy-l12.ps1', 'ops/server/deploy-l12-release.sh', 'scripts/test-l12-deploy-behavior.ps1'
     )
     $namedQaPaths = @(
         'opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs',
