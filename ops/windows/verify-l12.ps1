@@ -315,7 +315,13 @@ try {
     # installation on PATH, not only the PowerShell command shim.  Some
     # managed shells resolve npm.cmd but pass a shortened child PATH, which
     # makes `npm ci` pass while `npm run build` cannot find node/npm.
-    $nodeCommand = Get-Command "node.exe" -CommandType Application -ErrorAction Stop
+    $nodeCommand = @(Get-Command "node.exe" -CommandType Application -ErrorAction Stop |
+        Where-Object { $_.Source -ieq 'C:\nodejs\node.exe' } |
+        Select-Object -First 1)
+    if ($nodeCommand.Count -eq 0) {
+        $nodeCommand = @(Get-Command "node.exe" -CommandType Application -ErrorAction Stop | Select-Object -First 1)
+    }
+    $nodeCommand = $nodeCommand[0]
     $nodeDirectory = [IO.Path]::GetDirectoryName($nodeCommand.Source)
     if ([string]::IsNullOrWhiteSpace($nodeDirectory)) { throw '无法确定 Node.js 安装目录。' }
     $env:PATH = $nodeDirectory + [IO.Path]::PathSeparator + $env:PATH
