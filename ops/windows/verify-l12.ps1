@@ -518,7 +518,8 @@ try {
         $buildScript = [string]$isolatedPackage.scripts.build
         $gitCommand = Get-Command 'git.exe' -CommandType Application -ErrorAction Stop | Select-Object -First 1
         $gitDirectory = [IO.Path]::GetDirectoryName($gitCommand.Source)
-        $pathPrefix = 'set "PATH=' + $nodeDirectory + ';' + $gitDirectory + ';C:\Windows\System32;C:\Windows" && '
+        $pythonDirectory = [IO.Path]::GetDirectoryName($pythonExecutable)
+        $pathPrefix = 'set "PATH=' + $nodeDirectory + ';' + $gitDirectory + ';' + $pythonDirectory + ';C:\Windows\System32;C:\Windows" && '
         if (-not $buildScript.StartsWith('set "PATH=', [StringComparison]::OrdinalIgnoreCase)) {
             $isolatedPackage.scripts.build = $pathPrefix + $buildScript
             $isolatedPackage | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $isolatedPackageJson -Encoding utf8
