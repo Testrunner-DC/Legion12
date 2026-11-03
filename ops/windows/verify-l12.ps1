@@ -516,7 +516,9 @@ try {
             throw '隔离前端 package.json 缺少 build 脚本。'
         }
         $buildScript = [string]$isolatedPackage.scripts.build
-        $pathPrefix = 'set "PATH=' + $nodeDirectory + ';C:\Windows\System32;%PATH%" && '
+        $gitCommand = Get-Command 'git.exe' -CommandType Application -ErrorAction Stop | Select-Object -First 1
+        $gitDirectory = [IO.Path]::GetDirectoryName($gitCommand.Source)
+        $pathPrefix = 'set "PATH=' + $nodeDirectory + ';' + $gitDirectory + ';' + $env:PATH + '" && '
         if (-not $buildScript.StartsWith('set "PATH=', [StringComparison]::OrdinalIgnoreCase)) {
             $isolatedPackage.scripts.build = $pathPrefix + $buildScript
             $isolatedPackage | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $isolatedPackageJson -Encoding utf8
