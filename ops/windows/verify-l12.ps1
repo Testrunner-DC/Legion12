@@ -519,7 +519,8 @@ try {
         $gitCommand = Get-Command 'git.exe' -CommandType Application -ErrorAction Stop | Select-Object -First 1
         $gitDirectory = [IO.Path]::GetDirectoryName($gitCommand.Source)
         $pythonDirectory = [IO.Path]::GetDirectoryName($pythonExecutable)
-        $pathPrefix = 'set "PATH=' + $nodeDirectory + ';' + $gitDirectory + ';' + $pythonDirectory + ';C:\Windows\System32;C:\Windows" && '
+        $nodeBinDirectory = Join-Path $frontendBuildDirectory 'node_modules\.bin'
+        $pathPrefix = 'set "PATH=' + $nodeDirectory + ';' + $nodeBinDirectory + ';' + $gitDirectory + ';' + $pythonDirectory + ';C:\Windows\System32;C:\Windows" && '
         if (-not $buildScript.StartsWith('set "PATH=', [StringComparison]::OrdinalIgnoreCase)) {
             $isolatedPackage.scripts.build = $pathPrefix + $buildScript
             $isolatedPackage | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $isolatedPackageJson -Encoding utf8
