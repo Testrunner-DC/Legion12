@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url'
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = path.resolve(frontendRoot, '..')
 const read = relative => fs.readFileSync(path.join(repositoryRoot, relative), 'utf8')
-const budgets = JSON.parse(read('ops/performance-budgets.json'))
+const readJson = relative => JSON.parse(read(relative).replace(/^\uFEFF/, ''))
+const budgets = readJson('ops/performance-budgets.json')
 const reliability = read('服务端WebSocket/TwelveLegions/L12HttpReliability.cs')
 const server = read('服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const runtimeModel = read('服务端WebSocket/TwelveLegions/L12RuntimeStatus.cs')
 const platform = read('opcgpro-vue/src/l12/platform.ts')
 const operationsPanel = read('opcgpro-vue/src/l12/site/AdminOperationsPanel.vue')
-const packageDocument = JSON.parse(read('opcgpro-vue/package.json'))
+const packageDocument = readJson('opcgpro-vue/package.json')
 
 let checks = 0
 const acceptance = budgets.runtimeAcceptance
