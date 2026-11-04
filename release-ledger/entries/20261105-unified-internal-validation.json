@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261105-unified-internal-validation",
+  "date": "2026-11-05",
+  "audience": "internal",
+  "reason": "标准隔离前端构建在 Windows UTF-8 BOM 传输副本上读取 package.json 时保持 JSON 语义一致；仅修正验证脚本对受控 BOM 的读取，不改变业务代码、构建预算或发布门禁。",
+  "paths": ["opcgpro-vue/scripts/test-performance-architecture-lock.mjs"]
+}

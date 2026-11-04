@@ -6,7 +6,12 @@ import { analyzeSource, evaluateArchitecture } from './check-performance-archite
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = path.resolve(frontendRoot, '..')
-const packageDocument = JSON.parse(fs.readFileSync(path.join(frontendRoot, 'package.json'), 'utf8'))
+// The governed isolated-copy helper may emit UTF-8 with a BOM on Windows.
+// Keep the contract strict while accepting that transport marker, so the
+// architecture lock checks the same package bytes instead of failing before
+// it can inspect the build scripts.
+const readJson = filePath => JSON.parse(fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, ''))
+const packageDocument = readJson(path.join(frontendRoot, 'package.json'))
 const changeGate = fs.readFileSync(path.join(repositoryRoot, 'scripts', 'verify-l12-change.ps1'), 'utf8')
 const workflow = fs.readFileSync(path.join(repositoryRoot, '.github', 'workflows', 'verify-release.yml'), 'utf8')
 assert(packageDocument.scripts.build.includes('npm run check:performance-architecture'))
