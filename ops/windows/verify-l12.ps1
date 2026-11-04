@@ -525,7 +525,8 @@ try {
             $isolatedPackage.scripts.build = $pathPrefix + $buildScript
             # Node/Vite reads this generated manifest directly; Windows PowerShell's
             # `utf8` encoding adds a BOM that makes package/PostCSS JSON parsing fail.
-            $isolatedPackage | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $isolatedPackageJson -Encoding utf8NoBOM
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($isolatedPackageJson, ($isolatedPackage | ConvertTo-Json -Depth 30), $utf8NoBom)
         }
         $previousClientRelease = $env:VITE_APP_VERSION
         $previousQaSourceRepo = $env:L12_QA_SOURCE_REPO
