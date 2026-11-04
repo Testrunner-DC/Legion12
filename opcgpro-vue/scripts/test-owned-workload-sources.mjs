@@ -103,7 +103,8 @@ let legacyReads=0,networkCalls=0,childProcesses=0,sourceReads=0
 const deny=value=>{let name=value instanceof URL?fileURLToPath(value):String(value)
  if(name.startsWith('file:'))name=fileURLToPath(name)
  name=name.replaceAll('\\','/')
- if((name.includes('/artifacts/')&&/\.(mjs|ps1|py)$/.test(name))||name.includes('/ledger-r5/')){
+ const isGeneratedCandidateSource = /\/frontend-work-[^/]+\/opcgpro-vue\//.test(name)
+ if((name.includes('/artifacts/')&&/\.(mjs|ps1|py)$/.test(name)&&!isGeneratedCandidateSource)||name.includes('/ledger-r5/')){
   legacyReads++;throw new Error('LEGACY_EXECUTABLE_READ_FORBIDDEN')}
  if(name.includes('/.ssh/')||name.endsWith('.dpapi'))throw new Error('PRIVATE_INPUT_READ_FORBIDDEN')
  sourceReads++
