@@ -523,7 +523,9 @@ try {
         $pathPrefix = 'set "PATH=' + $nodeDirectory + ';' + $nodeBinDirectory + ';' + $gitDirectory + ';' + $pythonDirectory + ';C:\Windows\System32;C:\Windows" && '
         if (-not $buildScript.StartsWith('set "PATH=', [StringComparison]::OrdinalIgnoreCase)) {
             $isolatedPackage.scripts.build = $pathPrefix + $buildScript
-            $isolatedPackage | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $isolatedPackageJson -Encoding utf8
+            # Node/Vite reads this generated manifest directly; Windows PowerShell's
+            # `utf8` encoding adds a BOM that makes package/PostCSS JSON parsing fail.
+            $isolatedPackage | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $isolatedPackageJson -Encoding utf8NoBOM
         }
         $previousClientRelease = $env:VITE_APP_VERSION
         $previousQaSourceRepo = $env:L12_QA_SOURCE_REPO
