@@ -18,6 +18,7 @@ import {
 
 type RankingTab = 'players' | 'masters' | 'matchups' | 'history'
 type RankingRange = '7d' | '30d' | 'season'
+type HistoryView = 'season' | 'honor'
 type MasterSort = 'games' | 'winRate' | 'firstWinRate' | 'secondWinRate' | 'usageRate'
 type PlayerLeaderboardEntry = RankedLeaderboardEntry & {
   favoriteMasterId?: string | null
@@ -29,6 +30,7 @@ const range = ref<RankingRange>('season')
 const tab = ref<RankingTab>('players')
 const search = ref('')
 const masterSort = ref<MasterSort>('games')
+const historyView = ref<HistoryView>('season')
 const players = ref<PlayerLeaderboardEntry[]>([])
 const history = ref<RankedSeasonHistory>({ honors: [], factionTotals: [] })
 const analytics = ref<RankedAnalytics>({
@@ -144,6 +146,27 @@ const honorGroups = computed(() => {
 const visibleFactionTotals = computed(() => query.value
   ? history.value.factionTotals.filter(row => `${row.seasonName} ${row.factions.map(factionRow => `${factionRow.faction} ${factionRow.displayValue}`).join(' ')}`.toLocaleLowerCase().includes(query.value))
   : history.value.factionTotals)
+const historySeasons = computed(() => {
+  const bySeason = new Map<string, { seasonName: string; honors: RankedSeasonHonorHistory[]; factions: RankedSeasonHistory['factionTotals'][number]['factions'] }>()
+  for (const row of visibleHonors.value) {
+    const item = bySeason.get(row.seasonName) ?? { seasonName: row.seasonName, honors: [], factions: [] }
+    item.honors.push(row)
+    bySeason.set(row.seasonName, item)
+  }
+  for (const row of visibleFactionTotals.value) {
+    const item = bySeason.get(row.seasonName) ?? { seasonName: row.seasonName, honors: [], factions: [] }
+    item.factions = row.factions
+    bySeason.set(row.seasonName, item)
+  }
+  const order = new Map<string, number>()
+  for (const row of [...history.value.factionTotals, ...history.value.honors]) {
+    if (!order.has(row.seasonName)) order.set(row.seasonName, order.size)
+  }
+  return [...bySeason.values()].sort((left, right) => (order.get(left.seasonName) ?? 9999) - (order.get(right.seasonName) ?? 9999))
+})
+const historySeasonCount = computed(() => new Set(historySeasons.value.map(row => row.seasonName)).size)
+const historyHonorCount = computed(() => visibleHonors.value.length)
+const historyWinnerCount = computed(() => visibleHonors.value.reduce((total, row) => total + row.winners.length, 0))
 const latestHistorySeason = computed(() => history.value.latestSeasonName
   || history.value.factionTotals[0]?.seasonName || history.value.honors[0]?.seasonName)
 const expandedHistorySeason = (seasonName: string) => Boolean(query.value) || seasonName === latestHistorySeason.value
@@ -266,25 +289,45 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else-if="tab === 'history'" class="history-panel">
-      <section v-if="visibleFactionTotals.length" class="faction-final-totals" aria-label="历届派系结算数值">
-        <header><div><small>FACTION FINALS</small><h2>历届派系结算数值</h2></div></header>
-        <div class="faction-total-grid">
-          <details v-for="(season, seasonIndex) in visibleFactionTotals" :key="`${season.seasonName}-${seasonIndex}`" :open="expandedHistorySeason(season.seasonName)" class="history-season-details">
-            <summary>{{ season.seasonName }}</summary>
-            <div class="faction-total-values"><span v-for="factionRow in season.factions" :key="factionRow.faction"><small>{{ factionRow.faction }}</small><b>{{ factionRow.displayValue }}</b></span></div>
-          </details>
+      <header class="history-hero">
+        <div><small>HONOR ARCHIVE</small><h2>历史荣誉</h2><p>按已结算赛季保存称号与派系最终值，历史名称和数值不会随当前配置变化。</p></div>
+        <div class="history-view-switch" role="group" aria-label="历史荣誉视图">
+          <button type="button" :class="{ active: historyView === 'season' }" :aria-pressed="historyView === 'season'" @click="historyView = 'season'">按赛季</button>
+          <button type="button" :class="{ active: historyView === 'honor' }" :aria-pressed="historyView === 'honor'" @click="historyView = 'honor'">按称号</button>
         </div>
+      </header>
+      <div v-if="historySeasons.length" class="history-metrics" aria-label="历史荣誉摘要">
+        <article><small>已结算赛季</small><strong>{{ historySeasonCount }}</strong></article>
+        <article><small>历史称号记录</small><strong>{{ historyHonorCount }}</strong></article>
+        <article><small>称号获得者</small><strong>{{ historyWinnerCount }}</strong></article>
+        <article><small>最近结算</small><strong>{{ latestHistorySeason || '—' }}</strong></article>
+      </div>
+      <section v-if="historyView === 'season' && historySeasons.length" class="history-timeline" aria-label="按赛季查看历史荣誉">
+        <article v-for="(season, seasonIndex) in historySeasons" :key="`${season.seasonName}-${seasonIndex}`" class="history-season-card" :class="{ latest: season.seasonName === latestHistorySeason }">
+          <div class="history-season-marker"><b>{{ seasonIndex + 1 }}</b></div>
+          <div class="history-season-content">
+            <header><div><small>{{ season.seasonName === latestHistorySeason ? 'LATEST SETTLEMENT' : `SETTLEMENT ${String(historySeasons.length - seasonIndex).padStart(2, '0')}` }}</small><h3>{{ season.seasonName }}</h3></div><span>{{ season.honors.length }} 项荣誉</span></header>
+            <div v-if="season.factions.length" class="history-faction-values"><span v-for="factionRow in season.factions" :key="factionRow.faction"><small>{{ factionRow.faction }}</small><b>{{ factionRow.displayValue }}</b></span></div>
+            <div v-if="season.honors.length" class="history-season-honors">
+              <article v-for="honor in season.honors" :key="`${honor.title}-${honor.seasonName}`" class="honor-card">
+                <header><div class="honor-card-title"><img v-if="honor.masterId" class="honor-master-profile" :src="masterProfileUrl(honor.masterId)" :alt="`${honor.title}主宰头像`"/><RankedIdentityBadge :variant="titleVariant(honor.title)" :faction="factionForHonor(honor.title) || honor.winners[0]?.faction" :label="honor.title"/></div><span>{{ honor.winners.length }} 位获得者</span></header>
+                <div class="honor-winners"><span v-for="winner in honor.winners" :key="`${winner.username}-${winner.faction}`"><b>{{ winner.username }}</b><em>{{ winner.faction }}</em></span></div>
+              </article>
+            </div>
+            <p v-else class="history-no-honor">本赛季暂无称号记录</p>
+          </div>
+        </article>
       </section>
-      <section v-if="honorGroups.length" class="honor-groups" aria-label="历史称号获得者">
+      <section v-else-if="historyView === 'honor' && honorGroups.length" class="honor-groups" aria-label="按称号查看历史荣誉">
         <article v-for="group in honorGroups" :key="group.title" class="honor-group">
-          <header><img v-if="group.masterId" class="honor-master-profile" :src="masterProfileUrl(group.masterId)" :alt="`${group.title}主宰头像`"/><RankedIdentityBadge :variant="titleVariant(group.title)" :faction="group.faction" :label="group.title"/><span>历届获得者</span></header>
+          <header><img v-if="group.masterId" class="honor-master-profile" :src="masterProfileUrl(group.masterId)" :alt="`${group.title}主宰头像`"/><RankedIdentityBadge :variant="titleVariant(group.title)" :faction="group.faction" :label="group.title"/><span>{{ group.seasons.length }} 个赛季</span></header>
           <details v-for="(season, seasonIndex) in group.seasons" :key="`${group.title}-${season.seasonName}-${seasonIndex}`" class="honor-season history-season-details" :open="expandedHistorySeason(season.seasonName)">
-            <summary>{{ season.seasonName }}</summary>
+            <summary>{{ season.seasonName }}<small>{{ season.winners.length }} 位获得者</small></summary>
             <div class="honor-winners"><span v-for="winner in season.winners" :key="`${winner.username}-${winner.faction}`"><b>{{ winner.username }}</b><em>{{ winner.faction }}</em></span></div>
           </details>
         </article>
       </section>
-      <div v-if="!visibleHonors.length && !visibleFactionTotals.length" class="rank-panel empty">{{ query ? '没有符合搜索条件的历史荣誉或派系结算数值' : '尚无已结算的历史赛季荣誉' }}</div>
+      <div v-if="!historySeasons.length" class="rank-panel empty">{{ query ? '没有符合搜索条件的历史荣誉或派系结算数值' : '尚无已结算的历史赛季荣誉' }}</div>
     </section>
 
     <section v-else class="matrix-panel">
@@ -336,5 +379,11 @@ onBeforeUnmount(() => {
 .faction-total-grid .history-season-details{min-width:0;padding:0;background:#0a1118}.history-season-details>summary{cursor:pointer;list-style:none;font-size:15px;font-weight:900}.history-season-details>summary::-webkit-details-marker{display:none}.history-season-details>summary::after{content:'▾';float:right;color:#8e9ba0}.history-season-details:not([open])>summary::after{content:'▸'}.faction-total-grid .history-season-details>summary{padding:14px 16px}.faction-total-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 16px 14px}.faction-total-values span{display:grid;min-width:0;gap:4px;padding:10px;border:1px solid #2b3841;background:#0d1720}.faction-total-values small{color:#7d8b92}.faction-total-values b{overflow-wrap:anywhere;color:#efd375;font-size:17px}.honor-season.history-season-details{display:block}.honor-season>summary{padding:0}.honor-season .honor-winners{margin-top:10px}.honor-master-profile{width:42px;height:42px;flex:0 0 42px;border:1px solid #66747b;object-fit:cover}.honor-group>header>:deep(.ranked-identity-badge){min-width:0}.honor-group>header>span{white-space:nowrap}
 @media(max-width:700px){.faction-total-values{gap:5px;padding:0 12px 12px}.faction-total-values span{padding:8px}.faction-total-values b{font-size:14px}.honor-master-profile{width:34px;height:34px;flex-basis:34px}}
 @media(max-width:420px){.faction-total-values{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.history-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:18px 20px;border:1px solid #35424a;background:linear-gradient(120deg,#111d27,#0a1118 70%)}
+.history-hero small{color:#53c3ca;font:900 12px monospace;letter-spacing:.16em}.history-hero h2{margin:4px 0;font-size:22px}.history-hero p{margin:0;color:#819098;font-size:13px}.history-view-switch{display:flex;flex:none;gap:6px}.history-view-switch button{min-height:40px;padding:8px 13px;border:1px solid #36434c;background:#091016;color:#89979c;font-weight:900}.history-view-switch button.active{border-color:#d1ae55;background:#3a2d12;color:#f6d978}
+.history-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.history-metrics article{display:grid;gap:5px;min-height:70px;padding:12px 14px;border:1px solid #2b3943;background:#0b151e}.history-metrics small{color:#75858c;font-size:12px}.history-metrics strong{overflow-wrap:anywhere;color:#efd375;font-size:19px}
+.history-timeline{position:relative;display:grid;gap:14px;padding-left:28px}.history-timeline::before{position:absolute;top:10px;bottom:10px;left:10px;width:1px;background:linear-gradient(#d2ab4c,#34444d 45%,#1d2a32);content:''}.history-season-card{position:relative;min-width:0;border:1px solid #35424a;background:#0a1118}.history-season-card.latest{border-color:#a98d3f;box-shadow:0 0 0 1px #6c5525,0 10px 30px #0003}.history-season-marker{position:absolute;top:18px;left:-28px;display:grid;width:20px;height:20px;place-items:center;border:1px solid #586872;border-radius:50%;background:#0a1118;color:#aebbc0;font-size:10px}.history-season-card.latest .history-season-marker{border-color:#efd375;background:#5b4313;color:#fff1b1}.history-season-content{min-width:0;padding:16px 18px}.history-season-content>header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.history-season-content>header small{color:#778b92;font:900 11px monospace;letter-spacing:.12em}.history-season-card.latest .history-season-content>header small{color:#e5bf5c}.history-season-content h3{margin:4px 0 0;font-size:20px}.history-season-content>header>span{color:#829198;font-size:12px;white-space:nowrap}.history-faction-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.history-faction-values span{display:grid;gap:4px;min-width:0;padding:9px 10px;border:1px solid #2b3841;background:#0d1720}.history-faction-values small{color:#7c8b91}.history-faction-values b{overflow-wrap:anywhere;color:#efd375;font-size:16px}.history-season-honors{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px;margin-top:12px}.honor-card{min-width:0;padding:11px 12px;border:1px solid #303f48;background:#0d1720}.honor-card>header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.honor-card>header>span{color:#849399;font-size:11px;white-space:nowrap}.honor-card .honor-winners{margin-top:9px}.history-no-honor{margin:12px 0 0;color:#718087;font-size:13px}.honor-groups{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}.honor-group>header{min-height:56px}.honor-group>header>span{white-space:nowrap}.honor-season summary{display:flex;justify-content:space-between;gap:8px;color:#dfe7e7;font-weight:900;cursor:pointer}.honor-season summary small{color:#7d8d93;font-size:11px;font-weight:600;white-space:nowrap}.honor-season[open] summary{color:#f0d27b}.honor-season .honor-winners{grid-column:1/-1;margin-top:10px}
+@media(max-width:700px){.history-hero{display:grid;gap:12px;padding:14px}.history-hero h2{font-size:19px}.history-hero p{font-size:12px;line-height:1.55}.history-view-switch{width:100%}.history-view-switch button{flex:1;min-height:44px}.history-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.history-metrics article{min-height:60px;padding:9px}.history-metrics small{font-size:11px}.history-metrics strong{font-size:16px}.history-timeline{gap:8px;padding-left:18px}.history-timeline::before{left:6px}.history-season-marker{left:-18px;width:14px;height:14px;font-size:8px}.history-season-content{padding:12px}.history-season-content h3{font-size:16px}.history-season-content>header>span{font-size:11px}.history-faction-values{gap:4px;margin-top:10px}.history-faction-values span{padding:7px 6px}.history-faction-values small{font-size:10px}.history-faction-values b{font-size:13px}.history-season-honors{grid-template-columns:1fr;gap:6px;margin-top:8px}.honor-card{padding:9px}.honor-groups{grid-template-columns:1fr;gap:8px}.honor-group>header{padding:11px 12px}.honor-season{display:block;padding:11px 12px}.honor-season .honor-winners{margin-top:9px}.honor-winners>span{padding:6px 7px}.honor-winners b{font-size:12px}.honor-winners em{font-size:11px}}
+.honor-card-title{display:flex;min-width:0;align-items:center;gap:8px}.honor-card-title .honor-master-profile{width:30px;height:30px;flex-basis:30px}
 </style>
 

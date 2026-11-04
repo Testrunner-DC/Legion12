@@ -91,7 +91,7 @@ assert.doesNotMatch(summaryStrip, /<span>|自动刷新|当前赛季|统计范围
 assert.match(summaryStrip, /最近计入对局/)
 assert.doesNotMatch(source, /row\.seasonId|item\.seasonId/)
 assert.match(source, /v-if="tab === 'players'" class="faction-filter"/)
-assert.match(source, /class="faction-final-totals"/)
+assert.match(source, /class="history-faction-values"/)
 assert.match(source, /class="honor-groups"/)
 assert.doesNotMatch(source, /赛季段位|赛季七曜值/)
 assert.match(source, /range === 'season' \? '七曜值' : '七曜净变化'/)

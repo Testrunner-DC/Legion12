@@ -1,10 +1,30 @@
 # 十二军团简短交接
 
+## 2026-10-31 人类要求盘点后直接执行：旧档云恢复队列运行中
+
+- 本轮不是再次部署或操作维护。人类最新“盘点完就执行 我要休息了”覆盖已确认旧资料转存/冗余退出；唯一执行根`server-health-20261029/cloud-storage/storage-execute-20261031`，实际进度只看`execution-status.json`及最终`execution-summary.json`。已验证原proof/sidecar的11组旧E归档共21302660716B串行处理；每组完整SHA/两库WAL冷核验→原业务key加密→真实百度上传→全新目录云回取解密→原SHA一致后，才按原保护规则退休旧E源与新派生副本。已完成条目不重传/重删，失败单组挂起继续；protected/PINNED保源。真实大文件转存始终使用该根冻结且逐SHA核验的原V2工具，避免新工具修改与传输竞态。
+- 06:34读回前三组c4f/e2cd/19ea均已真实云恢复且旧E源退休，共3892011357逻辑字节；第四组处理中，不把排队当完成。原raw proof/sidecar、可信manifest及恢复索引D/E均保留；已有独立业务key继续复用，不刷新凭据/造钥匙/建计划，未触碰服务器。最新af/d557私有E及正式367两个不同快照不动。索引未冒人类独立另存或物理新机已验。
+- 两棵旧证据的六个具名cache/packages/bin/obj已通过原预演/逐项限定清理，2806979713逻辑字节；源、必要DLL、报告、失败与数据库保留。原结果freeBefore/freeAfter读的是D盘，不冒E实测净增，独立读回六路径不存在/保留DLL全SHA未变。24组其余旧档分类结果没有一组已证可再生：2TEST来源、3事故恢复、19业务归属未全定，均挂起保留，不因名称或年龄清理。
+- 新增显式分卷四叶已冻结，101/101纯合成与Main实际4295032832B分卷/重组、2/3/4GiB偏移标记、整体SHA通过，临时12.89GB已清；旧V2的4GiB拒绝仍保留，原age/V2字节不改。真实age三件263342B兼容及新格式9云文件独立回取/原VerifyReturned解密通过（30.739秒），未输出token/刷新授权或用业务key；合成周转已清。最终`transport-volumes-20261031/main-acceptance.json`已完成，本地提交/正常非强推/远端同a0ddea26630a1caba929e5559c87b6417255ec3f，独立`synchronization.json`已存；仅5叶含登记，其他3份既有dirty文档保留。不冒实际>4GiB云运输、最新367已上云、业务库或物理新机恢复，不重跑应用Release。
+- **后台接续**：4组已完成并退旧E源5298934670B，第5组处理中；原运行session11757，不重启队列。单次`finish-known-archive-queue.ps1`已实际启动session29229，最多等待本轮4小时，无新调度；队列结束后独立读回11组/原proof/可信清单，再用原V2/独立业务key将完成组和af/d557/8ec的可信manifest目录小包加密上云并独立取回逐成员SHA。未发新恢复key、不碰服务器，单组/目录失败仅留证挂起，不能重放成功上传或删除。最终状态以本根`closure-status.json`及`storage-session-summary.json`为准；`catalog-completion.json`未存在前不冒恢复目录已上云。目录脚本独审发现旧回执复用未绑定已修，终审Clear SHA7D8E666D，AST通过；未修改原云工具。后续接班先读这些真实状态，不因本段旧进度重新执行。
+
+## 2026-10-31 05:22 正式367已完成，保留维护；转入云储存续办
+
+- 本批唯一`formal-release-20261031-maintained/release-session-summary.json`已为`deployed-and-independently-verified-maintenance-retained`。最终源码/远端/正式均367d8a8c29c3fcf047c7136bdd823bd0abcb5bc1；原完整Release第三轮8773规则、3145平台、34consumer及完整前端/八阶段成功，不重跑。正式PID152024、schema12；TEST仍a267d32c/PID122400，本批未部署TEST。
+- 原3ffc在停服前拒绝、1535已切换后因30秒精确health等待过早保护性停服，失败原件不改成功。1535最新原备份EF78完整raw proof通过；首次启动已迁移12，不回写旧库。恢复另建当前停服快照E2D4并用原FC3746验证器真实8阶段271280ms通过，raw proof SHA7657b641；首次自定义文件名path_guard拒绝原件保留，同一快照只建标准名称硬链接，没有再造4.3GB副本。120秒有界同候选启动真实通过；原consumer观察同owner新instance/epoch并精确取消部署围栏，原immutable failure保留。
+- `forward-recovery-execution.json`独立记录旧部署会话按本人会话ID撤销/列表消失，以及新恢复会话撤销，不能拿后者代替前者。`forward-recovery-independent-verification.json`实际HTTP/WS/DLL/静态/玩家日志/两库proof/历史指纹与TEST不变通过；`maintenance-retained.json`最后读回ops154配置SHA不变、维护active/entryBlocked及干净部署围栏，专用会话撤销。正式合成业务事件0、数据库回退0、维护写0。人类原01:00—06:00预约维护保持，即时false，不冒称Main新建/拥有维护。禁止复活已完成部署或旧结束维护流程。
+- 人类新增要求：正式部署后继续既有百度网盘管线，分析本地/服务器条件性与周期性上云。续办根`server-health-20261029/cloud-storage/storage-followup-20261031`；原app124583157/密钥/独立保存确认复用，不重复OAuth/生成钥匙/上传已完成组，不新建自动计划。新两份367快照均略超当前4GiB单密文上限，需后续具名分卷/完整重组验收，不能放宽guard或当发布门槛。
+- 云续办已真实收束：af/d557均由原云manifest独立取回私有E、原key解密/全SHA通过，同源冷恢复证明复用；两具名服务器tar共6624556276B已退休，原proof/SHA/失败与最新两组367保留，最后系统盘余10595561472B、/www仍约4.65GB，两服PID不变、维护true。14个新下载密文周转文件6626192139B已退出，E保完整原档；不冒这是原有空间净清理。D旧r31/785六可再生叶939969842B已退，D实余约4.87GB，源/Git/Fixtures/DB/失败/当前热构建和包保留。`storage-session-summary.json`/`independent-final-readback.json`为真实完成依据；新恢复索引D/E双存，尚不宣称人类另存或物理新机已验。
+- `storage-policy-assessment.json`及STORAGE-GOVERNANCE新节给出条件性/周期性方案，未开新调度或正式自动删除。10/30旧盘点35归档约28.62GB、11组21.30GB仅元数据资格；旧证据先去可再生内容、约21.68GB混合恢复树逐组分类，不直接上云活库/在线素材。下一片是>4GiB版本化分卷与完整重组/损坏/恢复验证，当前未实施/未验收；不抬guard，不重传已完成三组或复活本次部署。
 
 ## 2026-10-31 正式服部署进行中，明确保留维护
 
-- 人类本批仅“部署正式服 不解除维护”；无论成功失败都不调用结束维护，TEST不部署。新批唯一目录`formal-release-20261031-maintained`，不重放10/30失败或任何旧定时事务。真实准备：正式af37454/PID83917、维护true、活动/房间0，系统盘约11.9GiB；TEST a267保持不动。
-- 旧检查卡在requests回表，已补元数据覆盖索引并43/43专项通过；一致独立副本7条历史异常保留，冷查询仍9.442秒，预热4.285/4.933秒，不能宣称原生完整检查通过。活库未改、未停服/切换。完整Release与现场原生检查待办，所有历史/最新数据和原始proof仍必须保全；更新日志按af至本批最终提交累计生成，不使用中间包。
+- **04:02新进度**：QA-only共享清理修复真实RED2/2及cleanup＋实际Tutorial全类18/18均已完成（包括原显式付费正文与teardown、可达锁第8次仍报错），Main全diff/监督已复核，三叶已提交367d8a8c29c3fcf047c7136bdd823bd0abcb5bc1；不由此追认原失败。原干净自有r31b正常switch367后第三轮原入口完整Release运行中，session88849、根complete-release-r3.log、唯一证据r30/pkg/verification-evidence/367d8a8c29c3fcf047c7136bdd823bd0abcb5bc1/20261030T200159Z-c354110d4cac40389ba68a78fbb07c20。root summary/冻结/发布绑定已改367，仍未qualified/推送/停服/切换；维护保留，TEST不部署。不要运行被拒绝/未创建的断点脚本，不复活下方f79/785失败或结束维护。
+- **最新状态覆盖下方进行中叙述**：第二轮f79原入口Release已失败退出，8773规则过、平台3137/3138，唯一TutorialResponseLesson显式付费用例Dispose删除matches.db遭共享锁；不把teardown错误解释为原正文已过。Main核原TRX/保留466944B合成库，host退出后可独占读；原锁owner未知，CS/csproj/Build/global的785→f79 diff为空但不拼Release。agent仅获QA清理helper/Tests两叶lease，原不可达no-delete句柄真实RED2/2失败；在原Windows可重试IO分支加GC机会，不等finalizers、不改8次/原异常/产品Dispose，focused清理与实际Tutorial待回。尚未qualified/推送/停服/切换，真实失败与根cleanup-failure-inspection.json保留；维护继续保留。冻结后提交并原入口完整Release，可正常switch干净自有r31b到新提交，不复用失败门禁。
+- 人类本批仅“部署正式服 不解除维护”；无论成功失败都不调用结束维护，TEST不部署。唯一目录`formal-release-20261031-maintained`，不重放10/30或旧定时事务。正式仍af37454/PID83917、维护true、活动/房间0；运营version154为已有01:00—06:00预约维护，即时false，不冒称Main新开维护。TEST a267/PID122400保持不动。
+- requests缺accepted覆盖而回表，43/43专项通过。独立一致副本quick_check/7→7通过，冷12.438→9.442秒、预热4.285/4.933秒。安全审批首次拒绝在线DDL后，人类明确“允许维护期间限定建索引并继续部署”；持原部署锁在活库仅建该非唯一索引5.544秒，schema0/业务行/原进程/维护不动，专用会话已撤销。随后旧进程真实两次native39/verified=true/none，4.911/4.106秒，14计数、全部实际房间与双lease0、平台revision夹验43268一致；只取消本次临时probe、未消费许可。原13条未结束历史/7孤儿/1waived/1quarantine/3已过期响应按精确指纹保留，不清理、不补0。
+- 首候选7853ad5b原完整Release规则8773、平台3138及排空真实过；前端因Git CRLF改变多行类型声明指纹失败。分段续验被审批拒绝、脚本未创建也未执行，不拼接Release。只给该源新增`.gitattributes eol=lf`，最终本地候选f79f65a2795c0797dc413124156e158fc8f7be97；新干净r31b检出已原指纹/11声明/7consumer/10负例复验通过，原断言不改。原入口第二轮完整Release正在运行，session21057；规则8773/8773已过，平台进行中。证据`r30/pkg/verification-evidence/f79f65a2795c0797dc413124156e158fc8f7be97/20261030T190230Z-780d70bf367447c0bda0ccf93e0df9b1`，根`complete-release-r2.log`；尚未qualified/推送/停服/切换。
+- 后续只消费本批`release-session-summary.json`及现有四步：完整包成功后qualify-and-publish、freeze-maintained-release、invoke-maintained-stage execute/verify、finish-retained-maintenance。脚本绑定f79/r31b、实际11→12契约，旧失败不可改成功；旧TEST不必同包、不部署。维护始终保留，正式禁止合成业务事件，最新停服两库/WAL及持久raw proof、独验全部仍必需。只读peer已发现并修正fresh root先替换再替op的绑定顺序，其余无新增具体阻断。原EOL失败、审批拒绝、probe-r1进程未启动失败等原件保留。
 
 ## 2026-10-31 镜像分段QA完成，同产品3132＋独立2项映射资格
 
@@ -45,7 +65,6 @@
 - 来源6叶green-r2与Main最终focused通过；实际组件回调、Vue监听和原请求协调器双向交错，四页隐藏自动读取0、晚包拒收；仅合成无网络，不冒浏览器/真机/线上流量收益。Main恢复原loading/alert语义，并迁移旧裁判/通知/信誉夹具到真实新状态/模块，保17通知谓词/5组及新增hidden/style/未知bind拒绝，裁判失效拒新操作。
 - 原正常前端链已按有效前段＋后续完成，最终types及双631模块构建退出0；原裁判/通知/信誉/牌库旧夹具失败与一次编排数组越界保留，逐个迁移真实依赖，不冒单轮npm全绿。最后原私有牌库30/30，workbench A-B-A合并掉中间B读，但仍要求旧读settle后真正fresh最终A、不接旧401；detail原3读/两旧拒收仍在。唯一`tournament-visibility/acceptance.json`，源码同步只看同根synchronization。上一C# b21fdc80完整平台3093不重跑/冒本片Release。Gallery14叶、opening、弃库规则等未完资格独立保留；未连接/写两服或维护。
 
-
 ## 2026-10-30 无关保存的赛事正文重读：本地验收完成
 
 - 沿人类“检测并处理无谓占用/持续推进”的本地授权，P3仅扩既有CommittedTournamentReads派生状态，不改库格式/权限或做部署。真实SaveAlternateArtProduct旧RED：同hash两参赛者解码2次；单次Save994280B/12.370ms、独立整个Prepare91800B/0.413ms，仅小合成夹具、不把整保存成本算赛事。原RED与监督失败证据保留。
@@ -68,12 +87,34 @@
 - 完整规范化/验证和事实对照的3次读取50819136→38009792B（约25.2%），不是完整事务/峰值内存/线上时延承诺，首次线上异常因果仍未闭环。完整性能守卫、P0—P4/P1及任务路由通过；npm启动PATH失败和一次相对初始化路径失败保留，后用绝对路径与官方CLI完成，不改门禁。唯一`server-health-20261029/offline-season-due-20261030/acceptance.json`；源码同步见同根synchronization，不冒Release/部署。
 - 下一项按需更新已开始源追踪：画廊编辑入口没有向全员发送完整图库；全员强推正文暂未证实。当前已定位GameBoard每次挂载都GET完整公开异画、图鉴挂载同时读图库与展示目录；需继续核实际消费者/重复字段/失效边界后形成限定修复，不删内容、不延迟后台可靠保存或鉴权/隐私/消息。
 
+## 2026-10-30 读取归因后续：精确UTF8方案获批，后续排按需更新
+
+- `offline-season-due-20261030/r1/r2`各3项真实合成探针通过，确认GetString/对象还原/gzip较重，现有SHA已分块。三codec均只含Normalize不含完整Validate；同DLL4MiB对照精确UTF8缓冲约少26%分配，直接两遍流更慢，不能冒权威读取或线上故障已修。人类已明确批准限定本地读取修复/对抗，不部署；两叶执行范围仅TransactionalStorage及SeasonRefreshIncidentRegressionTests，Main独审与完整平台待最终源，勿重跑0c532旧3017冒新资格。
+- 后续新要求已受理：当前任务结束后检查画廊等后台变更为何造成未查看用户的数据展开、全员刷新或无关索引重建。可靠保存、对局和鉴权/隐私/消息时效不削弱，不预设每条现有路径都有浪费；先查真实触发/消费者和现成证据再改。共享构建串行、旧规则9叶/开局4叶与Gallery各自回执独立保留，未完不得混发布。
+
 ## 2026-10-30 正式故障离线续办：赛季空检查限定优化已本地验收
 
 - 人类明确批准：仅同SQL事务、完整core字节SHA及原可信锚一致、赛季无需处理时复用已提交状态；本地实现验收，不部署。Main两产品叶沿既有广播锚复用，不另造持久化/恢复体系；只读预筛选不能授权返回，SQL强校验后再次确认。到期/租约、真实结算、身份迁移、嵌套事务、冷锚、变更及损坏仍原完整路；不清保护、不沿用无法验证的旧鉴权。
 - 唯一`server-health-20261029/offline-season-20261030`：初始6项复现通过、真实空检查RED保留；最终56项重点通过（15项新QA），同DLL无过滤完整平台3017/3017、0失败跳过，受监督临时资料自动回收。原修复顺序完整测试因独审重排而主动取消、无完成TRX，不冒成功。最终重排DLL7998D21C…/平台QA435CDF52…；独审最终4叶哈希吻合、架构/P1边界和原性能链均过。本机cmd启动配置丢Node PATH的两个失败保留，第三次同npm官方入口/PowerShell shell通过，不改产品或门禁。组合Batch合格而非Release；源码同步只看同根synchronization.json真实结果。
 - 同DLL、同4MiB可压缩合成内容4次真实事务，暖检查428832B/强制冷路68321040B分配；4MiB随机内容暖153736B/8.6–8.9ms，冷25732528B/54.5ms。冷暖均无持久页写，core修订/摘要、镜像及lease不变；不是实时堆大小、正式性能或物理OOM。新注入验证same/newer故障、业务health读取/鉴权一致与真实重读恢复，未冒HTTP端到端。另一实例两向改deadline、撤会话、缺DB/坏body/hash及新锚分配故障均已过。
 - 仅消除已核实的“尚无需处理”重建；到期/抢不到租约仍完整高分配路径，原15:14首故障分配栈仍缺，不能据这片宣称线上中断根治。正式/测试服务、维护、数据、转存及线上取样变化0。旧开局4叶/多张弃库9叶继续冻结，不与本片冒共同验收或上线。
+
+## 2026-10-30 紧急优先：人类报告正式服多人同时断服务，仅只读定位，未重启
+
+- **诊断校正/当前边界**：独审证明health并非绕过全部平台检查，它也检查同一已提交GameplayReads；不能据旧的不同时间采样冒“永久Mark锁死且health漏报”。17:12:37同瞬间/同端口owner PID83917配对：health200/无效非玩家凭据GET auth/me401，均3–4ms，未建账号会话，证明当时这类读取可用而非全业务已恢复。源码另有可恢复后台事务失败发布Unavailable、以后重新发布有效bundle的路径；16:33数值窗明确platform.failure.season-finalization=1，与OOM标记同窗，支持该方向但尚无首次分配/内层错误栈，不能冒确证因果或真实换季发奖。phase=platform/attempts0是缺诊断的默认值，不能当从未调用SQLite。唯一formal-incident-summary.json revision2保原初稿与所有原证据，初始health无平台检查/已证永久锁死假设明确被反证；没有恢复/重启/关维护/清保护。后续只做离线代表性复现，停止继续线上重采样，不拿后出现OOM解释15:14更早错误。
+
+- 人类明确测试服无问题，要求不能影响正常服务并查正式故障；无需再索取未截到的截图。所有备份SFTP已于15:41结束，后续云上传/回读/解密均本地→网盘，本轮两组完整云恢复及周转清理已完成。暂停新的正式重I/O/搬运，不能拿当前health200说用户无故障。
+- 16:38一次轻读：正式仍af/F41B7C81/PID83917，与早晨DLL一致；Nginx与进程active/NRestarts0。formal本机health200约5.92ms、公网health200/首页200，CPU约99.25%idle/MemAvailable1.67GB；cgroup max3GiB、OOM/kill/max事件0。此样本不证明之前无资源尖峰或业务恢复。
+- 近期有界journal含999条storage_unavailable/phase=platform/SQLite none/attempt0，Nginx也证排位/牌库/会话等503，WS鉴权/状态恢复出现同类异常。最早按升序查到15:14:26平台503；16:33:21仅有System.OutOfMemoryException类型标记、无原始触发栈，**不能把后者冒为更早故障根因**。af源码MarkRollbackViewUnavailable会永久封闭_data与已提交鉴权读取；已定位保护拒绝机制，最初触发分支尚未完整证实，不能伪称已证明数据库损坏、供应商宕机或转存完全无影响。
+- 唯一当前证据沿`server-health-20261029/cloud-storage/storage-execution-20261030/formal-*.json`。早SFTP15:17晚于首503，但更早归档SHA读取也消耗过共享磁盘，仍不能无证排除资源放大；未搬/写/删活库、未改两服/维护。当前人类是诊断请求，**没有执行重启、切版、清保护、旧DB回写或强退活局**。后台来源只读独审已发，旧开局4叶与另一规则9叶继续冻结；现场恢复需明确权限和活动/最新数据边界，不重复全量压测或盲重启。
+
+## 2026-10-30 午后存储执行：D空间已恢复，最新两组云副本另线推进
+
+- **最终完成**：af/d557约6.62GB原停服归档各7件云上传/独立Restore、同钥解密与两库/WAL原指纹/结构/quick_check全部通过；唯一storage-session-summary currentBatchCompleted=true。40件本轮新建周转副本40287927042B已退出，小型原proof/manifest/回执留；服务器两原件已16:25只读核存在及侧证一致，根余13272420352B，本轮服务器删除0。原8ec本地完整tar不动，未造当前实时备份/自动任务或新key。恢复索引D/E双存，非秘密SHA bc4fe8914cb1ce8b7cbb59038fb7b04b41af35e8cd80cc87fefb3119c825e186；人类独立密钥沿原确认，新索引未冒已被人类另存。临时密钥finally清除。旧阶段失败保留，源码/两服/维护不动，不能因回到旧计划再传同两组。
+
+- 人类在评估后“按序持续推进”。仅退出24个明确旧bin/obj，9761247409逻辑字节；24目标独立不存在核验，D余约11.46GB。原失败/日志/数据库、当前mm30/log30/r30与源码/共享依赖保留。又绑定既有8ec完整恢复＋当前8件原云对象fsId/分片，退出7件本地重复age共3201493120B；E原完整tar、原proof/可信清单与业务钥匙都在，不重传旧成功组、不重复退休服务器源。
+- 唯一`server-health-20261029/cloud-storage/storage-execution-20261030/storage-session-summary.json`指实际分组云状态。af/d557服务器最新两组只增云副本不删服务器；原复制器有限超时留前缀续接，首组完整后可先加密上传，不等第二组。必须真实独立Restore、原业务钥匙解密和DB/WAL原指纹/结构核验后才写完成，传输中不是恢复成功。服务/维护/活库和线上统计变化0，本轮不部署。
+- 两个产品子任务（多张弃库终局、开局双端时限/骰子避让）已各自冻结交回，不能借存储进展冒Main整合验收或上线；源码改动继续保留。旧混合测试数据/恢复资料逐组分类，不能将46GiB temp或20GiB历史恢复树整体当冗余删。真实删除与回收数字不重复计算今晨或旧批次。
 
 ## 2026-10-30 日志来源/弃牌同条批已通过Main组合验收，不部署
 

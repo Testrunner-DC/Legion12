@@ -23,6 +23,7 @@ const deploymentPath = value => value
 const normalizeMoraleCatalogCard = value => value
 const normalizeCardDimensions = value => value
 const withProductInclusions = value => value
+const productLabelsByBaseCardId = new Map()
 const productInclusionsByCardId = new Set(['S01-CARD', 'S01-VARIANT'])
 const cardArchiveAssets = []
 const lookupDeckCard = value => ({ id: value.cardNo, number: value.cardNo, cardNo: value.cardNo,
