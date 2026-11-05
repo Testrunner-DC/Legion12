@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261106-fictitious-chalice-triggered-presentation",
+  "date": "2026-11-06",
+  "audience": "players",
+  "title": "虚构的圣杯触发记录与卡图展示",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "虚构的圣杯触发天灾造成伤害时，会同时记录对应卡效并播放正确的卡图展示；同类由圣物触发的天灾伤害沿用相同的记录与展示规则。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs", "服务端WebSocket/TwelveLegions.Tests/ExtendedCardEffectsTests.cs", "服务端WebSocket/TwelveLegions.Tests/PublicEnterOwnTargetRevalidationTests.cs"]
+    }
+  ]
+}
