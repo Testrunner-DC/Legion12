@@ -62,7 +62,9 @@ if($statements.Count -ne 4){throw 'READER_LIBRARY_NOT_FOUR_FUNCTIONS'}
 $result=[ordered]@{}
 foreach($node in $statements){
  if($node -isnot [Management.Automation.Language.FunctionDefinitionAst]){throw 'READER_LIBRARY_HAS_EXECUTABLE_STATEMENT'}
- $result[$node.Name]=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($node.Extent.Text)))
+ $sha=[Security.Cryptography.SHA256]::Create()
+ try { $result[$node.Name]=[Convert]::ToHexString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($node.Extent.Text))) }
+ finally { $sha.Dispose() }
 }
 $result | ConvertTo-Json -Compress
 `],{encoding:'utf8',windowsHide:true,timeout:15000,maxBuffer:65536,env:{...process.env,
