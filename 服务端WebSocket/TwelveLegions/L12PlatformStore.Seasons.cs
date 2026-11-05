@@ -203,6 +203,7 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public string UpdatedBy { get; set; } = "系统迁移";
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public string? RankedBroadcastDisableReason { get; set; }
         public DateTimeOffset? ActivatedAt { get; set; }
         public SeasonActivationPlanRow? ActivationPlan { get; set; }
         public DateTimeOffset? DrainingAt { get; set; }
@@ -481,6 +482,8 @@ public sealed partial class L12PlatformStore
                 row.Name = normalized.Name;
                 row.EndsAt = normalized.EndsAt;
                 row.Configuration = CloneSeasonScope(normalized.Configuration);
+                row.RankedBroadcastDisableReason = normalized.Configuration.Ranked.BroadcastEnabled
+                    ? null : normalizedReason;
                 row.Revision++;
                 row.UpdatedBy = actor.Username;
                 row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -492,6 +495,8 @@ public sealed partial class L12PlatformStore
                 row.StartsAt = normalized.StartsAt;
                 row.EndsAt = normalized.EndsAt;
                 row.Configuration = CloneSeasonScope(normalized.Configuration);
+                row.RankedBroadcastDisableReason = normalized.Configuration.Ranked.BroadcastEnabled
+                    ? null : normalizedReason;
                 row.Revision++;
                 row.UpdatedBy = actor.Username;
                 row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -606,6 +611,8 @@ public sealed partial class L12PlatformStore
             row.Revision++;
             row.UpdatedBy = actor.Username;
             row.UpdatedAt = DateTimeOffset.UtcNow;
+            row.RankedBroadcastDisableReason = normalized.Configuration.Ranked.BroadcastEnabled
+                ? null : normalizedReason;
             var current = _data.SeasonDefinitions.Single(item => item.LifecycleStatus == "active");
             current.NextSeasonId = row.SeasonId;
             SyncPendingGradientFromDraft(current.SeasonId, row.Configuration.Ranked);
@@ -1182,7 +1189,10 @@ public sealed partial class L12PlatformStore
 
             var incomingScope = ToSeasonScopeView(draft.Configuration);
             var incomingRanked = CloneSeasonScope(draft.Configuration).Ranked;
-            EnsureRankedBroadcastDisableInstruction(incomingRanked.BroadcastEnabled, normalizedReason);
+            var broadcastReason = incomingRanked.BroadcastEnabled
+                ? normalizedReason
+                : draft.RankedBroadcastDisableReason ?? normalizedReason;
+            EnsureRankedBroadcastDisableInstruction(incomingRanked.BroadcastEnabled, broadcastReason);
             var previousOperations = ToPayload(operations);
             // Finish validation and construction before the first mutable season write. The nested
             // transaction savepoint remains the authority for failures from later reconciliation/storage.

@@ -249,7 +249,7 @@ public sealed class SeasonCutoverSettingsAndFinalPopulationTests
             next.Revision, seasons.OperationsVersion, Context("preview-next"));
         Assert.True(preview.Valid);
         return store.ApplySeasonDefinition(admin, next.DefinitionId, preview.Normalized,
-            next.Revision, seasons.OperationsVersion, preview.PreviewToken, "保存下赛季全部设置",
+            next.Revision, seasons.OperationsVersion, preview.PreviewToken, "保存下赛季全部设置；关闭排位广播",
             Context("save-next")).Definition;
     }
 
