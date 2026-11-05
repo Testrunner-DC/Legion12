@@ -1819,7 +1819,19 @@ public sealed partial class L12GameEngine
         if (!L12ActiveDisasterRules.RelicEffectUseDamagesMaster(State.ActiveDisaster?.CardId)
             || source.CardType != "artifact" || trigger is "disaster") return;
 
+        var hpBefore = State.Players[controller].Hp;
         DamageMasterNonLethalFromDisaster(controller, 1, "〈虚构的圣杯〉：发动圣物效果");
+        var actualDamage = hpBefore - State.Players[controller].Hp;
+        if (actualDamage <= 0 || State.ActiveDisaster is not { } chalice) return;
+
+        // The damage fact above is authoritative, but it is not itself a card
+        // presentation.  Register the continuous disaster as the producer so
+        // every relic entry path gets the same player log and card animation.
+        // Do not use the relic as producer: the triggered card is the Chalice.
+        AddPresentationEventByProducerIdWithPlayerLog(
+            "effect-trigger", controller,
+            $"〈{chalice.Name}〉触发：〈{source.Name}〉发动圣物效果，主宰受到 {actualDamage} 点非致命伤害",
+            chalice.CardId, sceneId: null, playerLogData: null, chalice);
     }
 
     private L12StackItem PushEffect(int controller, L12CardInstance source, string trigger, string text,

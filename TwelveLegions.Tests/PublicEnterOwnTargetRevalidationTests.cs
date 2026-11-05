@@ -160,8 +160,11 @@ public sealed class PublicEnterOwnTargetRevalidationTests
         Resolve(game, target.InstanceId);
 
         Assert.Equal(hpBefore - 1, player.Hp);
-        Assert.Single(game.State.Events,
+        Assert.Contains(game.State.Events,
             entry => entry.Text.Contains("虚构的圣杯", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S01-DS08")
+            && entry.Text.Contains("发动圣物效果", StringComparison.Ordinal));
         Assert.Single(game.State.EffectStack,
             item => item.SourceInstanceId == source.InstanceId && item.Trigger == "enter");
     }
