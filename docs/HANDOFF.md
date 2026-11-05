@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-11-06 部署标准流程修正（c27a9e29）
+
+- 正式部署脚本在 `systemctl start` 后先等待同一提交的本机 `/health` 有界通过，再读取重启后的排空 owner／epoch／围栏；避免启动瞬时拒绝被误记为人工对账阻断。对应回归断言已加入 `scripts/test-l12-deploy-behavior.ps1`。
+- `docs/DEPLOY-HK.md` 固化容量策略：预检把新快照、发布／解包临时空间和安全余量合并计算；全部无活动版本、未决失败或恢复引用的完整旧快照均列入 E／云冷存转存候选，不限于最旧一组。逐 SHA／大小／proof／回执核验成功后才退休服务器压缩包，校验、proof、失败证据和最新两组保留。
+- 本批源码与文档已提交并推送 `origin/main`：`c27a9e29`。未触发正式部署；线上仍以已核验的 `e8780631…` 为准。完整行为夹具在既有 malformed commit 负例的 PowerShell/Git 错误处理处中断，新顺序静态断言及 `git diff --check` 已通过，不能冒称全套夹具绿。
+
 ## 2026-11-06 云存储节省管线自动化落地
 
 - `Invoke-L12CloudStoragePipeline.ps1` 默认仅生成 D 盘计划收据，`Apply` 才调用既有百度 API 上传与独立回读；源文件退役同时受策略条目和 `-AllowSourceRetirement` 双重保护，云证明不完整或失败均保留源并写失败收据。
