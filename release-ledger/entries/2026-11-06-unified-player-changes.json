@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-06-unified-player-changes",
+  "date": "2026-11-06",
+  "audience": "players",
+  "title": "对战表现、排位广播与响应可见性整合",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对战中的主宰受击、卡牌落位和连续效果演出统一使用权威结果与单一视觉归属，减少重复卡面和错误受击表现；聊天入口在对战界面保持可达。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue",
+        "opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs"
+      ]
+    },
+    {
+      "category": "ranking",
+      "text": "排位历史荣耀按统御者、始乱者、织命者、代行主君、混沌领主、守望天士及最强主宰编号稳定排序；排位广播关闭时要求明确记录停用理由，赛季配置与广播状态保持一致。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "对手响应提示与公开目标信息沿权威来源展示，避免把可见时点误判为卡效或向错误接收者公开；相关发动与提示流程保持原有规则。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/SocialPopover.vue",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-06-unified-internal-changes",
+  "date": "2026-11-06",
+  "audience": "internal",
+  "reason": "整合正式服24434603基线与当前已验收修改，补齐发布门禁、回归证据和默认Plan-only云存储编排；不改变线上数据或云端任务状态。",
+  "paths": [
+    "TwelveLegions.Tests/BattlePlayerCombatPresentationTests.cs",
+    "TwelveLegions.Tests/PublicEnterOwnTargetRevalidationTests.cs",
+    "TwelveLegions.Tests/RankedIntegrityActionsTests.cs",
+    "TwelveLegions.Tests/RankedPlatformTests.cs",
+    "docs/BUGFIX-REGISTRY.md",
+    "docs/HANDOFF.md",
+    "docs/STORAGE-GOVERNANCE.md",
+    "docs/TASK-LEDGER.md",
+    "opcgpro-vue/scripts/check-ui-contracts.mjs",
+    "opcgpro-vue/scripts/test-combat-3d-ownership-20261025.mjs",
+    "opcgpro-vue/scripts/verify-chat-ui.mjs",
+    "ops/windows/Invoke-L12CloudStoragePipeline.ps1",
+    "ops/windows/Register-L12CloudStorageTask.ps1",
+    "ops/windows/cloud-storage-policy.example.json",
+    "scripts/test-l12-cloud-storage-pipeline.ps1"
+  ]
+}
