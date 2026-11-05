@@ -125,7 +125,7 @@ try {
     & git -C $bindingRoot config user.email 'synthetic@example.invalid'
     $bindingPaths = @('docs/HANDOFF.md','docs/TASK-LEDGER.md','docs/BUGFIX-REGISTRY.md',
         'docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md',
-        'ops/windows/deploy-l12.ps1','scripts/test-l12-deploy-behavior.ps1',
+        'ops/windows/deploy-l12.ps1','ops/server/deploy-l12-release.sh','scripts/test-l12-deploy-behavior.ps1',
         'server.cs','opcgpro-vue/src/net.ts','release-ledger/entry.json','global.json',
         'appsettings.json','ops/server/deploy-l12-release.sh','docs/ARCHITECTURE-LOCK.md',
         'ops/qa/not-admitted.mjs')
@@ -165,7 +165,7 @@ try {
         $bindingHead = (& git -C $bindingRoot rev-parse HEAD).Trim()
         $expectedBinding = $bindingPath -cin (@('docs/HANDOFF.md','docs/TASK-LEDGER.md',
             'docs/BUGFIX-REGISTRY.md','docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md',
-            'ops/windows/deploy-l12.ps1','scripts/test-l12-deploy-behavior.ps1') + $qaBindingPaths)
+            'ops/windows/deploy-l12.ps1','ops/server/deploy-l12-release.sh','scripts/test-l12-deploy-behavior.ps1') + $qaBindingPaths)
         Assert-True ((Test-L12AcceptedApplicationBinding $bindingRoot $bindingBase $bindingHead) -eq $expectedBinding) "Wrong application binding: $bindingPath"
         Assert-True (-not (Test-L12AcceptedApplicationBinding $bindingRoot $bindingHead $bindingBase)) 'Non-ancestor binding accepted.'
         $bindingCases += 2
@@ -509,6 +509,12 @@ stop_service_and_confirm
     $finalOpen = $serverDeploySource.IndexOf('if cancel_restarted_drain "$commit"')
     Assert-True ($finalFenceRemoval -ge 0 -and $finalFenceRemoval -lt $finalOpen) `
         "最终沙盒围栏没有在 exact cancel/Open 业务成功线性化之前严格清除。"
+    $restartHealthFunction = $serverDeploySource.IndexOf('wait_for_restarted_local_health()')
+    $restartHealthCall = $serverDeploySource.IndexOf('wait_for_restarted_local_health "$commit"')
+    $restartDrainObserve = $serverDeploySource.IndexOf('if [[ "$force_activity_excluded" -eq 1 ]]; then')
+    Assert-True ($restartHealthFunction -ge 0 -and $restartHealthCall -ge 0 -and
+        $restartHealthCall -lt $restartDrainObserve) `
+        "重启后没有先等待同一提交的本机健康接口再读取排空围栏，启动竞态可能被误记为人工对账阻断。"
     foreach ($reasonCode in @(
         "TIME_BUDGET_EXCEEDED", "SNAPSHOT_NOT_LATEST", "PERSISTENT_FACTS_CHANGED",
         "BACKUP_CHECKSUM_CHANGED", "SQLITE_INTEGRITY_REJECTED", "SCHEMA_CONTRACT_REJECTED",

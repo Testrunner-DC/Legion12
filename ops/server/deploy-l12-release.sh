@@ -1344,6 +1344,15 @@ observe_restarted_drain() {
     && "$restart_epoch" -gt "$drain_epoch" ]] || { drain_failure_code="CONSUMER_RECEIPT_REJECTED"; return 1; }
 }
 
+wait_for_restarted_local_health() {
+  local expected_commit="$1"
+  # systemd start returns before the application has bound 8083.  Wait for the
+  # same exact commit on the local health endpoint before asking the drain
+  # consumer to observe the restarted fence; a transient connection refusal
+  # must not create a deployment-blocked incident.
+  wait_for_exact_health "$local_base" "$expected_commit" "重启后本机后端"
+}
+
 cancel_restarted_drain() {
   local expected_active_commit="$1"
   local opened_process opened_epoch opened_seal opened_transaction opened_state
@@ -1739,6 +1748,7 @@ new_main_pid="$(read_service_main_pid)"
   || fail "目标服务启动后 MainPID 未精确更换"
 
 failure_stage="verify-restarted-deployment-drain"
+wait_for_restarted_local_health "$commit"
 if [[ "$force_activity_excluded" -eq 1 ]]; then
   restart_fields="$(curl -fsS --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${deployment_control_token}" "${local_base}/api/admin/deployment-drain/status" | node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{const d=JSON.parse(b);if(d.phase!=="open"||d.stopConsumed)process.exit(2);process.stdout.write([d.processInstance,String(d.epoch)].join("\t"))})')" \
     || fail "强制排空重启后状态读取失败"
