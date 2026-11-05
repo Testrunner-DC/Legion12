@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-11-06 云存储节省管线自动化落地
+
+- P3存储治理补齐可执行编排：`ops/windows/Invoke-L12CloudStoragePipeline.ps1`默认只做D盘计划收据，Apply才调用既有百度官方API上传/独立回读；源文件删除同时受策略条目和`-AllowSourceRetirement`双重条件约束，云证明不完整或失败均保留源并写失败收据。
+- 新增显式任务登记器`ops/windows/Register-L12CloudStorageTask.ps1`，默认Plan-only；未提供真实启用策略和任务登记授权，本批未注册任务、未在线传输、未删除业务源。模板`ops/windows/cloud-storage-policy.example.json`保持禁用/不可直接执行。
+- 语法解析三份脚本0错误；D盘合成测试通过计划收据、Apply退役开关拒绝、源保留和失败收据，E盘只读取既有manifest。测试证据目录按治理规则在结束后清理，未增加长期储存。
+
 
 ## 2026-10-31 正式服发布（本批不解除维护）
 

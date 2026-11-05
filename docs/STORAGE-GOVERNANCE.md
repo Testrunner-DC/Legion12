@@ -66,6 +66,14 @@
 - age1.3.2 ZIP由[官方发布清单](https://github.com/FiloSottile/age/releases/expanded_assets/v1.3.2)固定SHA `F48D8F8F9EBE903AB5027ED067652F2CC1DB94BC206976430133B905DCD8E8C7`，只提取两个便携程序到D。已核整包SHA和实际版本，未宣称额外Sigsum验证。PowerShell直接原生调用重复argv0的本机问题保留；工具统一显式ProcessStartInfo参数。
 - 真实业务恢复密钥及第二份离线托管尚未建立，禁止用合成测试key做业务备份。网盘当前显示约6.7T/14.0T，仅作容量观察，不新增付费资源、自动任务或共享链接。
 
+### 云管线自动化编排（2026-11-06）
+
+- `ops/windows/Invoke-L12CloudStoragePipeline.ps1`把策略预检、源文件字节/SHA绑定、官方API上传、独立下载回读和收据写入串成一个有界流程。默认`Plan`只生成D盘计划收据；`Apply`必须拿到云端`cloudProvenanceVerified=true`及完整回读状态，才能进入源文件退役判断。
+- 源文件只有在策略条目声明`retireSourceAfterCloudProof=true`且调用者额外传入`-AllowSourceRetirement`时才会删除；删除前再次核对字节数和SHA，删除后确认路径消失。任何失败、超时、锁冲突或云端证明不完整都写入`*.failure.json`并保留源文件。
+- `ops/windows/Register-L12CloudStorageTask.ps1`提供显式的Windows任务登记器，默认只登记每日`Plan`任务；`Apply`任务同时要求`-AllowSourceRetirement`。本批没有登记真实任务，也没有发起在线上传、下载或删除。
+- `ops/windows/cloud-storage-policy.example.json`只是一份禁用示例，真实策略必须放在D/E受管路径并填入独立核验的manifest SHA、源SHA和字节数。凭据继续只读E盘私有路径，不自动刷新OAuth，也不把C盘或同步目录当作输出。
+- `scripts/test-l12-cloud-storage-pipeline.ps1`覆盖计划收据、源文件保留和Apply退役开关拒绝；测试只使用D盘合成源及既有E盘清单，不写入E盘。
+
 已尝试正常客户端：许可先超时，后可读登录文本，但两次画面捕获超时、点击geometry不可用、Tab焦点不前进；不绕过安全软件。用户询问后台运行后，按Windows官方前台限制暂停桌面交互，转向官方API接入；本轮服务器/维护/删除/云上传下载均为0。
 
 ## 2026-10-22 稳定测试发布后的单次生成缓存收尾

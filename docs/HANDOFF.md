@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-11-06 云存储节省管线已落地，默认计划模式
+
+- 已新增 `ops/windows/Invoke-L12CloudStoragePipeline.ps1`：策略预检、源字节/SHA绑定、既有百度API上传、独立下载回读和收据串联；默认 `Plan` 不触网，`Apply` 只有在云端回执 `cloudProvenanceVerified=true` 且状态完整时才具备退役判断。
+- 源文件退役受策略 `retireSourceAfterCloudProof` 与调用开关 `-AllowSourceRetirement` 双重保护；删除前后均复核，失败或不确定写 `*.failure.json` 并保留源。凭据仍在E盘私有路径，收据在D盘受管路径，不自动刷新OAuth。
+- 已新增 `ops/windows/Register-L12CloudStorageTask.ps1`（默认每日Plan-only）、禁用示例策略和合成测试。三脚本语法0错误；D盘短生命周期测试通过，在线传输、源删除和真实任务注册均为0。后续只有取得真实启用策略后才可登记计划任务；Apply/源退役仍需单独显式操作。
+
 
 ## 2026-10-31 正式服部署进行中，明确保留维护
 

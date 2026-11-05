@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "status": "template",
+  "description": "Copy this file to a governed D/E policy path, replace the disabled entry with verified manifest/source bindings, then set status to active.",
+  "entries": [
+    {
+      "id": "example-disabled",
+      "enabled": false,
+      "manifestPath": "E:\\Legion12-ColdStorage\\private-baidu-api-124583157\\replace-with-manifest.json",
+      "manifestSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transferDirectory": "E:\\Legion12-ColdStorage\\private-baidu-api-124583157\\replace-with-transfer",
+      "sourceArchivePath": "D:\\GPT\\Legion12\\artifacts\\replace-with-source.age",
+      "sourceArchiveSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sourceArchiveBytes": 1,
+      "retireSourceAfterCloudProof": false,
+      "notes": "A real entry must be independently bound to its manifest SHA, source SHA and byte count before activation."
+    }
+  ]
+}
