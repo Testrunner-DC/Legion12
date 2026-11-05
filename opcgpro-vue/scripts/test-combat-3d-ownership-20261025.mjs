@@ -182,6 +182,18 @@ await test('positive unblocked defense damage recoils the real master once for t
     await f.settle();assert.equal(f.props.sequenceCoordinator.ownsVisualKey('master-1'),false)
   }finally{f.dispose()}
 })
+await test('positive effect damage recoils the real master once without a combat defense event',async()=>{
+  const f=fixture();try{await f.advance();f.apply([{
+    sequence:1,type:'damage',playerIndex:1,text:'对方主宰受到1点效果伤害',cards:[],
+    playerCombat:{eventKind:'master-damage',outcomeCode:'effect',publicReasonCode:'effect-damage',masterDamage:1},
+  }]);await f.advance()
+    const hits=f.animations.filter(item=>item.target===f.master)
+    assert.equal(hits.length,1);assert.equal(hits[0].options.duration,280)
+    assert(hits[0].frames.some(frame=>/perspective\(900px\)/.test(frame.transform)))
+    assert(f.props.sequenceCoordinator.ownsVisualKey('master-1'));await f.settle()
+    assert.equal(f.props.sequenceCoordinator.ownsVisualKey('master-1'),false)
+  }finally{f.dispose()}
+})
 await test('blocked, zero, malformed and non-defense master facts never invent a hit',async()=>{
   for(const event of [masterHit(1,1,'blocked'),masterHit(1,0),
     {...masterHit(),playerCombat:{eventKind:'attack',outcomeCode:'unblocked',masterDamage:1}},

@@ -601,7 +601,7 @@ public sealed class RankedIntegrityActionsTests
             PlacementMaximum = 1,
             BroadcastEnabled = broadcastEnabled,
             Factions = factions,
-        }, "测试历史结算不受广播与段位配置影响", Audit("compact-ranked-config"));
+        }, "关闭排位广播用于测试历史结算不受广播与段位配置影响", Audit("compact-ranked-config"));
     }
 
     private static bool RankedProfileBoolean(L12PlatformStore store, string accountId,

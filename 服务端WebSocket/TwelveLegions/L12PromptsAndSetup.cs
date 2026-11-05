@@ -1814,6 +1814,14 @@ public sealed partial class L12GameEngine
             _ => false,
         };
 
+    private void ApplyFictitiousChaliceRelicEffectDamage(int controller, L12CardInstance source, string trigger)
+    {
+        if (!L12ActiveDisasterRules.RelicEffectUseDamagesMaster(State.ActiveDisaster?.CardId)
+            || source.CardType != "artifact" || trigger is "disaster") return;
+
+        DamageMasterNonLethalFromDisaster(controller, 1, "〈虚构的圣杯〉：发动圣物效果");
+    }
+
     private L12StackItem PushEffect(int controller, L12CardInstance source, string trigger, string text,
         IEnumerable<string>? targets = null, Dictionary<string, string>? data = null)
     {
@@ -1845,13 +1853,9 @@ public sealed partial class L12GameEngine
             DamageMasterNonLethalFromDisaster(controller, 1, "〈无眠之夜〉的持续效果");
         }
         // 〈虚构的圣杯〉监听“圣物效果发动”这一公共事件，而不是只挂在主动效果按钮上。
-        // PushEffect 是登场时、主动、触发式圣物效果共同经过的唯一入口；持续效果不会入栈，
-        // 因而不会在这里被误计为一次发动。
-        if (L12ActiveDisasterRules.RelicEffectUseDamagesMaster(State.ActiveDisaster?.CardId) && source.CardType == "artifact"
-            && trigger is not "disaster")
-        {
-            DamageMasterNonLethalFromDisaster(controller, 1, "〈虚构的圣杯〉：发动圣物效果");
-        }
+        // PushEffect 是直接入栈路径，公开触发候选会在 AddTriggerCandidateToStack 入栈。
+        // 两条路径共用同一判定，持续效果不会入栈，因而不会在这里被误计为一次发动。
+        ApplyFictitiousChaliceRelicEffectDamage(controller, source, trigger);
         var presentationText = ResolveEffectPresentationText(source, trigger, text, data);
         var stackText = data?.GetValueOrDefault("stackText");
         if (string.IsNullOrWhiteSpace(stackText))

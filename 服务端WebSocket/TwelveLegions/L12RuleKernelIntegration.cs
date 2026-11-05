@@ -2364,6 +2364,7 @@ public sealed partial class L12GameEngine
         else State.EffectStack.Add(item);
         RevealSetReactionSourceWhenStacked(candidate);
         var source = FindSource(item) ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        ApplyFictitiousChaliceRelicEffectDamage(candidate.Controller, source, candidate.Trigger);
         AddPresentationEventById("effect-trigger", candidate.Controller, triggerEffectText,
             candidate.Data.GetValueOrDefault("presentationSceneId"), source);
         AddEvent("stack-push", candidate.Controller, $"〈{candidate.SourceName}〉的{stackText}进入同一时点触发批次",

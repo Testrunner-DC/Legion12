@@ -132,7 +132,7 @@ try {
       const popoverBox = await popover.boundingBox(); assert(popoverBox && popoverBox.x >= 0 && popoverBox.y >= 0 && popoverBox.x + popoverBox.width <= viewport.width + 1 && popoverBox.y + popoverBox.height <= viewport.height + 1)
       if (fixtureHasUnread) {
         assert.equal(await popover.getByRole('button', { name: '好友', exact: true }).getAttribute('aria-pressed'), 'true')
-        await popover.getByText('合成好友丙', { exact: true }).waitFor({ state: 'visible' }); await popover.getByText('最新未读', { exact: true }).waitFor({ state: 'visible' })
+        await popover.locator('.social-person').getByText('合成好友丙', { exact: true }).waitFor({ state: 'visible' }); await popover.getByText('最新未读', { exact: true }).waitFor({ state: 'visible' })
         assert.equal(await page.evaluate(() => window.__sent.some(payload => payload.type === 'chatRead' && payload.peerAccountId === 'carol')), true)
         result.latestUnreadOpened = 'carol'
       } else {
@@ -176,7 +176,9 @@ try {
       assert.equal(await page.evaluate(() => document.body.style.overflow), '')
       const box = await popover.boundingBox(); assert(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1)
       if (mode === 'spectator') assert.equal(await page.getByRole('button', { name: '本局对手', exact: true }).count(), 0)
-      await click(popover.getByRole('button', { name: '合成好友乙', exact: true }))
+      const friendButton = popover.getByRole('button', { name: /^合成好友乙/ })
+      await friendButton.waitFor({ state: 'visible' })
+      await click(friendButton)
     }
     if (mode.startsWith('site-')) {
       assert.deepEqual(result.pageErrors, []); assert.deepEqual(result.external, []); assert.deepEqual(result.httpApi, [])

@@ -143,6 +143,30 @@ public sealed class PublicEnterOwnTargetRevalidationTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "disaster:S01-DS08")]
+    [Trait("L12Evidence", "rule:fictitious-chalice-public-relic-entry")]
+    public void FictitiousChaliceDamagesTheControllerWhenAPublicRelicEntryCandidateStacks()
+    {
+        var game = Create(9210);
+        var player = game.State.Players[0];
+        game.State.ActiveDisaster = Card("S01-DS08", "public-entry-fictitious-chalice");
+        var source = Card("S01-0215", "public-entry-chalice-ankh");
+        var target = Card("S01-0212", "public-entry-chalice-guard");
+        PlaceSource(game, source);
+        player.Field[0][1] = target;
+        var hpBefore = player.Hp;
+
+        QueueEnter(game, source);
+        Resolve(game, target.InstanceId);
+
+        Assert.Equal(hpBefore - 1, player.Hp);
+        Assert.Single(game.State.Events,
+            entry => entry.Text.Contains("虚构的圣杯", StringComparison.Ordinal));
+        Assert.Single(game.State.EffectStack,
+            item => item.SourceInstanceId == source.InstanceId && item.Trigger == "enter");
+    }
+
+    [Fact]
     [Trait("L12Evidence", "entry:public-own-legion-current-faction-cost-paid")]
     public void MoziKeepsThePaidMoraleButDoesNotProtectATargetThatLosesTianting()
     {

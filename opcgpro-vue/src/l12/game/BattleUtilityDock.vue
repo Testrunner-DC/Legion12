@@ -190,7 +190,7 @@ function saveResponseSettings() {
   </aside>
 
   <Teleport :to="landscapeTeleportTarget()">
-    <SocialPopover v-if="showFriends" :anchor="friendsAnchor" :position-anchor="settingsAnchor" :opponent-id="!l12State.spectating ? governance?.opponentAccountId : undefined" :opponent-name="governance?.opponentName" :match-id="l12State.game?.matchId" :opponent-read-only="l12State.game?.phase === 'GameOver' || l12State.leavingRoom" @close="showFriends = false"/>
+    <SocialPopover v-if="showFriends" :anchor="friendsAnchor" :position-anchor="settingsAnchor" :teleport-target="landscapeTeleportTarget()" layer="battle" :opponent-id="!l12State.spectating ? governance?.opponentAccountId : undefined" :opponent-name="governance?.opponentName" :match-id="l12State.game?.matchId" :opponent-read-only="l12State.game?.phase === 'GameOver' || l12State.leavingRoom" @close="showFriends = false"/>
 
     <div v-if="showTools && !l12State.spectating" class="battle-modal-mask" @click.self="showTools = false">
       <section class="battle-dialog tools-dialog" role="dialog" aria-modal="true" aria-labelledby="battle-tools-title">

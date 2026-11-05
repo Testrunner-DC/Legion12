@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Reflection;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -254,6 +255,35 @@ public sealed class BattlePlayerCombatPresentationTests
         Assert.Equal("blocked", defense.PlayerCombat?.OutcomeCode);
         Assert.Null(defense.PlayerCombat?.MasterDamage);
         Assert.Contains(defense.Cards, card => card.InstanceId == blocker.InstanceId);
+    }
+
+    [Fact]
+    public void EffectMasterDamagePublishesOneSafePublicHitFactForEveryViewer()
+    {
+        var game = Game();
+        Ready(game);
+        var damage = typeof(L12GameEngine).GetMethod("DamageMaster",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(damage);
+        damage!.Invoke(game, [1, 1, "测试效果", null, false, false]);
+
+        var eventRecord = Assert.Single(game.State.Events, entry => entry.Type == "damage");
+        Assert.Equal(1, eventRecord.PlayerIndex);
+        Assert.Equal("master-damage", eventRecord.PlayerCombat?.EventKind);
+        Assert.Equal("effect", eventRecord.PlayerCombat?.OutcomeCode);
+        Assert.Equal("effect-damage", eventRecord.PlayerCombat?.PublicReasonCode);
+        Assert.Equal(1, eventRecord.PlayerCombat?.MasterDamage);
+        Assert.Null(eventRecord.PlayerCombat?.AttackerInstanceId);
+        Assert.Null(eventRecord.PlayerCombat?.TargetInstanceId);
+
+        foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1),
+                     game.SnapshotForSpectator(), game.SnapshotForReferee(), game.SnapshotForGm(0) })
+        {
+            var publicEvent = Assert.Single(snapshot.RecentEvents, entry => entry.Type == "damage");
+            Assert.Equal("master-damage", publicEvent.PlayerCombat?.EventKind);
+            Assert.Equal(1, publicEvent.PlayerCombat?.MasterDamage);
+            Assert.Equal("effect-damage", publicEvent.PlayerCombat?.PublicReasonCode);
+        }
     }
 
     [Fact]

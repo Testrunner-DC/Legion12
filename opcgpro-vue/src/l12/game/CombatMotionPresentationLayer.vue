@@ -260,9 +260,15 @@ function animateSurvivor(element: HTMLElement, presentation: CombatPresentation,
 }
 
 function masterDamageValue(event: ActionEvent) {
-  if (event.type !== 'defense' || event.playerCombat?.eventKind !== 'defense'
-      || event.playerCombat.outcomeCode !== 'unblocked') return null
-  const damage = event.playerCombat.masterDamage
+  const combat = event.playerCombat
+  if (event.type === 'damage' && combat?.eventKind === 'master-damage'
+      && combat.outcomeCode === 'effect') {
+    const damage = combat.masterDamage
+    return typeof damage === 'number' && Number.isFinite(damage) && damage > 0 ? damage : null
+  }
+  if (event.type !== 'defense' || combat?.eventKind !== 'defense'
+      || combat.outcomeCode !== 'unblocked') return null
+  const damage = combat.masterDamage
   return typeof damage === 'number' && Number.isFinite(damage) && damage > 0 ? damage : null
 }
 

@@ -496,17 +496,26 @@ public sealed partial class L12PlatformStore
         string reason, L12AdminAuditContext context)
     {
         EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
-        if (string.IsNullOrWhiteSpace(reason)) throw new L12OperationsConfigException("reason_required", "请填写排位配置变更理由");
+        var normalizedReason = RequireOperationsReason(reason);
         var normalized = NormalizeRankedConfig(value);
+        EnsureRankedBroadcastDisableInstruction(normalized.BroadcastEnabled, normalizedReason);
         lock (_gate)
         {
             _data.RankedConfig = normalized;
             SyncActiveSeasonDefinitionFromRuntime(actor);
             AddAdminAudit(actor, "operations", "ranked-config-apply", "ranked:config", null, null,
-                reason.Trim(), context with { Reason = reason.Trim(), Outcome = "succeeded" });
+                normalizedReason, context with { Reason = normalizedReason, Outcome = "succeeded" });
             Save();
             return ToView(normalized);
         }
+    }
+
+    private static void EnsureRankedBroadcastDisableInstruction(bool enabled, string reason)
+    {
+        if (enabled || reason.Contains("关闭排位广播", StringComparison.Ordinal)
+            || reason.Contains("停用排位广播", StringComparison.Ordinal)) return;
+        throw new L12OperationsConfigException("ranked_broadcast_disable_instruction_required",
+            "排位广播总开关只能在变更理由中明确写明“关闭排位广播”或“停用排位广播”后关闭");
     }
 
     public L12RankedProfileView RankedProfile(string accountId)
@@ -680,7 +689,10 @@ public sealed partial class L12PlatformStore
                         group.Key.Title, winners, HistoricalHonorMasterIdLocked(group.Key.SeasonId,
                             group.Key.Title)), AwardedAt: rows.Max(row => row.ArchivedAt));
                 })
-                .OrderBy(row => row.View.Title, StringComparer.Ordinal)
+                .OrderBy(row => HistoricalHonorTitleOrder(row.View.Title))
+                .ThenBy(row => row.View.MasterId is null ? 1 : 0)
+                .ThenBy(row => row.View.MasterId ?? string.Empty, Comparer<string>.Create(CompareHistoricalIdentifier))
+                .ThenBy(row => row.View.Title, StringComparer.Ordinal)
                 .ThenByDescending(row => row.AwardedAt)
                 .ThenBy(row => row.View.SeasonName, StringComparer.Ordinal)
                 .Take(Math.Clamp(limit, 1, 2000))
@@ -821,6 +833,61 @@ public sealed partial class L12PlatformStore
         "fate" => 2,
         _ => 3,
     };
+
+    private static int HistoricalHonorTitleOrder(string title)
+        => title.Trim() switch
+        {
+            "统御者" => 0,
+            "始乱者" => 1,
+            "织命者" => 2,
+            "代行主君" => 3,
+            "混沌领主" => 4,
+            "守望天士" => 5,
+            _ when title.Trim().StartsWith("最强", StringComparison.Ordinal) => 6,
+            _ => 7,
+        };
+
+    private static int CompareHistoricalIdentifier(string left, string right)
+    {
+        var leftIndex = 0;
+        var rightIndex = 0;
+        while (leftIndex < left.Length && rightIndex < right.Length)
+        {
+            var leftDigit = char.IsAsciiDigit(left[leftIndex]);
+            var rightDigit = char.IsAsciiDigit(right[rightIndex]);
+            if (leftDigit && rightDigit)
+            {
+                var leftEnd = leftIndex;
+                var rightEnd = rightIndex;
+                while (leftEnd < left.Length && char.IsAsciiDigit(left[leftEnd])) leftEnd++;
+                while (rightEnd < right.Length && char.IsAsciiDigit(right[rightEnd])) rightEnd++;
+                var leftSignificant = leftIndex;
+                var rightSignificant = rightIndex;
+                while (leftSignificant < leftEnd - 1 && left[leftSignificant] == '0') leftSignificant++;
+                while (rightSignificant < rightEnd - 1 && right[rightSignificant] == '0') rightSignificant++;
+                var length = (leftEnd - leftSignificant).CompareTo(rightEnd - rightSignificant);
+                if (length != 0) return length;
+                for (var index = 0; index < leftEnd - leftSignificant; index++)
+                {
+                    var digit = left[leftSignificant + index].CompareTo(right[rightSignificant + index]);
+                    if (digit != 0) return digit;
+                }
+                var padding = (leftEnd - leftIndex).CompareTo(rightEnd - rightIndex);
+                if (padding != 0) return padding;
+                leftIndex = leftEnd;
+                rightIndex = rightEnd;
+                continue;
+            }
+            if (leftDigit != rightDigit) return leftDigit ? -1 : 1;
+            var insensitive = char.ToUpperInvariant(left[leftIndex]).CompareTo(char.ToUpperInvariant(right[rightIndex]));
+            if (insensitive != 0) return insensitive;
+            var ordinal = left[leftIndex].CompareTo(right[rightIndex]);
+            if (ordinal != 0) return ordinal;
+            leftIndex++;
+            rightIndex++;
+        }
+        return (left.Length - leftIndex).CompareTo(right.Length - rightIndex);
+    }
 
     public IReadOnlyList<L12RankedLeaderboardEntry> RankedLeaderboard(string? faction = null, int limit = 50,
         string? viewerAccountId = null)

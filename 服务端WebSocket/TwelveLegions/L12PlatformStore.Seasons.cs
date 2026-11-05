@@ -446,6 +446,8 @@ public sealed partial class L12PlatformStore
             if (row.LifecycleStatus == "draft") EnsureSeasonActivationPlanAllowsMutation(row);
             var operations = RequireOperationsConfig();
             var normalized = NormalizeSeasonDefinitionCandidate(row, draft);
+            EnsureRankedBroadcastDisableInstruction(normalized.Configuration.Ranked.BroadcastEnabled,
+                normalizedReason);
             var expectedPreviewToken = CreateSeasonPreviewToken(row, operations.Version, normalized);
             if (string.IsNullOrWhiteSpace(previewToken)
                 || !string.Equals(previewToken.Trim(), expectedPreviewToken, StringComparison.Ordinal))
@@ -593,6 +595,8 @@ public sealed partial class L12PlatformStore
             EnsureSeasonActivationPlanAllowsMutation(row);
             EnsureSeasonDefinitionRevision(row, expectedRevision);
             var normalized = NormalizeSeasonDraft(draft, definitionId);
+            EnsureRankedBroadcastDisableInstruction(normalized.Configuration.Ranked.BroadcastEnabled,
+                normalizedReason);
             var previousRevision = row.Revision;
             row.SeasonId = normalized.SeasonId;
             row.Name = normalized.Name;
@@ -1178,6 +1182,7 @@ public sealed partial class L12PlatformStore
 
             var incomingScope = ToSeasonScopeView(draft.Configuration);
             var incomingRanked = CloneSeasonScope(draft.Configuration).Ranked;
+            EnsureRankedBroadcastDisableInstruction(incomingRanked.BroadcastEnabled, normalizedReason);
             var previousOperations = ToPayload(operations);
             // Finish validation and construction before the first mutable season write. The nested
             // transaction savepoint remains the authority for failures from later reconciliation/storage.

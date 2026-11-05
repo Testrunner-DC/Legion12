@@ -813,6 +813,26 @@ public sealed class RankedPlatformTests
                 new L12AdminAuditContext("ranked-broadcast-invalid")));
     }
 
+    [Fact]
+    public void RankedBroadcastMasterSwitchRequiresExplicitDisableInstruction()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-disable-guard",
+            Guid.NewGuid().ToString("N"), "platform.json");
+        var store = new L12PlatformStore(path);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var original = store.RankedConfig(admin);
+
+        var error = Assert.Throws<L12OperationsConfigException>(() => store.UpdateRankedConfig(admin,
+            original with { BroadcastEnabled = false }, "调整排位计时",
+            new L12AdminAuditContext("ranked-broadcast-disable-guard")));
+        Assert.Equal("ranked_broadcast_disable_instruction_required", error.Code);
+        Assert.True(store.RankedConfig(admin).BroadcastEnabled);
+
+        var disabled = store.UpdateRankedConfig(admin, original with { BroadcastEnabled = false },
+            "关闭排位广播进行维护", new L12AdminAuditContext("ranked-broadcast-explicit-disable"));
+        Assert.False(disabled.BroadcastEnabled);
+    }
+
     private static L12SeasonActivationView ActivateDraft(L12PlatformStore store, L12AccountView admin,
         string seasonId, string name, string reason)
     {

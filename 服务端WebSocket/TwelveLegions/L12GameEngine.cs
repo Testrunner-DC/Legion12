@@ -2544,7 +2544,14 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
-        AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {amount} 点血量");
+        var damageText = $"{player.Name} 的主宰因{source}失去 {amount} 点血量";
+        if (combatDamage)
+            AddEvent("damage", playerIndex, damageText);
+        else
+            AddPlayerCombatEvent("damage", playerIndex, damageText,
+                new L12PlayerCombatPresentation(
+                    EventKind: "master-damage", OutcomeCode: "effect",
+                    PublicReasonCode: "effect-damage", MasterDamage: amount));
         if (player.Hp <= 0)
             SetWinner(1 - playerIndex, $"{player.Name}的主宰因{source}血量降至0");
         if (State.Phase != L12Phase.GameOver)
@@ -2591,7 +2598,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         player.MasterDamageTakenThisTurn += actual;
         TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false,
             declaredSourceItem);
-        AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
+        var damageText = $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害";
+        AddPlayerCombatEvent("damage", playerIndex, damageText,
+            new L12PlayerCombatPresentation(
+                EventKind: "master-damage", OutcomeCode: "effect",
+                PublicReasonCode: "effect-damage", MasterDamage: actual));
         if (!fromDisaster && !IsDisasterAuthorityActive())
             QueueS1MasterDamageReactionCore(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource),
                 effectDamage: true, allowDamageTriggeredRelicEffects);

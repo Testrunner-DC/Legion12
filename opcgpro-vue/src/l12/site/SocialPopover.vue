@@ -8,7 +8,7 @@ import { isFriendOnline, onlineFirstFriends } from '../friendListPresentation'
 import ChatPanel from './ChatPanel.vue'
 const FriendHistoryPanel = defineAsyncComponent(() => import('./FriendHistoryPanel.vue'))
 const historyVisible = ref(false)
-const props = defineProps<{ anchor?: HTMLElement | null; positionAnchor?: HTMLElement | null; initialTab?: 'friends' | 'online' | 'opponent'; initialPeerId?: string; opponentId?: string; opponentName?: string; matchId?: string; opponentReadOnly?: boolean }>()
+const props = defineProps<{ anchor?: HTMLElement | null; positionAnchor?: HTMLElement | null; initialTab?: 'friends' | 'online' | 'opponent'; initialPeerId?: string; opponentId?: string; opponentName?: string; matchId?: string; opponentReadOnly?: boolean; teleportTarget?: string; layer?: 'default' | 'battle' }>()
 const emit = defineEmits<{ close: [] }>()
 const tab = ref(props.initialTab ?? 'friends')
 const selectedId = ref(props.initialPeerId ?? '')
@@ -50,8 +50,8 @@ onBeforeUnmount(() => {
 })
 </script>
 <template>
-  <Teleport to="body">
-    <section ref="panel" class="social-popover ui-state-scope" data-l12-social-popover :style="position" role="dialog" aria-modal="false" aria-label="好友与聊天">
+  <Teleport :to="props.teleportTarget || 'body'">
+    <section ref="panel" class="social-popover ui-state-scope" :class="{ 'battle-social-popover': props.layer === 'battle' }" data-l12-social-popover :style="position" role="dialog" aria-modal="false" aria-label="好友与聊天">
       <header><b>好友与聊天</b><button type="button" aria-label="关闭好友与聊天" @click="close(true)">×</button></header>
       <nav aria-label="社交功能"><button type="button" :aria-pressed="tab === 'friends'" @click="tab = 'friends'">好友</button><button v-if="$slots.online" type="button" :aria-pressed="tab === 'online'" @click="tab = 'online'">在线</button><button v-if="opponentId && matchId" type="button" :aria-pressed="tab === 'opponent'" @click="tab = 'opponent'">本局对手</button></nav>
       <p v-if="notice" role="status">{{ notice }}</p>
@@ -74,4 +74,5 @@ onBeforeUnmount(() => {
 </style>
 <style scoped>
 .social-popover{position:fixed;z-index:4750;box-sizing:border-box;display:flex;min-width:0;flex-direction:column;overflow:hidden;padding:12px;border:1px solid #586d74;background:#101b23;color:#ebeee9;box-shadow:0 12px 36px #0009;font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif;font-size:14px}.social-popover>header{display:flex;align-items:center;justify-content:space-between;gap:10px}.social-popover button{min-height:36px;padding:6px 10px;border:1px solid #4a636a;background:#10252d;color:#edf0e7;font:700 13px 'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.social-popover button:focus-visible,.social-popover a:focus-visible{outline:2px solid #e2c368;outline-offset:2px}.social-popover>header>button{width:36px;font-size:20px}.social-popover>nav{display:flex;gap:6px;margin:10px 0}.social-popover>nav>button{flex:1}.social-popover button[aria-pressed=true]{border-color:#d7b661;background:#332c16}.social-content{min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain}.social-friend{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;margin:6px 0;text-align:left;overflow-wrap:anywhere}.social-friend b{color:#f1d180}.social-popover p{color:#a9b7b9;font-size:13px;line-height:1.6}.social-popover a{display:block;margin-top:12px;color:#b9d8d8}.social-person{display:flex;justify-content:space-between;gap:8px;margin-bottom:10px}.social-content :deep(.chat-panel){min-height:220px}.social-content :deep(.chat-messages){max-height:240px}@media(max-height:450px){.social-popover{padding:8px}.social-popover>nav{margin:6px 0}.social-content :deep(.chat-panel){min-height:170px}.social-content :deep(.chat-messages){max-height:110px}}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .social-popover.battle-social-popover){z-index:2147483641}
 </style>

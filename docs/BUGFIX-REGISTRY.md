@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261106-FICTITIOUS-CHALICE-RELIC-ENTRY｜公开圣物效果未触发虚构的圣杯
+
+- 原规则只在 `PushEffect` 入口处理 S01-DS08「虚构的圣杯」。安卡神碑、卡诺匹斯罐一/四、神剑格拉墨、草薙剑、万物统御之戒、八尺琼勾玉、匠神锻造炉和黄金圣甲虫等圣物的公开登场效果会在候选确认后由 `AddTriggerCandidateToStack` 直接入栈，因此绕过圣杯伤害。
+- 将同一判定抽为 `ApplyFictitiousChaliceRelicEffectDamage`，在直接效果入栈与公开候选入栈两个共同入口调用。仅圣物且触发类型不是天灾时扣除1点非致命伤害，持续效果不入栈，保留原有防循环语义。
+- 同类扫描覆盖 S1/S2/ST 圣物目录及公开触发声明、登场计划、主动效果计划。新增安卡神碑公开登场候选回归，现有安卡神碑主动效果回归继续保留。针对性2项、公开登场复验与 ExtendedCardEffects 合计53项均通过，最后一次针对性回归2/2通过。证据位于 `D:/GPT/Legion12/artifacts/chalice-check-final/` 与 `D:/GPT/Legion12/artifacts/chalice-check-wide/`。
+- 修改文件为 `服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs`、`服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs`、`TwelveLegions.Tests/PublicEnterOwnTargetRevalidationTests.cs`。已与 L12-main 沟通，尚未部署或关闭线上 Bug。
+
 ## PERF-20261101-SEASON-EMPTY-ERROR｜空对账错误字段触发赛季终结重试
 
 - 正式服只读证据 `D:/GPT/Legion12/artifacts/server-health-20261101/formal-readonly-health-20261101.json`、`formal-season-state-20261101.json` 和 `formal-season-readiness-20261101.json` 显示：T01 已无活动排位、待结算为0、隔离为0，但 2874 条已应用结算的 `last_error` 为 `''`；赛季终结协调每分钟重复尝试，每次约15—23秒、平台镜像约650MB，并产生最高约10秒锁等待，导致多个后台接口超时；T02 切换因此一直停在 `season_finalization_not_ready`。服务未重启，未改线上数据。
@@ -9310,3 +9317,21 @@
 - 旧共享封面只有整体放大，没有左右独立横移；按人类要求同一DeckCover三张牌增加右+6%/左-6%，中牌不横移。仅精细指针hover/focus生效，旋转/1.08/0.3s、既有几何与稳定选牌身份保持，所有画廊/大厅/好友房/房间/编辑器消费者共用，不新增封面实现。
 - 原HEAD真实右牌外移RED、当前14场/三尺寸零错误、UI361/类型/双base与Main其余8前端链源级接受，Main看两图。原热门双触摸0.800/0.802px两失败保留；仅测量叶补Animation.pending/playState/currentTime，追加7组通过、双触摸样本pending=false/位移0；阈值0.5px不变，未修改产品触摸/滚动，不冒旧一帧原因已证或真机双指拆分通过。
 - 原权限/Node PATH启动失败另记为环境失败，非产品RED；新Main诊断沿D初始化，不笼统声称作者初期所有浏览器temp物理D。唯一deck-cover-fan-20261021/main-acceptance.json绑定3叶/原失败/新报告；后端未变不重跑2121/7999，无部署/维护/统计/线上关单。
+
+## UI-20261106-BATTLE-CHAT-RANKED-HISTORY｜对战好友对话层级与历史荣耀顺序（本地验收，未部署）
+
+- 好友对话：对战工具栏的社交弹层改为沿用现有 `#l12-landscape-teleports` 容器，并使用独立 battle 层级；桌面层级仍高于卡牌详情，移动端在同一容器内高于卡牌详情但保留现有对局遮罩与工具层关系，站点好友入口仍默认传送到 `body`。坐标计算与聊天、权限、隐私和数据请求不变。
+- 历史荣耀：服务端默认返回顺序固定为“统御者、始乱者、织命者、代行主君、混沌领主、守望天士”，随后按主宰编号的自然数值顺序排列“最强主宰”；未知称号稳定置后。前端既有同序排序与移动端渲染保持一致，未改变统计口径、赛季数据或获奖事实。
+- 防回归：`check-ui-contracts.mjs` 361项通过；排行榜历史荣誉视觉验收覆盖1280×900、390×844、360×800，8组称号及主宰编号顺序通过；Vue 类型检查通过；后端 `RankedPlatformTests` 25/25通过。好友对话完整合成脚本覆盖17种桌面、移动、观战、站点布局场景，通过；此前失败根因为测试定位器把带“在线”副标签的按钮按精确可访问名称查找，且未等待好友数据挂载，已修正测试等待与稳定定位。最终证据 `D:/GPT/Legion12/artifacts/qa-20261106/chat-ui-final5`。无部署、无维护、无业务统计写入。
+
+## BATTLE-20261106-MASTER-HIT-PRESENTATION｜主宰受击事实与动画（本地验收，未部署）
+
+- 根因：非战斗 `DamageMaster` 路径只写普通伤害事件，没有安全的 `PlayerCombat` 事实，前端无法可靠区分主宰受效果伤害与普通文本；前端不从文本猜测伤害，故效果伤害没有受击动效。
+- 修复：非战斗主宰伤害统一发布 `master-damage/effect/effect-damage/masterDamage` 公开事实，并同步观战、裁判及 GM 投影白名单；战斗防御仍沿原 `defense/unblocked` 路径，避免重复播放。前端统一消费两类事实，沿现有序列协调器播放一次 280ms 受击演出，不改伤害数值、规则或隐私。
+- 验收：前端主宰受击专项31/31，后端 `BattlePlayerCombatPresentationTests` 13/13，服务端 Release 编译0警告0错误；证据 `D:/GPT/Legion12/artifacts/master-hit-animation-20261106-r4/master-hit-animation.trx`。尚未纳入发布包、未部署、未关闭线上反馈。
+
+## RANKED-20261106-BROADCAST-MASTER-GUARD｜排位广播总开关禁止静默关闭（本地验收，未部署）
+
+- 根因：排位配置和赛季配置都是整份对象保存。旧草稿或无关配置保存可能携带 `broadcastEnabled=false`，服务端随后在 `BuildBroadcasts` 直接阻断新广播；此前公开设置只返回子规则，无法识别总开关已关闭。
+- 修复：排位总开关为关闭值时，`UpdateRankedConfig`、当前赛季应用、下赛季草稿保存和赛季激活均要求变更理由明确包含“关闭排位广播”或“停用排位广播”。普通计时、段位、天灾及其他赛季编辑不再静默关闭广播；明确授权仍可关闭并留下原审计理由。
+- 防回归：新增 `RankedBroadcastMasterSwitchRequiresExplicitDisableInstruction`，验证无明确关闭理由被拒且状态保持开启，明确关闭理由可保存；整组 `RankedPlatformTests` 26/26 通过。证据 `D:/GPT/Legion12/artifacts/ranked-broadcast-guard-20261106/ranked-platform/ranked-platform.trx`。未修改线上配置、未部署。

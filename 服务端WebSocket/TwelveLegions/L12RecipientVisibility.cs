@@ -9,16 +9,17 @@ internal static class L12RecipientVisibility
     private static readonly HashSet<string> PublicCombatKinds = new(StringComparer.Ordinal)
     {
         "attack", "defense", "defense-invalid", "support", "combat", "attack-aborted", "attack-ended",
+        "master-damage",
     };
     private static readonly HashSet<string> PublicCombatOutcomes = new(StringComparer.Ordinal)
     {
-        "declared", "blocked", "unblocked", "supported", "invalid-block", "invalid-support",
+        "declared", "blocked", "unblocked", "supported", "invalid-block", "invalid-support", "effect",
         "defeated", "not-defeated", "aborted", "completed", "unknown",
     };
     private static readonly HashSet<string> PublicCombatReasons = new(StringComparer.Ordinal)
     {
         "attacker-left", "target-left", "choice-unavailable", "context-unavailable",
-        "extra-cost-unpaid", "thunder-roll-failed", "unknown",
+        "extra-cost-unpaid", "thunder-roll-failed", "effect-damage", "unknown",
     };
 
     private static L12ActionEvent ProjectCombatEvent(L12ActionEvent actionEvent)
