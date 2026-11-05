@@ -63,7 +63,10 @@ $result=[ordered]@{}
 foreach($node in $statements){
  if($node -isnot [Management.Automation.Language.FunctionDefinitionAst]){throw 'READER_LIBRARY_HAS_EXECUTABLE_STATEMENT'}
  $sha=[Security.Cryptography.SHA256]::Create()
- try { $result[$node.Name]=[Convert]::ToHexString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($node.Extent.Text))) }
+ try {
+  $bytes=$sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($node.Extent.Text))
+  $result[$node.Name]=(-join ($bytes | ForEach-Object { $_.ToString('X2') }))
+ }
  finally { $sha.Dispose() }
 }
 $result | ConvertTo-Json -Compress
