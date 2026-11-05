@@ -121,7 +121,7 @@ function Read-L12StageCache {
 
 function Test-L12StageEvidence {
     param(
-        [Parameter(Mandatory = $true)][object]$Entry,
+        [Parameter(Mandatory = $true)][AllowNull()][object]$Entry,
         [Parameter(Mandatory = $true)][string]$Label
     )
     if ($null -eq $Entry -or $Entry.passed -ne $true -or [string]::IsNullOrWhiteSpace([string]$Entry.evidenceDirectory)) {
@@ -148,7 +148,9 @@ function Test-L12StageCacheEntry {
     foreach ($name in @('commit','productionBaseCommit','cardAssetsHash','playerReleaseNotesSha256','verifierSha256')) {
         if ([string]$Cache.binding.$name -cne [string]$Binding.$name) { return $false }
     }
-    $entry = $Cache.stages.PSObject.Properties[$Stage].Value
+    $stageProperty = @($Cache.stages.PSObject.Properties | Where-Object { $_.Name -ceq $Stage }) | Select-Object -First 1
+    if ($null -eq $stageProperty) { return $false }
+    $entry = $stageProperty.Value
     return Test-L12StageEvidence -Entry $entry -Label $ReceiptLabel
 }
 
@@ -309,6 +311,20 @@ try {
     $pythonExecutable = $pythonCommand.Source
     $npmCommand = Get-Command "npm.cmd" -ErrorAction SilentlyContinue
     $npmExecutable = if ($null -ne $npmCommand) { $npmCommand.Source } else { "npm" }
+    # npm lifecycle scripts are launched by cmd.exe and need the real Node
+    # installation on PATH, not only the PowerShell command shim.  Some
+    # managed shells resolve npm.cmd but pass a shortened child PATH, which
+    # makes `npm ci` pass while `npm run build` cannot find node/npm.
+    $nodeCommand = @(Get-Command "node.exe" -CommandType Application -ErrorAction Stop |
+        Where-Object { $_.Source -ieq 'C:\nodejs\node.exe' } |
+        Select-Object -First 1)
+    if ($nodeCommand.Count -eq 0) {
+        $nodeCommand = @(Get-Command "node.exe" -CommandType Application -ErrorAction Stop | Select-Object -First 1)
+    }
+    $nodeCommand = $nodeCommand[0]
+    $nodeDirectory = [IO.Path]::GetDirectoryName($nodeCommand.Source)
+    if ([string]::IsNullOrWhiteSpace($nodeDirectory)) { throw '无法确定 Node.js 安装目录。' }
+    $env:PATH = $nodeDirectory + [IO.Path]::PathSeparator + $env:PATH
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "无法读取当前提交" }
     Assert-CleanCommit -ExpectedCommit $commit -Operation "验证或复用发布包"
@@ -483,8 +499,35 @@ try {
     Get-ChildItem -LiteralPath (Join-Path $repoRoot "服务端WebSocket\TwelveLegions") -File -Filter "*.cs" |
         Copy-Item -Destination $isolatedServerSourceRoot -Force
     Push-Location $frontendBuildDirectory
+    $previousNpmScriptShell = $env:npm_config_script_shell
+    # The isolated package below uses absolute npm/node paths. Do not inherit
+    # a host-provided npm_config_script_shell: managed shells may point it at a
+    # wrapper that exits with a non-Windows status before the first script.
+    $env:npm_config_script_shell = $null
     try {
         Invoke-TimedExternal "frontend-npm-ci" $npmExecutable ci --prefer-offline --no-audit
+        # Keep the source package scripts byte-for-byte unchanged for their
+        # contract checks. In the isolated copy only, prefix build with a
+        # PATH assignment so nested `npm run`/`node` commands survive a host
+        # cmd.exe that drops PATH while spawning child scripts.
+        $isolatedPackageJson = Join-Path $frontendBuildDirectory 'package.json'
+        $isolatedPackage = Get-Content -LiteralPath $isolatedPackageJson -Raw -Encoding utf8 | ConvertFrom-Json
+        if ($null -eq $isolatedPackage.scripts -or [string]::IsNullOrWhiteSpace([string]$isolatedPackage.scripts.build)) {
+            throw '隔离前端 package.json 缺少 build 脚本。'
+        }
+        $buildScript = [string]$isolatedPackage.scripts.build
+        $gitCommand = Get-Command 'git.exe' -CommandType Application -ErrorAction Stop | Select-Object -First 1
+        $gitDirectory = [IO.Path]::GetDirectoryName($gitCommand.Source)
+        $pythonDirectory = [IO.Path]::GetDirectoryName($pythonExecutable)
+        $nodeBinDirectory = Join-Path $frontendBuildDirectory 'node_modules\.bin'
+        $pathPrefix = 'set "PATH=' + $nodeDirectory + ';' + $nodeBinDirectory + ';' + $gitDirectory + ';' + $pythonDirectory + ';C:\Windows\System32;C:\Windows" && '
+        if (-not $buildScript.StartsWith('set "PATH=', [StringComparison]::OrdinalIgnoreCase)) {
+            $isolatedPackage.scripts.build = $pathPrefix + $buildScript
+            # Node/Vite reads this generated manifest directly; Windows PowerShell's
+            # `utf8` encoding adds a BOM that makes package/PostCSS JSON parsing fail.
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($isolatedPackageJson, ($isolatedPackage | ConvertTo-Json -Depth 30), $utf8NoBom)
+        }
         $previousClientRelease = $env:VITE_APP_VERSION
         $previousQaSourceRepo = $env:L12_QA_SOURCE_REPO
         $previousQaSourceCommit = $env:L12_QA_SOURCE_COMMIT
@@ -500,7 +543,10 @@ try {
             $env:L12_QA_SOURCE_COMMIT = $previousQaSourceCommit
         }
     }
-    finally { Pop-Location }
+    finally {
+        $env:npm_config_script_shell = $previousNpmScriptShell
+        Pop-Location
+    }
 
     $stagingDirectory = Join-Path $artifactDirectory "staging-$([Guid]::NewGuid().ToString('N'))"
     $releaseRoot = Join-Path $stagingDirectory "release"

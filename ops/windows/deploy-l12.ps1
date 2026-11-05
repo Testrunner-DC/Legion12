@@ -9,6 +9,7 @@ param(
     # including actual upload and cutover after lengthy local preflight.
     [Nullable[DateTimeOffset]]$DeploymentDeadline = $null,
     [Security.SecureString]$DeploymentControlSessionToken = $null,
+    [switch]$AllowActivityDuringDrain,
     [ValidateSet("/opt", "/www/legion12")]
     [string]$ServerArtifactRoot = "/www/legion12",
     [switch]$DryRun,
@@ -155,11 +156,20 @@ function Invoke-GitFetchWithRetry {
 }
 
 function Resolve-L12ProductionBaseCommit {
-    try {
-        $health = Invoke-RestMethod -Uri "https://legion-12.com/health" -Method Get -TimeoutSec 15
+    $health = $null
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        try {
+            $health = Invoke-RestMethod -Uri "https://legion-12.com/health" -Method Get -TimeoutSec 15
+            break
+        }
+        catch {
+            $lastError = $_.Exception.Message
+            if ($attempt -lt 5) { Start-Sleep -Seconds (2 * $attempt) }
+        }
     }
-    catch {
-        throw "无法读取当前正式服版本，不能确定玩家更新日志区间：$($_.Exception.Message)"
+    if ($null -eq $health) {
+        throw "无法读取当前正式服版本，不能确定玩家更新日志区间：$lastError"
     }
     $baseCommit = [string]$health.serverVersion
     if ($baseCommit -notmatch '^[0-9a-f]{40}$') {
@@ -186,7 +196,7 @@ function Test-L12AcceptedApplicationBinding {
     $nonPayloadPaths = @(
         'docs/HANDOFF.md', 'docs/TASK-LEDGER.md', 'docs/BUGFIX-REGISTRY.md',
         'docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md',
-        'ops/windows/deploy-l12.ps1', 'scripts/test-l12-deploy-behavior.ps1'
+        'ops/windows/deploy-l12.ps1', 'ops/server/deploy-l12-release.sh', 'scripts/test-l12-deploy-behavior.ps1'
     )
     $namedQaPaths = @(
         'opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs',
@@ -573,8 +583,9 @@ try {
     }
     else {
         Write-Host "[L12 部署] 启用主页与资讯分享信息路由..."
+        $forcePrefix = if ($AllowActivityDuringDrain) { 'L12_DEPLOY_ALLOW_ACTIVITY=1 ' } else { '' }
         Invoke-External -NoRetry -SecureStandardInput $DeploymentControlSessionToken ssh @sshOptions $Server `
-            "/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' $deploymentDeadlineEpoch && sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir' && curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'og:title'"
+            "${forcePrefix}/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' $deploymentDeadlineEpoch && sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir' && curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'og:title'"
         Write-Host "[L12 部署] $mode 成功：https://legion-12.com/"
     }
 }

@@ -45,9 +45,15 @@ function Copy-L12PlainDirectory {
     $pending=[Collections.Generic.Stack[string]]::new();$pending.Push($source)
     $directories=[Collections.Generic.List[string]]::new()
     $files=[Collections.Generic.List[object]]::new()
+    $sourcePrefix=$source.TrimEnd($separator)+$separator
     while($pending.Count){
         foreach($entry in Get-ChildItem -LiteralPath $pending.Pop() -Force -ErrorAction Stop){
-            $relativeNative=[IO.Path]::GetRelativePath($source,$entry.FullName)
+            # Windows PowerShell 5.1 does not expose Path.GetRelativePath;
+            # derive the relative name from the already-resolved plain root.
+            # The prefix check keeps the same no-escape invariant on every host.
+            $entryFull=[IO.Path]::GetFullPath($entry.FullName)
+            if(-not $entryFull.StartsWith($sourcePrefix,$comparison)){throw 'L12_COPY_SOURCE_PATH_NOT_PORTABLE'}
+            $relativeNative=$entryFull.Substring($sourcePrefix.Length)
             if($separator -ne '\' -and $relativeNative.Contains('\')){throw 'L12_COPY_SOURCE_PATH_NOT_PORTABLE'}
             $relative=$relativeNative.Replace('\','/')
             if($excluded.Contains($relative)){

@@ -103,7 +103,10 @@ let legacyReads=0,networkCalls=0,childProcesses=0,sourceReads=0
 const deny=value=>{let name=value instanceof URL?fileURLToPath(value):String(value)
  if(name.startsWith('file:'))name=fileURLToPath(name)
  name=name.replaceAll('\\','/')
- if((name.includes('/artifacts/')&&/\.(mjs|ps1|py)$/.test(name))||name.includes('/ledger-r5/')){
+ const isGeneratedCandidateSource = /\/frontend-work-[^/]+\/(?:opcgpro-vue\/)?ops\/qa\/workload(?:\/|$)/.test(name)
+ const isGeneratedSourceTest = /\/source-test-[0-9a-f-]{36}\/(?:normal-prepared|normal-executable|local)\.mjs$/.test(name)
+ const isGeneratedSupportSource = /\/frontend-work-[^/]+\/(?:opcgpro-vue\/)?(?:scripts\/(?:lib\/l12-pressure-checkpoint|ws-burst-observer|testrun-pressure-protocol|local-pressure-protocol|testrun-pressure-execution|local-pressure-wire-cost|property-frame-source-module|owned-workload-sources)\.mjs|ops\/qa\/ledger\/account-ledger-client-r2\.mjs)$/.test(name)
+ if((name.includes('/artifacts/')&&/\.(mjs|ps1|py)$/.test(name)&&!isGeneratedCandidateSource&&!isGeneratedSourceTest&&!isGeneratedSupportSource)||name.includes('/ledger-r5/')){
   legacyReads++;throw new Error('LEGACY_EXECUTABLE_READ_FORBIDDEN')}
  if(name.includes('/.ssh/')||name.endsWith('.dpapi'))throw new Error('PRIVATE_INPUT_READ_FORBIDDEN')
  sourceReads++

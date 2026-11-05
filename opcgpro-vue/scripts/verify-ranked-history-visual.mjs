@@ -92,8 +92,7 @@ try {
     await page.setViewportSize(viewport)
     await page.goto(`http://127.0.0.1:${port}/__ranked_history_qa__`)
     await page.getByRole('button', { name: '历史荣誉', exact: true }).click()
-    await page.locator('.faction-final-totals').waitFor()
-    await page.locator('.honor-group').first().waitFor()
+    await page.locator('.history-timeline').waitFor()
     const report = await page.evaluate(() => {
       const text = document.querySelector('.history-panel')?.textContent?.replace(/\s+/g, ' ').trim() || ''
       const panel = document.querySelector('.history-panel')
@@ -101,33 +100,44 @@ try {
         text,
         documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
         panelOverflow: panel ? panel.scrollWidth > panel.clientWidth + 1 : true,
-        totals: document.querySelectorAll('.faction-final-totals details[open] .faction-total-values span').length,
-        honorGroups: document.querySelectorAll('.honor-group').length,
-        honorOrder: [...document.querySelectorAll('.honor-group header .ranked-identity-badge')].map(element => element.querySelector('span')?.textContent?.trim()),
-        closedOldSeasons: [...document.querySelectorAll('.history-season-details')].filter(element => element.querySelector('summary')?.textContent?.includes('第0赛季')).every(element => !element.open),
-        masterProfiles: [...document.querySelectorAll('.honor-master-profile')].map(element => element.getAttribute('src')),
-        factionBadgeClasses: [...document.querySelectorAll('.honor-group header .ranked-identity-badge')].slice(0, 6).map(element => element.className),
+        totals: document.querySelectorAll('.history-season-card.latest .history-faction-values span').length,
+        honorGroups: document.querySelectorAll('.history-season-card .honor-card').length,
+        honorOrder: [...document.querySelectorAll('.history-season-card .honor-card .ranked-identity-badge')].map(element => element.querySelector('span')?.textContent?.trim()),
+        closedOldSeasons: [...document.querySelectorAll('.history-season-card')].filter(element => element.querySelector('h3')?.textContent?.includes('第0赛季')).every(element => !element.matches(':focus-within')),
+        masterProfiles: [...document.querySelectorAll('.history-season-card .honor-master-profile')].map(element => element.getAttribute('src')),
+        factionBadgeClasses: [...document.querySelectorAll('.history-season-card .honor-card .ranked-identity-badge')].map(element => element.className),
         factionFilterVisible: !!document.querySelector('.faction-filter'),
       }
     })
     assert.equal(report.documentOverflow, false, `${viewport.width}px 页面出现横向溢出`)
     assert.equal(report.panelOverflow, false, `${viewport.width}px 历史荣誉区域出现横向溢出`)
     assert.equal(report.totals, 3, `${viewport.width}px 三派结算数值不完整`)
-    assert.equal(report.honorGroups, 8, `${viewport.width}px 未按称号独立分组`)
-    assert.deepEqual(report.honorOrder, ['统御者', '始乱者', '织命者', '代行主君', '混沌领主', '守望天士', '最强前号', '最强后号'], `${viewport.width}px 称号或主宰编号排序错误`)
-    assert.equal(report.closedOldSeasons, true, `${viewport.width}px 旧赛季未默认折叠`)
+    assert.equal(report.honorGroups, 8, `${viewport.width}px 最新赛季荣誉卡不完整`)
+    assert(report.honorOrder.includes('最强后号') && report.honorOrder.includes('统御者'), `${viewport.width}px 最新赛季称号内容缺失`)
     assert.equal(report.masterProfiles.length, 2, `${viewport.width}px 最强主宰缺少 Profile`)
     assert(report.masterProfiles.every(src => src?.includes('/special/master/')), `${viewport.width}px 最强主宰未用 Profile 资源`)
     assert(report.factionBadgeClasses.every(value => !value.includes('faction-neutral')), `${viewport.width}px 派系称号未沿用派系徽章`)
     assert.equal(report.factionFilterVisible, false, `${viewport.width}px 历史荣誉仍显示派系筛选`)
-    for (const expected of ['历届派系结算数值', '秩序', '混沌', '命运', '公开账号甲'])
+    for (const expected of ['历史荣誉', '秩序', '混沌', '命运', '公开账号甲'])
       assert(report.text.includes(expected), `${viewport.width}px 缺少玩家可见内容：${expected}`)
     for (const forbidden of ['S00', 'S01', 'SeasonId', 'Provenance', 'EvidenceFingerprint', 'AwardedAt', '赛季结束时冻结', '历史重建值'])
       assert(!report.text.includes(forbidden), `${viewport.width}px 外显内部字段或实现文案：${forbidden}`)
     await page.screenshot({ path: path.join(output, `ranked-history-${viewport.width}.png`), fullPage: true })
-    await page.locator('.faction-total-grid details').nth(1).locator('summary').click()
-    assert.equal(await page.locator('.faction-total-grid details').nth(1).getAttribute('open'), '', '旧赛季不能手动展开')
-    assert(await page.getByText('2,407,333').isVisible(), '展开旧赛季后未显示结算值')
+    await page.getByRole('button', { name: '按称号', exact: true }).click()
+    await page.locator('.honor-group').first().waitFor()
+    const honorView = await page.evaluate(() => ({
+      groups: document.querySelectorAll('.honor-group').length,
+      order: [...document.querySelectorAll('.honor-group header .ranked-identity-badge')].map(element => element.querySelector('span')?.textContent?.trim()),
+      profiles: [...document.querySelectorAll('.honor-master-profile')].map(element => element.getAttribute('src')),
+      oldSeasonCollapsed: [...document.querySelectorAll('.honor-season')].filter(element => element.querySelector('summary')?.textContent?.includes('第0赛季')).every(element => !element.open),
+    }))
+    assert.equal(honorView.groups, 8, `${viewport.width}px 按称号视图未完整分组`)
+    assert.deepEqual(honorView.order, ['统御者', '始乱者', '织命者', '代行主君', '混沌领主', '守望天士', '最强前号', '最强后号'], `${viewport.width}px 按称号视图排序错误`)
+    assert.equal(honorView.profiles.length, 2, `${viewport.width}px 按称号视图主宰头像缺失`)
+    assert.equal(honorView.oldSeasonCollapsed, true, `${viewport.width}px 按称号视图旧赛季未默认折叠`)
+    const oldHonorSeason = page.locator('.honor-season').filter({ hasText: '第0赛季 · 始源' }).first()
+    await oldHonorSeason.locator('summary').click()
+    assert.equal(await oldHonorSeason.getAttribute('open'), '', '展开旧赛季后未打开称号记录')
     if (viewport.width <= 390) {
       const group = page.locator('.honor-group').first()
       const winner = group.locator('.honor-winners > span').first()

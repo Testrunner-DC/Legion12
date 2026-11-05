@@ -61,10 +61,18 @@ public sealed class DeploymentPlatformGuardTests
             Assert.False(readiness.Verified);
             Assert.Equal("platform_busy", readiness.FailureCode);
             Assert.True(f.Coordinator.BeginDrain(f.Owner).Succeeded);
-            Assert.Equal(L12DeploymentDrainTransitionCode.OutstandingLeases, f.Coordinator.TryBeginSeal(f.Owner).Code);
+            // Activity leases are allowed to finish during the normal stop
+            // sequence; committed platform readiness remains the blocker.
+            var sealing = f.Coordinator.TryBeginSeal(f.Owner);
+            Assert.True(sealing.Succeeded);
+            Assert.Equal(L12DeploymentDrainPhase.Sealing, sealing.Snapshot.Phase);
         }
         finally { release.Set(); }
         Assert.Equal(!fail, await writer.WaitAsync(TimeSpan.FromSeconds(6)));
+        var sealedResult = f.Coordinator.CompleteSeal(f.Owner,
+            f.Coordinator.Snapshot().Epoch, L12DeploymentExternalReadiness.Clear);
+        Assert.True(sealedResult.Succeeded);
+        Assert.True(f.Coordinator.Cancel(f.Owner).Succeeded);
         f.Store.StorageFailureInjector = null;
         var committed = f.Store.CaptureDeploymentPlatformReadiness();
         Assert.True(committed.Verified);

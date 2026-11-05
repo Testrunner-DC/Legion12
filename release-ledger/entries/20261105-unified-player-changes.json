@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261105-unified-player-changes",
+  "date": "2026-11-05",
+  "audience": "players",
+  "title": "牌库产品筛选与历史荣誉视图",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "牌库编辑器的产品筛选会合并同一张可玩卡在异画、联动或其他收录产品中的全部归属；代表牌仍只从当前牌库主牌中选择，跨页面缓存按账号和环境隔离。",
+      "paths": ["opcgpro-vue/src/l12/L12DeckEditor.vue", "opcgpro-vue/src/l12/decks.ts"]
+    },
+    {
+      "category": "ranking",
+      "text": "排行榜历史页改为按赛季查看历史荣誉与派系结算值，也可切换为按称号查看，并显示已结算赛季、历史称号和获得者摘要。",
+      "paths": ["opcgpro-vue/src/l12/site/RankingsPage.vue"]
+    }
+  ]
+}

@@ -143,7 +143,7 @@ public sealed class DeploymentDrainControllerTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task AdmissionAndActivityLeasesMustBothReachZeroBeforeSealing(int leaseKind)
+    public async Task AdmissionLeasesBlockButActivityLeasesDoNotBlockSealing(int leaseKind)
     {
         await using var fixture = await DeploymentDrainFixture.CreateAsync();
         L12DeploymentDrainLease? lease;
@@ -160,12 +160,19 @@ public sealed class DeploymentDrainControllerTests
 
         using (lease)
         {
-            var blocked = await fixture.Controller.SealAsync(fixture.Owner);
-            Assert.Equal("OutstandingLeases", blocked.Code);
-            Assert.False(blocked.Granted);
-            Assert.Equal(L12DeploymentDrainPhase.Draining, blocked.Snapshot.Phase);
-            Assert.Equal(leaseKind == 0 ? 1 : 0, blocked.Snapshot.AdmissionLeases);
-            Assert.Equal(leaseKind == 1 ? 1 : 0, blocked.Snapshot.ActivityLeases);
+            var result = await fixture.Controller.SealAsync(fixture.Owner);
+            if (leaseKind == 0)
+            {
+                Assert.Equal("OutstandingLeases", result.Code);
+                Assert.False(result.Granted);
+                Assert.Equal(L12DeploymentDrainPhase.Draining, result.Snapshot.Phase);
+                Assert.Equal(1, result.Snapshot.AdmissionLeases);
+            }
+            else
+            {
+                Assert.True(result.Granted, result.Code);
+                Assert.Equal(L12DeploymentDrainPhase.Sealed, result.Snapshot.Phase);
+            }
         }
 
         var sealedResult = await fixture.Controller.SealAsync(fixture.Owner);

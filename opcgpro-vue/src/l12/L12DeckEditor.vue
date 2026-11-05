@@ -8,7 +8,7 @@ import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import { samplePublicDeckOpeningHand } from './site/publicDeckHands'
 import {
-  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, enableRepresentativeCards, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, trialCapacityForMaster,
+  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, cardProductLabels, deckProductOptions, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, enableRepresentativeCards, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, trialCapacityForMaster,
   loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, saveDeck, validateDeck, initializeDeckCache, loadLegacyDeckImports, legacyDeckCacheCandidates, legacyDeckImportWarning, type DeckCard,
   type PrivateDeckSummary, type PrivateDeckSummaryPage, type SavedL12Deck,
 } from './decks'
@@ -313,7 +313,7 @@ onMounted(async () => {
 })
 
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
-const productOptions = computed(() => [...new Set(catalog.value.map(card => card.product))].sort())
+const productOptions = computed(() => deckProductOptions(catalog.value))
 // masterId/cardType=master 统一使用主宰语义；不混入未实装模式的 divinity 卡。
 const masters = computed(() => catalog.value.filter(card => card.cardType === 'master' && card.id !== 'S01-02M2'))
 const selectedMaster = computed(() => byId.value.get(masterId.value))
@@ -402,7 +402,7 @@ const filteredBaseCards = computed(() => {
     if (master && card.faction !== 'universal' && card.faction !== master.faction) return false
     if (factionFilter.value !== 'all' && card.faction !== factionFilter.value) return false
     if (typeFilter.value !== 'all' && cardTypeFilterKey(card.cardType) !== typeFilter.value) return false
-    if (productFilters.value.length && !productFilters.value.includes(card.product)) return false
+    if (productFilters.value.length && !productFilters.value.some(product => cardProductLabels(card).includes(product))) return false
     const filterCost = filterableCardCost(card)
     if (costFilter.value !== 'all' && (filterCost === null || (costFilter.value === '7+'
       ? filterCost < 7

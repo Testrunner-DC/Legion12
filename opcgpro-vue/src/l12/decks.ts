@@ -206,6 +206,18 @@ const productInclusions = cardProductInclusionsData.cards as CardProductInclusio
 const productInclusionsByCardId = new Map(productInclusions.map(entry => [entry.cardId, entry]))
 const productInclusionsByNormalizedCardId = new Map(productInclusions.map(entry => [entry.cardId.toLocaleLowerCase(), entry]))
 const cardArchiveAssets = cardArchiveAssetsData.cards as CardArchiveAsset[]
+const productLabelsByBaseCardId = new Map<string, Set<string>>()
+function addProductLabels(cardId: string, products: readonly string[]) {
+  const labels = productLabelsByBaseCardId.get(cardId) ?? new Set<string>()
+  for (const product of products) if (product.trim()) labels.add(product)
+  productLabelsByBaseCardId.set(cardId, labels)
+}
+for (const entry of productInclusions) {
+  addProductLabels(entry.cardId, entry.products)
+  const archiveBaseId = cardArchiveAssets.find(asset => asset.id === entry.cardId)?.baseCardId
+  if (archiveBaseId) addProductLabels(archiveBaseId, entry.products)
+}
+for (const asset of cardArchiveAssets) addProductLabels(asset.baseCardId, asset.products)
 const moraleIdentityByFaction = new Map(moraleIdentities.map(identity => [identity.faction, identity]))
 const moraleIdentityByVersion = new Map(moraleIdentities.flatMap(identity =>
   identity.versionCardIds.map(cardId => [cardId, identity] as const)))
@@ -229,8 +241,36 @@ export function cardProductsForIds(cardIds: readonly string[]) {
 }
 
 function withProductInclusions(card: DeckCard): DeckCard {
-  const inclusion = productInclusionsByCardId.get(card.id)
-  return inclusion ? { ...card, products: [...inclusion.products] } : card
+  const inclusion = typeof productInclusionsByCardId === 'undefined' || typeof productInclusionsByCardId.get !== 'function'
+    ? undefined : productInclusionsByCardId.get(card.id)
+  const normalizedInclusion = typeof productInclusionsByNormalizedCardId === 'undefined'
+    || typeof productInclusionsByNormalizedCardId.get !== 'function'
+    ? undefined : productInclusionsByNormalizedCardId.get(card.id.toLocaleLowerCase())
+  // Some lightweight catalog-contract fixtures compile this helper in
+  // isolation; keep that contract valid while the real catalog uses the
+  // merged base-card map above.
+  const labels = new Set(typeof productLabelsByBaseCardId === 'undefined'
+    ? [] : productLabelsByBaseCardId.get(card.id) ?? [])
+  for (const product of [...(inclusion?.products ?? []), ...(normalizedInclusion?.products ?? [])]) labels.add(product)
+  return labels.size ? { ...card, products: [...labels] } : card
+}
+
+/**
+ * A playable card can be present in several products. Keep the base product as
+ * a fallback for older cards, but expose every catalogued inclusion to callers
+ * that build product filters.
+ */
+export function cardProductLabels(card: Pick<DeckCard, 'product' | 'products'>) {
+  const labels = (card.products ?? []).filter((value): value is string => Boolean(value && value.trim()))
+  return labels.length ? [...new Set(labels)] : card.product ? [card.product] : []
+}
+
+export function deckProductOptions(cards: readonly Pick<DeckCard, 'product' | 'products'>[]) {
+  const available = new Set(cards.flatMap(cardProductLabels))
+  return [
+    ...cardArchiveProducts.filter(product => available.delete(product)),
+    ...[...available].sort((left, right) => left.localeCompare(right, 'zh-CN', { numeric: true })),
+  ]
 }
 
 export function automaticExtraCardIdsForMaster(masterId: string | null | undefined) {
@@ -772,6 +812,7 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
     return [...seasonOne, ...seasonTwo, ...starterProducts]
       .map(normalizeMoraleCatalogCard)
       .map(normalizeCardDimensions)
+      .map(withProductInclusions)
   })
   catalogPromise = request
   void request.catch(() => {

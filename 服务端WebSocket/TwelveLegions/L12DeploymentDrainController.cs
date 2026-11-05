@@ -73,7 +73,7 @@ internal sealed class L12DeploymentDrainController
             }
             if (state.Phase != L12DeploymentDrainPhase.Draining || state.FenceUnknown || !state.FenceSynchronized)
                 return new("drain_not_ready", state);
-            if (state.AdmissionLeases != 0 || state.ActivityLeases != 0)
+            if (state.AdmissionLeases != 0)
                 return new("OutstandingLeases", state);
 
             // Do not freeze existing game actions for a multi-second SQL read while
