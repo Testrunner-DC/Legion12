@@ -30,6 +30,8 @@ const heroAltTexts = reactive<Record<HeroVariantKey, string>>({
 const heroPreviews = reactive<Record<HeroVariantKey, string>>({ desktop: '', mobile: '', thumbnail: '' })
 const heroStatuses = reactive<Record<HeroVariantKey, string>>({ desktop: '尚未选择', mobile: '尚未选择', thumbnail: '尚未选择' })
 const heroInputVersion = ref(0)
+const selectedIsAnimated = ref(false)
+const animationCheckPending = ref(false)
 const policy = computed(() => policies.value.find(item => item.kind === props.kind))
 const isHero = computed(() => props.kind === 'hero')
 const isFlexible = computed(() => Boolean(policy.value?.flexibleDimensions))
@@ -48,6 +50,36 @@ const heroSpecs = computed<HeroVariantSpec[]>(() => policy.value ? [
 ] : [])
 const heroReady = computed(() => heroSpecs.value.length === 3 && heroSpecs.value.every(spec =>
   heroFiles[spec.key] && heroAltTexts[spec.key].trim() && heroStatuses[spec.key].startsWith('已选择')))
+
+function readFourCc(bytes: Uint8Array, offset: number) {
+  return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3])
+}
+
+async function detectAnimatedWebp(file: Blob) {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (bytes.length < 20 || readFourCc(bytes, 0) !== 'RIFF' || readFourCc(bytes, 8) !== 'WEBP') return false
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  if (view.getUint32(4, true) + 8 !== bytes.length) return false
+  let offset = 12
+  while (offset + 8 <= bytes.length) {
+    const chunk = readFourCc(bytes, offset)
+    const length = view.getUint32(offset + 4, true)
+    const next = offset + 8 + length + (length & 1)
+    if (next > bytes.length) return false
+    if (chunk === 'ANIM' || chunk === 'ANMF') return true
+    offset = next
+  }
+  return false
+}
+
+async function inspectSelectedFile(selected: File | null) {
+  selectedIsAnimated.value = false
+  if (!selected || props.kind !== 'card-art' || selected.type !== 'image/webp') return
+  animationCheckPending.value = true
+  try { selectedIsAnimated.value = await detectAnimatedWebp(selected) }
+  catch { selectedIsAnimated.value = false }
+  finally { animationCheckPending.value = false }
+}
 
 function greatestCommonDivisor(left: number, right: number): number {
   return right ? greatestCommonDivisor(right, left % right) : left
@@ -78,6 +110,7 @@ function choose(event: Event) {
   const selected = (event.target as HTMLInputElement).files?.[0] || null
   file.value = selected
   if (selected && !altText.value.trim()) altText.value = selected.name.replace(/\.[^.]+$/, '')
+  void inspectSelectedFile(selected)
 }
 function revokeHeroPreview(key: HeroVariantKey) {
   if (heroPreviews[key]) URL.revokeObjectURL(heroPreviews[key])
@@ -153,6 +186,30 @@ async function upload() {
   let bitmap: ImageBitmap | null = null
   try {
     assertAcceptedSource(file.value)
+    const animated = props.kind === 'card-art' && await detectAnimatedWebp(file.value)
+    if (animated) {
+      if (file.value.size > DESKTOP_MAX_BYTES) throw new Error('动态图异画不能超过 5MB')
+      const estimatedRequestBytes = file.value.size * 4 + 64 * 1024
+      if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('动态图异画上传总量超过 32MB')
+      const normalizedAlt = altText.value.trim()
+      const form = new FormData()
+      form.append('kind', props.kind)
+      form.append('altText', normalizedAlt)
+      form.append('desktopAltText', normalizedAlt)
+      form.append('mobileAltText', normalizedAlt)
+      form.append('thumbnailAltText', normalizedAlt)
+      form.append('independentVariants', 'false')
+      form.append('focalX', String(focalX.value / 100))
+      form.append('focalY', String(focalY.value / 100))
+      form.append('original', file.value, file.value.name)
+      form.append('desktop', file.value, 'desktop.webp')
+      form.append('mobile', file.value, 'mobile.webp')
+      form.append('thumbnail', file.value, 'thumbnail.webp')
+      await submitForm(form)
+      file.value = null
+      selectedIsAnimated.value = false
+      return
+    }
     bitmap = await createOrientedBitmap(file.value)
     const desktop = await renderFlexibleVariant(bitmap, 2400, .87)
     await yieldToBrowser()
@@ -258,6 +315,8 @@ async function uploadHeroGroup() {
     <div class="media-upload-copy">
       <label>上传原图<input type="file" accept="image/jpeg,image/png,image/webp,image/avif" @change="choose"></label>
       <label>替代文字<input v-model="altText" maxlength="180" placeholder="描述图片内容，供无障碍与图片异常时使用"></label>
+      <p v-if="animationCheckPending" class="media-ratio-hint">正在检查动态图帧…</p>
+      <p v-else-if="selectedIsAnimated" class="media-ratio-hint">将保留动画帧，并在桌面、移动和缩略图入口播放。</p>
       <p v-if="policy" class="media-ratio-hint">建议比例 {{ desktopRatio || '不限' }}</p>
       <button :disabled="busy || !file || !policy" @click="upload">{{ busy ? '正在生成并上传…' : '上传图片' }}</button>
     </div>

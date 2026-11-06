@@ -29,7 +29,7 @@ public sealed record L12SiteMediaView(string Id, string Kind, string AltText, do
     int DesktopWidth, int DesktopHeight, int MobileWidth, int MobileHeight, int ThumbnailWidth,
     int ThumbnailHeight, long OriginalBytes, long DeliveryBytes, string CreatedBy, DateTimeOffset CreatedAt,
     int ReferenceCount, string DesktopAltText, string MobileAltText, string ThumbnailAltText,
-    bool IndependentVariants);
+    bool IndependentVariants, bool IsAnimated = false);
 
 public sealed record L12SiteMediaSearchView(IReadOnlyList<L12SiteMediaView> Items, int Page, int PageSize,
     int Total, bool HasMore);
@@ -382,6 +382,8 @@ public sealed partial class L12PlatformStore
     public const int SiteMediaMobileMaxBytes = 5 * 1024 * 1024;
     public const int SiteMediaThumbnailMaxBytes = 2 * 1024 * 1024;
     public const long SiteMediaRequestMaxBytes = 32L * 1024 * 1024;
+    private const int SiteMediaMaxAnimatedFrames = 120;
+    private const int SiteMediaMaxAnimatedDurationMs = 15_000;
 
     private sealed class SiteMediaRow
     {
@@ -405,6 +407,7 @@ public sealed partial class L12PlatformStore
         public string MobileHash { get; set; } = string.Empty;
         public string ThumbnailFile { get; set; } = string.Empty;
         public string ThumbnailHash { get; set; } = string.Empty;
+        public bool IsAnimated { get; set; }
         public int DesktopWidth { get; set; }
         public int DesktopHeight { get; set; }
         public int MobileWidth { get; set; }
@@ -682,16 +685,21 @@ public sealed partial class L12PlatformStore
         ValidateUploadBytes(upload.Original, "原图", SiteMediaOriginalMaxBytes);
         ValidateUploadBytes(upload.DesktopWebp, "桌面 WebP", SiteMediaDesktopMaxBytes);
         ValidateUploadBytes(upload.MobileWebp, "移动 WebP", SiteMediaMobileMaxBytes);
-        ValidateUploadBytes(upload.ThumbnailWebp, "缩略图 WebP", SiteMediaThumbnailMaxBytes);
+        var animatedCardArt = kind == "card-art" && IsAnimatedWebp(upload.DesktopWebp);
+        ValidateUploadBytes(upload.ThumbnailWebp, "缩略图 WebP",
+            animatedCardArt ? SiteMediaDesktopMaxBytes : SiteMediaThumbnailMaxBytes);
         var originalFormat = DetectImageFormat(upload.Original);
         if (!policy.AcceptedOriginalFormats.Contains(originalFormat, StringComparer.OrdinalIgnoreCase))
             throw new ArgumentException("原图只允许 JPEG、PNG、WebP 或 AVIF，禁止 SVG 与其他主动内容格式");
         // Display surfaces crop or contain images as needed. Upload safety is deliberately limited to
         // trusted formats and byte ceilings so an editor is never blocked by source pixel dimensions
         // or aspect ratio.
-        var desktopWebp = SanitizeDeliveryWebp(upload.DesktopWebp, null, null, "桌面 WebP");
-        var mobileWebp = SanitizeDeliveryWebp(upload.MobileWebp, null, null, "移动 WebP");
-        var thumbnailWebp = SanitizeDeliveryWebp(upload.ThumbnailWebp, null, null, "缩略图 WebP");
+        var desktopWebp = SanitizeDeliveryWebp(upload.DesktopWebp, null, null, "桌面 WebP", kind == "card-art");
+        var mobileWebp = SanitizeDeliveryWebp(upload.MobileWebp, null, null, "移动 WebP", kind == "card-art");
+        var thumbnailWebp = SanitizeDeliveryWebp(upload.ThumbnailWebp, null, null, "缩略图 WebP", kind == "card-art");
+        var deliveryAnimated = IsAnimatedWebp(desktopWebp);
+        if (deliveryAnimated != IsAnimatedWebp(mobileWebp) || deliveryAnimated != IsAnimatedWebp(thumbnailWebp))
+            throw new ArgumentException("卡牌异画的桌面、移动和缩略版本必须统一为静态或动态图");
         var desktopDimensions = ReadWebpDimensions(desktopWebp);
         var mobileDimensions = ReadWebpDimensions(mobileWebp);
         var thumbnailDimensions = ReadWebpDimensions(thumbnailWebp);
@@ -756,6 +764,7 @@ public sealed partial class L12PlatformStore
                 MobileHash = mobileHash,
                 ThumbnailFile = prepared.Files[3],
                 ThumbnailHash = thumbnailHash,
+                IsAnimated = deliveryAnimated,
                 DesktopWidth = desktopDimensions.Width,
                 DesktopHeight = desktopDimensions.Height,
                 MobileWidth = mobileDimensions.Width,
@@ -1475,7 +1484,7 @@ public sealed partial class L12PlatformStore
             row.DesktopWidth, row.DesktopHeight, row.MobileWidth, row.MobileHeight, row.ThumbnailWidth,
             row.ThumbnailHeight, row.OriginalBytes, row.DeliveryBytes, ArticleAccountName(row.CreatedByAccountId),
             row.CreatedAt, referenceCount, row.DesktopAltText, row.MobileAltText,
-            row.ThumbnailAltText, row.IndependentVariants);
+            row.ThumbnailAltText, row.IndependentVariants, row.IsAnimated);
 
     private IReadOnlyList<L12SiteMediaView> CreateSiteMediaViews(SiteMediaRow[] rows)
     {
@@ -1715,15 +1724,87 @@ public sealed partial class L12PlatformStore
         return "application/octet-stream";
     }
 
-    private static byte[] SanitizeDeliveryWebp(byte[] bytes, int? expectedWidth, int? expectedHeight, string label)
+    private static byte[] SanitizeDeliveryWebp(byte[] bytes, int? expectedWidth, int? expectedHeight,
+        string label, bool allowAnimation = false)
     {
         if (DetectImageFormat(bytes) != "image/webp") throw new ArgumentException($"{label}必须是真实 WebP 文件");
+        if (IsAnimatedWebp(bytes))
+        {
+            if (!allowAnimation) throw new ArgumentException($"{label}不能是动画 WebP");
+            ValidateAnimatedWebp(bytes, label);
+            return bytes;
+        }
         var sanitized = StripWebpMetadata(bytes, label);
         var dimensions = ReadWebpDimensions(sanitized);
         if (expectedWidth.HasValue && expectedHeight.HasValue &&
             (dimensions.Width != expectedWidth.Value || dimensions.Height != expectedHeight.Value))
             throw new ArgumentException($"{label}尺寸必须为 {expectedWidth}×{expectedHeight}，实际为 {dimensions.Width}×{dimensions.Height}");
         return sanitized;
+    }
+
+    private static bool IsAnimatedWebp(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length < 20 || !bytes[..4].SequenceEqual("RIFF"u8) ||
+            !bytes.Slice(8, 4).SequenceEqual("WEBP"u8))
+            return false;
+        var declaredLength = (long)BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(4, 4)) + 8;
+        if (declaredLength != bytes.Length) return false;
+        var offset = 12;
+        while (offset + 8 <= bytes.Length)
+        {
+            var chunk = Encoding.ASCII.GetString(bytes.Slice(offset, 4));
+            var chunkLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset + 4, 4));
+            var next = (long)offset + 8 + chunkLength + (chunkLength & 1);
+            if (next > bytes.Length) return false;
+            if (chunk is "ANIM" or "ANMF") return true;
+            offset = checked((int)next);
+        }
+        return false;
+    }
+
+    private static void ValidateAnimatedWebp(ReadOnlySpan<byte> bytes, string label)
+    {
+        if (bytes.Length < 30) throw new ArgumentException($"{label}的动画 WebP 文件头不完整");
+        var hasAnimationFlag = false;
+        var hasAnimationControl = false;
+        var hasFrame = false;
+        var frameCount = 0;
+        var totalDurationMs = 0;
+        var offset = 12;
+        while (offset < bytes.Length)
+        {
+            if (offset + 8 > bytes.Length) throw new ArgumentException($"{label}的动画 WebP 区块头不完整");
+            var chunk = Encoding.ASCII.GetString(bytes.Slice(offset, 4));
+            var chunkLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset + 4, 4));
+            var next = (long)offset + 8 + chunkLength + (chunkLength & 1);
+            if (next > bytes.Length) throw new ArgumentException($"{label}的动画 WebP 区块长度无效");
+            var payload = bytes.Slice(offset + 8, checked((int)chunkLength));
+            if (chunk == "VP8X")
+            {
+                if (payload.Length != 10 || (payload[0] & 0x02) == 0)
+                    throw new ArgumentException($"{label}缺少有效的动画标志");
+                hasAnimationFlag = true;
+            }
+            else if (chunk == "ANIM")
+            {
+                if (payload.Length != 6) throw new ArgumentException($"{label}的动画控制区块无效");
+                hasAnimationControl = true;
+            }
+            else if (chunk == "ANMF")
+            {
+                if (payload.Length < 16) throw new ArgumentException($"{label}的动画帧区块无效");
+                hasFrame = true;
+                frameCount++;
+                totalDurationMs += payload[12] | (payload[13] << 8) | (payload[14] << 16);
+                if (frameCount > SiteMediaMaxAnimatedFrames || totalDurationMs > SiteMediaMaxAnimatedDurationMs)
+                    throw new ArgumentException($"{label}最多支持 {SiteMediaMaxAnimatedFrames} 帧和 {SiteMediaMaxAnimatedDurationMs / 1000} 秒");
+            }
+            else if (chunk is not ("ICCP" or "EXIF" or "XMP " or "ALPH" or "VP8 " or "VP8L"))
+                throw new ArgumentException($"{label}包含不支持的 WebP 区块");
+            offset = checked((int)next);
+        }
+        if (!hasAnimationFlag || !hasAnimationControl || !hasFrame)
+            throw new ArgumentException($"{label}不是完整的动画 WebP");
     }
 
     private static byte[] StripWebpMetadata(ReadOnlySpan<byte> bytes, string label)

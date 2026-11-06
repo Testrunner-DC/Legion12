@@ -3420,18 +3420,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var form = await request.ReadFormAsync(request.HttpContext.RequestAborted);
+                var mediaKind = form["kind"].ToString();
                 var original = await ReadRequiredFormFile(form, "original", L12PlatformStore.SiteMediaOriginalMaxBytes,
                     request.HttpContext.RequestAborted);
                 var desktop = await ReadRequiredFormFile(form, "desktop", L12PlatformStore.SiteMediaDesktopMaxBytes,
                     request.HttpContext.RequestAborted);
                 var mobile = await ReadRequiredFormFile(form, "mobile", L12PlatformStore.SiteMediaMobileMaxBytes,
                     request.HttpContext.RequestAborted);
-                var thumbnail = await ReadRequiredFormFile(form, "thumbnail", L12PlatformStore.SiteMediaThumbnailMaxBytes,
+                var thumbnail = await ReadRequiredFormFile(form, "thumbnail",
+                    mediaKind == "card-art" ? L12PlatformStore.SiteMediaDesktopMaxBytes : L12PlatformStore.SiteMediaThumbnailMaxBytes,
                     request.HttpContext.RequestAborted);
                 var focalX = ParseFiniteDouble(form["focalX"], .5);
                 var focalY = ParseFiniteDouble(form["focalY"], .5);
                 var result = _platform.UploadSiteMedia(authenticated, request.Headers.Authorization.ToString(), new L12SiteMediaUpload(
-                    form["kind"].ToString(), original.FileName, original.ContentType, original.Bytes,
+                    mediaKind, original.FileName, original.ContentType, original.Bytes,
                     desktop.Bytes, mobile.Bytes, thumbnail.Bytes, form["altText"].ToString(), focalX, focalY,
                     form["desktopAltText"].ToString(), form["mobileAltText"].ToString(),
                     form["thumbnailAltText"].ToString(),

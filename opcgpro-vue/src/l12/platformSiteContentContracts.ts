@@ -12,6 +12,7 @@ export interface SiteMedia {
   thumbnailWidth: number; thumbnailHeight: number; originalBytes: number; deliveryBytes: number
   createdBy: string; createdAt: string; referenceCount: number
   desktopAltText: string; mobileAltText: string; thumbnailAltText: string; independentVariants: boolean
+  isAnimated?: boolean
 }
 export interface SiteMediaSearch { items: SiteMedia[]; page: number; pageSize: number; total: number; hasMore: boolean }
 export interface SiteMediaEmbed {
