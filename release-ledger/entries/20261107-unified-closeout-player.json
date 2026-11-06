@@ -6,7 +6,7 @@
   "title": "画廊、牌库、回放与对局体验收口",
   "changes": [
     {
-      "category": "gallery",
+      "category": "content",
       "text": "画廊卡牌详情、异画展示与牌库代表牌信息保持一致，玩家可在统一入口查看正确的卡图与产品信息。",
       "paths": [
         "opcgpro-vue/src/l12/CardArchive.vue",
@@ -18,7 +18,7 @@
       ]
     },
     {
-      "category": "deck-library",
+      "category": "decks",
       "text": "牌库排序、代表牌和大厅入口的展示保持稳定，公开牌库与个人牌库在切换、刷新及移动端查看时使用一致的信息。",
       "paths": [
         "opcgpro-vue/src/l12/LobbyPage.vue",
@@ -29,7 +29,7 @@
       ]
     },
     {
-      "category": "battle-and-replay",
+      "category": "battle",
       "text": "对局提示、动画准备阶段和只读回放的显示边界已统一，避免同一提示重复挂载或在准备阶段遮挡回放内容。",
       "paths": [
         "opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue",
@@ -38,7 +38,7 @@
       ]
     },
     {
-      "category": "ranked",
+      "category": "ranking",
       "text": "排位限制、赛事身份与玩家可见状态使用同一服务端校验，相关提示和状态在账号切换后不会串用。",
       "paths": [
         "opcgpro-vue/src/l12/rankedIntegrity.ts"
