@@ -29,8 +29,12 @@
     "opcgpro-vue/scripts/test-public-deck-read-consumers.mjs",
     "opcgpro-vue/scripts/test-public-deck-summary-consumers.mjs",
     "opcgpro-vue/scripts/test-tutorial-contract.mjs",
+    "opcgpro-vue/src/l12/platformSiteContentContracts.ts",
+    "opcgpro-vue/src/l12/site/MediaUploadField.vue",
     "服务端WebSocket/TwelveLegions/L12PlatformStore.AccountRankedRestrictions.cs",
     "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedIntegrityActions.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs",
     "服务端WebSocket/TwelveLegions/L12WebSocketServer.AccountRankedRestrictions.cs"
+    ,"服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
   ]
 }
