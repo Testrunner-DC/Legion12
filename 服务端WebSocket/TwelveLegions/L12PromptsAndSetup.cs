@@ -1828,10 +1828,11 @@ public sealed partial class L12GameEngine
         // presentation.  Register the continuous disaster as the producer so
         // every relic entry path gets the same player log and card animation.
         // Do not use the relic as producer: the triggered card is the Chalice.
-        AddPresentationEventByProducerIdWithPlayerLog(
-            "effect-trigger", controller,
-            $"〈{chalice.Name}〉触发：〈{source.Name}〉发动圣物效果，主宰受到 {actualDamage} 点非致命伤害",
-            chalice.CardId, sceneId: null, playerLogData: null, chalice);
+        var presentationText = $"〈{chalice.Name}〉触发：〈{source.Name}〉发动圣物效果，主宰受到 {actualDamage} 点非致命伤害";
+        var sceneId = ResolveEffectPresentationSceneId(chalice, "static", null, presentationText);
+        AddResolvedPresentationEventByProducerIdWithPlayerLog(
+            "effect-trigger", controller, presentationText,
+            chalice.CardId, sceneId, playerLogData: null, chalice);
     }
 
     private L12StackItem PushEffect(int controller, L12CardInstance source, string trigger, string text,

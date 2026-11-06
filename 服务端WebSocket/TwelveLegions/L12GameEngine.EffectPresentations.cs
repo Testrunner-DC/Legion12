@@ -48,9 +48,22 @@ public sealed partial class L12GameEngine
         => AddPresentationEventByProducerIdWithMovement(type, playerIndex, text,
             producerCardId, sceneId, playerLogData, null, cards);
 
+    private void AddResolvedPresentationEventByProducerIdWithPlayerLog(string type, int? playerIndex, string text,
+        string? producerCardId, string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
+        params L12CardInstance[] cards)
+        => AddPresentationEventByProducerIdWithMovementStatus(type, playerIndex, text,
+            producerCardId, sceneId, playerLogData, null, "resolved", cards);
+
     private void AddPresentationEventByProducerIdWithMovement(string type, int? playerIndex, string text,
         string? producerCardId, string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
         L12PlayerBattlefieldMovement? movement, params L12CardInstance[] cards)
+        => AddPresentationEventByProducerIdWithMovementStatus(type, playerIndex, text,
+            producerCardId, sceneId, playerLogData, movement, null, cards);
+
+    private void AddPresentationEventByProducerIdWithMovementStatus(string type, int? playerIndex, string text,
+        string? producerCardId, string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
+        L12PlayerBattlefieldMovement? movement, string? resultStatusOverride,
+        params L12CardInstance[] cards)
     {
         var configured = FindEffectPresentationScene(producerCardId, sceneId);
         var frozen = string.IsNullOrWhiteSpace(sceneId)
@@ -76,7 +89,7 @@ public sealed partial class L12GameEngine
             type = "effect-announced";
         }
         AddEventCoreWithCombat(type, playerIndex, text, effectText,
-            BuildEffectEventMetadata(configured, DeclaredStatus(type)),
+            BuildEffectEventMetadata(configured, resultStatusOverride ?? DeclaredStatus(type)),
             playerLogData?.GetValueOrDefault("playerLogGroupId"),
             playerLogData?.GetValueOrDefault("playerLogTiming"), null, null, null, movement, cards);
     }
