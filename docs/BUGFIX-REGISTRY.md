@@ -4,7 +4,7 @@
 
 - 原规则只在 `PushEffect` 入口处理 S01-DS08「虚构的圣杯」。安卡神碑、卡诺匹斯罐一/四、神剑格拉墨、草薙剑、万物统御之戒、八尺琼勾玉、匠神锻造炉和黄金圣甲虫等圣物的公开登场效果会在候选确认后由 `AddTriggerCandidateToStack` 直接入栈，因此绕过圣杯伤害。
 - 将同一判定抽为 `ApplyFictitiousChaliceRelicEffectDamage`，在直接效果入栈与公开候选入栈两个共同入口调用。仅圣物且触发类型不是天灾时扣除1点非致命伤害，持续效果不入栈，保留原有防循环语义。
-- 同一共享入口现在在实际扣血后登记带 S01-DS08 卡图的已结算 `effect-trigger` 事件和玩家记录；事件绑定 `S01-DS08` 的 `relic-trigger` 场景并进入前端卡图动画队列，不再只留下主宰扣血事实。该逻辑覆盖所有圣物直接发动、登场公开候选和其他公共触发入口，不按安卡神碑等单卡分支处理；未实际造成非致命伤害时不虚构动画或记录。
+- 同一共享入口现在在实际扣血后登记带 S01-DS08 卡图的已结算 `effect-trigger` 事件和玩家记录；事件绑定稳定的运行时 `relic-trigger` 场景并进入前端卡图动画队列，不改变全局能力目录指纹，不再只留下主宰扣血事实。该逻辑覆盖所有圣物直接发动、登场公开候选和其他公共触发入口，不按安卡神碑等单卡分支处理；未实际造成非致命伤害时不虚构动画或记录。
 - 同类扫描覆盖 S1/S2/ST 圣物目录及公开触发声明、登场计划、主动效果计划。新增安卡神碑公开登场候选回归，现有安卡神碑主动效果回归继续保留。针对性2项、公开登场复验与 ExtendedCardEffects 合计53项均通过，最后一次针对性回归2/2通过。证据位于 `D:/GPT/Legion12/artifacts/chalice-check-final/` 与 `D:/GPT/Legion12/artifacts/chalice-check-wide/`。
 - 本轮补充修改 `服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs`、`L12GameEngine.EffectPresentations.cs` 与 `EffectPresentationTexts.cs`，并在 `ExtendedCardEffectsTests`、`PublicEnterOwnTargetRevalidationTests` 固定直接/公开两条路径的场景、已结算状态、卡图事件与记录。针对性圣杯2/2、触发记录/展示相关共享回归214/214通过；待重新生成 Release 并部署后读回线上场景再关闭线上 Bug。
 

@@ -73,7 +73,6 @@ public static class L12EffectPresentationSceneCatalog
         Scene("S01-0419", "play", "search-add", "search", "加入手牌结果", "花魁的馈赠将〈{cardName}〉加入手牌", "cardName"),
         Scene("S01-0415", "enter", "enter-hide", "hidden-reveal", "发动隐匿前展示", "{cardName}展示后发动隐匿", "cardName"),
         Scene("S01-0204", "leave", "tomb-fallback-transition", "effect-trigger", "阵亡无效后转为离场效果", "陵墓构造体的【阵亡时】效果被无效，改由【离场时】效果直接发动"),
-        Scene("S01-DS08", "static", "relic-trigger", "effect", "圣物效果触发天灾", "〈虚构的圣杯〉因圣物效果触发"),
         Scene("S02-0008", "enter", "search-hit", "reveal", "检索成功", "万物统御之戒展示并将〈{cardName}〉加入手牌", "cardName"),
         Scene("S02-0012", "play", "public-disaster", "reveal", "公开天灾", "〈祷告仪式〉公开下1张天灾卡〈{cardName}〉", "cardName"),
         Scene("S02-0101", "enter", "condition-failed-hand", "reveal", "发动条件未满足", "始皇帝 嬴政登场时未满足发动条件，展示我方所有手牌"),

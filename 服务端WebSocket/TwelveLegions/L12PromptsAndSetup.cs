@@ -1829,7 +1829,7 @@ public sealed partial class L12GameEngine
         // every relic entry path gets the same player log and card animation.
         // Do not use the relic as producer: the triggered card is the Chalice.
         var presentationText = $"〈{chalice.Name}〉触发：〈{source.Name}〉发动圣物效果，主宰受到 {actualDamage} 点非致命伤害";
-        var sceneId = ResolveEffectPresentationSceneId(chalice, "static", null, presentationText);
+        const string sceneId = "S01-DS08:runtime:presentation:relic-trigger";
         AddResolvedPresentationEventByProducerIdWithPlayerLog(
             "effect-trigger", controller, presentationText,
             chalice.CardId, sceneId, playerLogData: null, chalice);

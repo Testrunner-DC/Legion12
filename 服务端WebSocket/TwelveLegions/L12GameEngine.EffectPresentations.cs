@@ -88,8 +88,12 @@ public sealed partial class L12GameEngine
             // chosen branch may enter the card animation queue.
             type = "effect-announced";
         }
+        var effectMetadata = configured is null && !string.IsNullOrWhiteSpace(sceneId)
+            && resultStatusOverride is not null
+            ? new L12EffectEventMetadata(sceneId, null, null, null, null, null, null, resultStatusOverride)
+            : BuildEffectEventMetadata(configured, resultStatusOverride ?? DeclaredStatus(type));
         AddEventCoreWithCombat(type, playerIndex, text, effectText,
-            BuildEffectEventMetadata(configured, resultStatusOverride ?? DeclaredStatus(type)),
+            effectMetadata,
             playerLogData?.GetValueOrDefault("playerLogGroupId"),
             playerLogData?.GetValueOrDefault("playerLogTiming"), null, null, null, movement, cards);
     }
