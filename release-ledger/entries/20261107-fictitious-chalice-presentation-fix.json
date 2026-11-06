@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "20261107-fictitious-chalice-presentation-fix",
+  "date": "2026-11-07",
+  "audience": "players",
+  "title": "虚构的圣杯触发演出",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "虚构的圣杯因圣物效果造成伤害时，卡效记录会绑定正确的触发场景并播放圣杯卡图；直接发动和登场触发的圣物效果使用同一套展示规则。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs",
+        "服务端WebSocket/TwelveLegions/EffectPresentationTexts.cs"
+      ]
+    }
+  ]
+}
