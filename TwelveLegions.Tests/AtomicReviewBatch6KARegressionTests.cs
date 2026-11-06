@@ -356,6 +356,50 @@ public sealed class AtomicReviewBatch6KARegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "bug:BUG-20261101-668e5183")]
+    [Trait("L12Evidence", "card:S01-0116")]
+    public void XishiCanSummonTheStarterDeckZhugeCrossbowAndThenDraw()
+    {
+        var game = Create(6685183);
+        var player = game.State.Players[0];
+        var xishi = Card("S01-0116", "bug-668e-xishi");
+        var crossbow = Card("ST01-07", "bug-668e-crossbow");
+        var draw = Card("S01-0003", "bug-668e-draw");
+        player.Field[0][0] = xishi;
+        player.Hand.Add(crossbow);
+        player.Library.Add(draw);
+        AddReadyMorale(player, 1);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var activation = game.Handle(0, new L12Command("activateAbility", xishi.InstanceId,
+            Ability: "xishiExchange"));
+        Assert.True(activation.Accepted, activation.Error);
+
+        var cardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(crossbow.InstanceId, cardPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: cardPrompt.PromptId,
+            Choice: crossbow.InstanceId)).Accepted);
+
+        var entryPrompt = Assert.Single(game.State.PendingPrompts);
+        if (entryPrompt.ValidChoices.Contains("battlefield:0"))
+        {
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: entryPrompt.PromptId,
+                Choice: "battlefield:0")).Accepted, string.Join(',', entryPrompt.ValidChoices));
+        }
+
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("0:0", slotPrompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slotPrompt.PromptId,
+            Choice: "0:0")).Accepted);
+        PassResponses(game);
+
+        Assert.Same(crossbow, player.Field[0][0]);
+        Assert.Contains(draw, player.Hand);
+        Assert.Contains(xishi, player.Graveyard);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "card:S01-0116")]
     [Trait("L12Evidence", "entry:strict-hand-entry-settlement")]
     [L12AbilityEvidence("S01-0116:ability:static:74c527aaab5e91cd", "target-invalidated")]

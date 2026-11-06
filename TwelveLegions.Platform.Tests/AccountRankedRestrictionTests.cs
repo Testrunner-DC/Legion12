@@ -54,12 +54,20 @@ public sealed class AccountRankedRestrictionTests
         Assert.NotNull(store.RankedEntryBlock(target.Id, DateTimeOffset.UtcNow));
         Assert.Null(store.RankedEntryBlock(target.Id, DateTimeOffset.UtcNow.AddDays(8)));
         Assert.Empty(store.RankedIntegrityDecisions(admin).Items);
-        Assert.Empty(store.RankedIntegrityNotifications(target).Items);
+        var until = store.AccountRankedRestriction(admin, target.Id).RestrictionUntil!.Value;
+        var notifications = store.RankedIntegrityNotifications(target).Items;
+        var notification = Assert.Single(notifications);
+        Assert.Equal("manual-ranked-restriction", notification.Outcome);
+        Assert.Equal("synthetic-account-only-seven-day-ban", notification.Reason);
+        Assert.Equal(until, notification.RestrictionUntil);
+        Assert.Empty(notification.DecisionId);
+        Assert.Empty(notification.MatchIds);
 
         var reloaded = new L12PlatformStore(fixture.MirrorPath);
         Assert.NotNull(reloaded.RankedEntryBlock(target.Id, DateTimeOffset.UtcNow));
         Assert.NotNull(reloaded.AuthenticateTokenSession(fixture.PlayerToken));
         Assert.Empty(reloaded.RankedIntegrityDecisions(admin).Items);
+        Assert.Single(reloaded.RankedIntegrityNotifications(target).Items);
     }
 
     [Fact]
@@ -175,7 +183,7 @@ public sealed class AccountRankedRestrictionTests
         Assert.True(preview.CanConfirm, string.Join(";", preview.BlockingReasons));
         var decision = store.ConfirmRankedIntegrityAction(admin, input, preview.Revision, new("manual-ban-integrity"));
         var integrityUntil = Assert.Single(decision.AccountEffects).RestrictionUntil;
-        var notifications = store.RankedIntegrityNotifications(target).Items.Count;
+        var notifications = store.RankedIntegrityNotifications(target).Items.Count(item => !string.IsNullOrEmpty(item.DecisionId));
         using var set = await Mutate(f, target.Id, new { restrictionDays = manualDays, reason = "synthetic-manual-overlap",
             expectedVersion = store.Version, idempotencyKey = "manual-over-integrity" });
         Assert.Equal(HttpStatusCode.OK, set.StatusCode);
@@ -188,7 +196,10 @@ public sealed class AccountRankedRestrictionTests
         Assert.Null(store.RankedEntryBlock(opponent.Id, DateTimeOffset.UtcNow));
         Assert.Equal(integrityUntil, store.AccountRankedRestriction(admin, target.Id).EffectiveRestrictionUntil);
         Assert.Single(store.RankedIntegrityDecisions(admin).Items);
-        Assert.Equal(notifications, store.RankedIntegrityNotifications(target).Items.Count);
+        var allNotifications = store.RankedIntegrityNotifications(target).Items;
+        Assert.Equal(notifications + 1, allNotifications.Count);
+        Assert.Contains(allNotifications, item => item.Outcome == "manual-ranked-restriction"
+            && item.Reason == "synthetic-manual-overlap");
         Assert.Equal("applied", store.RankedSettlement("manual-ban-integrity", opponent.Id)!.RewardStatus);
     }
 

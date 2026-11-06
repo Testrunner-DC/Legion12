@@ -80,11 +80,15 @@ check('create product calls gallery metadata only',()=>{assert.equal(calls.artic
 await state.saveGalleryProduct();await flush()
 check('retry selection does not create another product',()=>{assert.equal(calls.product.length,1);assert(state.artForm.productIds.includes('legacy:new-gallery'));assert.equal(state.pendingProductId,'')})
 app.unmount();check('admin listener released',()=>assert.equal(listeners.size,0))
-const detail=compile('CardDetailContent.vue',{vue:Vue,'./decks':{displayCardNumber:card=>card.number},'./cardPresentation':{cardTypeLabel:type=>type,isHorizontalCardType:()=>false},'./CardImage.vue':stubs})
+const detail=compile('CardDetailContent.vue',{vue:Vue,'./decks':{displayCardNumber:card=>card.number},'./cardPresentation':{cardTypeLabel:type=>type,isHorizontalCardType:()=>false},'./factionPresentation':{factionLabel:value=>value??''},'./CardImage.vue':stubs})
 for(const filled of [true,false]) {
   const card={id:'GALLERY-card',number:'PR-026',nameZh:'联动卡',cardType:'gallery-card',product:'',faction:'',galleryStandalone:true,...(filled?information:{})}
   const host=makeNode('root'),detailApp=renderer.createApp({render:()=>Vue.h(detail,{card})});detailApp.mount(host);await flush()
   check(`details ${filled?'filled':'blank'} have correct numeric rows`,()=>assert.deepEqual(descendants(host).filter(n=>n.tag==='dt').map(textContent),filled?['费用','兵力','血量','天灾等级','试炼值','同名卡上限']:[]))
+  if(filled)check('linked card uses one 联动 trait without a duplicate 联动卡 tag',()=>{
+    const tags=descendants(host).filter(n=>n.tag==='span').map(textContent)
+    assert(tags.includes('联动'));assert(!tags.includes('联动卡'))
+  })
   if(filled)check('detail renders zero and all six values',()=>assert.deepEqual(descendants(host).filter(n=>n.tag==='dd').map(textContent),['0','5432','9','2','3','2']))
   detailApp.unmount()
 }

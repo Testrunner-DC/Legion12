@@ -780,6 +780,12 @@ const activeBoardPromptIds = computed(() => [...new Set([
 const activeBoardPromptId = computed(() => visibleInlinePromptIds.value[0] ?? null)
 const promptOverlayMounted = computed(() => !props.readOnly
   || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative')
+// Replays are read-only timelines, not interactive prompts.  The normal
+// preparation/initiative overlay would obscure the public card presentation
+// and pause its reservation while no player can answer it.  Live read-only
+// viewers (without a replay clock) still retain the phase banner.
+const replayPromptOverlayMounted = computed(() => Boolean(promptOverlayMounted.value
+  && !(props.readOnly && props.replayPlaybackSpeed)))
 const visibleBoardPromptIds = computed(() => !props.readOnly && !boardControlMinimized.value
   ? activeBoardPromptIds.value.filter(promptId => !deferredEntryPromptIds.value.has(promptId)) : [])
 const visibleBoardPromptId = computed(() => visibleBoardPromptIds.value[0] ?? null)
@@ -790,6 +796,7 @@ const routedPromptModal = computed(() => {
     || props.game.phase === 'Mulligan' || props.game.phase === 'DisasterPreparation')
 })
 const visiblePromptModal = computed(() => Boolean(promptOverlayMounted.value
+  && !(props.readOnly && props.replayPlaybackSpeed)
   && routedPromptModal.value && !promptMinimized.value))
 function cardIsVisibleInAuthoritySurface(instanceId: string) {
   const visibleCard = (card: Card | null | undefined) => card?.instanceId === instanceId && !card.hidden
@@ -2072,7 +2079,7 @@ function statusTexts(card: Card) {
               ? '确认支付' : '确认选择' }}</button>
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :data-tutorial-action="resourceSelectionPrompt ? 'restore-payment' : undefined" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
-      <PromptOverlay v-if="promptOverlayMounted" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport" :passive-wait-target="passiveWaitTarget"
+      <PromptOverlay v-if="replayPromptOverlayMounted" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport" :passive-wait-target="passiveWaitTarget"
         @focus-card="focusCard = $event" @auto-focus-card="promptAutoFocusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="freeCommand('mulligan')" @mulligan-keep-all="keepAllMulligan" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>

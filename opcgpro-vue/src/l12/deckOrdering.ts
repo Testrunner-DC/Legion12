@@ -8,7 +8,7 @@ const TYPE_PRIORITY: Record<string, number> = {
 }
 
 /**
- * 十二军团牌库的唯一默认顺序：军团→圣物→战术→其他；本阵营→中立；
+ * 十二军团牌库的唯一默认顺序：军团→圣物→战术→其他；本阵营→通用；
  * 费用高→低；编号前→后。编辑器、详情与牌库图必须全部复用此比较器。
  */
 export function compareDeckCards(left: DeckCard | undefined, right: DeckCard | undefined, masterFaction?: string) {

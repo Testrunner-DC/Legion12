@@ -106,6 +106,8 @@ public sealed partial class L12PlatformStore
                     SetAt = now, RestrictionUntil = now.AddDays(input.RestrictionDays!.Value),
                     SetByAccountId = actor.Id, Reason = reason,
                 };
+                AddManualRankedRestrictionNotificationLocked(account.Id,
+                    account.RankedRestriction.RestrictionUntil, reason, now);
             }
             AddAdminAudit(actor, "account", input.Clear ? "ranked-ban-clear" : "ranked-ban-set",
                 $"account:{account.Id}", before?.RestrictionUntil.ToString("O"),

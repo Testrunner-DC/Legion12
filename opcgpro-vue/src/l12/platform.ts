@@ -2034,7 +2034,7 @@ export const deckLibraryApi = {
     const params = new URLSearchParams()
     for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '') params.set(key, String(value))
     return platformRequest<PublicDeckSummaryPage>(`/api/deck-library/summaries${params.size ? `?${params}` : ''}`, {
-      headers: getDeckCoverRequestHeaders(),
+      headers: getRepresentativeDeckRequestHeaders(),
     })
   },
   ownReferences: (ids: readonly string[]) => {
@@ -2097,25 +2097,25 @@ export const publicDeckReadApi = {
 
 export const publicDeckApi = {
   counter: (id: string, kind: 'view' | 'copy' | 'like') => platformRequest<PublicDeckCounterResult>(
-    `/api/public-decks/${encodeURIComponent(id)}/counters/${kind}`, { method: 'POST' }),
+    `/api/public-decks/${encodeURIComponent(id)}/counters/${kind}`, { method: 'POST', headers: getRepresentativeDeckRequestHeaders() }),
   list: (query: { sort?: 'copies' | 'likes' | 'views' | 'latest'; seasonCompliant?: boolean } = {}) => {
     const params = new URLSearchParams()
     if (query.sort) params.set('sort', query.sort)
     if (query.seasonCompliant) params.set('seasonCompliant', 'true')
     const suffix = params.size ? `?${params}` : ''
-    return platformRequest<PublishedDeck[]>(`/api/public-decks${suffix}`)
+    return platformRequest<PublishedDeck[]>(`/api/public-decks${suffix}`, { headers: getRepresentativeDeckRequestHeaders() })
   },
-  get: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}`),
+  get: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}`, { headers: getRepresentativeDeckRequestHeaders() }),
   publish: (deck: SavedL12Deck, publicationId?: string) => platformRequest<PublishedDeck>('/api/public-decks', {
     method: 'POST', body: JSON.stringify({ publicationId: publicationId || null, deck }),
     headers: getRepresentativeDeckRequestHeaders(),
   }),
   updateContent: (id: string, guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) => platformRequest<PublicDeckDetails>(
     `/api/public-decks/${encodeURIComponent(id)}/content`, {
-      method: 'PUT', body: JSON.stringify({ guide, matchups }),
+      method: 'PUT', body: JSON.stringify({ guide, matchups }), headers: getRepresentativeDeckRequestHeaders(),
     }),
   delete: (id: string) => platformRequest<void>(`/api/public-decks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  toggleLike: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/like`, { method: 'POST' }),
-  recordView: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/view`, { method: 'POST' }),
-  recordCopy: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/copy`, { method: 'POST' }),
+  toggleLike: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/like`, { method: 'POST', headers: getRepresentativeDeckRequestHeaders() }),
+  recordView: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/view`, { method: 'POST', headers: getRepresentativeDeckRequestHeaders() }),
+  recordCopy: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/copy`, { method: 'POST', headers: getRepresentativeDeckRequestHeaders() }),
 }

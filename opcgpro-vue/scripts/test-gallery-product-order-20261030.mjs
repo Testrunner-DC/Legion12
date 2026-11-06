@@ -44,7 +44,10 @@ async function fixture(sourceKind='legacy'){
   const api={gallery:async()=>{calls.push('gallery');return arts},presentationCatalog:async()=>{calls.push('presentation');return {regularCards:[],filterProducts:products}}}
   const imports={vue:Vue,'./cardPresentation':{cardTypeFilterKey:type=>type,cardTypeLabel:type=>type,isHorizontalCardType:type=>type==='master'},
     './cardArchiveVersions':{compareArchiveVersions:(a,b)=>a.number.localeCompare(b.number,'zh-CN',{numeric:true}),groupArchiveCards:cards=>cards.map(c=>({logicalId:c.id,defaultVersion:c,versions:[c]}))},
-    './decks':{cardArchiveProducts:['S1','S2'],displayCardNumber:c=>c.number,filterableCardCost:c=>c.cost??null,loadCardArchiveCatalog:async()=>{calls.push('catalog');return [base]}},
+    './factionPresentation':{factionLabel:value=>value?.trim()??'',normalizeFactionKey:value=>value?.trim()??''},
+    './decks':{cardArchiveProducts:['S1','S2'],displayCardNumber:c=>c.number,filterableCardCost:c=>c.cost??null,
+      normalizeCardPresentation:card=>({...card,traits:[...(card.galleryStandalone?['联动']:[]),card.faction,...(card.traits??[])],hp:['master','divinity'].includes(card.cardType)?card.hp:undefined}),
+      loadCardArchiveCatalog:async()=>{calls.push('catalog');return [base]}},
     './data/cardErrata':{cardErrataForCard:()=>[]},'./platform':{alternateArtApi:api},'./MobileDeferredCardImage.vue':{__esModule:true,default:stub},'./CardDetailContent.vue':{__esModule:true,default:stub},'./site/MobileFilterSheet.vue':{__esModule:true,default:stub}}
   const win={addEventListener:(type,fn)=>listeners.set(type,fn),removeEventListener:type=>listeners.delete(type),matchMedia:()=>({matches:false})}
   const component=evaluate(script.content,imports,{window:win}).default
@@ -64,7 +67,10 @@ for(const sourceKind of ['legacy','catalog','site']){
   const information={cardType:'legion',faction:'联动阵营',cost:0,troops:5432,hp:9,disasterLevel:2,trialValue:3,profession:'战士',traits:['人类'],deckLimit:2,isCounterTactic:false}
   check(`${sourceKind}: gallery projection forwards every optional field`,()=>{
     const projected=s.projectedUploadedArt({...f.arts[0],cardInformation:information},true)
-    for(const [key,value]of Object.entries(information))assert.deepEqual(normalize(projected[key]),value)
+    for(const [key,value]of Object.entries({...information,traits:['联动','联动阵营','人类'],hp:undefined})) {
+      if(value===undefined) assert.equal(projected[key],undefined)
+      else assert.deepEqual(normalize(projected[key]),value)
+    }
     assert.equal(projected.galleryStandalone,true)
   })
   check(`${sourceKind}: absent optional information never invents stats`,()=>{

@@ -117,6 +117,7 @@ public sealed class L12RankedIntegrityActionException : InvalidOperationExceptio
 public sealed partial class L12PlatformStore
 {
     private const string RankedAppealGuidance = "如有异议，可在“我的-排位处置记录”提交申诉；申诉不会自动解除限制。";
+    internal const string ManualRankedRestrictionOutcome = "manual-ranked-restriction";
     private static readonly string[] RankedIntegrityDispositions =
         ["normal", "insufficient", "system-error", "confirmed", "review", "revoked"];
     private static readonly string[] RankedIntegrityAppealStatuses =
@@ -1665,6 +1666,23 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    internal void AddManualRankedRestrictionNotificationLocked(string accountId,
+        DateTimeOffset restrictionUntil, string reason, DateTimeOffset decidedAt)
+    {
+        _data.RankedIntegrityNotifications.Add(new RankedIntegrityNotificationRow
+        {
+            AccountId = accountId,
+            DecisionId = string.Empty,
+            MatchIds = [],
+            Outcome = ManualRankedRestrictionOutcome,
+            Reason = reason,
+            DecidedAt = decidedAt,
+            ScoreDelta = 0,
+            RestrictionUntil = restrictionUntil,
+            AppealGuidance = "如对手工排位限制有疑问，请联系管理员；此通知不提供排位处置申诉入口。",
+        });
+    }
+
     private static bool ShouldNotifyRankedIntegrityEffect(RankedIntegrityAccountEffectRow effect)
         // Placement, held rewards and historical voids can change rights without changing SevenValue.
         => effect.ScoreDelta != 0 || effect.RestrictionUntil is not null
@@ -1950,7 +1968,11 @@ public sealed partial class L12PlatformStore
             || data.RankedIntegrityNotifications.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
             || data.RankedIntegrityNotifications.Any(row => !accountIds.Contains(row.AccountId)
-                || !decisionIds.Contains(row.DecisionId) || row.MatchIds is null)
+                || row.MatchIds is null
+                || row.Outcome != ManualRankedRestrictionOutcome && !decisionIds.Contains(row.DecisionId)
+                || row.Outcome == ManualRankedRestrictionOutcome && (row.DecisionId != string.Empty
+                    || row.MatchIds.Count != 0 || row.ScoreDelta != 0
+                    || row.RestrictionUntil is null || string.IsNullOrWhiteSpace(row.Reason)))
             || data.RankedIntegrityAppeals.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
             || data.RankedIntegrityAppeals.GroupBy(row => row.RequestId, StringComparer.Ordinal)

@@ -76,6 +76,7 @@ const executableSource = deckSource
   .replace("from './deckCacheStorage'", "from '" + storageUrl + "'")
   .replace("from './deckCacheCodec'", "from '" + codecUrl + "'")
   .replace("import { normalizeLookupCardType } from './cardPresentation'", "const normalizeLookupCardType = value => value")
+  .replace("import { factionLabel, normalizeFactionKey } from './factionPresentation'", "const normalizeFactionKey = value => value; const factionLabel = value => value")
   .replace(
     "import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
     "const { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform",

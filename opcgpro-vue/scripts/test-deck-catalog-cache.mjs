@@ -22,6 +22,10 @@ const support = `
 const deploymentPath = value => value
 const normalizeMoraleCatalogCard = value => value
 const normalizeCardDimensions = value => value
+const normalizeCardPresentation = value => value
+const normalizeFactionKey = value => value
+const factionLabel = value => value
+const isDerivedDeckSpecialCard = value => false
 const withProductInclusions = value => value
 const productLabelsByBaseCardId = new Map()
 const productInclusionsByCardId = new Set(['S01-CARD', 'S01-VARIANT'])
@@ -192,7 +196,7 @@ try {
     }
     const variables = new Set(['seasonTwoIdentityById', 'lookupFactionMap', 'moraleIdentities', 'productInclusions',
       'productInclusionsByCardId', 'cardArchiveAssets', 'moraleIdentityByFaction', 'moraleIdentityByVersion', 'moraleIdentityByGodPower'])
-    const functions = new Set(['withProductInclusions', 'normalizeMoraleCatalogCard', 'normalizeCardDimensions',
+const functions = new Set(['withProductInclusions', 'normalizeMoraleCatalogCard', 'normalizeCardDimensions', 'normalizeCardPresentation',
       'normalizeLookupRarity', 'lookupDeckCard'])
     const actualDeclarations = tree.statements.filter(node =>
       ts.isVariableStatement(node) && node.declarationList.declarations.some(item => variables.has(item.name.getText(tree)))
@@ -200,7 +204,11 @@ try {
     const presentation = ts.createSourceFile('cardPresentation.ts', readFileSync(new URL('../src/l12/cardPresentation.ts', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true)
     const normalizeType = presentation.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'normalizeLookupCardType')
     assert.ok(normalizeType)
-    const realSupport = ['const deploymentPath = value => value',
+    const realSupport = [
+      'const deploymentPath = value => value',
+      'const normalizeFactionKey = value => value',
+      'const factionLabel = value => value',
+      "const isDerivedDeckSpecialCard = card => card?.cardType === 'token' || card?.id === 'S02-01S1' || card?.id === 'S02-06S2'",
       ...Object.entries(data).map(([name, value]) => `const ${name} = ${JSON.stringify(value)}`),
       normalizeType.getText(presentation), ...actualDeclarations].join('\n')
     const s1 = readJson('../public/data/l12/cards.s1.json')

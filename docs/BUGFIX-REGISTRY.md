@@ -1,5 +1,19 @@
 # Legion12 Bug 修复记录
 
+## CHECK-20261101-668E5183｜西施弃置后诸葛连弩兵未登场
+
+- 正式反馈 `BUG-20261101-668e5183`（好友房 `X9VSXY`，对局 `a73297e493ab4cfea95fec8e41fc1e8f`，报告版本 `367d8a8c29c3fcf047c7136bdd823bd0abcb5bc1`）描述：对方西施发动弃置、抽牌后，手牌中的 `ST01-07`〈诸葛连弩兵〉没有登场。该条原记录仍为 `new`，不能用旧的西施通用回归直接当作已处理。
+- 当前源代码核查：西施路径已走严格的“同一手牌实例＋军团类型＋兵力不高于2000＋预声明战场/位置”结算；召唤失败会写入 `effectResultStatus=failed`，复合计划的“随后抽牌”带 `RequiresPreviousSuccess`，不会在登场失败时继续抽牌。全池同类手牌军团登场入口继续复用 `TrySummonFromHand`，没有另行给 `ST01-07` 放宽条件。
+- 新增具名回归 `AtomicReviewBatch6KARegressionTests.XishiCanSummonTheStarterDeckZhugeCrossbowAndThenDraw`：使用真实目录卡号 `S01-0116`＋`ST01-07`，验证手牌候选、位置声明、活跃登场、随后抽牌及西施入墓。受管本地回归 1/1 通过，证据 `D:/GPT/Legion12/artifacts/bug-20261101-668e5183/test-74a87d3ce0ea44eba199f3237274feb0/pass-proof.trx`。
+- 结论：当前源码对该精确正例已通过，不能据此声称正式服已修复；报告版本与当前源的现场复现尚未完成同一回放链核验，正式线上记录保持 `new/未关闭`。下一步需在不生成业务统计的前提下核对正式具名版本是否包含该回归，再按部署后的线上具名验证关闭；若复现仍失败，优先取该场景的候选/位置/结算事实，不再重复泛化西施测试。
+
+## FIX-20261107-CARD-ARCHIVE-METADATA｜图鉴阵营、特征、卡类与数值展示统一
+
+- 图鉴原先直接展示目录与查表中的原始字段。通用卡的旧特征仍为“中立”，不少阵营卡、圣物和战术没有把阵营补进特征，联动卡详情会同时显示“联动卡”和“联动”，衍生卡标签写成“衍生卡牌”。S02 查表还存在7条非军团兵力、4条非主宰血量的错误数值，图鉴会直接展示。
+- 新增展示层规范化。已将中立别名统一为通用，所有已识别阵营补入特征，按卡类过滤费用、兵力和血量维度，联动卡自动带联动特征并移除重复的联动卡标签。哮天犬·稚及王者之剑继续保持 token 衍生卡身份，只有战场运行时按规则视为军团。画廊阵营筛选现在包含联动卡自定义阵营，详情显示阵营名称而非内部代码。
+- 同类扫描覆盖 S1、S2、ST 目录、S02 查表、图鉴投影、共享详情和联动卡后台入口。专项图鉴合同 361 项、画廊产品排序 51 项、联动卡资料与详情 16 项、前端类型检查全部通过。完整 UI 合同在当前工作树另有牌库请求头改动导致既有 deck contract 失败，该失败与本批图鉴改动无关，未覆盖或回退该并行修改。
+- 修改文件包括 `opcgpro-vue/src/l12/decks.ts`、`opcgpro-vue/src/l12/factionPresentation.ts`、`opcgpro-vue/src/l12/cardPresentation.ts`、`opcgpro-vue/src/l12/CardArchive.vue`、`opcgpro-vue/src/l12/CardDetailContent.vue`、`opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue` 及对应前端回归脚本。尚未部署。
+
 ## FIX-20261106-FICTITIOUS-CHALICE-RELIC-ENTRY｜公开圣物效果未触发虚构的圣杯
 
 - 原规则只在 `PushEffect` 入口处理 S01-DS08「虚构的圣杯」。安卡神碑、卡诺匹斯罐一/四、神剑格拉墨、草薙剑、万物统御之戒、八尺琼勾玉、匠神锻造炉和黄金圣甲虫等圣物的公开登场效果会在候选确认后由 `AddTriggerCandidateToStack` 直接入栈，因此绕过圣杯伤害。
@@ -9336,3 +9350,10 @@
 - 根因：排位配置和赛季配置都是整份对象保存。旧草稿或无关配置保存可能携带 `broadcastEnabled=false`，服务端随后在 `BuildBroadcasts` 直接阻断新广播；此前公开设置只返回子规则，无法识别总开关已关闭。
 - 修复：排位总开关为关闭值时，`UpdateRankedConfig`、当前赛季应用、下赛季草稿保存和赛季激活均要求变更理由明确包含“关闭排位广播”或“停用排位广播”。普通计时、段位、天灾及其他赛季编辑不再静默关闭广播；明确授权仍可关闭并留下原审计理由。
 - 防回归：新增 `RankedBroadcastMasterSwitchRequiresExplicitDisableInstruction`，验证无明确关闭理由被拒且状态保持开启，明确关闭理由可保存；整组 `RankedPlatformTests` 26/26 通过。证据 `D:/GPT/Legion12/artifacts/ranked-broadcast-guard-20261106/ranked-platform/ranked-platform.trx`。未修改线上配置、未部署。
+
+## MOTION-20261107-REPLAY-PREPARATION-BARRIER｜回放准备阶段与只读提示阻塞（本地验收，未部署）
+
+- 根因一：`CombatMotionPresentationLayer` 在创建卡牌阵亡／主宰受击演出前先递增 `preparationCount`，但回放 `busyChange` 只读取已挂载的 `animations.size`；`ReplayPage` 因而可能在 DOM 动画尚未建立时推进到下一事件，造成卡效或阵亡演出缺失、连续回放不完整。
+- 根因二：只读回放处于 `DisasterPreparation`／`Initiative` 时仍挂载交互式 `PromptOverlay`。该层既以最高层级遮挡公开演出，又通过 `modalPresentationPaused` 暂停公共展示队列；回放没有可回答玩家，导致准备阶段卡住。
+- 共享修正：回放 `busyChange` 统一以 `preparationCount || animations.size` 作为 barrier；教学／实时只读的 `presentationChange` 及原始提示规则不变。新增 `replayPromptOverlayMounted`，仅当不是回放时挂载交互提示；回放仍保留只读场面和专用开场／天灾展示，不改卡效、顺序、隐私或计时。
+- 防回归：`check-motion-contracts.mjs` 50/50、`test-a3-replay-entry-template-contract.mjs` 65 cases、`test-match-opening-presentation.mjs`、`test-inline-prompt-waiting-priority.mjs` 22/22、教程合同 38 项（含 prep-only replay barrier）通过；`replay-entry-template-contract.mjs` 通过。`test-entry-before-effect-lifecycle-20261026.mjs` 在现有工作树缺失其既有测试适配器 `persistentMasterMovementAnchorId` 时停止，非本批改动引入。尚未部署或关闭线上反馈。

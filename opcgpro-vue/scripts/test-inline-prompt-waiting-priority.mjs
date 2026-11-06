@@ -29,10 +29,10 @@ function evaluate(kind,name,environment){
 function fixture(you){
  const game=reactive({you,phase:'Main',prompts:[],waitingPrompt:null,
   players:[0,1].map(playerIndex=>({playerIndex,field:[[{instanceId:'field-'+playerIndex},null,null],[null,null,null]]}))})
- const props=reactive({game,readOnly:false})
- const board={props,computed,boardControlMinimized:ref(false),deferredEntryPromptIds:ref(new Set())}
+ const props=reactive({game,readOnly:false,replayPlaybackSpeed:null})
+ const board={props,computed,boardControlMinimized:ref(false),deferredEntryPromptIds:ref(new Set()),promptMinimized:ref(false)}
  for(const name of ['presentationPrompts','boardTargetPrompt','boardSlotPrompt','resourceSelectionPrompt','visibleInlinePromptIds','activeBoardPromptIds',
-  'promptOverlayMounted','visibleBoardPromptIds','routedPromptModal'])board[name]=evaluate('board',name,board)
+  'promptOverlayMounted','replayPromptOverlayMounted','visibleBoardPromptIds','routedPromptModal','visiblePromptModal'])board[name]=evaluate('board',name,board)
  const overlay={props:{game,get suppressedPromptIds(){return board.activeBoardPromptIds.value},suppressedPromptId:null},
   computed,waitingDefense:ref(false),isMulliganPhase:ref(false),isDisasterPreparation:ref(false)}
  for(const name of ['prompt','waitingPrompt','visible'])overlay[name]=evaluate('overlay',name,overlay)
@@ -87,6 +87,14 @@ for(const you of [0,1]){
  f.game.phase='DisasterPreparation'
  assert.equal(f.board.promptOverlayMounted.value,true,'public disaster preparation still mounts its existing overlay')
  assert.equal(f.board.routedPromptModal.value,true)
+ assert.equal(f.board.replayPromptOverlayMounted.value,true)
+ assert.equal(f.board.visiblePromptModal.value,true)
+ f.props.replayPlaybackSpeed=1
+ assert.equal(f.board.replayPromptOverlayMounted.value,false,'read-only replay does not mount an interactive preparation overlay')
+ assert.equal(f.board.visiblePromptModal.value,false,'read-only replay preparation is non-blocking for presentation queues')
+ f.game.phase='Initiative'
+ assert.equal(f.board.routedPromptModal.value,false,'initiative uses the dedicated opening presentation rather than a prompt modal')
+ assert.equal(f.board.replayPromptOverlayMounted.value,false,'read-only replay initiative is also non-blocking')
  checks++
 }
 assert.match(sources.board,/<PromptOverlay[^>]+:suppressed-prompt-ids="activeBoardPromptIds"/)

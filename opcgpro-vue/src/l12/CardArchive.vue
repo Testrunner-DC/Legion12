@@ -2,7 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
-import { displayCardNumber, filterableCardCost, loadCardArchiveCatalog, type DeckCard } from './decks'
+import { displayCardNumber, filterableCardCost, loadCardArchiveCatalog, normalizeCardPresentation, type DeckCard } from './decks'
+import { factionLabel, normalizeFactionKey } from './factionPresentation'
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import MobileDeferredCardImage from './MobileDeferredCardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
@@ -15,12 +16,12 @@ type ArchivePage = 'catalog' | 'gallery'
 const typeLabels: Record<string, string> = {
   legion: '军团', tactic: '战术（主动／反击）', rune: '士气卡', artifact: '圣物',
   divinity: '主城', master: '主宰', destruction: '天灾',
-  token: '衍生卡牌', trial: '试炼卡', unknown: '待识别', 'gallery-card': '联动卡',
+  token: '衍生卡', trial: '试炼卡', unknown: '待识别', 'gallery-card': '联动卡',
 }
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原',
   asgard: '阿斯加德', taiyangcheng: '太阳城',
-  olympus: '奥林匹斯', bijie: '彼界', otherworld: '彼界', disaster: '天灾',
+  olympus: '奥林匹斯', otherworld: '彼界', disaster: '天灾',
 }
 
 // Gallery membership is intentionally auditable. Alternate art must match one
@@ -72,7 +73,7 @@ function alternateArtArchiveName(baseName: string, artName: string) {
 function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard | null {
   if (art.kind === 'gallery-card') {
     if (!gallery) return null
-    return {
+    return normalizeCardPresentation({
       id: `GALLERY-${art.id}`,
       number: art.artCode || `GALLERY-${art.id.slice(0, 8)}`,
       nameZh: art.displayName,
@@ -96,7 +97,7 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
       collaboration: art.collaboration || undefined,
       products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : []),
       galleryStandalone: true,
-    }
+    } as CatalogCard)
   }
   const base = regularDisplayCards.value.find(card => card.id === art.baseCardId)
   if (!base || art.builtIn) return null
@@ -267,7 +268,17 @@ const filteredGallery = computed(() => {
 })
 const types = computed(() => [...new Set((page.value === 'gallery' ? galleryCards.value : regularDisplayCards.value).map(card => cardTypeFilterKey(card.cardType)))]
   .filter(key => typeLabels[key]))
-const factions = computed(() => Object.keys(factionLabels).filter(key => regularDisplayCards.value.some(card => card.faction === key)))
+const factions = computed(() => {
+  const cardsForPage = page.value === 'gallery' ? galleryCards.value : regularDisplayCards.value
+  const available = new Set(cardsForPage.map(card => normalizeFactionKey(card.faction)).filter(Boolean))
+  return [...available].sort((left, right) => {
+    const leftRank = Object.keys(factionLabels).indexOf(left)
+    const rightRank = Object.keys(factionLabels).indexOf(right)
+    return (leftRank < 0 ? Number.MAX_SAFE_INTEGER : leftRank)
+      - (rightRank < 0 ? Number.MAX_SAFE_INTEGER : rightRank)
+      || factionLabel(left).localeCompare(factionLabel(right), 'zh-CN')
+  })
+})
 const selectedLogical = computed(() => logicalCards.value.find(entry => entry.logicalId === selectedLogicalId.value) ?? null)
 const selectedCatalogCard = computed(() => selectedLogical.value?.versions.find(card => card.id === selectedVersionId.value)
   ?? selectedLogical.value?.defaultVersion
@@ -288,7 +299,7 @@ const activeFilterCount = computed(() => [type.value, faction.value, product.val
 const activeFilterSummary = computed(() => {
   const parts = [
     type.value !== 'all' ? typeLabels[type.value] : '',
-    faction.value !== 'all' ? factionLabels[faction.value] : '',
+    faction.value !== 'all' ? factionLabel(faction.value) : '',
     product.value !== 'all' ? product.value : '',
     cost.value !== 'all' ? `费用 ${cost.value}` : '',
     disaster.value !== 'all' ? `天灾 ${disaster.value}` : '',
@@ -391,7 +402,7 @@ function resetFilters() {
       <MobileFilterSheet v-model="filtersOpen" title="图鉴筛选与排序" :active-count="activeFilterCount" @reset="resetFilters">
         <div class="archive-filter-fields">
           <label><span>类型</span><select v-model="type" style="min-height:38px!important"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
-          <label><span>阵营</span><select v-model="faction" style="min-height:38px!important"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
+          <label><span>阵营</span><select v-model="faction" style="min-height:38px!important"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabel(key) }}</option></select></label>
           <label><span>收录产品</span><select v-model="product" style="min-height:38px!important"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
           <label><span>费用</span><select v-model="cost" style="min-height:38px!important"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
           <label><span>天灾等级</span><select v-model="disaster" style="min-height:38px!important"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
@@ -401,7 +412,7 @@ function resetFilters() {
       </MobileFilterSheet>
       <div class="archive-desktop-filters archive-filter-fields">
         <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
-        <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
+        <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabel(key) }}</option></select></label>
         <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
         <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
         <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>

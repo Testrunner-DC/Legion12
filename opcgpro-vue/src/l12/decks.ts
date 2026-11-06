@@ -7,6 +7,7 @@ import { deckCacheDatabase, deckDatabaseScope, fingerprintLegacyDeckRaw, type De
 import { deckDraftSessionId } from './site/deckEditorDraft'
 
 import { normalizeLookupCardType } from './cardPresentation'
+import { factionLabel, normalizeFactionKey } from './factionPresentation'
 import { validateOptionalDeckCoverCardIds } from './deckCover'
 import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
 import { deploymentPath, deploymentBasePath } from './deploymentBase'
@@ -33,6 +34,7 @@ export interface DeckCard {
   product: string
   faction: string
   imageUrl?: string
+  thumbnailUrl?: string
   cost?: number
   hp?: number
   troops?: number
@@ -287,9 +289,30 @@ function normalizeMoraleCatalogCard(card: DeckCard): DeckCard {
 }
 
 function normalizeCardDimensions(card: DeckCard): DeckCard {
-  return card.cardType === 'master'
-    ? { ...card, cost: undefined, troops: undefined }
-    : card
+  if (card.cardType === 'gallery-card') return card
+  if (card.cardType === 'master') return { ...card, cost: undefined, troops: undefined }
+  const hasCost = ['legion', 'artifact', 'tactic', 'divinity'].includes(card.cardType)
+  const hasTroops = ['legion', 'token'].includes(card.cardType)
+  const hasHp = ['master', 'divinity'].includes(card.cardType)
+  return {
+    ...card,
+    cost: hasCost ? card.cost : undefined,
+    troops: hasTroops ? card.troops : undefined,
+    hp: hasHp ? card.hp : undefined,
+  }
+}
+
+export function normalizeCardPresentation(card: DeckCard): DeckCard {
+  const faction = normalizeFactionKey(card.faction)
+  const displayFaction = factionLabel(faction)
+  const traits = (card.traits ?? []).map(value => value.trim()).filter(Boolean)
+    .filter(value => normalizeFactionKey(value) !== faction)
+  const requiredTraits = (card as DeckCard & { galleryStandalone?: boolean }).galleryStandalone ? ['联动'] : []
+  return normalizeCardDimensions({
+    ...card,
+    faction,
+    traits: [...new Set([...requiredTraits, ...(displayFaction ? [displayFaction] : []), ...traits])],
+  })
 }
 
 function normalizeLookupRarity(value: string | null | undefined) {
@@ -299,11 +322,14 @@ function normalizeLookupRarity(value: string | null | undefined) {
 
 function lookupDeckCard(card: LookupCard): DeckCard {
   const authoritative = seasonTwoIdentityById.get(card.cardNo)
-  return normalizeCardDimensions(normalizeMoraleCatalogCard({
+  const cardType = isDerivedDeckSpecialCard({ id: card.cardNo, cardType: authoritative?.cardType ?? '' })
+    ? 'token'
+    : authoritative?.cardType ?? normalizeLookupCardType(card.type, card.name)
+  return normalizeCardPresentation(normalizeMoraleCatalogCard({
     id: card.cardNo,
     number: card.cardNo,
     nameZh: card.name,
-    cardType: authoritative?.cardType ?? normalizeLookupCardType(card.type, card.name),
+    cardType,
     isCounterTactic: authoritative?.isCounterTactic === true,
     product: card.cardNo.split('-')[0] || 'UNKNOWN',
     faction: lookupFactionMap[card.faction] ?? card.faction,
@@ -637,7 +663,7 @@ export async function loadPrivateDeckSummaryPage(query: PrivateDeckSummaryQuery 
     assertCompleteDeckAccount(context)
     if (!context.accountId || !context.token) throw new Error('请先登录账号再读取牌库目录')
     const response = await platformRequest<unknown>(privateDeckSummaryRequestPath(query), {
-      cache: 'no-store', headers: getDeckCoverRequestHeaders(),
+      cache: 'no-store', headers: getRepresentativeDeckRequestHeaders(),
     })
     if (!isCurrentDeckStorageContext(context)) throw new Error('账号已切换，已忽略旧牌库目录')
     return validatePrivateDeckSummaryPage(response, query)
@@ -811,7 +837,7 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
     const starterProducts: DeckCard[] = await stResponse.json()
     return [...seasonOne, ...seasonTwo, ...starterProducts]
       .map(normalizeMoraleCatalogCard)
-      .map(normalizeCardDimensions)
+      .map(normalizeCardPresentation)
       .map(withProductInclusions)
   })
   catalogPromise = request
@@ -1154,7 +1180,7 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
           rarity: card.rarity ?? base.rarity,
         }
       : card
-    byId.set(archiveVersion.id, withProductInclusions(normalizeCardDimensions(normalizeMoraleCatalogCard(archiveVersion))))
+    byId.set(archiveVersion.id, withProductInclusions(normalizeCardPresentation(normalizeMoraleCatalogCard(archiveVersion))))
   })
   cardArchiveAssets.forEach(asset => {
     const base = byId.get(asset.baseCardId) ?? catalogById.get(asset.baseCardId)
@@ -1169,7 +1195,7 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
       return
     }
     if (!base) return
-    byId.set(asset.id, {
+    byId.set(asset.id, normalizeCardPresentation({
       ...base,
       id: asset.id,
       number: asset.number ?? asset.id,
@@ -1180,7 +1206,7 @@ export async function loadCardArchiveCatalog(): Promise<DeckCard[]> {
       rarity: asset.rarity,
       imageUrl: undefined,
       archiveBaseCardId: asset.baseCardId,
-    })
+    }))
   })
   return [...byId.values()]
 }

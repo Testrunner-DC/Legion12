@@ -331,9 +331,10 @@ const checks = [
     && !coordinator.includes('presentedVisualTransactions') && !coordinator.includes('motionRequired')],
   ['only actually mounted prompts block spectator card presentations',
     board.replace(/\s+/g, ' ').includes("const promptOverlayMounted = computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative')")
+    && board.replace(/\s+/g, ' ').includes('const replayPromptOverlayMounted = computed(() => Boolean(promptOverlayMounted.value && !(props.readOnly && props.replayPlaybackSpeed)))')
     && board.includes('const visibleBoardPromptIds = computed(() => !props.readOnly && !boardControlMinimized.value')
     && board.includes('visibleBoardPromptId.value') && board.includes('|| visiblePromptModal.value')
-    && board.includes('<PromptOverlay v-if="promptOverlayMounted"')
+    && board.includes('<PromptOverlay v-if="replayPromptOverlayMounted"')
     && board.includes(':suppressed-prompt-ids="activeBoardPromptIds"')
     && board.includes('const inlinePromptIds = new Set(activeBoardPromptIds.value)')
     && board.includes('!inlinePromptIds.has(item.promptId)')

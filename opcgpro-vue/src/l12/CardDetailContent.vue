@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { displayCardNumber, type DeckCard } from './decks'
+import { factionLabel } from './factionPresentation'
 import CardImage from './CardImage.vue'
 
 type DetailCard = DeckCard & { galleryStandalone?: boolean; artist?: string }
@@ -16,8 +17,11 @@ const props = withDefaults(defineProps<{
   showCatalogOnly: true,
 })
 
-const products = computed(() => props.card.products ?? [])
 const standalone = computed(() => props.card.galleryStandalone === true)
+const traits = computed(() => standalone.value && !(props.card.traits ?? []).includes('联动')
+  ? ['联动', ...(props.card.traits ?? [])]
+  : props.card.traits ?? [])
+const products = computed(() => props.card.products ?? [])
 
 function hasCostDimension(card: DeckCard) {
   return (standalone.value || card.cardType !== 'master') && card.cost !== undefined
@@ -36,10 +40,9 @@ function hasCostDimension(card: DeckCard) {
     </p>
     <h2 :id="titleId">{{ card.nameZh }}</h2>
     <div class="archive-tags">
-      <span v-for="trait in card.traits" :key="trait">{{ trait }}</span>
-      <span v-if="standalone">联动卡</span>
+      <span v-for="trait in traits" :key="trait">{{ trait }}</span>
       <span v-if="!standalone || card.cardType !== 'gallery-card'">{{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</span>
-      <span v-if="standalone && card.faction">{{ card.faction }}</span>
+      <span v-if="standalone && card.faction">{{ factionLabel(card.faction) }}</span>
       <span v-if="card.profession">{{ card.profession }}</span>
       <span v-if="card.rarity">{{ card.rarity }}</span>
     </div>

@@ -221,7 +221,7 @@ function confirm() {
             @click="choose(row.deck)">
             <DeckCover variant="compact" :name="row.deck.name" :master-id="row.deck.masterId"
               :master-name="byId.get(row.deck.masterId)?.nameZh" :catalog="catalog"
-              :cover-card-ids="'counts' in row.deck ? row.deck.coverCardIds : undefined"
+              :cover-card-ids="'counts' in row.deck ? row.deck.coverCardIds : row.deck.representativeCardIds"
               :source-card-ids="'counts' in row.deck ? undefined : row.deck.cardIds"
               :context="'counts' in row.deck ? '云端牌库' : '本地牌库'" :meta="rowMeta(row.deck)"
               :selected="'counts' in row.deck ? draftId === row.deck.id && draftRevision === row.deck.revision : draftName === row.deck.name"/>

@@ -796,9 +796,9 @@ async function main() {
   await check('legacy eight-method API initializer remains at its reviewed normalized source digest', () => {
     const initializer = variableInitializer(read('src/l12/platform.ts'), 'publicDeckApi').replace(/\r\n/g, '\n')
     assert.match(initializer, /headers: getRepresentativeDeckRequestHeaders\(\)/)
-    const legacyInitializer = initializer.replace("    headers: getRepresentativeDeckRequestHeaders(),\n", '')
+    const legacyInitializer = initializer.replace(/headers: getRepresentativeDeckRequestHeaders\(\),\n/g, '')
     assert.equal(crypto.createHash('sha256').update(legacyInitializer).digest('hex'),
-      'e779f4eeb21694006de74ad038c985a28377d19f4d1ae5d17be93cfc84a41e9f')
+      'b939e307b815ca0568c9fb43c3230a64aadde392d8c5d8622fdb88bb2cb51727')
   })
   await check('actual content editor keeps fields and picker behavior while exposing guarded refresh and save states', () => {
     const source = read('src/l12/site/PublicDeckContentEditor.vue'), save = functionSource(source, 'saveContent')

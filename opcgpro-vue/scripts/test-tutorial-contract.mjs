@@ -97,7 +97,7 @@ check('live presentation busy is exposed without changing replay speed gating', 
   assert.match(source.board, /watch\(cardPresentationBusy, busy => emit\('presentationChange', busy\)/)
   assert.match(source.board, /const replayCardPresentationBusy = computed\(\(\) => Boolean\(props\.replayPlaybackSpeed && \(/)
   assert.match(source.combatMotion, /emit\('presentationChange', Boolean\(preparationCount \|\| animations\.size\)\)/)
-  assert.match(source.combatMotion, /emit\('busyChange', Boolean\(props\.playbackSpeed && animations\.size\)\)/)
+  assert.match(source.combatMotion, /emit\('busyChange', Boolean\(props\.playbackSpeed && \(preparationCount \|\| animations\.size\)\)\)/)
 })
 check('tutorial entry stays independent while personal sandbox requires a valid account', () => {
   assert.ok(source.router.includes("path: '/battle/tutorial'"))
@@ -263,13 +263,17 @@ check('actual board busy includes preparation without mounted animations and pre
   assert.equal(live.value, true)
   assert.equal(replay.value, false, 'the new signal must not add dice to the legacy replay barrier')
 })
-check('actual combat notifier reports preparation for live teaching while keeping replay output unchanged', () => {
+check('actual combat notifier reports preparation for live teaching and replay barriers', () => {
   const props = { playbackSpeed: null }, animations = new Set(), events = []
   const run = preparationCount => actualFunctions(source.combatMotion, ['notifyBusy'], {
     props, animations, preparationCount, emit: (name, busy) => events.push([name, busy]),
   }).notifyBusy()
   run(1)
   assert.deepEqual(events.splice(0), [['busyChange', false], ['presentationChange', true]])
+  props.playbackSpeed = 2
+  run(1)
+  assert.deepEqual(events.splice(0), [['busyChange', true], ['presentationChange', true]],
+    'replay busy must include a preparation-only combat reservation before animation DOM exists')
   animations.add('synthetic-animation'); props.playbackSpeed = 2; run(0)
   assert.deepEqual(events.splice(0), [['busyChange', true], ['presentationChange', true]])
   animations.clear(); run(0)

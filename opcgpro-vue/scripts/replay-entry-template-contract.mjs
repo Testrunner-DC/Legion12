@@ -381,14 +381,13 @@ export function replayEntryTemplateContract(sources) {
   const playerMats = bound('PlayerMat', 'player-mat')
   const graveyard = bound('GraveyardOverlay', 'graveyard-overlay', { name: 'if', expected: 'graveyardPlayer !== null' })
   const master = bound('MasterOverlay', 'master-overlay', { name: 'if', expected: 'masterPlayerIndex !== null' })
-  const prompt = [
-    ...bound('PromptOverlay', 'prompt-overlay', {
-      name: 'if', expected: "!readOnly || game.phase === 'DisasterPreparation' || game.phase === 'Initiative'",
-    }),
-    ...(hasExactComputedBoolean(board.script, 'promptOverlayMounted',
-      "!props.readOnly || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative'")
-      ? bound('PromptOverlay', 'prompt-overlay', { name: 'if', expected: 'promptOverlayMounted' }) : []),
-  ]
+  const promptMountSemantics = hasExactComputedBoolean(board.script, 'promptOverlayMounted',
+    "!props.readOnly || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative'")
+    && hasExactComputedBoolean(board.script, 'replayPromptOverlayMounted',
+      'Boolean(promptOverlayMounted.value && !(props.readOnly && props.replayPlaybackSpeed))')
+  const prompt = promptMountSemantics ? bound('PromptOverlay', 'prompt-overlay', {
+    name: 'if', expected: 'replayPromptOverlayMounted',
+  }) : []
   return {
     recordsHeaderAndImport: Boolean(recordsRoot && recordsHeader && heading && retention && fileActions && fileInput && importButton),
     recordsReplayAvailability: Boolean(selectedDetail && launch && cleared && desktopHint && exportButton && playButton

@@ -132,7 +132,9 @@ function summaryLoaderRuntime(headers = DECK_COVER_REQUEST_HEADERS) {
     'privateDeckObject', 'privateDeckExactFields', 'privateDeckInteger', 'privateDeckText', 'privateDeckContractError',
     'normalizePrivateDeckSummaryQuery', 'privateDeckSummaryRequestPath', 'validatePrivateDeckSummaryPage', 'loadPrivateDeckSummaryPage',
   ], {
-    getDeckCoverRequestHeaders: () => headers, validateOptionalDeckCoverCardIds,
+    getDeckCoverRequestHeaders: () => headers,
+    getRepresentativeDeckRequestHeaders: () => headers['X-L12-Deck-Cover'] ? { 'X-L12-Deck-Cover': '2' } : {},
+    validateOptionalDeckCoverCardIds,
     captureDeckStorageContext: () => context,
     assertCompleteDeckAccount: () => {},
     platformRequest: (url, init) => { const row = { url, init, ...deferred() }; calls.push(row); return row.promise },
@@ -146,7 +148,7 @@ await check('actual summary loader requests only metadata and performs no cache 
   const loading = runtime.loadPrivateDeckSummaryPage(query)
   assert.equal(runtime.calls.length, 1); assert.match(runtime.calls[0].url, /^\/api\/decks\/summaries\?/)
   assert.equal(runtime.calls[0].init.cache, 'no-store')
-  assert.deepEqual(runtime.calls[0].init.headers, { 'X-L12-Deck-Cover': '1' })
+  assert.deepEqual(runtime.calls[0].init.headers, { 'X-L12-Deck-Cover': '2' })
   runtime.calls[0].resolve(page([summary()], 31, query)); const result = await loading
   assert.equal(result.page, 2); assert.equal(result.total, 31)
 })

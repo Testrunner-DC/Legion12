@@ -48,7 +48,11 @@ function presentationDuration(standardMs: number, liveMinimumMs: number, replayM
 function notifyBusy() {
   // Keep the existing replay clock contract; teaching also needs the live
   // preparation interval before an animation has a mounted DOM element.
-  emit('busyChange', Boolean(props.playbackSpeed && animations.size))
+  // A replay presentation reserves its visual turn before the DOM animation
+  // is mounted.  The reservation is part of the same barrier as the mounted
+  // animation; otherwise ReplayPage may advance to the next event while the
+  // current defeat/master-hit is still preparing and its card effect is lost.
+  emit('busyChange', Boolean(props.playbackSpeed && (preparationCount || animations.size)))
   emit('presentationChange', Boolean(preparationCount || animations.size))
 }
 

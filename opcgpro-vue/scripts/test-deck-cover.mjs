@@ -287,9 +287,9 @@ assert.match(source('../src/l12/LobbyPage.vue'), /repeat\(auto-fit,minmax\(min\(
   'legacy room cover grid must collapse responsively instead of squeezing four covers')
 assert.doesNotMatch(source('../src/l12/site/PublicDeckDetailPage.vue'), /DeckCover/,
   'public detail and matchup layouts remain unchanged')
-assert.match(source('../src/l12/decks.ts'), /platformRequest<unknown>\(privateDeckSummaryRequestPath\(query\),\s*\{\s*cache: 'no-store', headers: getDeckCoverRequestHeaders\(\)/)
+assert.match(source('../src/l12/decks.ts'), /platformRequest<unknown>\(privateDeckSummaryRequestPath\(query\),\s*\{\s*cache: 'no-store', headers: getRepresentativeDeckRequestHeaders\(\)/)
 const platform = source('../src/l12/platform.ts')
-assert.match(platform, /platformRequest<PublicDeckSummaryPage>\([^;]*headers: getDeckCoverRequestHeaders\(\)/)
+assert.match(platform, /platformRequest<PublicDeckSummaryPage>\([^;]*headers: getRepresentativeDeckRequestHeaders\(\)/)
 const platformTree = ts.createSourceFile('platform.ts', platform, ts.ScriptTarget.Latest, true)
 const getter = platformTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'getDeckCoverRequestHeaders')
 assert.ok(getter)

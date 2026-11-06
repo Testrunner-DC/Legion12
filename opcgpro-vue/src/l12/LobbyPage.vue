@@ -106,7 +106,7 @@ function officialSourceCards(deck: { name: string; masterId: string }) {
                 :class="{ selected: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready"
                 @click="selectCustomDeck(deck)">
                 <DeckCover variant="compact" :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh"
-                  :name="deck.name" :catalog="catalog" :source-card-ids="deck.cardIds" context="自定义"
+                  :name="deck.name" :catalog="catalog" :cover-card-ids="deck.representativeCardIds" :source-card-ids="deck.cardIds" context="自定义"
                   :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`"
                   :selected="me?.customDeck && me?.deckName === deck.name"/>
               </button>

@@ -205,6 +205,7 @@ function requestRuntime() {
     `const counter = ${counter.getText(file)};`].join('\n')
   const apiMethods = evaluated(code, {
     platformState: { token: 'A' }, platformSessionVersion: 1, apiBase: () => 'http://counter.invalid', usesSharedGallery: false,
+    getRepresentativeDeckRequestHeaders: () => ({ 'X-L12-Deck-Cover': '2' }),
     PLATFORM_READ_TIMEOUT_MS: 10000, PLATFORM_MUTATION_TIMEOUT_MS: 20000, PLATFORM_UPLOAD_TIMEOUT_MS: 60000,
     PLATFORM_READ_MAX_ATTEMPTS: 2, requestFingerprint: async () => 'key', retryableReadFailure: () => true,
     RequestDeadlineError: class extends Error {}, authState: { verified: true }, forgetAccount: () => {}, refreshCurrentAccount: async () => null,

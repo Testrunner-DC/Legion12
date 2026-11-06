@@ -8,6 +8,7 @@ export const integrityOutcomeLabels: Record<string, string> = {
   released: '排位收益已补发', voided: '所选对局收益已作废', restored: '所选对局收益已恢复',
   unchanged: '排位收益不变', 'voided-profile-preserved': '所选对局已作废；为保护后续正常结算，当前排位档案保持不变',
   'appeal-reply': '申诉处理回复', partial: '部分账号已处置，其他账号未作结论',
+  'manual-ranked-restriction': '账号已被暂时禁止参加排位',
 }
 export const integrityLabel = (value: string) => integrityOutcomeLabels[value] || value
 export function integrityNotificationMessage(accountIds: readonly string[] | undefined, confirmed = false) {

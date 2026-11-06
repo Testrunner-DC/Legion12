@@ -218,12 +218,13 @@ if (process.env.L12_SUMMARY_BASELINE_ONLY !== '1') {
     let headers = cover.DECK_COVER_REQUEST_HEADERS
     const calls = [], api = evaluate('export const api=' + initializer, {
       getDeckCoverRequestHeaders: () => headers,
+      getRepresentativeDeckRequestHeaders: () => headers['X-L12-Deck-Cover'] ? { 'X-L12-Deck-Cover': '2' } : {},
       platformRequest: (url, init) => { calls.push({ url, init }); return Promise.resolve({}) },
     }).api
     await api.summaries({ source: 'all', page: 2, pageSize: 30, legal: false, keyword: '中文 &', cardId: 'C', masterId: 'M', faction: 'fate',
       environment: '2.5', updatedAfter: '2026-10-07T00:00:00.000Z', sort: 'name' })
     const query = new URL(calls[0].url, 'http://owned.invalid').searchParams
-    assert.deepEqual(calls[0].init.headers, { 'X-L12-Deck-Cover': '1' })
+    assert.deepEqual(calls[0].init.headers, { 'X-L12-Deck-Cover': '2' })
     assert.equal(query.get('legal'), 'false'); assert.equal(query.get('keyword'), '中文 &'); assert.equal(query.get('page'), '2')
     assert.equal(query.get('updatedAfter'), '2026-10-07T00:00:00.000Z')
     await api.ownReferences(['A/B', '第二条']); assert.deepEqual(new URL(calls[1].url, 'http://owned.invalid').searchParams.getAll('publicationId'), ['A/B', '第二条'])

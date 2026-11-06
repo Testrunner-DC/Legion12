@@ -233,6 +233,10 @@ assert.match(template, /<template v-if="!readOnly && prompt && diceSettled">/,
   'a read-only spectator must never inherit the initiative choice controls')
 assert.match(gameBoardSource, /const promptOverlayMounted = computed\(\(\) => !props\.readOnly[\s\S]*props\.game\.phase === 'DisasterPreparation' \|\| props\.game\.phase === 'Initiative'\)/,
   'read-only spectators must mount the shared opening during Initiative without broadening other prompt phases')
+assert.match(gameBoardSource, /const replayPromptOverlayMounted = computed\(\(\) => Boolean\([\s\S]*promptOverlayMounted\.value\s*&&\s*!\(props\.readOnly && props\.replayPlaybackSpeed\)/,
+  'read-only replay must suppress interactive preparation prompts while preserving the live spectator opening')
+assert.match(gameBoardSource, /<PromptOverlay v-if="replayPromptOverlayMounted"/,
+  'replay prompt suppression must be enforced at the actual overlay mount')
 assert.doesNotMatch(template, /opening-initiative-panel|initiative-opening-stage/,
   'the accepted opening must not return to the framed two-banner panel')
 assert.match(template, /class="opening-versus"[^>]*>对阵<\/strong>/,

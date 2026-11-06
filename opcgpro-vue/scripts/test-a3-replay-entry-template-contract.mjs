@@ -16,6 +16,8 @@ const baselineSources = {
 }
 const actualPromptMount = baselineSources.gameBoard.match(/computed\(\(\) => !props\.readOnly\s*\|\| props\.game\.phase === 'DisasterPreparation' \|\| props\.game\.phase === 'Initiative'\)/)?.[0]
 assert.ok(actualPromptMount, 'current read-only opening/preparation mount declaration must exist')
+const actualReplayPromptMount = baselineSources.gameBoard.match(/computed\(\(\) => Boolean\(\s*promptOverlayMounted\.value\s*&&\s*!\(props\.readOnly && props\.replayPlaybackSpeed\),?\s*\)\)/)?.[0]
+assert.ok(actualReplayPromptMount, 'current replay prompt suppression declaration must exist')
 
 const replaceOnce = (source, before, after) => {
   const index = source.indexOf(before)
@@ -212,28 +214,25 @@ reject('mobile detail content overridden', 'boardMobileInspectorDetails', change
 reject('opponent hand loses mobile layout model', 'boardMobileLayoutConsumers', changed('gameBoard',
   ':confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"',
   ':confirm-all-playable="mobileLandscapeViewport"'))
-accept('inline prompt mount condition remains semantically equivalent', changed('gameBoard',
-  'v-if="promptOverlayMounted"', 'v-if="!readOnly || game.phase === \'DisasterPreparation\' || game.phase === \'Initiative\'"'))
+reject('inline prompt mount bypasses replay-only guard', 'boardMobileLayoutConsumers', changed('gameBoard',
+  'v-if="replayPromptOverlayMounted"', 'v-if="!readOnly || game.phase === \'DisasterPreparation\' || game.phase === \'Initiative\'"'))
 reject('inline prompt mount cannot omit spectator initiative', 'boardMobileLayoutConsumers', changed('gameBoard',
-  'v-if="promptOverlayMounted"', 'v-if="!readOnly || game.phase === \'DisasterPreparation\'"'))
-accept('computed prompt mount allows expression parentheses', changed('gameBoard',
-  actualPromptMount,
-  "computed(() => ( !props.readOnly || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Initiative' ))"))
+  'v-if="replayPromptOverlayMounted"', 'v-if="!readOnly || game.phase === \'DisasterPreparation\'"'))
 reject('computed prompt mount cannot be permanently hidden', 'boardMobileLayoutConsumers', changed('gameBoard',
-  actualPromptMount, 'computed(() => false)'))
+  actualReplayPromptMount, 'computed(() => false)'))
 reject('computed prompt mount keeps spectator preparation', 'boardMobileLayoutConsumers', changed('gameBoard',
-  actualPromptMount,
-  "computed(() => !props.readOnly || props.game.phase === 'Main')"))
+  actualReplayPromptMount,
+  "computed(() => Boolean(promptOverlayMounted.value && props.game.phase === 'Main'))"))
 reject('computed prompt mount cannot reverse player eligibility', 'boardMobileLayoutConsumers', changed('gameBoard',
-  actualPromptMount,
-  "computed(() => props.readOnly || props.game.phase === 'DisasterPreparation')"))
+  actualReplayPromptMount,
+  "computed(() => Boolean(props.readOnly || props.game.phase === 'DisasterPreparation'))"))
 reject('unrelated prompt binding cannot borrow valid computed declaration', 'boardMobileLayoutConsumers', changed('gameBoard',
-  'v-if="promptOverlayMounted"', 'v-if="unrelatedPrompt"'))
+  'v-if="replayPromptOverlayMounted"', 'v-if="unrelatedPrompt"'))
 reject('prompt mount must use the imported computed function', 'boardMobileLayoutConsumers', changed('gameBoard',
-  actualPromptMount,
-  "fakeComputed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')"))
+  actualReplayPromptMount,
+  "fakeComputed(() => Boolean(promptOverlayMounted.value && !(props.readOnly && props.replayPlaybackSpeed)))"))
 reject('computed prompt mount keeps spectator initiative', 'boardMobileLayoutConsumers', changed('gameBoard',
-  actualPromptMount, "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')"))
+  actualReplayPromptMount, "computed(() => Boolean(promptOverlayMounted.value && props.game.phase === 'DisasterPreparation'))"))
 reject('prompt receives wrong mobile model', 'boardMobileLayoutConsumers', changed('gameBoard',
   ':inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"',
   ':inspector-visible="modalInspectorVisible" :mobile-layout="compactViewport"'))

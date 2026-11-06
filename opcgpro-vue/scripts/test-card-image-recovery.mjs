@@ -378,7 +378,8 @@ export async function runCardImageRecoveryTests() {
     const base = { id: 'BASE', nameZh: 'base', imageUrl: '/base.webp', products: [] }
     const art = { id: 'uploaded', kind, displayName: 'alternate', baseCardId: 'BASE', cardImageId: 'BASE', artCode: 'BASE',
       imageUrl: original, thumbnailUrl: thumb, builtIn: kind === 'built-in' }
-    const env = { regularDisplayCards: { value: [base] }, regularGalleryCards: { value: [art] }, galleryArts: { value: [art] } }
+    const env = { regularDisplayCards: { value: [base] }, regularGalleryCards: { value: [art] }, galleryArts: { value: [art] },
+      normalizeCardPresentation: value => value }
     vm.createContext(env); vm.runInContext(compile(functions), env)
     assert.equal(typeof env.archiveListImageUrl, 'function')
     const card = kind === 'regular-card' ? env.withRegularGalleryMetadata(base) : kind === 'built-in' ? env.withGalleryMetadata(base) : env.projectedUploadedArt(art, true)

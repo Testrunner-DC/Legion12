@@ -127,6 +127,7 @@ const specialAssets = read('../src/l12/specialAssets.ts')
 const cardTile = read('../src/l12/CardTile.vue')
 const roundCardImage = read('../src/l12/RoundCardImage.vue')
 const cardPresentation = read('../src/l12/cardPresentation.ts')
+const factionPresentation = read('../src/l12/factionPresentation.ts')
 const l12Types = read('../src/l12/types.ts')
 const cardArchive = read('../src/l12/CardArchive.vue')
 const mobileDeferredCardImage = read('../src/l12/MobileDeferredCardImage.vue')
@@ -393,6 +394,15 @@ const contracts = [
   [decks.includes('function normalizeCardDimensions(card: DeckCard)')
     && decks.includes("card.cardType === 'master'") && decks.includes('cost: undefined, troops: undefined')
     && cardDetailContent.includes('hasCostDimension(card)'), '主宰只有血量维度；卡牌图鉴、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
+  [factionPresentation.includes("universal: { label: '通用'")
+    && factionPresentation.includes("中立: 'universal'")
+    && decks.includes('export function normalizeCardPresentation')
+    && decks.includes("const hasTroops = ['legion', 'token']")
+    && cardArchive.includes('normalizeCardPresentation')
+    && cardArchive.includes('factionLabel(key)')
+    && cardPresentation.includes("token: '衍生卡'")
+    && cardDetailContent.includes("['联动', ...(props.card.traits ?? [])]")
+    && !cardDetailContent.includes('联动卡</span>'), '图鉴必须统一通用阵营、补齐阵营特征、按卡类过滤错误数值，并将联动卡归入联动特征'],
   [naturalGift && naturalGift.cardType === 'tactic' && naturalGift.cost == null
     && decks.includes('export function filterableCardCost') && decks.includes("card.cardType === 'master' ? null : (card.cost ?? 0)")
     && cardArchive.includes('filterableCardCost(card)') && deckEditor.includes('filterableCardCost(card)')
@@ -1198,7 +1208,8 @@ const contracts = [
     && deckEditor.includes('automaticExtraCardIdsForMaster(selectedMaster.value?.id)')
     && deckShare.includes('automaticExtraCardIdsForMaster(deck.masterId)'), '主宰自动额外卡映射必须由 decks.ts 公共函数统一提供给编辑器与牌库图导出'],
   [openingHandEligibility.includes("card?.id === 'S02-01S1'") && openingHandEligibility.includes("card?.id === 'S02-06S2'")
-    && decks.includes('isDerivedDeckSpecialCard(card)') && deckEditor.includes('!isDerivedSpecialCard(card)'),
+    && decks.includes('isDerivedDeckSpecialCard(card)') && decks.includes("isDerivedDeckSpecialCard({ id: card.cardNo")
+    && deckEditor.includes('!isDerivedSpecialCard(card)'),
   '哮天犬与王者之剑必须共用衍生卡身份，不进入主牌库候选或保存校验'],
   [deckShare.includes('...(deck.specialIds ?? [])') && deckShare.includes('const extraIds = [...new Set([')
     && deckShare.includes("isHorizontalCardType(card?.cardType) ? 1752 / 1255 : 5 / 7")
@@ -1217,7 +1228,7 @@ const contracts = [
   [cardArchive.includes('const productOptions = computed(') && cardArchive.includes('<option value="all">全部产品</option><option v-for="value in productOptions"') && sandboxPicker.includes('<option value="all">全部产品</option><option v-for="value in products"'), '卡牌图鉴与共享单卡选择器必须从权威完整目录动态列出产品，不得回退为旧双卡池硬编码'],
   [deckEditor.indexOf('生成牌库图') > deckEditor.indexOf('另存为牌库') && deckEditor.indexOf('生成牌库图') < deckEditor.indexOf('删除牌库'), '生成牌库图必须位于另存为牌库与删除牌库之间'],
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],
-  [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckConstructionBrowser.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
+  [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckConstructionBrowser.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/通用、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
   [deckEditor.includes('牌库删除后不可找回') && deckEditor.includes('继续删除') && deckEditor.includes('pendingDeleteName') && !deckEditor.includes('@click="onDelete'), '全部牌库删除入口必须先经过统一确认弹框'],
   [gamePage.includes("import { gameAction, l12State, leaveRoom } from './net'") && gamePage.includes("game.value?.phase === 'GameOver'")
     && gamePage.includes("const destination = tutorialRoom ? '/battle/tutorial'") && gamePage.includes(": sandboxRoom ? '/sandbox'")

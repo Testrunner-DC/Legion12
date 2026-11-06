@@ -52,6 +52,8 @@ public sealed partial class L12WebSocketServer
                 { return L12AdminCommandResult<L12AccountRankedRestrictionOperation>.Fail("ranked_restriction_forbidden", error.Message, 403); }
             }
             var outcome = _adminCommands.Execute(command, permission, _ => Execute(true), _ => Execute(false));
+            if (outcome.Success && !clear && outcome.Value is { Applied: true })
+                NotifyIntegrityChanged([id]);
             return AdminCommandResponse(request, command, outcome);
         }
         app.MapPut(route, (HttpRequest request, string id, AccountRankedRestrictionRequest body)
