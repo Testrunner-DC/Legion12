@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-11-07 Bug 收口续验（5c2d1e1a）
+
+- 本轮未部署、未改维护、未写线上业务数据。当前 `origin/main` 与工作树同为 `5c2d1e1a`；候选仍以正式服 `eceb6c27…` 为线上基线。
+- 具名回归补验：西施→诸葛连弩兵、虚构圣杯直接触发、虚构圣杯公开登场共 3/3；赛季空对账错误字段相关 `RankedPersistenceRecoveryTests` 43/43。证据分别为 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/rules/test-f7e57459765843ac8c2615567502a7d6/pass-proof.trx` 与 `.../test-4cc6a2198fca4788915172ae8b718924/pass-proof.trx`。
+- 图鉴／画廊本地回归：公开异画切换、同名去重、产品顺序、ST 士气异画分组两尺寸通过；画廊产品筛选并发 7/7 通过。证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/card-archive/report.json`、`.../gallery-filter/report.json`。
+- 仍保持开放：`BUG-20261101-668e5183`、圣杯触发线上具名读回、赛季 readiness 正式服无统计副作用读回、箱子 `BUG-20261029-521883f4` 的原场景根因。未部署前不得标记 `resolved`；箱子不再重复同配置合成探针，等待新的权威读取或独立真 RED。
+
 ## 2026-11-06 部署标准流程修正（c27a9e29）
 
 - 正式部署脚本在 `systemctl start` 后先等待同一提交的本机 `/health` 有界通过，再读取重启后的排空 owner／epoch／围栏；避免启动瞬时拒绝被误记为人工对账阻断。对应回归断言已加入 `scripts/test-l12-deploy-behavior.ps1`。
