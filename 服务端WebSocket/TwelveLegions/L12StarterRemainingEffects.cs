@@ -621,6 +621,7 @@ public sealed partial class L12GameEngine
             case "hidden-pass-summon":
             {
                 var entries = player.Hand.Where(card => card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4)
+                        && CanSummonLegionFromHand(player, card)
                         && L12StructuredCardRules.HasFaction(player, card, "tianting"))
                     .Select(card => card.InstanceId).ToList();
                 var sourceSlot = FreshSetCounterSourceVacatedEntrySlot(candidate, candidate.Controller);
@@ -912,6 +913,7 @@ public sealed partial class L12GameEngine
                 if (!IsFreshSetCounterTacticTrigger(candidate) || !CanDeclareFreshSetCounterTacticTrigger(candidate)
                     || returnCost.Count != 1 || !CanReturnSelectedMoraleById(player, returnCost, 1)
                     || !player.Hand.Any(card => card.InstanceId == entryId && card.CardType == "legion"
+                        && CanSummonLegionFromHand(player, card)
                         && L12StructuredCardRules.CurrentCostAtMost(card, 4) && L12StructuredCardRules.HasFaction(player, card, "tianting"))
                     || string.IsNullOrWhiteSpace(slot)
                     || !FreshSetCounterEntrySlotsAfterSourceVacates(candidate, candidate.Controller)

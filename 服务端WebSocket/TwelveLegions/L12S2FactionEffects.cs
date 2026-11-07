@@ -377,7 +377,9 @@ public sealed partial class L12GameEngine
             case "罗宾汉":
             {
                 var candidates = player.Hand.Concat(player.Library).Concat(player.Graveyard)
-                    .Where(candidate => candidate.CardId == "S02-0609").ToArray();
+                    .Where(candidate => candidate.CardId == "S02-0609"
+                        && (!player.Hand.Contains(candidate) || CanSummonLegionFromHand(player, candidate)))
+                    .ToArray();
                 if (candidates.Length == 0) { FinishStackItem(item); return true; }
                 var squires = candidates.Select(candidate => candidate.InstanceId).Append("skip").ToArray();
                 var data = new Dictionary<string, string>
@@ -885,7 +887,8 @@ public sealed partial class L12GameEngine
         var summonId = CompositeDeclared(item, "summonTarget").SingleOrDefault();
         var slotChoice = CompositeDeclared(item, "summonSlot").SingleOrDefault();
         var summon = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == summonId
-            && IsDesertHandSummonCandidate(player, candidate, discardCount, item.SourceInstanceId));
+            && IsDesertHandSummonCandidate(player, candidate, discardCount, item.SourceInstanceId)
+            && CanSummonLegionFromHand(player, candidate));
         if (discardIds.Length > 3 || summon is null || slotChoice is null
             || !TrySummonFromAnyPrivateZone(player, item.Controller, summon.InstanceId, slotChoice,
                 tapped: false, presentationOwner: item))

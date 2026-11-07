@@ -368,6 +368,40 @@ public sealed class BackendReportRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "BUG-20261107-WORLD-UPHEAVAL-SAME-PROFESSION-HAND-SUMMON")]
+    public void WorldUpheavalAlsoBlocksMatchingProfessionLegionPulledFromHand()
+    {
+        var game = Create(826147);
+        var player = game.State.Players[0];
+        var alvida = Card("S01-0307", "world-upheaval-alvida-source");
+        var matching = Card("S02-0102", "world-upheaval-matching-hand");
+        var different = Card("S02-0303", "world-upheaval-different-hand");
+        var libraryTop = Card("S02-0604", "world-upheaval-hand-summon-top");
+        Assert.Equal(matching.Profession, libraryTop.Profession);
+        Assert.NotEqual(different.Profession, libraryTop.Profession);
+        player.Field[0][0] = alvida;
+        player.Hand.Add(matching);
+        player.Hand.Add(different);
+        player.Library.Add(libraryTop);
+        game.State.ActiveDisaster = Card("S02-DS01", "world-upheaval-hand-summon");
+
+        var begin = game.Handle(0, new L12Command("activateAbility", alvida.InstanceId,
+            Ability: "alvidaSummon"));
+        Assert.True(begin.Accepted, begin.Error);
+        var entry = Prompt(game);
+        Assert.DoesNotContain(matching.InstanceId, entry.ValidChoices);
+        Assert.Contains(different.InstanceId, entry.ValidChoices);
+
+        Choose(game, different.InstanceId);
+        Choose(game, "0:1");
+        PassResponses(game);
+
+        Assert.Same(different, player.Field[0][1]);
+        Assert.Contains(matching, player.Hand);
+        Assert.Contains(alvida, player.Graveyard);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "BUG-82e6141a-cancellation")]
     public void CancellingAlvidasProspectiveSlotReleasesTheWholeUncommittedDeclaration()
     {

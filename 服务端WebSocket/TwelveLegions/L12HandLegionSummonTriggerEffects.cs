@@ -41,9 +41,10 @@ public sealed partial class L12GameEngine
         };
     }
 
-    private static L12CardInstance[] LegalHandLegionSummonTargets(
+    private L12CardInstance[] LegalHandLegionSummonTargets(
         L12HandLegionSummonTriggerSpec spec, L12PlayerState player)
-        => player.Hand.Where(card => IsLegalHandLegionSummonTarget(spec, player, card)).ToArray();
+        => player.Hand.Where(card => IsLegalHandLegionSummonTarget(spec, player, card)
+                && CanSummonLegionFromHand(player, card)).ToArray();
 
     private bool TryResolveHandLegionSummonTrigger(L12StackItem item, L12CardInstance source)
     {
@@ -67,7 +68,8 @@ public sealed partial class L12GameEngine
         }
 
         var target = player.Hand.FirstOrDefault(card => card.InstanceId == entryId
-            && IsLegalHandLegionSummonTarget(spec, player, card));
+            && IsLegalHandLegionSummonTarget(spec, player, card)
+            && CanSummonLegionFromHand(player, card));
         if (target is null || string.IsNullOrWhiteSpace(slot)
             || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
         {

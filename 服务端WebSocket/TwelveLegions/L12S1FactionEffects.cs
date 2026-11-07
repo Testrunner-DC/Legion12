@@ -900,7 +900,8 @@ public sealed partial class L12GameEngine
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var legion = declared.Length == 3
                     ? player.Hand.FirstOrDefault(card => card.InstanceId == declared[0]
-                        && card.CardType == "legion" && card.DisasterLevel == 2)
+                        && card.CardType == "legion" && card.DisasterLevel == 2
+                        && CanSummonLegionFromHand(player, card))
                     : null;
                 var battlefield = declared.Length == 3 ? ParseEffectEntryBattlefieldChoice(declared[1]) : null;
                 var (row, slot) = declared.Length == 3 ? ParseSlot(declared[2]) : (-1, -1);
@@ -2172,13 +2173,18 @@ public sealed partial class L12GameEngine
         }
 
         var card = matches[0];
+        var fromHand = sourceOwner.Hand.Contains(card);
+        if (fromHand && HandLegionBlockReasonForCurrentDisaster(sourceOwner, card) is { } handBlockReason)
+        {
+            AddEvent("effect-cancelled", sourceOwner.PlayerIndex, handBlockReason, card);
+            return false;
+        }
         if (!EffectEntryBattlefieldChoices(sourceOwner.PlayerIndex, card).Contains(destinationPlayerIndex))
         {
             AddEvent("effect-cancelled", sourceOwner.PlayerIndex,
                 "该军团不能在其他玩家战场登场；仅取消本次登场");
             return false;
         }
-        var fromHand = sourceOwner.Hand.Contains(card);
         var fromLibrary = sourceOwner.Library.Contains(card);
         var (row, slot) = ParseSlot(slotChoice);
         if (destination.Field[row][slot] is not null)

@@ -677,6 +677,7 @@ public sealed partial class L12GameEngine
                 {
                     Kind = "card", Text = "西施：选择手牌中最多 1 张兵力不高于 2000 的其他军团",
                     ValidChoices = player.Hand.Where(card => card.CardType == "legion" && card.CardId != "S01-0116" && card.Troops <= 2000
+                        && CanSummonLegionFromHand(player, card)
                         && (EffectEntryBattlefieldChoices(playerIndex, card).Any()
                             || SourceSlotAfterCost(playerIndex, source.InstanceId) is not null)).Select(card => card.InstanceId).ToList(),
                     DeclarationKey = "entryCard",
@@ -1024,6 +1025,11 @@ public sealed partial class L12GameEngine
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId
             && candidate.CardType == "legion" && (candidateRule?.Invoke(candidate) ?? true));
         if (card is null) return false;
+        if (HandLegionBlockReasonForCurrentDisaster(player, card) is { } handBlockReason)
+        {
+            AddEvent("effect-cancelled", player.PlayerIndex, handBlockReason, card);
+            return false;
+        }
         var battlefield = targetPlayerIndex ?? player.PlayerIndex;
         if (battlefield < 0 || battlefield >= State.Players.Length
             || battlefield != player.PlayerIndex && card.CardId != "S01-0004"
@@ -1045,6 +1051,18 @@ public sealed partial class L12GameEngine
     private void SummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped,
         int? targetPlayerIndex = null)
         => _ = TrySummonFromHand(player, cardId, slotChoice, tapped, targetPlayerIndex);
+
+    /// <summary>
+    /// Shared candidate/settlement predicate for effects that move a legion from
+    /// the controller's hand onto a battlefield. The direct play path has the
+    /// same rule, but effect-generated hand entries must not bypass it.
+    /// </summary>
+    private string? HandLegionBlockReasonForCurrentDisaster(L12PlayerState owner, L12CardInstance card)
+        => L12ActiveDisasterRules.HandLegionBlockReason(
+            State.ActiveDisaster?.CardId, card, owner.Library.FirstOrDefault());
+
+    private bool CanSummonLegionFromHand(L12PlayerState owner, L12CardInstance card)
+        => HandLegionBlockReasonForCurrentDisaster(owner, card) is null;
 
     private bool IsCounterTactic(string cardId)
         => _catalog.Cards.TryGetValue(cardId, out var definition)

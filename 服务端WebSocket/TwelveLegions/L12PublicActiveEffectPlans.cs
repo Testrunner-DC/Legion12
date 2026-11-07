@@ -117,7 +117,8 @@ public sealed partial class L12GameEngine
             }
             case ("S01-0307", "alvidaSummon"):
             {
-                var legions = player.Hand.Where(card => card.CardType == "legion" && card.DisasterLevel == 2)
+                var legions = player.Hand.Where(card => card.CardType == "legion" && card.DisasterLevel == 2
+                        && CanSummonLegionFromHand(player, card))
                     .Select(card => card.InstanceId).ToList();
                 if (legions.Count == 0)
                     return CommandResult.Reject("手牌需要1张天灾等级2的军团");

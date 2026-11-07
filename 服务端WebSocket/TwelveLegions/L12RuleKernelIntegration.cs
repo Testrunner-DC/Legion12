@@ -789,7 +789,7 @@ public sealed partial class L12GameEngine
                     : activation.DeclaredValues.GetValueOrDefault("discardTargets", [])
                         .Count(id => !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase));
             var choices = player.Hand.Where(card => IsDesertHandSummonCandidate(player, card, discardCount,
-                    activation.SourceInstanceId))
+                    activation.SourceInstanceId) && CanSummonLegionFromHand(player, card))
                 .Select(card => card.InstanceId).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);

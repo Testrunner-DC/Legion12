@@ -900,7 +900,8 @@ public sealed partial class L12GameEngine
     private bool BeginTakedaFollowupWithinStack(L12StackItem item)
     {
         var player = State.Players[item.Controller];
-        var sanadas = player.Hand.Where(card => card.CardId == "S01-0404").ToArray();
+        var sanadas = player.Hand.Where(card => card.CardId == "S01-0404"
+            && CanSummonLegionFromHand(player, card)).ToArray();
         if (sanadas.Length == 0 || !EmptySlots(player).Any())
             return BeginTakedaMoraleWithinStack(item);
 

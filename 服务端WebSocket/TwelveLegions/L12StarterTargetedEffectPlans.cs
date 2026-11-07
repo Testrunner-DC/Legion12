@@ -30,7 +30,8 @@ public sealed partial class L12GameEngine
         {
             case "xiaohe-summon":
             {
-                var hanXin = player.Hand.Where(card => card.CardId == L12StructuredCardRules.StarterHanXinCardId)
+                var hanXin = player.Hand.Where(card => card.CardId == L12StructuredCardRules.StarterHanXinCardId
+                        && CanSummonLegionFromHand(player, card))
                     .Select(card => card.InstanceId).ToList();
                 var canUse = player.Morale.Count > 0 && hanXin.Count > 0 && slots.Count > 0;
                 steps =
@@ -65,7 +66,8 @@ public sealed partial class L12GameEngine
             case "snake-charmer-summon":
             {
                 var cobras = player.Hand.Concat(player.Library)
-                    .Where(card => card.CardId == L12StructuredCardRules.StarterDesertCobraCardId)
+                    .Where(card => card.CardId == L12StructuredCardRules.StarterDesertCobraCardId
+                        && (!player.Hand.Contains(card) || CanSummonLegionFromHand(player, card)))
                     .Select(card => card.InstanceId).ToList();
                 var canUse = cobras.Count > 0 && slots.Count > 0;
                 steps =
@@ -115,6 +117,7 @@ public sealed partial class L12GameEngine
             case "penelope-summon":
             {
                 var entries = player.Hand.Where(card => card.CardType == "legion"
+                        && CanSummonLegionFromHand(player, card)
                         && L12StructuredCardRules.CurrentCostAtMost(card, 3)
                         && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     .Select(card => card.InstanceId).ToList();
@@ -273,6 +276,7 @@ public sealed partial class L12GameEngine
                 var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
                 if (returnCost.Count != 1 || !CanReturnSelectedMoraleById(player, returnCost, 1)
                     || !player.Hand.Any(card => card.InstanceId == entry
+                        && CanSummonLegionFromHand(player, card)
                         && card.CardId == L12StructuredCardRules.StarterHanXinCardId)
                     || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     error = "萧何选择的士气、〈韩信〉或登场位置已失效；未返还士气且效果未入栈";
@@ -291,7 +295,8 @@ public sealed partial class L12GameEngine
                 var entry = activation.DeclaredValues.GetValueOrDefault("entryCard", []).SingleOrDefault();
                 var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
                 if (!player.Hand.Concat(player.Library).Any(card => card.InstanceId == entry
-                        && card.CardId == L12StructuredCardRules.StarterDesertCobraCardId)
+                        && card.CardId == L12StructuredCardRules.StarterDesertCobraCardId
+                        && (!player.Hand.Contains(card) || CanSummonLegionFromHand(player, card)))
                     || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     error = "白沙瓦舞蛇人选择的〈沙漠眼镜蛇〉或登场位置已失效；效果未入栈";
                 break;
@@ -318,6 +323,7 @@ public sealed partial class L12GameEngine
                 var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
                 if (!player.Morale.Any(card => card.IsGodPower && !card.Tapped)
                     || !player.Hand.Any(card => card.InstanceId == entry && card.CardType == "legion"
+                        && CanSummonLegionFromHand(player, card)
                         && L12StructuredCardRules.CurrentCostAtMost(card, 3) && L12StructuredCardRules.HasFaction(player, card, "olympus"))
                     || slot is null || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
                     error = "珀涅罗珀选择的神力、手牌军团或登场位置已失效；未支付神力且效果未入栈";

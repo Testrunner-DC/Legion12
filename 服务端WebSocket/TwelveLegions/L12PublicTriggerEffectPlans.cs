@@ -863,7 +863,8 @@ public sealed partial class L12GameEngine
             }
             case ("S01-0105", "enter", _):
             {
-                var brothers = player.Hand.Where(card => card.CardId is "S01-0106" or "S01-0107")
+                var brothers = player.Hand.Where(card => (card.CardId is "S01-0106" or "S01-0107")
+                        && CanSummonLegionFromHand(player, card))
                     .Select(card => card.InstanceId).ToList();
                 var canUse = player.Morale.Count > 0;
                 steps =
@@ -931,7 +932,8 @@ public sealed partial class L12GameEngine
             }
             case ("S01-0309", "enter", _):
             {
-                var sigurd = player.Hand.Concat(player.Graveyard).Where(card => card.CardId == PublicTriggerSigurdCard)
+                var sigurd = player.Hand.Concat(player.Graveyard).Where(card => card.CardId == PublicTriggerSigurdCard
+                        && (!player.Hand.Contains(card) || CanSummonLegionFromHand(player, card)))
                     .Select(card => card.InstanceId).ToList();
                 steps =
                 [
@@ -953,6 +955,7 @@ public sealed partial class L12GameEngine
             {
                 var sourceSlot = FreshSetCounterSourceVacatedEntrySlot(candidate, candidate.Controller);
                 var legions = player.Hand.Where(card => card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 3)
+                        && CanSummonLegionFromHand(player, card)
                         && EffectEntryBattlefieldChoices(candidate.Controller, card,
                             sourceSlot is null ? null : candidate).Any())
                     .Select(card => card.InstanceId).ToList();
@@ -1417,7 +1420,8 @@ public sealed partial class L12GameEngine
                 && string.IsNullOrWhiteSpace(slot);
             var validSelected = entries.Count == 1
                 && player.Hand.Any(card => card.InstanceId == entries[0]
-                    && IsLegalHandLegionSummonTarget(handSummon, player, card))
+                    && IsLegalHandLegionSummonTarget(handSummon, player, card)
+                    && CanSummonLegionFromHand(player, card))
                 && slot is not null && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase);
             if (expectsSelection && !validEmpty && !validSelected)
                 error = $"〈{candidate.SourceName}〉声明的私密手牌军团或公开登场位置已失效；效果未入栈";
