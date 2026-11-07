@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261108-deployment-readiness-history",
+  "date": "2026-11-08",
+  "audience": "internal",
+  "reason": "收窄部署耐久性检查对长期保留历史的误阻断，并补同一快照回归",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/MatchRecorder.DeploymentReadiness.cs",
+    "TwelveLegions.Platform.Tests/DeploymentDurabilityReadinessTests.cs"
+  ]
+}

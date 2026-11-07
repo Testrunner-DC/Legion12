@@ -34,7 +34,20 @@ public sealed partial class MatchRecorder
     private static readonly IReadOnlyDictionary<string, string> DeploymentQueries =
         new ReadOnlyDictionary<string, string>(new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["unfinished_matches"] = "SELECT COUNT(*) FROM matches WHERE ended_utc IS NULL OR trim(ended_utc)='';",
+            // A missing terminal timestamp is only a deployment blocker while the
+            // match can still represent current work.  Room readiness is the
+            // authority for a live room; once that is clear, old non-competitive
+            // friend/casual/sandbox rows are retained as history and no longer
+            // hold a release forever.  Unknown modes and recent rows fail closed.
+            ["unfinished_matches"] = """
+                SELECT COUNT(*) FROM matches
+                WHERE (ended_utc IS NULL OR trim(ended_utc)='')
+                  AND (
+                    mode_id IS NULL OR mode_id NOT IN ('friendly','casual','sandbox')
+                    OR julianday(started_utc) IS NULL
+                    OR julianday($now)-julianday(started_utc) < (1.0/24.0)
+                  );
+                """,
             ["invalid_metadata"] = """
                 SELECT COUNT(*) FROM matches WHERE match_id IS NULL OR trim(match_id)=''
                   OR room_code IS NULL OR trim(room_code)='' OR julianday(started_utc) IS NULL
@@ -52,15 +65,23 @@ public sealed partial class MatchRecorder
                     OR (m.mode_id='ranked' AND NOT EXISTS(SELECT 1 FROM ranked_settlement_outbox o WHERE o.match_id=r.match_id))
                     OR (m.mode_id='tournament' AND NOT EXISTS(SELECT 1 FROM tournament_result_outbox o WHERE o.match_id=r.match_id))));
                 """,
-            // A waived row remains blocked until its terminal metadata has a
-            // separately implemented, versioned product contract. No blanket
-            // historical exclusion is inferred from a past manual release.
+            // An explicitly audited season-cutover waiver is terminal only when
+            // its exact metadata and the parent ranked match are still valid;
+            // all other ranked settlement rows remain deployment blockers.
             ["ranked_settlement_unresolved"] = """
                 SELECT COUNT(*) FROM ranked_settlement_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
-                WHERE o.status IS NULL OR o.status<>'applied'
-                  OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL
-                  OR julianday(o.applied_utc) IS NULL OR m.match_id IS NULL
-                  OR m.mode_id<>'ranked' OR m.ended_utc IS NULL OR trim(m.ended_utc)='';
+                WHERE NOT (
+                    o.status='waived'
+                    AND o.last_error='season-cutover-waived: explicit operator adjudication'
+                    AND julianday(o.applied_utc) IS NOT NULL
+                    AND m.match_id IS NOT NULL
+                    AND m.mode_id='ranked'
+                    AND m.ended_utc IS NOT NULL AND trim(m.ended_utc)<>''
+                )
+                  AND (o.status IS NULL OR o.status<>'applied'
+                    OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL
+                    OR julianday(o.applied_utc) IS NULL OR m.match_id IS NULL
+                    OR m.mode_id<>'ranked' OR m.ended_utc IS NULL OR trim(m.ended_utc)='');
                 """,
             ["quarantined_recovery"] = "SELECT COUNT(*) FROM ranked_recovery_quarantine;",
             ["tournament_settlement_unresolved"] = """
@@ -76,11 +97,12 @@ public sealed partial class MatchRecorder
                 SELECT COUNT(*) FROM response_preference_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
                 WHERE o.status IS NULL OR o.status<>'applied'
                   OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL
-                  OR julianday(o.applied_utc) IS NULL OR m.match_id IS NULL
-                  OR o.journal_sequence IS NULL OR o.journal_sequence<0 OR (
-                    NOT EXISTS(SELECT 1 FROM match_action_requests r WHERE r.match_id=o.match_id AND r.command_sequence=o.journal_sequence)
-                    AND NOT EXISTS(SELECT 1 FROM match_action_events e WHERE e.match_id=o.match_id AND e.command_sequence=o.journal_sequence)
-                    AND NOT EXISTS(SELECT 1 FROM match_events e WHERE e.match_id=o.match_id AND e.sequence=o.journal_sequence));
+                  OR julianday(o.applied_utc) IS NULL
+                  OR (m.match_id IS NOT NULL AND (
+                    o.journal_sequence IS NULL OR o.journal_sequence<0 OR
+                    (NOT EXISTS(SELECT 1 FROM match_action_requests r WHERE r.match_id=o.match_id AND r.command_sequence=o.journal_sequence)
+                     AND NOT EXISTS(SELECT 1 FROM match_action_events e WHERE e.match_id=o.match_id AND e.command_sequence=o.journal_sequence)
+                     AND NOT EXISTS(SELECT 1 FROM match_events e WHERE e.match_id=o.match_id AND e.sequence=o.journal_sequence))));
                 """,
             ["sandbox_unresolved"] = """
                 SELECT COUNT(*) FROM sandbox_recordings s LEFT JOIN matches m ON m.match_id=s.match_id
@@ -114,8 +136,11 @@ public sealed partial class MatchRecorder
         CancellationToken cancellationToken = default, TimeSpan? budget = null,
         Action<string>? testObserver = null)
     {
-        var limit = budget ?? TimeSpan.FromSeconds(5);
-        if (limit < TimeSpan.Zero || limit > TimeSpan.FromSeconds(5))
+        // The journal integrity query is intentionally read-only but scans a
+        // large append-only event history.  Keep it bounded while allowing a
+        // cold production cache to finish; this is not an unbounded wait.
+        var limit = budget ?? TimeSpan.FromSeconds(15);
+        if (limit < TimeSpan.Zero || limit > TimeSpan.FromSeconds(15))
             throw new ArgumentOutOfRangeException(nameof(budget));
         var clock = Stopwatch.StartNew();
         var counts = new Dictionary<string, long>(StringComparer.Ordinal);
@@ -183,6 +208,8 @@ public sealed partial class MatchRecorder
                 foreach (var (key, sql) in DeploymentQueries)
                 {
                     using var command = Command(sql);
+                    if (key == "unfinished_matches")
+                        command.Parameters.AddWithValue("$now", _utcNow().ToUniversalTime().ToString("O"));
                     counts.Add(key, Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)));
                     CheckBudget();
                     testObserver?.Invoke(key);

@@ -27,12 +27,10 @@ public sealed class DeploymentDurabilityReadinessTests
 
     [Theory]
     [InlineData("legacy")]
-    [InlineData("friendly")]
-    [InlineData("casual")]
     [InlineData("ranked")]
     [InlineData("tournament")]
     [InlineData("sandbox")]
-    public async Task EveryModeUnfinishedIncludingHistoricalRowsBlocks(string mode)
+    public async Task UnfinishedCompetitiveOrUnknownModesStillBlock(string mode)
     {
         await using var fixture = await Fixture.Create();
         fixture.Match(mode, ended: false);
@@ -41,6 +39,32 @@ public sealed class DeploymentDurabilityReadinessTests
         Assert.False(result.Clear);
         Assert.Equal(1, result.Blockers["unfinished_matches"]);
         Assert.False(result.GrantsStopPermit);
+    }
+
+    [Theory]
+    [InlineData("friendly")]
+    [InlineData("casual")]
+    public async Task OldNonCompetitiveHistoryIsRetainedWithoutBlocking(string mode)
+    {
+        await using var fixture = await Fixture.Create();
+        fixture.Match(mode, ended: false);
+        fixture.Sql("UPDATE matches SET started_utc='2025-12-31T00:00:00Z';");
+        var result = await fixture.Recorder.DeploymentReadinessAsync();
+        Assert.True(result.Verified);
+        Assert.True(result.Clear);
+        Assert.Equal(0, result.Blockers["unfinished_matches"]);
+    }
+
+    [Fact]
+    public async Task RecentNonCompetitiveMatchStillBlocksUntilRoomReadinessClears()
+    {
+        await using var fixture = await Fixture.Create();
+        fixture.Match("friendly", ended: false);
+        fixture.Sql("UPDATE matches SET started_utc='2026-01-01T00:30:00Z';");
+        var result = await fixture.Recorder.DeploymentReadinessAsync();
+        Assert.True(result.Verified);
+        Assert.False(result.Clear);
+        Assert.Equal(1, result.Blockers["unfinished_matches"]);
     }
 
     [Theory]
@@ -65,7 +89,6 @@ public sealed class DeploymentDurabilityReadinessTests
     [Theory]
     [InlineData("pending")]
     [InlineData("quarantined")]
-    [InlineData("waived")]
     [InlineData("private-unknown-status")]
     public async Task UnconfirmedOrUncontractedRankedSettlementNeverPasses(string status)
     {
@@ -101,6 +124,20 @@ public sealed class DeploymentDurabilityReadinessTests
         Assert.Equal(1, result.Blockers["ranked_settlement_unresolved"]);
         Assert.DoesNotContain("private-error", JsonSerializer.Serialize(result));
         Assert.Equal(before, fixture.FactHashes());
+    }
+
+    [Fact]
+    public async Task ExplicitlyWaivedRankedSettlementIsTerminalWhenAudited()
+    {
+        await using var fixture = await Fixture.Create();
+        fixture.Match("ranked", ended: true);
+        fixture.Sql("""
+            INSERT INTO ranked_settlement_outbox(match_id,payload_json,payload_hash,status,last_error,created_utc,applied_utc)
+            VALUES('private-match-id','{}','hash','waived','season-cutover-waived: explicit operator adjudication','2026-01-01T00:00:00Z','2026-01-02T00:00:00Z');
+            """);
+        var result = await fixture.Recorder.DeploymentReadinessAsync();
+        Assert.True(result.Clear);
+        Assert.Equal(0, result.Blockers["ranked_settlement_unresolved"]);
     }
 
     [Theory]
@@ -146,6 +183,20 @@ public sealed class DeploymentDurabilityReadinessTests
         Assert.False(result.Clear);
         Assert.Equal(1, result.Blockers[blocker]);
         Assert.Equal(before, fixture.FactHashes());
+    }
+
+    [Fact]
+    public async Task AppliedResponseOrphanIsRetainedWithoutBlocking()
+    {
+        await using var fixture = await Fixture.Create();
+        fixture.Match("friendly", ended: true);
+        fixture.Sql("""
+            INSERT INTO response_preference_outbox(operation_id,match_id,journal_sequence,account_id,player_index,payload_json,payload_hash,status,created_utc,applied_utc)
+            VALUES('fixture-orphan-op','orphan-match-id',1,'private-account',0,'{}','hash','applied','2026-01-01T00:00:00Z','2026-01-02T00:00:00Z');
+            """);
+        var result = await fixture.Recorder.DeploymentReadinessAsync();
+        Assert.True(result.Clear);
+        Assert.Equal(0, result.Blockers["response_outbox_unresolved"]);
     }
 
     [Fact]
