@@ -1322,6 +1322,15 @@ public sealed class LatestBugRegressionTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(game.SnapshotFor(1)));
         Assert.Equal(top.CardId, document.RootElement.GetProperty("Players")[0]
             .GetProperty("libraryTop").GetProperty("CardId").GetString());
+        var projectedHand = Assert.Single(SnapshotHand(game, 0), card => card.InstanceId == hand.InstanceId);
+        Assert.Contains("天地异变", projectedHand.PlayBlockedReason);
+        var different = Card("S02-0611", "different-profession-hand");
+        player.Hand.Clear();
+        player.Hand.Add(different);
+        var differentProjection = Assert.Single(SnapshotHand(game, 0), card => card.InstanceId == different.InstanceId);
+        Assert.Null(differentProjection.PlayBlockedReason);
+        player.Hand.Clear();
+        player.Hand.Add(hand);
         var result = game.Handle(0, new L12Command("playCard", hand.InstanceId, Row: 0, Slot: 0));
         Assert.False(result.Accepted);
         Assert.Contains("天地异变", result.Error);

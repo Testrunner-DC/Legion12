@@ -45,6 +45,39 @@ public static class L12ActiveDisasterRules
     public static bool HandLegionBlockedMatchingLibraryTop(string? activeDisasterId)
         => activeDisasterId == "S02-DS01";
 
+    /// <summary>
+    /// Returns the authoritative hand-play restriction for 天地异变.  The
+    /// player snapshot and the command path must use the same predicate: a
+    /// stale/partial client projection must not make a matching legion look
+    /// playable, and a legacy checkpoint without the new EffectiveProfession
+    /// field must still use the printed profession.
+    /// </summary>
+    public static string? HandLegionBlockReason(string? activeDisasterId,
+        L12CardInstance card, L12CardInstance? libraryTop)
+    {
+        if (!HandLegionBlockedMatchingLibraryTop(activeDisasterId)
+            || card.CardType != "legion" || libraryTop is null)
+            return null;
+
+        var profession = PrintedProfession(card);
+        var topProfession = PrintedProfession(libraryTop);
+        if (profession is null || topProfession is null
+            || !string.Equals(profession, topProfession, StringComparison.Ordinal))
+            return null;
+
+        return $"〈天地异变〉持续期间，无法从手牌打出与牌库顶部相同兵种（{profession}）的军团";
+    }
+
+    private static string? PrintedProfession(L12CardInstance card)
+    {
+        // Hand/library cards use Profession as the printed identity.  The
+        // fallback keeps checkpoints written before EffectiveProfession was
+        // introduced safe without treating a field-only derived profession
+        // as a new printed identity.
+        var profession = card.Profession ?? card.EffectiveProfession;
+        return string.IsNullOrWhiteSpace(profession) ? null : profession.Trim();
+    }
+
     // S02-DS02 迷雾绝境：不可进攻处于活跃状态的前排军团。
     public static bool ActiveFrontRowUnattackable(string? activeDisasterId)
         => activeDisasterId == "S02-DS02";

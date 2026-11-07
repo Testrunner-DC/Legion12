@@ -110,11 +110,9 @@ public sealed partial class L12GameEngine
         var targetBattlefield = State.Players[targetPlayerIndex];
         if (L12StructuredCardRules.HandPlayBlockReason(player, card) is { } playBlockReason)
             return CommandResult.Reject(playBlockReason);
-        if (L12ActiveDisasterRules.HandLegionBlockedMatchingLibraryTop(State.ActiveDisaster?.CardId) && card.CardType == "legion"
-            && player.Library.FirstOrDefault() is { } visibleTop
-            && !string.IsNullOrWhiteSpace(card.Profession)
-            && card.Profession == visibleTop.Profession)
-            return CommandResult.Reject($"〈天地异变〉持续期间，无法从手牌打出与牌库顶部相同兵种（{card.Profession}）的军团");
+        if (L12ActiveDisasterRules.HandLegionBlockReason(State.ActiveDisaster?.CardId,
+                card, player.Library.FirstOrDefault()) is { } disasterBlockReason)
+            return CommandResult.Reject(disasterBlockReason);
         if (card.CardId == "S02-0306" && player.MasterDamageTakenThisTurn < 2)
             return CommandResult.Reject("本回合我方主宰受到的累计伤害不足2点");
         if (card.CardId == "S02-0306" && L12CardNameUsageRules.HasUsed(player, card.CardId))

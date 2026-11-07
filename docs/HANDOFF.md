@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-11-07 天地异变同兵种出牌反馈（本地修复，未部署）
+
+- 新反馈称〈天地异变〉生效后仍可从手牌打出与牌库顶部相同兵种的军团。当前服务端 `PlayCard` 原本已有拒绝，但玩家手牌快照的 `playBlockedReason` 未包含该天灾，前端与服务端各自重复判断，快照落后或旧检查点缺派生字段时会出现“界面可打出”的假可用状态。
+- 本地已将比较抽到 `L12ActiveDisasterRules.HandLegionBlockReason`，由命令校验和手牌快照共同消费；优先印刷 `Profession`，旧检查点缺失时回退 `EffectiveProfession`，不把场上派生职介带入手牌判定。复合声明／提示续接均回到 `PlayCard`；GM 手牌入口和效果“召唤/置入战场”路径保留原语义。
+- 回归：同兵种快照标记不可打出、异兵种不误拦、服务端提交拒绝 1/1；天地异变持续规则、恢复与最新回归邻接集合 96/96。证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/天地异变/test-e4300acbcba742a6ab1e524cb7fcf17d/pass-proof.trx`、`.../test-fa1cf7380cb44cea817fac14b4d51eb9/pass-proof.trx`。详细登记见 `BUG-20261107-WORLD-UPHEAVAL-SAME-PROFESSION`。
+- 本批仍未做 Release、提交推送、部署或线上关单；线上报告保持开放，后续须把该候选纳入统一 Release 后按同一原场景具名读回。
+
 ## 2026-11-07 Bug 收口续验（5c2d1e1a）
 
 - 本轮未部署、未改维护、未写线上业务数据。当前 `origin/main` 与工作树同为 `5c2d1e1a`；候选仍以正式服 `eceb6c27…` 为线上基线。

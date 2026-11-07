@@ -2365,7 +2365,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             snapshot.MinimumPlayCost = counterPlacement ? snapshot.PlayCost
                 : GetPlayCostWithSigurdDiscount(playerIndex, card, selfDamageDiscount, spentRunes, rolloReturns,
                     canUseSigurdDiscount);
-            snapshot.PlayBlockedReason = L12StructuredCardRules.HandPlayBlockReason(State.Players[playerIndex], card);
+            snapshot.PlayBlockedReason = L12StructuredCardRules.HandPlayBlockReason(State.Players[playerIndex], card)
+                ?? L12ActiveDisasterRules.HandLegionBlockReason(
+                    State.ActiveDisaster?.CardId, card, State.Players[playerIndex].Library.FirstOrDefault());
             return snapshot;
         }).ToArray();
 

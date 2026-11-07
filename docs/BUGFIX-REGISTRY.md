@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261107-WORLD-UPHEAVAL-SAME-PROFESSION｜天地异变同兵种军团可打出反馈
+
+- 反馈：玩家称〈天地异变〉生效后，仍能从手牌打出与牌库顶部相同兵种的军团。
+- 现状核对：当前 `PlayCard` 已有服务端拒绝，但手牌快照的 `playBlockedReason` 只接入圣物等普通手牌限制，天地异变另在前端 `playableIds` 重复判断；因此在快照缺顶牌、旧检查点缺派生字段或响应落后时，界面仍可能把同兵种卡显示为可打出。正常 `playCard` 命令本地原测试已拒绝，不能把“服务端已有一处守卫”冒充完整闭环。
+- 根因与修改：将天地异变的“手牌军团 vs 当前牌库顶印刷兵种”比较抽到 `L12ActiveDisasterRules.HandLegionBlockReason`，服务端命令校验与玩家手牌快照共用同一谓词；优先读取印刷 `Profession`，旧检查点缺失时才回退 `EffectiveProfession`，不把场上派生职介误当成手牌身份。GM `playHandCard` 仍是管理员调试入口；效果文本写“召唤/置入战场”的 `TrySummonFromHand` 不属于“从手牌打出”，未扩大规则边界。
+- 同类扫描：全量检索 `playCard`、复合声明、提示续接和 `PlayCard` 回调；这些入口均回到共享命令校验。另查 `TrySummonFromHand`、效果生成免费打出和 GM 手牌入口，分别保留其“置入/召唤”或调试语义，未擅自套用天地异变限制。
+- 回归：`LatestBugRegressionTests.WorldUpheavalRevealsLibraryTopAndBlocksMatchingProfessionLegion` 增加同兵种快照不可打出、异兵种不被误拦及服务端提交拒绝，受管本地 1/1 通过；天地异变持续规则、快照、恢复及最新回归相邻集合 96/96 通过。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261107/天地异变/test-e4300acbcba742a6ab1e524cb7fcf17d/pass-proof.trx`、`D:/GPT/Legion12/artifacts/bug-closeout-20261107/天地异变/test-fa1cf7380cb44cea817fac14b4d51eb9/pass-proof.trx`。
+- 状态：本地候选已补共享闭环，尚未提交级 Release、部署或正式服具名复测；线上反馈保持未关闭，待部署后按同一场景读回确认。
+
 ## CHECK-20261101-668E5183｜西施弃置后诸葛连弩兵未登场
 
 - 正式反馈 `BUG-20261101-668e5183`（好友房 `X9VSXY`，对局 `a73297e493ab4cfea95fec8e41fc1e8f`，报告版本 `367d8a8c29c3fcf047c7136bdd823bd0abcb5bc1`）描述：对方西施发动弃置、抽牌后，手牌中的 `ST01-07`〈诸葛连弩兵〉没有登场。该条原记录仍为 `new`，不能用旧的西施通用回归直接当作已处理。
