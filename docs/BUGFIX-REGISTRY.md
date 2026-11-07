@@ -1,12 +1,18 @@
 # Legion12 Bug 修复记录
 
+## 2026-11-08 玩家反馈 Bug 收口第三步：测试服候选已部署
+
+- 统一候选 `49fff5102e458709a3638c0aae38950eea283aa6` 通过 Release 门禁（规则 8779/8779、平台 3145/3145、前端／服务端／归档全通过）并已部署测试服；测试服本机／公网 health、HTTP、WebSocket 读回同一提交，正式服未改动。
+- `BUG-20261107-WORLD-UPHEAVAL-SAME-PROFESSION` 与 `BUG-20261107-WORLD-UPHEAVAL-HAND-SUMMON` 目前状态更新为“测试服已部署，待具名场景复验”；不提前标记 resolved，正式服仍不在本批范围。
+- Release 证据：`D:/GPT/Legion12/artifacts/deploy/49fff5102e458709a3638c0aae38950eea283aa6/l12-release-49fff5102e458709a3638c0aae38950eea283aa6.json`；门禁计时：`D:/GPT/Legion12/artifacts/deploy/verification-evidence/49fff5102e458709a3638c0aae38950eea283aa6/20261107T165613Z-fed216fd9e794015aafc13f7868326a8/timings.json`。
+
 ## BUG-20261107-WORLD-UPHEAVAL-HAND-SUMMON｜天地异变限制扩展到手牌拉入战场
 
 - 反馈补充：〈天地异变〉不仅限制玩家直接从手牌打出同牌库顶相同兵种的军团；阿尔维达等效果把军团从手牌拉入战场时，也必须受同一限制。牌库、墓地等其他区域进入战场不受此条限制。
 - 根因：既有 `HandLegionBlockReason` 只接入直接 `PlayCard` 与手牌快照；若效果在候选、声明提交或最终移区阶段从手牌召唤，部分入口没有复用该谓词，可能出现“候选可选、提交已付费、结算才错误放入”的不一致。
 - 修改：在 `TrySummonFromHand`、`TrySummonFromAnyPrivateZone` 的实际来源区判断及公共手牌召唤的候选／提交／结算三层统一调用 `CanSummonLegionFromHand`。已覆盖阿尔维达、西施、刘备兄弟、摄政、武田、罗宾汉、暗度陈仓、萧何、蛇女、佩内洛普、沙漠召唤及通用手牌召唤触发；仅当来源确为手牌时拦截，牌库／墓地路径保持原规则。
 - 回归：`BackendReportRegressionTests.WorldUpheavalAlsoBlocksMatchingProfessionLegionPulledFromHand` 验证阿尔维达实际路径：同兵种不出现在候选、异兵种可选并正常登场、被拦卡仍留在手牌。受管宽回归 `BackendReportRegressionTests|LatestBugRegressionTests|ActiveUsageLimitTests|AtomicReviewBatch6IBRegressionTests` 共 317/317 通过。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261107/天地异变-hand-summon/test-41d425744eac4283b8093e28712081cc/pass-proof.trx`、`.../天地异变-hand-summon-broad/test-899c88facd424508addf6f8c5859ad3e/pass-proof.trx`。
-- 状态：本地候选修复与同类回归通过，尚未提交级 Release、部署或正式服具名读回；须纳入下一次统一 Release 后再按直接打出与效果拉入两条原场景验收并关单。
+- 状态：本地候选修复与同类回归通过；统一 Release `49fff510` 已部署测试服，待按直接打出与效果拉入两条原场景做测试服具名复验；正式服具名读回尚未进行，暂不关单。
 
 ## BUG-20261107-WORLD-UPHEAVAL-SAME-PROFESSION｜天地异变同兵种军团可打出反馈
 
@@ -15,7 +21,7 @@
 - 根因与修改：将天地异变的“手牌军团 vs 当前牌库顶印刷兵种”比较抽到 `L12ActiveDisasterRules.HandLegionBlockReason`，服务端命令校验与玩家手牌快照共用同一谓词；优先读取印刷 `Profession`，旧检查点缺失时才回退 `EffectiveProfession`，不把场上派生职介误当成手牌身份。GM `playHandCard` 仍是管理员调试入口；效果生成的手牌召唤范围见后续 `BUG-20261107-WORLD-UPHEAVAL-HAND-SUMMON` 条目。
 - 同类扫描：全量检索 `playCard`、复合声明、提示续接和 `PlayCard` 回调；这些入口均回到共享命令校验。随后另查 `TrySummonFromHand`、效果生成免费打出和 GM 手牌入口，保留其“置入/召唤”或调试语义，同时将真实来源为手牌的效果召唤纳入同一限制；牌库／墓地来源不拦。
 - 回归：`LatestBugRegressionTests.WorldUpheavalRevealsLibraryTopAndBlocksMatchingProfessionLegion` 增加同兵种快照不可打出、异兵种不被误拦及服务端提交拒绝，受管本地 1/1 通过；天地异变持续规则、快照、恢复及最新回归相邻集合 96/96 通过。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261107/天地异变/test-e4300acbcba742a6ab1e524cb7fcf17d/pass-proof.trx`、`D:/GPT/Legion12/artifacts/bug-closeout-20261107/天地异变/test-fa1cf7380cb44cea817fac14b4d51eb9/pass-proof.trx`。
-- 状态：本地候选已补共享闭环，尚未提交级 Release、部署或正式服具名复测；线上反馈保持未关闭，待部署后按同一场景读回确认。
+- 状态：本地候选已补共享闭环；统一 Release `49fff510` 已部署测试服，待按同一场景读回确认；正式服具名复测尚未进行，线上反馈保持未关闭。
 
 ## CHECK-20261101-668E5183｜西施弃置后诸葛连弩兵未登场
 
