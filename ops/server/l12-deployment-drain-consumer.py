@@ -14,7 +14,9 @@ import argparse
 import hashlib
 import http.client
 import json
+import os
 import re
+import sqlite3
 import sys
 import time
 from dataclasses import dataclass
@@ -84,6 +86,89 @@ ERROR_CODE_MAP = {
     "invalid_deployment_owner": "REQUEST_REJECTED",
     "invalid_deployment_permit": "REQUEST_REJECTED",
 }
+
+# The native readiness reader is deliberately bounded at five seconds.  A cold
+# SQLite cache can therefore return a legitimate partial `query_budget` result
+# before all fixed counters are visited.  Warm the same read-only predicates
+# after the deployment fence is acquired and before seal; never fill missing
+# counters or treat this pass as a permit.
+READINESS_PREWARM_QUERIES = (
+    "SELECT COUNT(*) FROM matches WHERE ended_utc IS NULL OR trim(ended_utc)='';",
+    """SELECT COUNT(*) FROM matches WHERE match_id IS NULL OR trim(match_id)=''
+      OR room_code IS NULL OR trim(room_code)='' OR julianday(started_utc) IS NULL
+      OR (ended_utc IS NOT NULL AND (julianday(ended_utc) IS NULL
+        OR julianday(ended_utc)<julianday(started_utc)));""",
+    "SELECT COUNT(*) FROM matches WHERE mode_id IS NULL OR mode_id NOT IN ('legacy','friendly','casual','ranked','tournament','sandbox');",
+    "SELECT COUNT(*) FROM matches WHERE storage_version IS NULL OR hash_version IS NULL OR NOT ((storage_version=1 AND hash_version=1) OR (storage_version=2 AND hash_version=2));",
+    "SELECT COUNT(*) FROM ranked_match_runtime WHERE status IS NULL OR status<>'completed';",
+    """SELECT COUNT(*) FROM ranked_match_runtime r LEFT JOIN matches m ON m.match_id=r.match_id
+      WHERE m.match_id IS NULL OR r.room_code IS NULL OR trim(r.room_code)=''
+        OR r.room_code<>m.room_code OR m.mode_id NOT IN ('ranked','tournament')
+        OR (r.status='completed' AND (m.ended_utc IS NULL OR trim(m.ended_utc)=''
+          OR (m.mode_id='ranked' AND NOT EXISTS(SELECT 1 FROM ranked_settlement_outbox o WHERE o.match_id=r.match_id))
+          OR (m.mode_id='tournament' AND NOT EXISTS(SELECT 1 FROM tournament_result_outbox o WHERE o.match_id=r.match_id))));""",
+    """SELECT COUNT(*) FROM ranked_settlement_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
+      WHERE o.status IS NULL OR o.status<>'applied'
+        OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL OR julianday(o.applied_utc) IS NULL
+        OR m.match_id IS NULL OR m.mode_id<>'ranked' OR m.ended_utc IS NULL OR trim(m.ended_utc)='';""",
+    "SELECT COUNT(*) FROM ranked_recovery_quarantine;",
+    """SELECT COUNT(*) FROM tournament_result_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
+      WHERE o.status IS NULL OR o.status<>'applied'
+        OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL OR julianday(o.applied_utc) IS NULL
+        OR m.match_id IS NULL OR m.mode_id<>'tournament' OR m.ended_utc IS NULL OR trim(m.ended_utc)=''
+        OR trim(o.tournament_id)='' OR trim(o.tournament_match_id)=''
+        OR m.winner IS NULL OR o.winner<>m.winner OR o.winner NOT IN (0,1);""",
+    """SELECT COUNT(*) FROM response_preference_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
+      WHERE o.status IS NULL OR o.status<>'applied'
+        OR NULLIF(TRIM(COALESCE(o.last_error,'')),'') IS NOT NULL OR julianday(o.applied_utc) IS NULL
+        OR m.match_id IS NULL OR o.journal_sequence IS NULL OR o.journal_sequence<0
+        OR (NOT EXISTS(SELECT 1 FROM match_action_requests r WHERE r.match_id=o.match_id AND r.command_sequence=o.journal_sequence)
+          AND NOT EXISTS(SELECT 1 FROM match_action_events e WHERE e.match_id=o.match_id AND e.command_sequence=o.journal_sequence)
+          AND NOT EXISTS(SELECT 1 FROM match_events e WHERE e.match_id=o.match_id AND e.sequence=o.journal_sequence));""",
+    """SELECT COUNT(*) FROM sandbox_recordings s LEFT JOIN matches m ON m.match_id=s.match_id
+      WHERE s.status IS NULL OR s.status NOT IN ('completed','abandoned') OR m.match_id IS NULL
+        OR m.mode_id<>'sandbox' OR m.ended_utc IS NULL OR trim(m.ended_utc)=''
+        OR julianday(s.retention_anchor_utc) IS NULL OR julianday(s.retention_anchor_utc)<>julianday(m.ended_utc);""",
+    """SELECT (SELECT COUNT(*) FROM match_state_checkpoints c WHERE c.sequence<0 OR NOT EXISTS(SELECT 1 FROM matches m WHERE m.match_id=c.match_id))
+      +(SELECT COUNT(*) FROM match_action_events e WHERE e.command_sequence<0 OR NOT EXISTS(SELECT 1 FROM matches m WHERE m.match_id=e.match_id))
+      +(SELECT COUNT(*) FROM match_action_requests r WHERE r.command_sequence<0 OR r.accepted NOT IN (0,1) OR NOT EXISTS(SELECT 1 FROM matches m WHERE m.match_id=r.match_id))
+      +(SELECT COUNT(*) FROM match_events e WHERE e.sequence<0 OR NOT EXISTS(SELECT 1 FROM matches m WHERE m.match_id=e.match_id));""",
+    """SELECT COUNT(*) FROM matches m WHERE m.storage_version=2
+      AND NOT EXISTS(SELECT 1 FROM match_state_checkpoints c WHERE c.match_id=m.match_id)
+      AND NOT EXISTS(SELECT 1 FROM player_replay_payload_expirations x WHERE x.match_id=m.match_id
+        AND julianday(x.expired_utc)>=julianday(m.ended_utc) AND m.mode_id<>'sandbox'
+        AND x.retained_command_count>=0 AND x.cleared_payload_bytes>=0);""",
+    """SELECT COUNT(*) FROM player_replay_payload_expirations x LEFT JOIN matches m ON m.match_id=x.match_id
+      WHERE m.match_id IS NULL OR m.mode_id='sandbox' OR julianday(m.ended_utc) IS NULL
+        OR julianday(x.expired_utc) IS NULL OR julianday(x.expired_utc)<julianday(m.ended_utc)
+        OR x.retained_command_count<0 OR x.cleared_payload_bytes<0;""",
+)
+
+def _prewarm_readiness() -> None:
+    database = os.environ.get("L12_READINESS_DATABASE", "").strip()
+    if not database:
+        return
+    if not os.path.isabs(database) or os.path.islink(database) or not os.path.isfile(database):
+        raise ConsumerFailure("READINESS_PREWARM_REJECTED", "prewarm", "unknown")
+    started = time.monotonic()
+    try:
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=1)
+        connection.execute("PRAGMA query_only=on")
+        connection.execute("BEGIN")
+        try:
+            if connection.execute("PRAGMA user_version").fetchone()[0] != 0:
+                raise ConsumerFailure("READINESS_PREWARM_REJECTED", "prewarm", "unknown")
+            for query in READINESS_PREWARM_QUERIES:
+                if time.monotonic() - started > 60:
+                    raise ConsumerFailure("READINESS_PREWARM_REJECTED", "prewarm", "unknown")
+                connection.execute(query).fetchone()
+        finally:
+            connection.rollback()
+            connection.close()
+    except ConsumerFailure:
+        raise
+    except Exception:
+        raise ConsumerFailure("READINESS_PREWARM_REJECTED", "prewarm", "unknown") from None
 
 
 class ConsumerFailure(Exception):
@@ -445,6 +530,10 @@ class DeploymentDrainConsumer:
                 break
             if not begun:
                 raise ConsumerFailure("BEGIN_STATE_UNKNOWN", "begin", "unknown")
+
+            # Keep this inside the same owner/epoch window as the seal.  It is
+            # read-only cache warming, never a substitute for native readiness.
+            _prewarm_readiness()
 
             remaining_before_stop = stop_cutoff - self._wall_clock()
             if remaining_before_stop <= 0:

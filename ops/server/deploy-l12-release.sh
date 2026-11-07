@@ -598,7 +598,7 @@ run_consumer() {
   shift 3
   local status parsed
   consumer_output=""
-  if consumer_output="$(printf '%s\n' "$deployment_control_token" | "$drain_consumer" "$@")"; then
+  if consumer_output="$(printf '%s\n' "$deployment_control_token" | L12_READINESS_DATABASE="$runtime_dir/matches.db" "$drain_consumer" "$@")"; then
     :
   else
     status=$?
