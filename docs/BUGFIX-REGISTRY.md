@@ -14,6 +14,7 @@
 - 新增展示层规范化。已将中立别名统一为通用，所有已识别阵营补入特征，按卡类过滤费用、兵力和血量维度，联动卡自动带联动特征并移除重复的联动卡标签。哮天犬·稚及王者之剑继续保持 token 衍生卡身份，只有战场运行时按规则视为军团。画廊阵营筛选现在包含联动卡自定义阵营，详情显示阵营名称而非内部代码。
 - 同类扫描覆盖 S1、S2、ST 目录、S02 查表、图鉴投影、共享详情和联动卡后台入口。专项图鉴合同 361 项、画廊产品排序 51 项、联动卡资料与详情 16 项、前端类型检查全部通过。完整 UI 合同在当前工作树另有牌库请求头改动导致既有 deck contract 失败，该失败与本批图鉴改动无关，未覆盖或回退该并行修改。
 - 修改文件包括 `opcgpro-vue/src/l12/decks.ts`、`opcgpro-vue/src/l12/factionPresentation.ts`、`opcgpro-vue/src/l12/cardPresentation.ts`、`opcgpro-vue/src/l12/CardArchive.vue`、`opcgpro-vue/src/l12/CardDetailContent.vue`、`opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue` 及对应前端回归脚本。尚未部署。
+- 2026-11-07 本地精确复验：公开异画版本切换、同名去重、不同名保留、产品首序、六张 ST 士气异画分组在 1440×900 与 390×844 均通过；公开接口排除停用异画、牌库／对局权益守卫保留、生产写入为0。证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/card-archive/report.json`，仍未部署。
 
 ## FIX-20261106-FICTITIOUS-CHALICE-RELIC-ENTRY｜公开圣物效果未触发虚构的圣杯
 
@@ -79,6 +80,7 @@
 - 沿人类已批准的原画廊专项及本轮“都解决、并行处理”，保原独立产品管理/发布顺序与选填联动卡资料功能。画廊产品不再借商品文章发布或合并归档商品；历史已管理site引用按确定alias兼容、无关商品不引入，商品字段不改。原三件商品恢复早已完成，本轮没有重放或线上写入。
 - Main独审又证新CardInformation.Traits通过本地Save/public/admin/search直接返回存储数组；四真实RED失败，统一ToAlternateArtView创建新record/Traits数组，保输入规范化与所有显示字段/null。独审继续发现共享TEST绕开本地构造器，Parse新字段仍List可改；snapshot/public/admin/search四真实RED失败后，沿原Products/Rarities的不可变边界复制并只读包装。不是HTTP用户直接修改内存的攻击证明，不改权限、网络、时效、数据库格式或事实权威。
 - 原22专项保为来源旧资格；最终本地/共享/产品83/83，完整平台3101/3101、失败跳过0，83个testId全在完整结果内。两个只读审查Clear，全部原失败保留（首local数组IsReadOnly夹具假阳性、首shared字段名编译失败不冒真RED）。前端51排序/15实际SFC与11原接口合同已接正常入口，整条正常前端一次通过、类型与双631模块通过。headless浏览器账户三尺寸前段过，旧产品标签定位失败保留；QA修正后仅续Admin三尺寸/Gallery通过，6缩略图完整contain、pageErrors0/cardImageFailures0，保本地媒体拒连与中止请求。合成API不冒真实持久化/真机/单轮全链。原件`gallery-product-order-20261030/main/final-acceptance.json`及`trait-isolation`，无正式部署/Bug关单。
+- 2026-11-07 并发筛选回归补验：同一产品保存期间禁用、失败释放、不同产品并行、过期回复拒收、发布顺序、重命名禁用/新建和窄屏包含共 7 项通过；证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/gallery-filter/report.json`。此证据只补充本地候选，不替代部署后线上读回。
 
 ## FIX-20261030-TOURNAMENT-MANAGEMENT-DRAFTS｜同值赛事刷新不覆盖主办草稿（本地验收）
 
