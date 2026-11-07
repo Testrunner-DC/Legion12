@@ -6,6 +6,7 @@
 - 当前源代码核查：西施路径已走严格的“同一手牌实例＋军团类型＋兵力不高于2000＋预声明战场/位置”结算；召唤失败会写入 `effectResultStatus=failed`，复合计划的“随后抽牌”带 `RequiresPreviousSuccess`，不会在登场失败时继续抽牌。全池同类手牌军团登场入口继续复用 `TrySummonFromHand`，没有另行给 `ST01-07` 放宽条件。
 - 新增具名回归 `AtomicReviewBatch6KARegressionTests.XishiCanSummonTheStarterDeckZhugeCrossbowAndThenDraw`：使用真实目录卡号 `S01-0116`＋`ST01-07`，验证手牌候选、位置声明、活跃登场、随后抽牌及西施入墓。受管本地回归 1/1 通过，证据 `D:/GPT/Legion12/artifacts/bug-20261101-668e5183/test-74a87d3ce0ea44eba199f3237274feb0/pass-proof.trx`。
 - 结论：当前源码对该精确正例已通过，不能据此声称正式服已修复；报告版本与当前源的现场复现尚未完成同一回放链核验，正式线上记录保持 `new/未关闭`。下一步需在不生成业务统计的前提下核对正式具名版本是否包含该回归，再按部署后的线上具名验证关闭；若复现仍失败，优先取该场景的候选/位置/结算事实，不再重复泛化西施测试。
+- 2026-11-07 本地候选复跑：沿受管 L12 测试入口，以当前 `9de412ea` 源和无业务数据夹具重跑该具名用例，`XishiCanSummonTheStarterDeckZhugeCrossbowAndThenDraw` 通过；证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/rules/test-f7e57459765843ac8c2615567502a7d6/pass-proof.trx`。该证据仅确认本地候选回归，仍不替代报告版本的正式具名现场核对或部署后线上读回。
 
 ## FIX-20261107-CARD-ARCHIVE-METADATA｜图鉴阵营、特征、卡类与数值展示统一
 
@@ -21,12 +22,14 @@
 - 同一共享入口现在在实际扣血后登记带 S01-DS08 卡图的已结算 `effect-trigger` 事件和玩家记录；事件绑定稳定的运行时 `relic-trigger` 场景并进入前端卡图动画队列，不改变全局能力目录指纹，不再只留下主宰扣血事实。该逻辑覆盖所有圣物直接发动、登场公开候选和其他公共触发入口，不按安卡神碑等单卡分支处理；未实际造成非致命伤害时不虚构动画或记录。
 - 同类扫描覆盖 S1/S2/ST 圣物目录及公开触发声明、登场计划、主动效果计划。新增安卡神碑公开登场候选回归，现有安卡神碑主动效果回归继续保留。针对性2项、公开登场复验与 ExtendedCardEffects 合计53项均通过，最后一次针对性回归2/2通过。证据位于 `D:/GPT/Legion12/artifacts/chalice-check-final/` 与 `D:/GPT/Legion12/artifacts/chalice-check-wide/`。
 - 本轮补充修改 `服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs`、`L12GameEngine.EffectPresentations.cs` 与 `EffectPresentationTexts.cs`，并在 `ExtendedCardEffectsTests`、`PublicEnterOwnTargetRevalidationTests` 固定直接/公开两条路径的场景、已结算状态、卡图事件与记录。针对性圣杯2/2、触发记录/展示相关共享回归214/214通过；待重新生成 Release 并部署后读回线上场景再关闭线上 Bug。
+- 2026-11-07 本地候选精确复跑：直接效果、公开登场两条路径与西施回归同批运行，三项均通过（3/3）；证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/rules/test-f7e57459765843ac8c2615567502a7d6/pass-proof.trx`。仍按原边界保留“待 Release/部署后线上具名读回”，不提前关闭。
 
 ## PERF-20261101-SEASON-EMPTY-ERROR｜空对账错误字段触发赛季终结重试
 
 - 正式服只读证据 `D:/GPT/Legion12/artifacts/server-health-20261101/formal-readonly-health-20261101.json`、`formal-season-state-20261101.json` 和 `formal-season-readiness-20261101.json` 显示：T01 已无活动排位、待结算为0、隔离为0，但 2874 条已应用结算的 `last_error` 为 `''`；赛季终结协调每分钟重复尝试，每次约15—23秒、平台镜像约650MB，并产生最高约10秒锁等待，导致多个后台接口超时；T02 切换因此一直停在 `season_finalization_not_ready`。服务未重启，未改线上数据。
 - 根因是 `IS NOT NULL` 把历史成功记录的空字符串误判为实际错误。共享修复统一以 `NULLIF(TRIM(COALESCE(last_error,'')),'') IS NOT NULL` 识别非空错误，覆盖赛季就绪、赛季身份迁移和部署就绪三条读取链；真实错误文本仍继续阻断。
 - 回归：新增 `BlankAppliedOutboxErrorDoesNotBlockSeasonCutoverReadiness`；该用例及赛季结算/恢复相关 43 项通过；全量 `TwelveLegions.Tests` 8774/8774 通过。证据位于 `D:/GPT/Legion12/artifacts/server-health-20261101/blank-applied-test/`、`season-regression-test/` 和 D 盘全量测试收据。尚未部署正式服；部署后需无统计副作用地读回 T01 readiness、终结任务不再循环、后台接口超时消失，再关闭本条。
+- 2026-11-07 本地候选复跑：按正确测试项目与类过滤器重跑 `RankedPersistenceRecoveryTests`，43/43 通过；证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/rules/test-4cc6a2198fca4788915172ae8b718924/pass-proof.trx`。此前两次错误项目/方法过滤只产生空结果失败收据，未被计入通过；本条仍待正式服无统计副作用读回，未部署、未关闭。
 
 ## OPS-20261031-BAIDU-TRANSPORT-VOLUMES｜保留原age/V2字节的大文件显式分卷
 
