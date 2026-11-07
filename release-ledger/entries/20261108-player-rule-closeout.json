@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "20261108-player-rule-closeout",
+  "date": "2026-11-08",
+  "audience": "players",
+  "title": "卡效结算与对局记录收口",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "卡牌触发、伤害、阵亡与后续联动按同一权威结算顺序处理；由圣物或其他效果触发的天灾与卡效会保留对应对局记录和卡图展示，避免同一事实漏记或重复展示。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12ActiveDisasterRules.cs",
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12HandLegionSummonTriggerEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicActiveEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterTargetedEffectPlans.cs"
+      ]
+    },
+    {
+      "category": "ranking",
+      "text": "排位与后台状态读取继续使用当前权威版本和权限边界，刷新、切换账号或迟到响应不会串用旧状态。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.AccountRankedRestrictions.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedIntegrityActions.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.AccountRankedRestrictions.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    }
+  ]
+}
