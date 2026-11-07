@@ -4,6 +4,7 @@
 
 - 本批不是单条关单：复用 `D:/GPT/Legion12/artifacts/bug-closeout-remaining-20261027/fresh-queue-20261030-buglist-r4-open.json` 及其真实读取回执，确认最近一次有界快照为 6 条非终态、其中 2 条为最新未见反馈；没有从旧 852／941 历史总量推导当前开放数。
 - 同一正式提交 `eceb6c27d826328b28a24b4e92c615b25f11ac42` 的共享层回归 90/90 通过，覆盖奈芙蒂斯有效阵营、海伦致死替代、雷神授予效果、定时减兵力抵消和傀儡改向迦具土窗口。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261108-buglist/test-14b7b941fac44b28b523934f55cfffb6/pass-proof.trx`。
+- 同一程序集的响应窗口专项回归通过 309/309，覆盖连续提示、延期入队、堆叠选择、移动端响应展示和角色边界。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261108-buglist/test-ee02ffe74a124d36aeb4c5661a331973/pass-proof.trx`；该证据不替代 `BUG-20261027-24514780` 的原局具名复现与线上读回。
 - 当前逐项边界：
   - `BUG-20261029-521883f4`：箱子开局卡死；保留 `reproduce`，此前读取窗口返回 503，未用合成通过或时间相关日志冒充原局复现。
   - `BUG-20261028-865d67aa`：万物统御之戒与奈芙蒂斯；`39fc7499` 已并入正式提交并通过 `NephthysEffectiveFactionDiscount20261026Tests`，待线上具名读回后 `fixed_verified`。
