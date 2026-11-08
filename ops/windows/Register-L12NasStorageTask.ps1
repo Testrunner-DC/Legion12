@@ -5,6 +5,7 @@ param(
     [ValidatePattern('^(?:[01]\d|2[0-3]):[0-5]\d$')][string]$DailyAt = '03:30',
     [switch]$Apply,
     [switch]$AllowSourceRetirement,
+    [string]$RunAsUser,
     [string]$PipelineScript = (Join-Path $PSScriptRoot 'Invoke-L12NasStoragePipeline.ps1')
 )
 
@@ -24,8 +25,9 @@ if ($PSCmdlet.ShouldProcess($TaskName,"register NAS storage pipeline $mode task"
     $action = New-ScheduledTaskAction -Execute $pwsh -Argument ($arguments -join ' ')
     $time = [DateTime]::ParseExact($DailyAt,'HH:mm',[Globalization.CultureInfo]::InvariantCulture)
     $trigger = New-ScheduledTaskTrigger -Daily -At $time
-    $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+    $userId = if ([string]::IsNullOrWhiteSpace($RunAsUser)) { [Security.Principal.WindowsIdentity]::GetCurrent().Name } else { $RunAsUser }
+    $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'L12 NAS archive pipeline; uses UNC storage, resumable copy, independent verification and explicit source retirement.' -Force | Out-Null
 }
-[pscustomobject]@{ taskName = $TaskName; mode = $mode; dailyAt = $DailyAt; sourceRetirementSwitch = [bool]$AllowSourceRetirement; status = if ($WhatIfPreference) {'what-if'} else {'registered'} }
+[pscustomobject]@{ taskName = $TaskName; mode = $mode; dailyAt = $DailyAt; runAsUser = $userId; sourceRetirementSwitch = [bool]$AllowSourceRetirement; status = if ($WhatIfPreference) {'what-if'} else {'registered'} }

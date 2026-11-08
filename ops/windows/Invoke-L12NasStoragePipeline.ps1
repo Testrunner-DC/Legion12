@@ -48,21 +48,29 @@ function Ensure-NasSession {
     } catch { return $false } finally { if ($proc) { $proc.Dispose() } }
 }
 
+$script:LastNasProbe = [ordered]@{}
 function Test-NasRootAvailable {
     param([Parameter(Mandatory)][string]$Path)
     $share = Get-NasShareRoot $Path
     $server = if ($share) { ([regex]::Match($share,'^\\\\([^\\]+)\\').Groups[1].Value) } else { $null }
-    if ([string]::IsNullOrWhiteSpace($server)) { return $false }
-    $null = Ensure-NasSession $share
-    $mapped = @(Get-SmbMapping -ErrorAction SilentlyContinue | Where-Object { $_.RemotePath -like ('\\\\' + $server + '\\*') })
-    if ($mapped.Count -gt 0 -and @($mapped | Where-Object { [string]$_.Status -in @('0','OK') }).Count -gt 0) { return $true }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $script:LastNasProbe = [ordered]@{ server = $server; share = $share; identity = $identity; sessionName = $env:SESSIONNAME; mappingCount = 0; mappingStatus = @(); tcp445 = $false; error = $null; checkedUtc = [DateTimeOffset]::UtcNow.ToString('o') }
+    if ([string]::IsNullOrWhiteSpace($server)) { $script:LastNasProbe.error = 'L12_NAS_SHARE_INVALID'; return $false }
+    $sessionReady = Ensure-NasSession $share
+    $mapped = @()
+    try { $mapped = @(Get-SmbMapping -ErrorAction SilentlyContinue | Where-Object { $_.RemotePath -like ('\\\\' + $server + '\\*') }) } catch { $script:LastNasProbe.error = $_.Exception.Message }
+    $script:LastNasProbe.mappingCount = $mapped.Count
+    $script:LastNasProbe.mappingStatus = @($mapped | ForEach-Object { [string]$_.Status })
+    if ($mapped.Count -gt 0 -and @($mapped | Where-Object { [string]$_.Status -in @('0','OK') }).Count -gt 0) { $script:LastNasProbe.tcp445 = $true; return $true }
     $client = [Net.Sockets.TcpClient]::new()
     try {
         $async = $client.BeginConnect($server,445,$null,$null)
-        if (-not $async.AsyncWaitHandle.WaitOne([TimeSpan]::FromSeconds($NasProbeTimeoutSeconds))) { return $false }
+        if (-not $async.AsyncWaitHandle.WaitOne([TimeSpan]::FromSeconds($NasProbeTimeoutSeconds))) { $script:LastNasProbe.error = 'L12_NAS_TCP445_TIMEOUT'; return $false }
         $client.EndConnect($async)
+        $script:LastNasProbe.tcp445 = $client.Connected
+        if (-not $sessionReady -and -not $client.Connected) { $script:LastNasProbe.error = 'L12_NAS_SESSION_UNAVAILABLE' }
         return $client.Connected
-    } catch { return $false } finally { $client.Dispose() }
+    } catch { $script:LastNasProbe.error = $_.Exception.Message; return $false } finally { $client.Dispose() }
 }
 
 function Assert-LocalSource {
@@ -166,7 +174,7 @@ try {
     $group = if ($GroupName) { $GroupName } elseif ($plan.raw.groupName) { [string]$plan.raw.groupName } else { 'group-' + [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmss') + '-' + $runId.Substring(0,8) }
     if ($group -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,96}$') { throw 'L12_NAS_GROUP_NAME' }
     if ($Mode -in @('Apply','Verify') -and -not (Test-NasRootAvailable $plan.destination)) {
-        $paused = [ordered]@{ schema = 1; runId = $runId; status = 'paused-nas-unavailable'; mode = $Mode; destination = $plan.destination; probeTimeoutSeconds = $NasProbeTimeoutSeconds; sourceRetirement = $false; createdUtc = [DateTimeOffset]::UtcNow.ToString('o') }
+        $paused = [ordered]@{ schema = 1; runId = $runId; status = 'paused-nas-unavailable'; mode = $Mode; destination = $plan.destination; probeTimeoutSeconds = $NasProbeTimeoutSeconds; probe = $script:LastNasProbe; sourceRetirement = $false; createdUtc = [DateTimeOffset]::UtcNow.ToString('o') }
         $path = Write-NasReceipt $paused ('nas-' + $runId + '.paused.json')
         return [pscustomobject]@{ status = $paused.status; receiptPath = $path; entries = 0 }
     }
@@ -232,7 +240,7 @@ try {
     $receiptPath = Write-NasReceipt $receipt ('nas-' + $runId + '.json')
     return [pscustomobject]@{ status = $status; receiptPath = $receiptPath; entries = $results.Count; sourceRetired = @($results | Where-Object sourceRetired).Count }
 } catch {
-    $failure = [ordered]@{ schema = 1; runId = $runId; status = 'failed-preserved'; mode = $Mode; error = $_.Exception.Message; partialResults = @($results); createdUtc = [DateTimeOffset]::UtcNow.ToString('o') }
+    $failure = [ordered]@{ schema = 1; runId = $runId; status = 'failed-preserved'; mode = $Mode; error = $_.Exception.Message; probe = $script:LastNasProbe; partialResults = @($results); createdUtc = [DateTimeOffset]::UtcNow.ToString('o') }
     $path = Write-NasReceipt $failure ('nas-' + $runId + '.failure.json')
     throw ('L12_NAS_PIPELINE_FAILED receipt=' + $path + ' error=' + $_.Exception.Message)
 } finally { if ($lock) { $lock.Dispose() } }
