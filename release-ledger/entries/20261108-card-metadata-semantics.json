@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261108-card-metadata-semantics",
+  "date": "2026-11-08",
+  "audience": "players",
+  "title": "卡牌阵营与联动信息显示修正",
+  "changes": [
+    {
+      "category": "content",
+      "text": "卡牌详情、牌库筛选和选牌界面只把六个阵营与通用显示为阵营；联动作为独立特征显示一次，天灾不会再被误显示为阵营。",
+      "paths": ["opcgpro-vue/src/l12/SingleCardPicker.vue"]
+    }
+  ]
+}
