@@ -3,6 +3,7 @@ import { vHorizontalScrollArrows } from './horizontalScrollArrows'
 import { computed, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { filterableCardCost, loadDeckCatalog, type DeckCard } from './decks'
+import { factionLabel, isOfficialFaction, normalizeFactionKey } from './factionPresentation'
 import CardImage from './CardImage.vue'
 import CatalogCardDetails from './CatalogCardDetails.vue'
 import { landscapeTeleportTarget } from './mobileViewport'
@@ -42,11 +43,6 @@ const product = ref('all')
 const cost = ref('all')
 const disaster = ref('all')
 
-const factionLabels: Record<string, string> = {
-  universal: '通用', tianting: '天廷', gaotianyuan: '高天原', asgard: '阿斯加德',
-  taiyangcheng: '太阳城', olympus: '奥林匹斯', bijie: '彼界', otherworld: '彼界', disaster: '天灾',
-}
-
 function fromCatalog(card: DeckCard): SingleCardPickerItem {
   return {
     id: card.id, cardId: card.id, number: card.number, name: card.nameZh, nameZh: card.nameZh,
@@ -68,7 +64,7 @@ const available = computed(() => props.allowedTypes.length
   ? sourceItems.value.filter(card => props.allowedTypes.includes(cardTypeFilterKey(card.cardType)))
   : sourceItems.value)
 const types = computed(() => [...new Set(available.value.map(card => cardTypeFilterKey(card.cardType)))])
-const factions = computed(() => [...new Set(available.value.map(card => card.faction).filter(Boolean) as string[])])
+const factions = computed(() => [...new Set(available.value.map(card => normalizeFactionKey(card.faction)).filter(isOfficialFaction))])
 const products = computed(() => [...new Set(available.value.map(card => card.product).filter(Boolean) as string[])])
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
@@ -96,7 +92,7 @@ const filtered = computed(() => {
         <div v-horizontal-scroll-arrows="'卡牌筛选'" class="single-card-filters">
           <input v-model="query" type="search" placeholder="搜索卡名、编号或效果文字" autofocus>
           <select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ cardTypeLabel(key) }}</option></select>
-          <select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] ?? key }}</option></select>
+          <select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabel(key) }}</option></select>
           <select v-model="product"><option value="all">全部产品</option><option v-for="value in products" :key="value" :value="value">{{ value }}</option></select>
           <select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value">{{ value }}</option></select>
           <select v-model="disaster"><option value="all">全部天灾等级</option><option value="none">无天灾等级</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select>
@@ -109,7 +105,7 @@ const filtered = computed(() => {
               <span v-else>暂无卡图</span>
             </button>
             <b>{{ card.name }}</b><small>{{ card.number || card.cardId }} · {{ cardTypeLabel(card.cardType) }}</small>
-            <span>{{ card.subtitle || [factionLabels[card.faction || ''] || card.faction, card.product].filter(Boolean).join(' · ') }}</span>
+            <span>{{ card.subtitle || [factionLabel(card.faction), card.product].filter(Boolean).join(' · ') }}</span>
             <div class="single-card-actions"><button v-if="card.detailCard" type="button" @click="detailCard = card.detailCard">详情</button><button type="button" @click="emit('select', card)">选择</button></div>
           </article>
           <p v-if="!filtered.length" class="single-card-empty">没有符合条件的卡牌。</p>

@@ -7,7 +7,7 @@ import { deckCacheDatabase, deckDatabaseScope, fingerprintLegacyDeckRaw, type De
 import { deckDraftSessionId } from './site/deckEditorDraft'
 
 import { normalizeLookupCardType } from './cardPresentation'
-import { factionLabel, normalizeFactionKey } from './factionPresentation'
+import { factionLabel, isOfficialFaction, normalizeFactionKey } from './factionPresentation'
 import { validateOptionalDeckCoverCardIds } from './deckCover'
 import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
 import { deploymentPath, deploymentBasePath } from './deploymentBase'
@@ -303,15 +303,19 @@ function normalizeCardDimensions(card: DeckCard): DeckCard {
 }
 
 export function normalizeCardPresentation(card: DeckCard): DeckCard {
-  const faction = normalizeFactionKey(card.faction)
-  const displayFaction = factionLabel(faction)
+  const normalizedFaction = normalizeFactionKey(card.faction)
+  const faction = isOfficialFaction(normalizedFaction) ? normalizedFaction : ''
   const traits = (card.traits ?? []).map(value => value.trim()).filter(Boolean)
-    .filter(value => normalizeFactionKey(value) !== faction)
-  const requiredTraits = (card as DeckCard & { galleryStandalone?: boolean }).galleryStandalone ? ['联动'] : []
+    .filter(value => !(isOfficialFaction(value) && normalizeFactionKey(value) === faction))
+  const extendedCard = card as DeckCard & { galleryStandalone?: boolean }
+  const requiredTraits = [
+    factionLabel(faction),
+    extendedCard.galleryStandalone || card.collaboration?.trim() ? '联动' : '',
+  ].filter(Boolean)
   return normalizeCardDimensions({
     ...card,
     faction,
-    traits: [...new Set([...requiredTraits, ...(displayFaction ? [displayFaction] : []), ...traits])],
+    traits: [...new Set([...requiredTraits, ...traits])],
   })
 }
 

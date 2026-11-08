@@ -40,7 +40,7 @@ function compile(file,imports,globals={}) {
   component.render=evaluate(template.code,{vue:{...Vue,vModelText:{},vModelSelect:{},vModelCheckbox:{}}},globals).render
   return component
 }
-const information={cardType:'legion',faction:'联动阵营',cost:0,troops:5432,hp:9,disasterLevel:2,trialValue:3,profession:'战士',traits:['人类','英雄'],deckLimit:2,isCounterTactic:false}
+const information={cardType:'legion',faction:'tianting',cost:0,troops:5432,hp:9,disasterLevel:2,trialValue:3,profession:'战士',traits:['人类','英雄'],deckLimit:2,isCounterTactic:false}
 const art={id:'collab',artCode:'PR-026',baseCardId:'',displayName:'联动卡',mediaAssetId:'media',imageUrl:'',thumbnailUrl:'',active:false,kind:'gallery-card',effect:'',products:[],rarities:[],cardInformation:information}
 const calls={save:[],metadata:[],product:[],article:0};let stored=plain(art), products=[];let failRefresh=false
 const adminApi={alternateArtProducts:async()=>{if(failRefresh){failRefresh=false;throw Error('synthetic refresh failure')}return products},alternateArtRarities:async()=>[],
@@ -50,7 +50,7 @@ const adminApi={alternateArtProducts:async()=>{if(failRefresh){failRefresh=false
   saveAlternateArtProduct:async draft=>{calls.product.push(plain(draft));const product={id:'legacy:new-gallery',name:draft.name,active:true};products.push(product);return product}}
 const risk = evaluate(fs.readFileSync(path.join(project,'src/l12/site/useAdminRiskAction.ts'),'utf8'),{vue:Vue})
 const imports={vue:Vue,'@/l12/platform':{adminApi,hasPermission:()=>true,platformState:Vue.reactive({account:{id:'admin'}})},
-  '@/l12/decks':{loadDeckCatalog:async()=>[]},'./useAdminRiskAction':risk,'@/l12/deploymentBase':{sharedGalleryAdminPath:'',usesSharedGallery:false},'./alternateArtRuleExplanation':{alternateArtRuleExplanation:()=>''}}
+  '@/l12/decks':{loadDeckCatalog:async()=>[]},'@/l12/factionPresentation':{isOfficialFaction:value=>value === 'tianting',normalizeFactionKey:value=>value},'./useAdminRiskAction':risk,'@/l12/deploymentBase':{sharedGalleryAdminPath:'',usesSharedGallery:false},'./alternateArtRuleExplanation':{alternateArtRuleExplanation:()=>''}}
 for(const name of ['./MediaUploadField.vue','./SiteMediaPicker.vue','@/l12/SingleCardPicker.vue','@/l12/CardImage.vue','@/l12/CatalogCardDetails.vue','./AdminRiskActionDialog.vue','./AdminAccountPicker.vue'])imports[name]=stubs
 const listeners=new Map(),window={addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)}
 const component=compile('site/AdminAlternateArtsPanel.vue',imports,{window})
@@ -80,7 +80,7 @@ check('create product calls gallery metadata only',()=>{assert.equal(calls.artic
 await state.saveGalleryProduct();await flush()
 check('retry selection does not create another product',()=>{assert.equal(calls.product.length,1);assert(state.artForm.productIds.includes('legacy:new-gallery'));assert.equal(state.pendingProductId,'')})
 app.unmount();check('admin listener released',()=>assert.equal(listeners.size,0))
-const detail=compile('CardDetailContent.vue',{vue:Vue,'./decks':{displayCardNumber:card=>card.number},'./cardPresentation':{cardTypeLabel:type=>type,isHorizontalCardType:()=>false},'./factionPresentation':{factionLabel:value=>value??''},'./CardImage.vue':stubs})
+const detail=compile('CardDetailContent.vue',{vue:Vue,'./decks':{displayCardNumber:card=>card.number},'./cardPresentation':{cardTypeLabel:type=>type,isHorizontalCardType:()=>false},'./factionPresentation':{factionLabel:value=>value === 'tianting' ? '天廷' : '',isOfficialFaction:value=>value === 'tianting'},'./CardImage.vue':stubs})
 for(const filled of [true,false]) {
   const card={id:'GALLERY-card',number:'PR-026',nameZh:'联动卡',cardType:'gallery-card',product:'',faction:'',galleryStandalone:true,...(filled?information:{})}
   const host=makeNode('root'),detailApp=renderer.createApp({render:()=>Vue.h(detail,{card})});detailApp.mount(host);await flush()
@@ -88,9 +88,19 @@ for(const filled of [true,false]) {
   if(filled)check('linked card uses one 联动 trait without a duplicate 联动卡 tag',()=>{
     const tags=descendants(host).filter(n=>n.tag==='span').map(textContent)
     assert(tags.includes('联动'));assert(!tags.includes('联动卡'))
+    assert.equal(tags.filter(tag=>tag==='联动').length,1)
+    assert.equal(tags.filter(tag=>tag==='天廷').length,1)
   })
   if(filled)check('detail renders zero and all six values',()=>assert.deepEqual(descendants(host).filter(n=>n.tag==='dd').map(textContent),['0','5432','9','2','3','2']))
   detailApp.unmount()
 }
+const disasterHost=makeNode('root')
+const disasterApp=renderer.createApp({render:()=>Vue.h(detail,{card:{id:'GALLERY-disaster',number:'PR-027',nameZh:'天灾展示卡',cardType:'gallery-card',product:'',faction:'天灾',galleryStandalone:true,traits:[]}})})
+disasterApp.mount(disasterHost);await flush()
+check('天灾不能被当作阵营标签',()=>{
+  const tags=descendants(disasterHost).filter(n=>n.tag==='span').map(textContent)
+  assert(tags.includes('联动'));assert(!tags.includes('天灾'));assert(!tags.includes('disaster'))
+})
+disasterApp.unmount()
 console.log(JSON.stringify({cases,failed:failures.length,scope:'Actual compiled admin/detail SFCs, synthetic API and memory renderer; no native browser geometry claim',sources:Object.fromEntries(sources),failures},null,2))
 if(failures.length)process.exitCode=1

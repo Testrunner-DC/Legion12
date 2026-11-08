@@ -396,12 +396,17 @@ const contracts = [
     && cardDetailContent.includes('hasCostDimension(card)'), '主宰只有血量维度；卡牌图鉴、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
   [factionPresentation.includes("universal: { label: '通用'")
     && factionPresentation.includes("中立: 'universal'")
+    && factionPresentation.includes('OFFICIAL_FACTION_KEYS')
+    && factionPresentation.includes('isOfficialFaction')
     && decks.includes('export function normalizeCardPresentation')
+    && decks.includes('const requiredTraits = [')
+    && decks.includes("extendedCard.galleryStandalone || card.collaboration?.trim() ? '联动' : ''")
     && decks.includes("const hasTroops = ['legion', 'token']")
     && cardArchive.includes('normalizeCardPresentation')
     && cardArchive.includes('factionLabel(key)')
     && cardPresentation.includes("token: '衍生卡'")
-    && cardDetailContent.includes("['联动', ...(props.card.traits ?? [])]")
+    && cardDetailContent.includes('const tags = computed')
+    && cardDetailContent.includes('needsCollaboration')
     && !cardDetailContent.includes('联动卡</span>'), '图鉴必须统一通用阵营、补齐阵营特征、按卡类过滤错误数值，并将联动卡归入联动特征'],
   [naturalGift && naturalGift.cardType === 'tactic' && naturalGift.cost == null
     && decks.includes('export function filterableCardCost') && decks.includes("card.cardType === 'master' ? null : (card.cost ?? 0)")

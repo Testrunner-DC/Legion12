@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
 import { displayCardNumber, filterableCardCost, loadCardArchiveCatalog, normalizeCardPresentation, type DeckCard } from './decks'
-import { factionLabel, normalizeFactionKey } from './factionPresentation'
+import { factionLabel, isOfficialFaction, normalizeFactionKey } from './factionPresentation'
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import MobileDeferredCardImage from './MobileDeferredCardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
@@ -21,7 +21,7 @@ const typeLabels: Record<string, string> = {
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原',
   asgard: '阿斯加德', taiyangcheng: '太阳城',
-  olympus: '奥林匹斯', otherworld: '彼界', disaster: '天灾',
+  olympus: '奥林匹斯', otherworld: '彼界',
 }
 
 // Gallery membership is intentionally auditable. Alternate art must match one
@@ -270,7 +270,7 @@ const types = computed(() => [...new Set((page.value === 'gallery' ? galleryCard
   .filter(key => typeLabels[key]))
 const factions = computed(() => {
   const cardsForPage = page.value === 'gallery' ? galleryCards.value : regularDisplayCards.value
-  const available = new Set(cardsForPage.map(card => normalizeFactionKey(card.faction)).filter(Boolean))
+  const available = new Set(cardsForPage.map(card => normalizeFactionKey(card.faction)).filter(isOfficialFaction))
   return [...available].sort((left, right) => {
     const leftRank = Object.keys(factionLabels).indexOf(left)
     const rightRank = Object.keys(factionLabels).indexOf(right)

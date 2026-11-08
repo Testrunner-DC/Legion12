@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { displayCardNumber, type DeckCard } from './decks'
-import { factionLabel } from './factionPresentation'
+import { factionLabel, isOfficialFaction } from './factionPresentation'
 import CardImage from './CardImage.vue'
 
 type DetailCard = DeckCard & { galleryStandalone?: boolean; artist?: string }
@@ -18,9 +18,22 @@ const props = withDefaults(defineProps<{
 })
 
 const standalone = computed(() => props.card.galleryStandalone === true)
-const traits = computed(() => standalone.value && !(props.card.traits ?? []).includes('联动')
-  ? ['联动', ...(props.card.traits ?? [])]
-  : props.card.traits ?? [])
+const traits = computed(() => {
+  const values = (props.card.traits ?? []).map(value => {
+    const trimmed = value.trim()
+    return isOfficialFaction(trimmed) ? factionLabel(trimmed) : trimmed
+  }).filter(Boolean)
+  const faction = factionLabel(props.card.faction)
+  const needsCollaboration = standalone.value || Boolean(props.card.collaboration?.trim()) || values.includes('联动')
+  return [...new Set([faction, needsCollaboration ? '联动' : '', ...values].filter(Boolean))]
+})
+const tags = computed(() => {
+  const values = [...traits.value]
+  if (!standalone.value || props.card.cardType !== 'gallery-card') values.push(cardTypeLabel(props.card.cardType, props.card.isCounterTactic))
+  if (props.card.profession) values.push(props.card.profession)
+  if (props.card.rarity) values.push(props.card.rarity)
+  return [...new Set(values.filter(Boolean))]
+})
 const products = computed(() => props.card.products ?? [])
 
 function hasCostDimension(card: DeckCard) {
@@ -40,11 +53,7 @@ function hasCostDimension(card: DeckCard) {
     </p>
     <h2 :id="titleId">{{ card.nameZh }}</h2>
     <div class="archive-tags">
-      <span v-for="trait in traits" :key="trait">{{ trait }}</span>
-      <span v-if="!standalone || card.cardType !== 'gallery-card'">{{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</span>
-      <span v-if="standalone && card.faction">{{ factionLabel(card.faction) }}</span>
-      <span v-if="card.profession">{{ card.profession }}</span>
-      <span v-if="card.rarity">{{ card.rarity }}</span>
+      <span v-for="tag in tags" :key="tag">{{ tag }}</span>
     </div>
     <p v-if="card.artist" class="archive-artist" data-gallery-artist><b>画师</b><span>{{ card.artist }}</span></p>
     <p v-if="card.collaboration" class="archive-artist" data-gallery-collaboration><b>联动</b><span>{{ card.collaboration }}</span></p>

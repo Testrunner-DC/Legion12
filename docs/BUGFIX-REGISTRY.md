@@ -9413,3 +9413,11 @@
 - 根因二：只读回放处于 `DisasterPreparation`／`Initiative` 时仍挂载交互式 `PromptOverlay`。该层既以最高层级遮挡公开演出，又通过 `modalPresentationPaused` 暂停公共展示队列；回放没有可回答玩家，导致准备阶段卡住。
 - 共享修正：回放 `busyChange` 统一以 `preparationCount || animations.size` 作为 barrier；教学／实时只读的 `presentationChange` 及原始提示规则不变。新增 `replayPromptOverlayMounted`，仅当不是回放时挂载交互提示；回放仍保留只读场面和专用开场／天灾展示，不改卡效、顺序、隐私或计时。
 - 防回归：`check-motion-contracts.mjs` 50/50、`test-a3-replay-entry-template-contract.mjs` 65 cases、`test-match-opening-presentation.mjs`、`test-inline-prompt-waiting-priority.mjs` 22/22、教程合同 38 项（含 prep-only replay barrier）通过；`replay-entry-template-contract.mjs` 通过。`test-entry-before-effect-lifecycle-20261026.mjs` 在现有工作树缺失其既有测试适配器 `persistentMasterMovementAnchorId` 时停止，非本批改动引入。尚未部署或关闭线上反馈。
+
+## UI-20261108-CARD-METADATA-SEMANTICS｜阵营与联动标签语义（本地验收，可热修，未部署）
+
+- 规则口径：阵营仅允许六阵营与通用；阵营同时作为一个特征进入标签。联动是特征，不是阵营；天灾是卡牌类别／等级，不是阵营；未知值不会自动扩展为新阵营。
+- 根因：`normalizeCardPresentation` 将阵营显示名混入特征后，详情组件又单独渲染阵营；独立联动卡强制补联动但普通异画有联动元数据时不补，导致重复阵营、缺失联动与非法“天灾阵营”显示。后台还允许以“联动专属阵营”提示录入非法字段。
+- 修复：新增官方阵营白名单与 `isOfficialFaction`；统一规范化阵营／特征并去重；详情标签一次性合并阵营、联动、卡类、职业与罕贵；图鉴与单卡选择器不再把天灾列为阵营；后台只接受六阵营或通用，联动通过特征／联动字段记录。
+- 防回归：画廊后台与详情编译合同 17/17、画廊产品排序 51/51、相关牌库消费者回归、Vue 类型检查通过；生产与测试服 Vite 构建均通过。输出位于 `D:/GPT/Legion12/cache/primary/release-20261107/card-metadata-semantics-20261108/build`。未部署、未改数据库、未改对战规则。
+- 热修边界：这是前端静态展示与后台录入校验修复，可通过现有带哈希资源的原子静态切换不停服热修；若后续要清洗历史资料库中的非法 `faction` 值，需另行做数据修正批次，不与本次前端热修混合。

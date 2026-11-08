@@ -44,7 +44,7 @@ async function fixture(sourceKind='legacy'){
   const api={gallery:async()=>{calls.push('gallery');return arts},presentationCatalog:async()=>{calls.push('presentation');return {regularCards:[],filterProducts:products}}}
   const imports={vue:Vue,'./cardPresentation':{cardTypeFilterKey:type=>type,cardTypeLabel:type=>type,isHorizontalCardType:type=>type==='master'},
     './cardArchiveVersions':{compareArchiveVersions:(a,b)=>a.number.localeCompare(b.number,'zh-CN',{numeric:true}),groupArchiveCards:cards=>cards.map(c=>({logicalId:c.id,defaultVersion:c,versions:[c]}))},
-    './factionPresentation':{factionLabel:value=>value?.trim()??'',normalizeFactionKey:value=>value?.trim()??''},
+    './factionPresentation':{factionLabel:value=>value?.trim()??'',normalizeFactionKey:value=>value?.trim()??'',isOfficialFaction:value=>['tianting','otherworld','gaotianyuan','asgard','taiyangcheng','olympus','universal'].includes(value?.trim()??'')},
     './decks':{cardArchiveProducts:['S1','S2'],displayCardNumber:c=>c.number,filterableCardCost:c=>c.cost??null,
       normalizeCardPresentation:card=>({...card,traits:[...(card.galleryStandalone?['联动']:[]),card.faction,...(card.traits??[])],hp:['master','divinity'].includes(card.cardType)?card.hp:undefined}),
       loadCardArchiveCatalog:async()=>{calls.push('catalog');return [base]}},
