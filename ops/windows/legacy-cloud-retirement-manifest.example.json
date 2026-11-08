@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "status": "template",
+  "items": [
+    {
+      "path": "L12-CloudStorage-Plan",
+      "action": "disable-task",
+      "notes": "仅停用旧百度云计划任务，不删除NAS内容。"
+    },
+    {
+      "path": "D:\\GPT\\Legion12\\artifacts\\cloud-storage",
+      "action": "remove-state",
+      "notes": "须绑定NAS完成回执后移除旧云管线状态/传输残留。"
+    },
+    {
+      "path": "D:\\GPT\\Legion12\\worktrees\\lubu-pingyang-20261001\\ops\\windows\\Invoke-L12CloudStoragePipeline.ps1",
+      "action": "retire-code",
+      "notes": "仅在所有引用迁移到NAS管线并完成发布候选整合后执行。"
+    },
+    {
+      "path": "D:\\GPT\\Legion12\\worktrees\\lubu-pingyang-20261001\\ops\\windows\\Register-L12CloudStorageTask.ps1",
+      "action": "retire-code",
+      "notes": "防止旧百度云计划任务被重新注册。"
+    },
+    {
+      "path": "D:\\GPT\\Legion12\\worktrees\\lubu-pingyang-20261001\\ops\\windows\\L12BaiduNetdisk.ps1",
+      "action": "retire-code",
+      "notes": "旧云管线命令入口迁移后退出活动路径。"
+    },
+    {
+      "path": "D:\\GPT\\Legion12\\worktrees\\lubu-pingyang-20261001\\ops\\windows\\L12BaiduNetdisk.psm1",
+      "action": "retire-code",
+      "notes": "旧云传输模块迁移后退出活动路径。"
+    },
+    {
+      "path": "D:\\GPT\\Legion12\\worktrees\\lubu-pingyang-20261001\\ops\\windows\\L12BaiduTransportVolumes.ps1",
+      "action": "retire-code",
+      "notes": "旧云分卷实现迁移后退出活动路径。"
+    },
+    {
+      "path": "D:\\GPT\\Legion12\\worktrees\\lubu-pingyang-20261001\\ops\\windows\\L12CloudArchive.ps1",
+      "action": "retire-code",
+      "notes": "旧云归档入口迁移后退出活动路径。"
+    }
+  ]
+}

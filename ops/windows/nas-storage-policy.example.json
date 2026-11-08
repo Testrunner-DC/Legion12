@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "status": "template",
+  "destinationRoot": "\\\\SmartStorage\\我的文档-2405002358\\Legion12-ColdStorage",
+  "description": "NAS后台转存策略模板。复制到受治理的D盘配置目录后，逐项核对源目录和目标子目录，再将status改为active。",
+  "entries": [
+    {
+      "id": "e-coldstorage",
+      "enabled": false,
+      "sourceRoot": "E:\\Legion12-ColdStorage",
+      "destinationSubdirectory": "E-Legion12-ColdStorage",
+      "retireSourceAfterVerification": false,
+      "notes": "恢复可达后使用/Z断点续传；完成后独立文件数、大小和SHA校验。"
+    },
+    {
+      "id": "d-old-tmp",
+      "enabled": false,
+      "sourceRoot": "D:\\GPT\\Legion12\\app\\.tmp",
+      "destinationSubdirectory": "D-app-tmp",
+      "retireSourceAfterVerification": false,
+      "notes": "仅放入已完成归类的旧可再生内容，不混入当前运行临时目录。"
+    },
+    {
+      "id": "d-old-artifacts",
+      "enabled": false,
+      "sourceRoot": "D:\\GPT\\Legion12\\app\\artifacts",
+      "destinationSubdirectory": "D-app-artifacts",
+      "retireSourceAfterVerification": false,
+      "notes": "必须先按最新发布、失败证据、私有资料和当前回滚保护规则分组。"
+    },
+    {
+      "id": "legacy-cloud-pipeline-state",
+      "enabled": false,
+      "sourceRoot": "D:\\GPT\\Legion12\\artifacts\\cloud-storage",
+      "destinationSubdirectory": "legacy-cloud-pipeline-state",
+      "retireSourceAfterVerification": false,
+      "notes": "旧百度云管线状态先迁移并校验，随后由Retire-L12LegacyCloudStorage按回执退役。"
+    }
+  ]
+}

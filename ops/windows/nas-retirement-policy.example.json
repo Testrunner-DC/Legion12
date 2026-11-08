@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "status": "template",
+  "destinationRoot": "\\\\SmartStorage\\我的文档-2405002358\\Legion12-ColdStorage",
+  "keepLatestGroups": 2,
+  "unpinnedMaxAgeDays": 90,
+  "protectedPrefixes": ["current", "latest", "proof", "failure", "failed", "pinned", "private", "unresolved"],
+  "notes": "每次最多删除一组更旧且已逐文件SHA核验的组；NAS不可达、证明缺失或分类不明确就停止。"
+}
