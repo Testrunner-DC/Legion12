@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "20261110-rule-center-organization",
+  "date": "2026-11-10",
+  "audience": "players",
+  "title": "规则中心章节目录整理",
+  "changes": [
+    {
+      "category": "rules",
+      "text": "规则中心目录按一级章节聚合，玩家可直接跳转到对应章节；规则资料的二级板块整理不改变正文内容。",
+      "paths": [
+        "opcgpro-vue/src/l12/data/ruleCenterData.ts",
+        "opcgpro-vue/src/l12/site/RuleCenterPage.vue",
+        "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue"
+      ]
+    }
+  ]
+}
