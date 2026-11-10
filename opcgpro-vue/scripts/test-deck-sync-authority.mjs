@@ -81,6 +81,9 @@ const executableSource = deckSource
   // production import while preserving the real source module untouched.
   .replace(/import\s*\{\s*factionLabel\s*,\s*isOfficialFaction\s*,\s*normalizeFactionKey\s*\}\s*from\s*['\"]\.\/factionPresentation['\"]/m,
     "const normalizeFactionKey = value => value; function isOfficialFaction() { return true }; const factionLabel = value => value")
+  // TypeScript's isolated transpile may elide the synthetic helper declaration;
+  // make the fixture's official-faction predicate explicit at each call site.
+  .replace(/isOfficialFaction\([^)]*\)/g, 'true')
   .replace(
     "import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
     "const { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform",
