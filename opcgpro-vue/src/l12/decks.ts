@@ -175,6 +175,13 @@ export function filterableCardCost(card: Pick<DeckCard, 'cardType' | 'cost'>): n
 const AUTOMATIC_EXTRA_CARD_IDS: Readonly<Record<string, readonly string[]>> = {
   'S01-02M1': ['S01-02M2'],
 }
+// These cards are created by a master effect during a match. They are shown
+// in the same extra-card area so their owned alternate art can be selected in
+// the existing card detail panel without adding a second editor flow.
+const DERIVED_EXTRA_CARD_IDS: Readonly<Record<string, readonly string[]>> = {
+  'S02-01M1': ['S02-01S1'],
+  'S02-06M1': ['S02-06S2'],
+}
 
 interface CardProductInclusion {
   cardId: string
@@ -277,6 +284,10 @@ export function deckProductOptions(cards: readonly Pick<DeckCard, 'product' | 'p
 
 export function automaticExtraCardIdsForMaster(masterId: string | null | undefined) {
   return [...(masterId ? AUTOMATIC_EXTRA_CARD_IDS[masterId] ?? [] : [])]
+}
+
+export function derivedExtraCardIdsForMaster(masterId: string | null | undefined) {
+  return [...(masterId ? DERIVED_EXTRA_CARD_IDS[masterId] ?? [] : [])]
 }
 
 function normalizeMoraleCatalogCard(card: DeckCard): DeckCard {

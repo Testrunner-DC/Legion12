@@ -57,7 +57,8 @@ public sealed partial class L12RoomManager
                     var state = System.Text.Json.JsonSerializer.Serialize(original.State);
                     var candidate = L12GameEngine.RestoreCheckpoint(_catalog, state, random,
                         original.CardFactSignalSequence, original.AutoPassEmptyResponses,
-                        original.ConcealHiddenResponseAvailability, _utcNow);
+                        original.ConcealHiddenResponseAvailability, _utcNow,
+                        ResolveAlternateArtUrls(room.Sessions.Select(id => _sessions[id])));
                     var originalHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
                         System.Text.Encoding.UTF8.GetBytes(state))).ToLowerInvariant();
                     if (!string.Equals(candidate.ComputeStateHash(), originalHash, StringComparison.Ordinal))

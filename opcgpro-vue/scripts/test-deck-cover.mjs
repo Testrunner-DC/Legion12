@@ -87,6 +87,8 @@ assert.equal(validateOptionalDeckCoverCardIds({ coverCardIds: ['L-12', 'L-12'] }
 const source = relative => readFileSync(new URL(relative, import.meta.url), 'utf8')
 const coverComponent = source('../src/l12/DeckCover.vue')
 const specialAssets = source('../src/l12/specialAssets.ts')
+assert.match(coverComponent, /!props\.coverCardIds\?\.length[\s\S]{0,180}selectDeckCoverCardIds\(props\.sourceCardIds \?\? \[\], byId\.value\)/,
+  'an empty representative selection must fall back to the automatic source-card cover')
 assert.doesNotMatch(coverComponent, /\.deck-cover--compact\{height:(?:104|96)px/,
   'compact hosts must preserve the 12:5 banner instead of fixed-height cropping')
 assert.match(coverComponent, /bottom:0;right:-2%/,

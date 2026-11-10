@@ -42,6 +42,7 @@ public sealed class PublicDeckSummaryProjectionTests
     {
         using var fixture = new PublicDeckSummaryFixture();
         fixture.Publish("season");
+        fixture.PublicRows()[0].GetType().GetProperty("RepresentativeCardIds")!.SetValue(fixture.PublicRows()[0], new List<string>());
         fixture.Configure(config => config with { CardRestrictions = [new(fixture.Source.CardIds[0], 0, "CQ2 synthetic")] });
         fixture.Observe();
         var page = fixture.Page(new(Source: "public"), includeCover: true);

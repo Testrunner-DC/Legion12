@@ -47,7 +47,11 @@ public sealed class DeckSummaryProjectionTests
     {
         using var fixture = new Fixture();
         var source = fixture.Catalog.PresetDecks[0];
-        fixture.Create("season", source);
+        var created = fixture.Create("season", source);
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(fixture.Store)!;
+        var row = ((IEnumerable)data.GetType().GetProperty("Decks")!.GetValue(data)!).Cast<object>().Single(item =>
+            (string)item.GetType().GetProperty("Id")!.GetValue(item)! == created.Id);
+        row.GetType().GetProperty("RepresentativeCardIds")!.SetValue(row, new List<string>());
         var admin = fixture.Store.Login("Admin", "L12master").Account!;
         var config = fixture.Store.OperationsConfig(admin);
         var banned = source.CardIds[0];

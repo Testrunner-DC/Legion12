@@ -131,6 +131,7 @@ public sealed partial class L12GameEngine
             && !player.UsedAbilities.Contains($"trigger:xiaotian-morale:{State.TurnSerial}"))
         {
             var xiaotian = CreateCard("S02-01S1", $"p{playerIndex}-xiaotian");
+            ApplyAlternateArt(playerIndex, xiaotian);
             candidates.Add(CreateTriggerCandidate(playerIndex, xiaotian, "master-morale-return", "【主宰效果返还士气时】效果",
                 new Dictionary<string, string>
                 {
@@ -184,6 +185,7 @@ public sealed partial class L12GameEngine
         }
         var xiaotian = ReusableDerivedSpecialCard(player, item.SourceCardId)
             ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+        ApplyAlternateArt(item.Controller, xiaotian);
         var originZone = player.Graveyard.Contains(xiaotian) ? "graveyard"
             : player.Removed.Contains(xiaotian) ? "removed" : "generated";
         var (row, slot) = ParseSlot(destination);
@@ -2239,6 +2241,7 @@ public sealed partial class L12GameEngine
                     }
                     var sword = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-06S2")
                         ?? CreateCard("S02-06S2", $"p{item.Controller}-arthur-sword-{State.TurnSerial}");
+                    ApplyAlternateArt(item.Controller, sword);
                     player.Graveyard.Remove(sword);
                     ResetCardForFieldEntry(sword);
                     sword.OwnerIndex = item.Controller;

@@ -60,7 +60,7 @@ function descendants(parsed, root) { return parsed.nodes.filter(node => parsed.p
 export function privateEditorSavedPanelsContract(source) {
   const parsed = component(source)
   if (!parsed) return false
-  const desktop = parsed.nodes.find(node => has(node, 'saved-decks-panel') && has(node, 'grand-panel')
+  const selectorEntry = parsed.nodes.find(node => has(node, 'saved-deck-entry') && has(node, 'grand-panel')
     && parsed.parents.get(node).some(parent => has(parent, 'deck-side-column')))
   const mobile = parsed.nodes.find(node => has(node, 'mobile-saved-decks-dialog') && attr(node, 'role') === 'dialog'
     && attr(node, 'aria-modal') === 'true' && parsed.parents.get(node).some(parent => has(parent, 'mobile-saved-decks-mask')))
@@ -71,24 +71,23 @@ export function privateEditorSavedPanelsContract(source) {
     && descendants(parsed, node).some(option => option.tag === 'option'
       && equal(directive(option, 'for'), 'item in draftEntries')
       && equal(directive(option, 'bind', 'value'), 'item.slot'))
-  if (!desktop || !mobile || parsed.nodes.some(node => node.tag === 'select'
+  if (!selectorEntry || !mobile || parsed.nodes.some(node => node.tag === 'select'
     && parsed.parents.get(node).some(parent => has(parent, 'deck-builder-topbar'))
     && !allowedDraftSelector(node))) return false
   const selected = 'deck.id ? deck.id === activeDeckId : deck.name === activeDeckName'
-  const desktopNodes = descendants(parsed, desktop), mobileNodes = descendants(parsed, mobile)
-  const row = desktopNodes.find(node => node.tag === 'article' && equal(directive(node, 'for'), 'deck in savedDirectoryDecks'))
+  if (attr(selectorEntry, 'aria-haspopup') !== 'dialog'
+    || attr(selectorEntry, 'aria-controls') !== 'mobile-saved-decks-dialog'
+    || !equal(directive(selectorEntry, 'on', 'click'), 'mobileSavedDecksOpen = true')) return false
+  const mobileNodes = descendants(parsed, mobile)
   const mobileRow = mobileNodes.find(node => node.tag === 'button' && equal(directive(node, 'for'), 'deck in savedDirectoryDecks'))
-  if (!row || !mobileRow || !equal(activeValue(row), selected) || !equal(activeValue(mobileRow), selected)) return false
+  if (!mobileRow || !equal(activeValue(mobileRow), selected)) return false
   if (!equal(directive(mobileRow, 'on', 'click'), 'chooseMobileSavedDeck(deck)')) return false
-  const button = desktopNodes.find(node => node.tag === 'button' && parsed.parents.get(node).includes(row)
-    && equal(directive(node, 'on', 'click'), 'requestLoadDeck(deck)'))
-  if (!button) return false
-  return [desktopNodes, mobileNodes].every(nodes => nodes.some(node => node.tag === 'DeckCover'
+  return mobileNodes.some(node => node.tag === 'DeckCover'
     && attr(node, 'variant') === 'compact'
     && equal(directive(node, 'bind', 'cover-card-ids'), 'savedDeckCoverIds(deck)')
     && equal(directive(node, 'bind', 'source-card-ids'), 'savedDeckSourceIds(deck)')
     && equal(directive(node, 'bind', 'selected'), selected)
-    && equal(directive(node, 'bind', 'meta'), 'savedDeckCountLabel(deck)')))
+    && equal(directive(node, 'bind', 'meta'), 'savedDeckCountLabel(deck)'))
 }
 
 export function privateModeLegalityContract(source) {

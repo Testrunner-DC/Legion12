@@ -44,7 +44,7 @@ public sealed partial class L12PlatformStore
         catalog.Cards.TryGetValue(masterId, out var master);
         return new(new(id, source, name, masterId, master?.NameZh ?? masterId, master?.Faction ?? "unknown", author,
             publicCode, publicationVersion, createdAt, updatedAt, counts,
-            representatives ?? L12DeckCoverSelection.SelectCardIds(catalog, main), legal, legal ? null : reason, environment,
+            representatives is { Count: > 0 } ? representatives : L12DeckCoverSelection.SelectCardIds(catalog, main), legal, legal ? null : reason, environment,
             views, likes, copies, liked, canEdit), cards);
     }
 

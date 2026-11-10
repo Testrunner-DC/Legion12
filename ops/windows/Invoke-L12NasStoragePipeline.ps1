@@ -144,11 +144,11 @@ function Verify-NasManifest {
     $checked = 0
     foreach ($file in @($Manifest.files)) {
         $path = Join-Path $DestinationRoot $file.path
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'L12_NAS_VERIFY_MISSING_FILE' }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw ('L12_NAS_VERIFY_MISSING_FILE:' + [string]$file.path) }
         $item = Get-Item -LiteralPath $path -Force
-        if ([long]$item.Length -ne [long]$file.bytes) { throw 'L12_NAS_VERIFY_BYTES' }
+        if ([long]$item.Length -ne [long]$file.bytes) { throw ('L12_NAS_VERIFY_BYTES:' + [string]$file.path + ':expected=' + [string]$file.bytes + ':actual=' + [string]$item.Length) }
         $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($hash -cne [string]$file.sha256) { throw 'L12_NAS_VERIFY_SHA' }
+        if ($hash -cne [string]$file.sha256) { throw ('L12_NAS_VERIFY_SHA:' + [string]$file.path + ':expected=' + [string]$file.sha256 + ':actual=' + $hash) }
         $checked++
     }
     return $checked

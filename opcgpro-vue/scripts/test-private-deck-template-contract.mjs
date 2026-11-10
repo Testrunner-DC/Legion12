@@ -14,9 +14,9 @@ for (const [before, after] of [
   [':value="item.slot"', ':value="item.draft.deck.id"'],
 ]) check(privateEditorSavedPanelsContract(editor.replaceAll(before, after)), false, `topbar rejects non-draft selector ${after}`)
 check(privateEditorSavedPanelsContract(editor.replace('<header class="deck-builder-topbar">', '<header class="deck-builder-topbar"><select aria-label="选择牌库"/>')), false, 'topbar saved-deck dropdown remains forbidden')
-check(privateEditorSavedPanelsContract(editor.replace('saved-decks-panel grand-panel', 'grand-panel added-state saved-decks-panel')), true, 'class order and extra state are irrelevant')
+check(privateEditorSavedPanelsContract(editor.replace('saved-deck-entry grand-panel', 'grand-panel added-state saved-deck-entry')), true, 'class order and extra state are irrelevant')
 check(privateEditorSavedPanelsContract(editor.replaceAll('deck.id ? deck.id === activeDeckId : deck.name === activeDeckName', '(deck.id ? deck.id === activeDeckId : deck.name === activeDeckName)')), true, 'parentheses preserve identity selection')
-for (const [before, after] of [['chooseMobileSavedDeck(deck)', 'requestNewDeck()'], ['requestLoadDeck(deck)', 'requestDelete(deck)'],
+for (const [before, after] of [['chooseMobileSavedDeck(deck)', 'requestNewDeck()'],
   ['role="dialog" aria-modal="true" aria-labelledby="mobile-saved-decks-title"', 'role="region" aria-labelledby="mobile-saved-decks-title"'],
   ['savedDeckCountLabel(deck)', 'deck.cardIds.length'], ['deck in savedDirectoryDecks', 'deck in []'],
   ['<DeckCover variant="compact"', '<DeckProfile compact'], ['savedDeckCoverIds(deck)', '[]'],

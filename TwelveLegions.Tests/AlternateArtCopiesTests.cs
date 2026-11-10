@@ -60,4 +60,34 @@ public sealed class AlternateArtCopiesTests
         Assert.Equal(alternateUrl, Assert.Single(cards, card => card.InstanceId == "p0-c1").ImageUrl);
         Assert.NotEqual(alternateUrl, Assert.Single(cards, card => card.InstanceId == "p0-c2").ImageUrl);
     }
+
+    [Fact]
+    public void IsisGeneratedOsirisUsesTheSelectedAlternateArt()
+    {
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+        var isisDeck = new L12PresetDeckDefinition
+        {
+            Name = "伊西斯衍生卡异画测试",
+            MasterId = "S01-02M1",
+            CardIds = [],
+            MoraleIds = [],
+            SpecialIds = [],
+        };
+        var opponent = catalog.PresetDecks[0];
+        const string alternateUrl = "/api/site-media/osiris-alternate-test";
+        var engine = new L12GameEngine(catalog, "alternate-art-generated-test", "GENERATED", 17,
+            ["玩家一", "玩家二"], [isisDeck, opponent], skipPreparation: true,
+            alternateArtUrls:
+            [
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["S01-02M2"] = alternateUrl,
+                },
+                new Dictionary<string, string>(),
+            ]);
+
+        var osiris = Assert.Single(engine.State.Players[0].Graveyard,
+            card => card.CardId == "S01-02M2");
+        Assert.Equal(alternateUrl, osiris.ImageUrl);
+    }
 }

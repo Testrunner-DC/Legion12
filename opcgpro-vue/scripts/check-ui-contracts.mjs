@@ -1019,7 +1019,7 @@ const contracts = [
     && !adminMatches.includes('technical-replay') && !adminMatches.includes('JSON.stringify(detail.replay'), '玩家记录、JSON与后台对局档案必须共用同一个全屏回放播放器；后台回放须按稳定游标逐页读取，不能再请求一次性全量命令，并清除旧原始JSON渲染'],
   [prompt.includes('naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)') && prompt.includes('safeChoiceFallback(id)') && !prompt.includes('const choiceLabels: Record<string, string>'), '效果选项必须优先显示服务端权威自然语言标签，并且只能用不泄露协议值的通用文案兜底'],
   [playerMat.includes('entry.enabled === false || entry.triggerOnly') && playerMat.includes('.faction-effect-actions button:disabled'), '不可发动与仅触发时发动的效果必须保留可查看文本、灰置且不可点击'],
-  [deckEditor.includes('saved-list'), '保留既有牌库编辑器回滚防护'],
+  [deckEditor.includes('saved-deck-entry') && deckEditor.includes('mobile-saved-decks-list') && deckEditor.includes('chooseMobileSavedDeck'), '保留牌库编辑器选择入口与弹框载入回滚防护'],
   [!deckEditor.includes('STARTER COPY') && !deckEditor.includes('importPreset'), '牌库编辑器不得重新引入 Starter Copy 区块'],
   [prompt.includes('<CardImage :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl"')
     && prompt.includes('class="opening-master-card"'), '先后手开场必须通过既有卡图组件展示权威主宰卡面'],
@@ -1190,9 +1190,14 @@ const contracts = [
   [deckEditor.includes('class="catalog-filter-bar"') && deckEditor.includes('aria-label="主牌库筛选"') && !deckEditor.includes('<h2>构筑设定</h2>')
     && ['factionFilter', 'costFilter', 'troopsFilter', 'disasterFilter', 'legalityFilter', 'sortMode'].every(value => deckEditor.includes(value)), '牌库编辑器必须把完整卡池筛选放在主牌库卡池上方，并保留阵营、类型、卡池、费用、兵力、天灾、禁限与排序'],
   [deckEditor.includes('class="deck-detail-panel grand-panel"') && deckEditor.includes('detailCollapsed')
-    && deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('class="saved-list"')
-    && deckEditor.includes('grid-template-rows:minmax(0,5fr) minmax(0,2fr)')
-    && deckEditor.includes('class="mobile-saved-decks-dialog"') && !deckEditor.includes('<label>已保存牌库<select'), '牌库编辑器桌面详情与已保存牌库必须按约5:2分区独立滚动；移动端已保存牌库只通过弹框选择'],
+    && deckEditor.includes('class="saved-deck-entry grand-panel"')
+    && deckEditor.includes('aria-controls="mobile-saved-decks-dialog"')
+    && deckEditor.includes('@click="mobileSavedDecksOpen = true"')
+    && deckEditor.includes('class="mobile-saved-decks-dialog"')
+    && deckEditor.includes('class="mobile-saved-decks-list"')
+    && deckEditor.includes('chooseMobileSavedDeck')
+    && !deckEditor.includes('class="saved-decks-panel grand-panel"')
+    && !deckEditor.includes('<label>已保存牌库<select'), '牌库编辑器以紧凑入口统一打开牌库选择弹框，不再常驻桌面列表或顶部下拉菜单'],
   [deckEditor.includes('class="deck-list-header"') && deckEditor.includes('<DeckCover variant="compact" :master-id="selectedMaster?.id"')
     && deckEditor.includes('context="当前牌表"') && deckEditor.includes('士气 ${moraleIds.length} 张')
     && deckEditor.includes('<b>{{ countSummary.label }}</b>') && !deckEditor.includes('class="current-deck-summary"')
@@ -1282,7 +1287,8 @@ const contracts = [
     && board.includes('isCounterTacticCard(card)') && !board.includes('counterIds = new Set')
     && playerMat.includes('isCounterTacticCard(card)') && !playerMat.includes("['S01-0016'")
     && l12PromptSetup.includes('isCounterTactic')
-    && deckConstructionBrowser.includes('CatalogCardDetails') && catalogCardDetails.includes('CardDetailContent') && cardDetailContent.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
+    && deckConstructionBrowser.includes('CatalogCardDetails') && catalogCardDetails.includes('CardDetailContent')
+    && (cardDetailContent.includes('cardTypeLabel(card.cardType, card.isCounterTactic)') || cardDetailContent.includes('cardTypeLabel(props.card.cardType, props.card.isCounterTactic)'))
     && adminPage.includes('cardTypeLabel(card.cardType, card.isCounterTactic)')
     && adminPage.includes('cardTypeLabel(selected.cardType, selected.isCounterTactic)'), '主动/反击战术必须共用tactic类型并由独立属性贯穿目录、对战、弹框与后台；不得保留卡号清单或显示内部英文类型'],
   [l12PromptSetup.includes('"discard-or-decline", "optional-card", "search"') && l12PromptSetup.includes('data.TryAdd("layout", "single-row")') && l12PromptSetup.includes('data["displayCardIds"]') && prompt.includes("prompt.value?.data?.layout === 'single-row'") && prompt.includes('displayCardIds') && prompt.includes('unavailable'), '弃牌及查看多张选择部分必须使用横向全卡图列表，并将不合法卡灰置不可选'],

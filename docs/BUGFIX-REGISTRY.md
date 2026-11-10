@@ -14,8 +14,8 @@
 - 同一程序集的响应窗口专项回归通过 309/309，覆盖连续提示、延期入队、堆叠选择、移动端响应展示和角色边界。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261108-buglist/test-ee02ffe74a124d36aeb4c5661a331973/pass-proof.trx`；该证据不替代 `BUG-20261027-24514780` 的原局具名复现与线上读回。
 - 当前逐项边界：
   - `BUG-20261029-521883f4`：箱子开局卡死；保留 `reproduce`，此前读取窗口返回 503，未用合成通过或时间相关日志冒充原局复现。
-  - `BUG-20261028-865d67aa`：万物统御之戒与奈芙蒂斯；`39fc7499` 已并入正式提交并通过 `NephthysEffectiveFactionDiscount20261026Tests`，待线上具名读回后 `fixed_verified`。
-  - `BUG-20261028-cebc6c9c`：汉尼拔正加成与本回合减兵力的抵消顺序；用户裁定为先抵消加成，`defcb58c` 已并入正式提交并通过共享减兵力回归，待线上具名读回后 `fixed_verified`。
+  - `BUG-20261028-865d67aa`：万物统御之戒与奈芙蒂斯；`39fc7499` 已并入正式提交并通过 `NephthysEffectiveFactionDiscount20261026Tests`。2026-11-10 当前源共享规则复跑 175/175 通过，证据 `D:/GPT/Legion12/artifacts/bug-20261110-shared-rules/evidence/test-5b87f6495f0a49e9a2d01f44dc46b1c7/pass-proof.trx`；仍待线上具名读回后 `fixed_verified`。
+  - `BUG-20261028-cebc6c9c`：汉尼拔正加成与本回合减兵力的抵消顺序；用户裁定为先抵消加成，`defcb58c` 已并入正式提交并通过共享减兵力回归。2026-11-10 当前源共享规则复跑 175/175 通过，证据同上；仍待线上具名读回后 `fixed_verified`。
   - `BUG-20261027-24514780`：对手回合响应提示缺失；保留现有共享响应／连续提示修复证据，未将“需要刷新”的旧反馈直接推成已解决，待线上场景读回。
   - `BUG-20261027-c25df143`：操作互相阻拦的优化建议；不擅自改变规则，保留为产品边界项，不与真实响应缺失混单。
   - `BUG-20261026-7eb4c289`：`S01-02C1B-SR` 异画基础卡与名称更正；原审计、前后值及两服读回已齐，按新增 `resolved/data_corrected_verified` 合同收口，不伪造 `fixCommit`。
@@ -58,6 +58,7 @@
 - 新增具名回归 `AtomicReviewBatch6KARegressionTests.XishiCanSummonTheStarterDeckZhugeCrossbowAndThenDraw`：使用真实目录卡号 `S01-0116`＋`ST01-07`，验证手牌候选、位置声明、活跃登场、随后抽牌及西施入墓。受管本地回归 1/1 通过，证据 `D:/GPT/Legion12/artifacts/bug-20261101-668e5183/test-74a87d3ce0ea44eba199f3237274feb0/pass-proof.trx`。
 - 结论：当前源码对该精确正例已通过，不能据此声称正式服已修复；报告版本与当前源的现场复现尚未完成同一回放链核验，正式线上记录保持 `new/未关闭`。下一步需在不生成业务统计的前提下核对正式具名版本是否包含该回归，再按部署后的线上具名验证关闭；若复现仍失败，优先取该场景的候选/位置/结算事实，不再重复泛化西施测试。
 - 2026-11-07 本地候选复跑：沿受管 L12 测试入口，以当前 `9de412ea` 源和无业务数据夹具重跑该具名用例，`XishiCanSummonTheStarterDeckZhugeCrossbowAndThenDraw` 通过；证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261107/rules/test-f7e57459765843ac8c2615567502a7d6/pass-proof.trx`。该证据仅确认本地候选回归，仍不替代报告版本的正式具名现场核对或部署后线上读回。
+- 2026-11-10 当前源复核：在受控 D 盘测试存储中以当前源重跑同一具名回归 `AtomicReviewBatch6KARegressionTests.XishiCanSummonTheStarterDeckZhugeCrossbowAndThenDraw`，1/1 通过；证据 `D:/GPT/Legion12/artifacts/bug-20261110-xishi-r2/evidence/test-ed86445b15b846ac81fed08f9c209e91/pass-proof.trx`。此前两次失败收据仍保留，未改写；正式服当前版本尚未包含该修复，线上 Bug 保持未关闭。
 
 ## FIX-20261107-CARD-ARCHIVE-METADATA｜图鉴阵营、特征、卡类与数值展示统一
 

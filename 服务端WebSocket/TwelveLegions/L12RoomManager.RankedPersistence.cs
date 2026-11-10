@@ -350,7 +350,9 @@ public sealed partial class L12RoomManager
             engine = L12GameEngine.RestoreCheckpoint(_catalog, checkpoint.StateJson,
                 checkpoint.RandomState, checkpoint.CardFactSignalSequence,
                 checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability,
-                _utcNow);
+                _utcNow, source.Decks.Select((deck, index) => _platform?.ResolveOwnedAlternateArtUrls(
+                    source.AccountIds[index], deck.AlternateArtSelections, deck.AlternateArtCopies)
+                    ?? new Dictionary<string, string>()).ToArray());
             if (engine.State.Revision != checkpoint.Revision
                 || !string.Equals(engine.ComputeStateHash(), checkpoint.StateHash,
                     StringComparison.Ordinal))

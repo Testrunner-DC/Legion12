@@ -37,7 +37,10 @@ const byId = computed(() => {
 const master = computed(() => byId.value.get(props.masterId) ?? byId.value.get(props.masterId.toLocaleUpperCase('en-US')))
 const presentation = computed(() => getFactionPresentation(props.faction || master.value?.faction))
 const cards = computed(() => {
-  const ids = props.coverCardIds === undefined
+  // An empty representative selection means “use the original automatic cover”.
+  // Summary endpoints may encode an unset optional field as [], so do not let
+  // that transport detail suppress the shared source-card fallback.
+  const ids = !props.coverCardIds?.length
     ? selectDeckCoverCardIds(props.sourceCardIds ?? [], byId.value)
     : validateDeckCoverCardIds(props.coverCardIds, byId.value) ? [...props.coverCardIds] : []
   return ids.map(id => byId.value.get(id) ?? byId.value.get(id.toLocaleUpperCase('en-US')))

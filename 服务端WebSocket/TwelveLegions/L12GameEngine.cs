@@ -27,6 +27,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private readonly Random _random;
     private readonly bool _autoPassEmptyResponses;
     private readonly bool _concealHiddenResponseAvailability;
+    // Deck appearance selections are runtime input, so keep them beside the
+    // engine for cards that are generated after the initial deck is built.
+    private readonly IReadOnlyDictionary<string, string>[] _alternateArtUrls;
     private readonly Func<DateTimeOffset> _utcNow;
     private long _cachedHashRevision = long.MinValue;
     private int _cachedHashEventCount = -1;
@@ -104,6 +107,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             : new Random(seed);
         _autoPassEmptyResponses = autoPassEmptyResponses ?? AutoPassEmptyResponsesByDefault;
         _concealHiddenResponseAvailability = concealHiddenResponseAvailability ?? !skipPreparation;
+        _alternateArtUrls = alternateArtUrls is { Length: 2 }
+            ? alternateArtUrls.Select(urls => urls ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)).ToArray()
+            : [new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)];
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         State = new L12GameState
         {
@@ -162,7 +168,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private L12GameEngine(L12Catalog catalog, L12GameState state, L12RandomState randomState,
         long cardFactSignalSequence, bool autoPassEmptyResponses,
-        bool concealHiddenResponseAvailability, Func<DateTimeOffset>? utcNow)
+        bool concealHiddenResponseAvailability, Func<DateTimeOffset>? utcNow,
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls)
     {
         _catalog = catalog;
         State = state;
@@ -170,13 +177,17 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         _cardFactSignalSequence = cardFactSignalSequence;
         _autoPassEmptyResponses = autoPassEmptyResponses;
         _concealHiddenResponseAvailability = concealHiddenResponseAvailability;
+        _alternateArtUrls = alternateArtUrls is { Length: 2 }
+            ? alternateArtUrls.Select(urls => urls ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)).ToArray()
+            : [new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)];
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
     internal static L12GameEngine RestoreCheckpoint(L12Catalog catalog, string stateJson,
         L12RandomState randomState, long cardFactSignalSequence,
         bool autoPassEmptyResponses = true, bool concealHiddenResponseAvailability = true,
-        Func<DateTimeOffset>? utcNow = null)
+        Func<DateTimeOffset>? utcNow = null,
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null)
     {
         var state = JsonSerializer.Deserialize<L12GameState>(stateJson, new JsonSerializerOptions
         {
@@ -190,7 +201,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             throw new InvalidDataException("对局检查点战场结构无效，不能以空战场恢复");
         ValidateCheckpointCardInstances(state);
         return new L12GameEngine(catalog, state, randomState, cardFactSignalSequence,
-            autoPassEmptyResponses, concealHiddenResponseAvailability, utcNow);
+            autoPassEmptyResponses, concealHiddenResponseAvailability, utcNow, alternateArtUrls);
     }
 
     private static void ValidateCheckpointCardInstances(L12GameState state)
@@ -1163,8 +1174,18 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 player.Graveyard.Add(CreateCard("S01-0212", $"p{index}-guard-{i + 1}"));
         }
         if (player.MasterId == "S01-02M1" && _catalog.Cards.ContainsKey("S01-02M2"))
-            player.Graveyard.Add(CreateCard("S01-02M2", $"p{index}-osiris"));
+        {
+            var osiris = CreateCard("S01-02M2", $"p{index}-osiris");
+            osiris.ImageUrl = ResolveAlternateArtUrl(osiris.CardId, osiris.ImageUrl, alternateArtUrls);
+            player.Graveyard.Add(osiris);
+        }
         return player;
+    }
+
+    private void ApplyAlternateArt(int controller, L12CardInstance card)
+    {
+        if (controller is < 0 or > 1) return;
+        card.ImageUrl = ResolveAlternateArtUrl(card.CardId, card.ImageUrl, _alternateArtUrls[controller]);
     }
 
     private static string? ResolveAlternateArtUrl(string cardId, string? originalUrl,

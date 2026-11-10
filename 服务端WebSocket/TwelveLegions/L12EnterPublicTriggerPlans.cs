@@ -769,6 +769,7 @@ public sealed partial class L12GameEngine
                 {
                     var sword = player.Graveyard.FirstOrDefault(card => card.CardId == "S02-06S2")
                         ?? CreateCard("S02-06S2", $"p{item.Controller}-arthur-sword-{State.TurnSerial}");
+                    ApplyAlternateArt(item.Controller, sword);
                     player.Graveyard.Remove(sword);
                     ResetCardForFieldEntry(sword);
                     sword.OwnerIndex = item.Controller;
