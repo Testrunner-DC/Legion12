@@ -77,6 +77,10 @@ const executableSource = deckSource
   .replace("from './deckCacheCodec'", "from '" + codecUrl + "'")
   .replace("import { normalizeLookupCardType } from './cardPresentation'", "const normalizeLookupCardType = value => value")
   .replace("import { factionLabel, isOfficialFaction, normalizeFactionKey } from './factionPresentation'", "const normalizeFactionKey = value => value; const isOfficialFaction = () => true; const factionLabel = value => value")
+  // Keep the isolated fixture resilient to formatter/newline changes in the
+  // production import while preserving the real source module untouched.
+  .replace(/import\s*\{\s*factionLabel\s*,\s*isOfficialFaction\s*,\s*normalizeFactionKey\s*\}\s*from\s*['\"]\.\/factionPresentation['\"]/m,
+    "const normalizeFactionKey = value => value; const isOfficialFaction = () => true; const factionLabel = value => value")
   .replace(
     "import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
     "const { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform",
