@@ -8,7 +8,6 @@ import ts from 'typescript'
 import { reactive } from 'vue'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 import { idbModel } from './test-deck-cache-database.mjs'
-import './test-deck-legacy-import-style.mjs'
 
 const front = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const require = createRequire(import.meta.url)
