@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "20261111-representative-card-summary",
+  "date": "2026-11-11",
+  "audience": "players",
+  "title": "牌库代表卡摘要显示修复",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "牌库列表摘要兼容代表卡读取协议版本，牌库封面可显示已选或自动生成的代表卡。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckQueryContracts.cs",
+        "TwelveLegions.Platform.Tests/DeckCoverSelectionTests.cs",
+        "TwelveLegions.Platform.Tests/DeckSummaryHttpTests.cs"
+      ]
+    }
+  ]
+}
