@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261111-DECK-COVER-CAPABILITY-V2｜代表卡摘要缺失
+
+- 现象与根因：用户测试服截图只有主宰横幅。客户端 `getRepresentativeDeckRequestHeaders` 发送精确能力 `2`，共享 `L12DeckCoverCapability.IsEnabled` 仅接受 `1`；薄摘要没有正文卡号，省略 `coverCardIds` 后无法在封面本地推导。
+- 同类扫描：检索能力头、`IsEnabled` 与 `coverCardIds` 消费者；本人摘要和公开摘要都使用该共享谓词。仅增加精确单值 `2`，保留 `1`、无协商省略、非法／重复头拒绝、账号隔离与正文不展开，不改变手动或自动代表卡选择规则。
+- 具名保护：`DeckCoverSelectionTests.CoverCapabilityRequiresOneExactSupportedHeader` 与 `DeckSummaryHttpTests.NewPrivateReadRoutesUseCurrentOwnerWithoutExpandingOtherBodies` 的 `2` 分支。完整候选 `f8ee9cde` 规则 8782、平台 3148 及全部 Release 阶段通过。
+- 状态：`e3788aed` 修复、`f8ee9cde` 发布账本已进入测试服；真实公开摘要在头 `1`／`2` 下均 10/10 含代表卡。本轮浏览器桥接超时，用户登录页面的视觉核验仍待验；不关闭线上反馈、不宣称正式服已修复。唯一回执为 `artifacts/test-release-20261111-representative-fix-final/release-session-summary.json`。
+
 ## BUG-CLOSEOUT-20261108-ONLINE-BATCH｜当前线上整批对账
 
 - 通过固定指纹 SSH 在服务器内部加载既有隔离管理员环境，只读读取 `/api/admin/bugs/query`：运行版本 `eceb6c27d826328b28a24b4e92c615b25f11ac42`，平台版本 `64507`，Bug 总数 955，初始非终态 14 条。
