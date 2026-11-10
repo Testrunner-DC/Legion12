@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "20261110-alternate-art-recovery-internal",
+  "date": "2026-11-10",
+  "audience": "internal",
+  "reason": "恢复内存房间与排位检查点中的已拥有异画映射，确保重连后生成卡牌继续使用正确素材；补充具名回归。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12RoomManager.Inactivity.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+    "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+    "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+    "TwelveLegions.Tests/AlternateArtCopiesTests.cs"
+  ]
+}

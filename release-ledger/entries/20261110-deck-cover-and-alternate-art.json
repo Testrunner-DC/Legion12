@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "20261110-deck-cover-and-alternate-art",
+  "date": "2026-11-10",
+  "audience": "players",
+  "title": "牌库封面与异画选择整合",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "牌库未手动选择代表牌时，列表、匹配入口和封面预览会继续使用原有自动代表牌；手动代表牌仍按玩家选择显示。牌库编辑器的额外卡区域补齐效果生成卡，并可沿用现有详情面板选择已拥有异画。",
+      "paths": [
+        "opcgpro-vue/src/l12/DeckCover.vue",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/decks.ts",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckSummaries.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryProjection.cs",
+        "opcgpro-vue/src/l12/DeckCostCurve.vue"
+      ]
+    }
+  ]
+}
