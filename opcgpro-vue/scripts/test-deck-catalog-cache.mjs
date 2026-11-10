@@ -24,6 +24,7 @@ const normalizeMoraleCatalogCard = value => value
 const normalizeCardDimensions = value => value
 const normalizeCardPresentation = value => value
 const normalizeFactionKey = value => value
+const isOfficialFaction = value => true
 const factionLabel = value => value
 const isDerivedDeckSpecialCard = value => false
 const withProductInclusions = value => value
@@ -207,6 +208,7 @@ const functions = new Set(['withProductInclusions', 'normalizeMoraleCatalogCard'
     const realSupport = [
       'const deploymentPath = value => value',
       'const normalizeFactionKey = value => value',
+      'const isOfficialFaction = value => true',
       'const factionLabel = value => value',
       "const isDerivedDeckSpecialCard = card => card?.cardType === 'token' || card?.id === 'S02-01S1' || card?.id === 'S02-06S2'",
       ...Object.entries(data).map(([name, value]) => `const ${name} = ${JSON.stringify(value)}`),
