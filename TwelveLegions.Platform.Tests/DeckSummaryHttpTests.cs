@@ -75,10 +75,11 @@ public sealed class DeckSummaryHttpTests
     }
 
     [Theory]
-    [InlineData("summaries", false)]
-    [InlineData("summaries", true)]
-    [InlineData("detail", false)]
-    public async Task NewPrivateReadRoutesUseCurrentOwnerWithoutExpandingOtherBodies(string kind, bool includeCover)
+    [InlineData("summaries", false, null)]
+    [InlineData("summaries", true, "1")]
+    [InlineData("summaries", true, "2")]
+    [InlineData("detail", false, null)]
+    public async Task NewPrivateReadRoutesUseCurrentOwnerWithoutExpandingOtherBodies(string kind, bool includeCover, string? capability)
     {
         var root = Path.Combine(Path.GetTempPath(), "l12-c-q1-http-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -119,7 +120,7 @@ public sealed class DeckSummaryHttpTests
                 : $"/api/decks/by-id/{selected!.Id}?expectedRevision={selected.Revision}";
             using var request = new HttpRequestMessage(HttpMethod.Get, target);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", login.Token!);
-            if (includeCover) request.Headers.Add("X-L12-Deck-Cover", "1");
+            if (capability is not null) request.Headers.Add("X-L12-Deck-Cover", capability);
             using var response = await client.SendAsync(request);
             Console.WriteLine($"CQ1 HTTP {target}: status={(int)response.StatusCode}, expansions={expansions.Count}");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);

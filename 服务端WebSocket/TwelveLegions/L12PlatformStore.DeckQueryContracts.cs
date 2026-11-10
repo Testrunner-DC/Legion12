@@ -9,7 +9,7 @@ public static class L12DeckCoverCapability
     public const string HeaderName = "X-L12-Deck-Cover";
 
     public static bool IsEnabled(IHeaderDictionary headers)
-        => headers.TryGetValue(HeaderName, out var value) && value.Count == 1 && value[0] == "1";
+        => headers.TryGetValue(HeaderName, out var value) && value.Count == 1 && value[0] is "1" or "2";
 }
 
 public sealed record L12PrivateDeckQuery(int Page = 1, int PageSize = 30,

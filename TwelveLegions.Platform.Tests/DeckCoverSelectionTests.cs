@@ -12,7 +12,7 @@ public sealed class DeckCoverSelectionTests
     [InlineData("", false)]
     [InlineData("0", false)]
     [InlineData("true", false)]
-    [InlineData("2", false)]
+    [InlineData("2", true)]
     [InlineData("1,1", false)]
     [InlineData("1 ", false)]
     [InlineData("1", true)]
