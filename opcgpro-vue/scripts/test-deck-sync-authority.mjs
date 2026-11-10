@@ -67,7 +67,7 @@ const storageUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCach
   .replace("from './deckCacheCodec'", "from '" + codecUrl + "'"))
 const cacheStorage = await import(storageUrl)
 
-const executableSource = deckSource
+const executableSource = "const normalizeFactionKey = value => value; const isOfficialFaction = () => true; const factionLabel = value => value;\n" + deckSource
   .replace("from './deckCacheDatabase'", `from '${databaseUrl}'`)
   .replace("from './site/deckEditorDraft'", `from '${draftUrl}'`)
   .replace("from './browserStorage'", "from '" + productionModuleUrl(readFileSync(new URL('../src/l12/browserStorage.ts', import.meta.url), 'utf8')) + "'")
@@ -76,14 +76,11 @@ const executableSource = deckSource
   .replace("from './deckCacheStorage'", "from '" + storageUrl + "'")
   .replace("from './deckCacheCodec'", "from '" + codecUrl + "'")
   .replace("import { normalizeLookupCardType } from './cardPresentation'", "const normalizeLookupCardType = value => value")
-  .replace("import { factionLabel, isOfficialFaction, normalizeFactionKey } from './factionPresentation'", "const normalizeFactionKey = value => value; const isOfficialFaction = true; const factionLabel = value => value")
+  .replace("import { factionLabel, isOfficialFaction, normalizeFactionKey } from './factionPresentation'", "")
   // Keep the isolated fixture resilient to formatter/newline changes in the
   // production import while preserving the real source module untouched.
   .replace(/import\s*\{\s*factionLabel\s*,\s*isOfficialFaction\s*,\s*normalizeFactionKey\s*\}\s*from\s*['\"]\.\/factionPresentation['\"]/m,
-    "const normalizeFactionKey = value => value; const isOfficialFaction = true; const factionLabel = value => value")
-  // TypeScript's isolated transpile may elide the synthetic helper declaration;
-  // make the fixture's official-faction predicate explicit at each call site.
-  .replace(/isOfficialFaction\([^)]*\)/g, 'true')
+    "")
   .replace(
     "import { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
     "const { getDeckCoverRequestHeaders, getRepresentativeDeckRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform",
