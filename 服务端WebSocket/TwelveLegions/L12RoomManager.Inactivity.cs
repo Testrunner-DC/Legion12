@@ -55,7 +55,7 @@ public sealed partial class L12RoomManager
                     // A committed room has already materialized its canonical V2 projection.
                     // Serialize the state directly: inspecting it must not recalculate the live engine.
                     var state = System.Text.Json.JsonSerializer.Serialize(original.State);
-                    var candidate = L12GameEngine.RestoreCheckpoint(_catalog, state, random,
+                    var candidate = L12GameEngine.RestoreCheckpointWithAlternateArt(_catalog, state, random,
                         original.CardFactSignalSequence, original.AutoPassEmptyResponses,
                         original.ConcealHiddenResponseAvailability, _utcNow,
                         ResolveAlternateArtUrls(room.Sessions.Select(id => _sessions[id])));

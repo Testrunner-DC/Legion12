@@ -347,7 +347,7 @@ public sealed partial class L12RoomManager
         {
             var checkpoint = source.StateCheckpoint
                 ?? throw new InvalidDataException("v2 排位缺少状态检查点");
-            engine = L12GameEngine.RestoreCheckpoint(_catalog, checkpoint.StateJson,
+            engine = L12GameEngine.RestoreCheckpointWithAlternateArt(_catalog, checkpoint.StateJson,
                 checkpoint.RandomState, checkpoint.CardFactSignalSequence,
                 checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability,
                 _utcNow, source.Decks.Select((deck, index) => _platform?.ResolveOwnedAlternateArtUrls(

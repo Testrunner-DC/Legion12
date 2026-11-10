@@ -183,7 +183,17 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
+    // Keep the historical reflection/test contract at seven parameters. The
+    // alternate-art-aware recovery path has a distinct name so reflection
+    // callers do not become ambiguous when optional parameters are added.
     internal static L12GameEngine RestoreCheckpoint(L12Catalog catalog, string stateJson,
+        L12RandomState randomState, long cardFactSignalSequence,
+        bool autoPassEmptyResponses = true, bool concealHiddenResponseAvailability = true,
+        Func<DateTimeOffset>? utcNow = null)
+        => RestoreCheckpointWithAlternateArt(catalog, stateJson, randomState, cardFactSignalSequence,
+            autoPassEmptyResponses, concealHiddenResponseAvailability, utcNow, null);
+
+    internal static L12GameEngine RestoreCheckpointWithAlternateArt(L12Catalog catalog, string stateJson,
         L12RandomState randomState, long cardFactSignalSequence,
         bool autoPassEmptyResponses = true, bool concealHiddenResponseAvailability = true,
         Func<DateTimeOffset>? utcNow = null,
