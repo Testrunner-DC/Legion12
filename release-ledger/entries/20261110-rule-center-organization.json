@@ -11,7 +11,8 @@
       "paths": [
         "opcgpro-vue/src/l12/data/ruleCenterData.ts",
         "opcgpro-vue/src/l12/site/RuleCenterPage.vue",
-        "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue"
+        "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs"
       ]
     }
   ]
