@@ -42,6 +42,7 @@ function mount(file, overrides = {}, props = {}) {
     '@/l12/decks': { loadDeckCatalog: async () => catalog }, './decks': { loadDeckCatalog: async () => catalog, filterableCardCost: c => c.cost ?? null },
     '@/l12/specialAssets': { masterProfileUrl: id => id }, './mobileViewport': { landscapeTeleportTarget: () => 'body' },
     './cardPresentation': { cardTypeFilterKey: value => value, cardTypeLabel: value => value, isHorizontalCardType: () => false },
+    './factionPresentation': { factionLabel: value => value, isOfficialFaction: () => true, normalizeFactionKey: value => value },
     ...overrides,
     '@/l12/platform': platform,
   }
