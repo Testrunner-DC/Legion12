@@ -1318,6 +1318,14 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
     <p v-if="notice" class="deck-operation-notice" role="status">{{ notice }}</p>
     <button v-if="draftConflict" :disabled="draftBusy" type="button" @click="saveLocalDraft(true)">另存为恢复草稿（保留原草稿）</button>
     <button v-if="pendingDraftCount" type="button" @click="recoverPendingAccountDrafts().then(refreshLocalDraft)">重试暂存原账号修改（{{ pendingDraftCount }}）</button>
+    <details v-if="legacySources.length" class="legacy-deck-import">
+      <summary>旧本机资料（{{ legacySources.length }} 个保留版本）</summary>
+      <p>旧资料的正式／测试归属未识别，未自动导入。载入后须另行保存，不覆盖旧资料或当前牌库；旧页面的后续修改也只在此保留。</p>
+      <select v-model="legacySourceId" aria-label="选择旧资料版本"><option v-for="item in legacySources" :key="item.id" :value="item.id">{{ item.source === 'cache' ? '旧牌库' : '旧草稿' }} · {{ item.fingerprint.slice(0, 10) }}</option></select>
+      <button v-for="(deck, index) in legacyCandidates" :key="index" type="button" @click="loadLegacyCandidate(deck)">作为新构筑载入：{{ deck.name }}</button>
+      <p v-if="!legacyCandidates.length">此版本无可载入构筑或格式不受支持；原串仍完整保留。</p>
+      <button type="button" @click="initializeDeckCache().then(refreshEditorCacheView)">重新检查旧资料</button>
+    </details>
     <p v-if="legacyDeckImportWarning()" class="deck-operation-notice">{{ legacyDeckImportWarning() }}</p>
     <p v-if="seasonAdvisory" class="deck-operation-notice" data-season-advisory>{{ seasonAdvisory }}</p>
     <div v-if="authenticatedEditor && (ownedArtLoading || ownedArtError)" class="alternate-art-status" role="status" :aria-busy="ownedArtLoading">
@@ -1519,6 +1527,14 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
 </template>
 
 <style scoped>
+.legacy-deck-import{margin:8px 0;padding:10px;border:1px solid #495754;border-radius:8px;background:#17211f;color:#d9e1db;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}.legacy-deck-import select,.secondary-actions select{max-width:100%;min-width:0;background:#17211f;color:#e1e7df;border:1px solid #52645d;border-radius:5px;padding:8px}.legacy-deck-import option,.secondary-actions option{background:#17211f;color:#e1e7df}.legacy-deck-import button{margin:4px;white-space:normal;overflow-wrap:anywhere}
+/* Legacy import accessibility boundary. */
+.legacy-deck-import{min-width:0;flex:none}
+.legacy-deck-import summary{box-sizing:border-box;min-height:38px;max-width:100%;padding:8px 0;list-style-position:inside;cursor:pointer;overflow-wrap:anywhere}
+.legacy-deck-import button{box-sizing:border-box;display:block;min-width:0;min-height:38px;max-width:100%;margin:4px 0;padding:8px 10px;white-space:normal;overflow-wrap:anywhere}
+.legacy-deck-import select{box-sizing:border-box;min-width:0;min-height:38px;width:100%;max-width:100%}
+.legacy-deck-import[open]{max-height:44vh;max-height:min(44dvh,22rem);overflow-y:auto;overscroll-behavior:contain}
+/* End legacy import accessibility boundary. */
 .secondary-actions select{max-width:100%;min-width:0;background:#17211f;color:#e1e7df;border:1px solid #52645d;border-radius:5px;padding:8px}.secondary-actions option{background:#17211f;color:#e1e7df}
 .alternate-art-status{display:flex;flex:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:0;padding:6px 12px;border-bottom:1px solid #675f59;background:#151c20;color:#e0c875;font-size:13px;line-height:1.5}.alternate-art-status span{min-width:0;flex:1 1 220px;overflow-wrap:anywhere}.alternate-art-status button{flex:none;min-height:44px;padding:6px 10px;border:1px solid #617572;background:#142326;color:#eee;font:inherit;font-weight:700}.alternate-art-status button:focus-visible{outline:2px solid #70d7df;outline-offset:2px}
 .deck-builder-shell .mobile-saved-decks-dialog{display:flex;flex-direction:column}
