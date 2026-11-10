@@ -76,7 +76,9 @@ export interface RuleCenterVersion {
 export interface RuleCenterCoreBlock {
   id: string
   page: string
+  /** 一级章节；后台可直接填写，公共页左侧目录按此字段聚合。 */
   topic?: string
+  /** 二级板块名；旧数据中的 chapter 字段继续沿用。 */
   chapter?: string
   text: string
   mediaAssetId?: string

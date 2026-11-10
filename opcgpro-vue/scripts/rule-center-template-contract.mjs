@@ -195,7 +195,10 @@ function propertyPath(node) {
   return null
 }
 
-const forbiddenCenterPaths = new Set(['item.row.id', 'item.row.page', 'item.row.topic', 'item.collection'])
+// The owning chapter is intentionally editable: administrators can create
+// new chapter names directly in the core-rule form. Stable IDs, source pages
+// and collection ownership remain immutable.
+const forbiddenCenterPaths = new Set(['item.row.id', 'item.row.page', 'item.collection'])
 
 function expressionContainsForbidden(value) {
   const parsed = parsedExpression(value)
@@ -328,9 +331,9 @@ export function ruleCenterTemplateContract(sources) {
     && exactVisibility(node, 'if', "workspace === 'drafts' || workspace === 'published'")
     && pathAllows(admin, node, adminRoot))
   const centerGroup = workspacePanel && unique(admin.nodes, node => node.tag === 'section' && hasClass(node, 'item-group')
-    && exactFor(node, 'group', 'activeCenterGroups') && pathAllows(admin, node, workspacePanel))
+    && exactVisibility(node, 'if', 'activeCenterGroup') && pathAllows(admin, node, workspacePanel))
   const centerEditor = centerGroup && unique(admin.nodes, node => node.tag === 'details' && hasClass(node, 'center-editor')
-    && exactFor(node, 'item', 'group.items') && pathAllows(admin, node, centerGroup)
+    && exactFor(node, 'item', 'activeCenterGroup.items') && pathAllows(admin, node, centerGroup)
     && exactDirective(node, 'bind', 'id', '`admin-rule-item-${item.id}`')
     && exactDirective(node, 'bind', 'key', '`${item.collection}-${item.id}`'))
   const centerDraft = centerEditor && unique(renderedChildren(centerEditor), node => node.tag === 'template'

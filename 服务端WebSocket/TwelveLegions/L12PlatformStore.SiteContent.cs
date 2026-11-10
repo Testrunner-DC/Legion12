@@ -346,7 +346,7 @@ public sealed partial class L12PlatformStore
 
     private static JsonObject NewRuleCenterItem(string collection, string id) => collection switch
     {
-        "coreBlocks" => new JsonObject { ["id"] = id, ["page"] = "", ["chapter"] = "新章节", ["text"] = "请填写规则正文", ["status"] = "pending" },
+        "coreBlocks" => new JsonObject { ["id"] = id, ["page"] = "", ["topic"] = "新章节", ["chapter"] = "新板块", ["text"] = "请填写规则正文", ["status"] = "pending" },
         "quickStart" => new JsonObject { ["id"] = id, ["section"] = "quick-start", ["title"] = "新入门条目", ["body"] = "请填写正文", ["sourceRef"] = "待补充来源", ["tags"] = new JsonArray(), ["status"] = "pending" },
         "terms" => new JsonObject { ["id"] = id, ["section"] = "term", ["title"] = "新术语", ["body"] = "请填写正文", ["sourceRef"] = "待补充来源", ["tags"] = new JsonArray(), ["status"] = "pending" },
         "tournament" => new JsonObject { ["id"] = id, ["section"] = "tournament", ["title"] = "新赛事规则", ["body"] = "请填写正文", ["sourceRef"] = "待补充来源", ["tags"] = new JsonArray(), ["status"] = "pending" },

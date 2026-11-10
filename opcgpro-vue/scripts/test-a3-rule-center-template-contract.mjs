@@ -61,7 +61,7 @@ accept('non-rendering dynamic accessibility state stays compatible', changed('pl
   '<div :aria-busy="loading" class="rules-page ui-state-scope">'))
 
 let ofLoops = changed('player', 'v-for="chapter in coreTableOfContents"', 'v-for="chapter of coreTableOfContents"')
-ofLoops = changed('admin', 'v-for="item in group.items"', 'v-for="item of group.items"', 1, ofLoops)
+ofLoops = changed('admin', 'v-for="item in activeCenterGroup.items"', 'v-for="item of activeCenterGroup.items"', 1, ofLoops)
 accept('Vue in and of loop syntax are equivalent', ofLoops)
 
 accept('explicit CardImage kebab spelling', changed('player', '<CardImage :card-id="linked.card.id"',
@@ -130,8 +130,8 @@ reject('center stable ID cannot return via bracket v-model', 'adminCenterImmutab
   `${centerForm}<input v-model.trim="item.row['id']">`))
 reject('center page cannot return under renamed label', 'adminCenterImmutableFields', changed('admin', centerForm,
   `${centerForm}<label>定位<input v-model="item.row.page"></label>`))
-reject('center topic cannot return through input assignment', 'adminCenterImmutableFields', changed('admin', centerForm,
-  `${centerForm}<input @input="item.row.topic = $event.target.value">`))
+reject('center stable ID cannot return through input assignment', 'adminCenterImmutableFields', changed('admin', centerForm,
+  `${centerForm}<input @input="item.row.id = $event.target.value">`))
 reject('center collection cannot return through value binding', 'adminCenterImmutableFields', changed('admin', centerForm,
   `${centerForm}<select :value="item.collection"><option>raw</option></select>`))
 reject('center raw object binding fails closed', 'adminCenterImmutableFields', changed('admin', centerForm,

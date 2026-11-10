@@ -61,7 +61,7 @@ assert(/watch\(\[tab, faqMode\],[\s\S]*?ensureCardCatalog\(\)[\s\S]*?\}, \{ imme
   'direct card FAQ entry must initialize card title metadata immediately')
 for (const token of ['coreTableOfContents', 'scrollToCoreChapter', 'rule-block-image', 'block.image.mobileUrl'])
   assert(player.includes(token), `core rule chapter directory or managed image presentation missing ${token}`)
-assert(player.includes('ruleResults.value') && player.includes("const chapter = block.chapter?.trim() || '其他规则'"),
+assert(player.includes('ruleResults.value') && player.includes("const chapter = block.topic?.trim() || '其他规则'"),
   'core directory must derive from the currently filtered published blocks')
 
 for (const token of ['SingleCardPicker', 'rule-item-publish', 'ruleHistory', 'historyChanges', '审核并发布此项', '高级：查看原始结构（只读）'])
