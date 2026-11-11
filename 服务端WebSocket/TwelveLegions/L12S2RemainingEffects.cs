@@ -175,6 +175,9 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("声明的前排位置已失效");
                 if (!ReturnSelectedMorale(player, cards.Cast<L12MoraleCard>().ToArray()))
                     return CommandResult.Reject("选择的士气已失效");
+                // The returned payment is still the master's declared transform effect;
+                // Li Mu observes the same four-or-more return fact as other masters.
+                RegisterMasterEffectMoraleReturn(playerIndex, source, cards.Length);
                 RecordLimitedActiveAbilityUse(player, source, ability);
                 var compositeDeclared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
                 {
@@ -823,7 +826,7 @@ public sealed partial class L12GameEngine
         int declaredDisasterMasterDamageBonus = 0)
     {
         if (State.ActivePlayer == player.PlayerIndex || player.Relic?.CardId != "S02-0305"
-            || player.MasterDamageTakenThisTurn != 0)
+            || player.MasterDamageTakenOutsideDisasterThisTurn != 0)
             return amount;
 
         const int replacementDamage = 2;
