@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261112-bjorn-resolving-summon",
+  "date": "2026-11-12",
+  "audience": "players",
+  "title": "比约恩结算期召唤入口",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "比约恩在最终结算阶段可从当前结算来源完成合法召唤；原有手牌、墓地和牌库来源校验、格位校验、费用与展示记录保持不变。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "TwelveLegions.Tests/AtomicReviewBatch6ERegressionTests.cs"
+      ]
+    }
+  ]
+}

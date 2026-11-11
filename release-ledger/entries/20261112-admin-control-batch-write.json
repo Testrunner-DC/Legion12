@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261112-admin-control-batch-write",
+  "date": "2026-11-12",
+  "audience": "internal",
+  "reason": "后台规则中心、内容草稿和对局治理写入口统一使用有界动作门控与批次保存，合并重复提交并保留审计、幂等和版本冲突保护；不改变玩家公开快照或业务数据语义。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminMatchGovernancePanel.vue",
+    "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminSiteContentPanel.vue",
+    "服务端WebSocket/TwelveLegions/L12HttpContracts.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}
