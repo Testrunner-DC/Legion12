@@ -4752,6 +4752,77 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "bug:BUG-20261109-81cd4dec")]
+    public void LiMuTriggersForFourMoraleReturnedByWukongTransform()
+    {
+        var game = CreateWithFirstMaster("S02-01M1", 6332);
+        var player = game.State.Players[0];
+        player.Field[1][0] = Card("S02-0102", "limu-wukong-return");
+        AddMorale(player, 4);
+        player.MoraleDeck.Add(new L12MoraleCard
+        {
+            CardId = "S01-01C1",
+            InstanceId = "limu-wukong-return-deck",
+        });
+        game.State.Phase = L12Phase.Main;
+        var returned = player.Morale.Select(card => card.InstanceId).ToArray();
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "wukongTransform")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("choiceMode") == "resource-selection");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: [.. returned])).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "slot");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: slot.ValidChoices[0])).Accepted);
+        PassResponses(game);
+
+        var declaredLiMu = false;
+        while (game.State.PendingPrompts.SingleOrDefault()?.Continuation == "pending-activation")
+        {
+            var prompt = game.State.PendingPrompts[0];
+            var activation = Assert.Single(game.State.PendingActivations,
+                candidate => candidate.ActivationId == prompt.Data["activationId"]);
+            var use = activation.SourceCardId == "S02-0102";
+            declaredLiMu |= use;
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                Choice: use ? "mode:use" : "mode:none")).Accepted);
+        }
+        Assert.True(declaredLiMu);
+        PassResponses(game);
+        Assert.Contains(player.Morale, morale => morale.Tapped);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "bug:BUG-20261109-81cd4dec")]
+    public void LiMuDoesNotTriggerForThreeMoraleReturnedByWukongTransform()
+    {
+        var game = CreateWithFirstMaster("S02-01M1", 6333);
+        var player = game.State.Players[0];
+        player.Field[1][0] = Card("S02-0102", "limu-wukong-three");
+        AddMorale(player, 3);
+        game.State.Phase = L12Phase.Main;
+        var returned = player.Morale.Select(card => card.InstanceId).ToArray();
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "wukongTransform")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("choiceMode") == "resource-selection");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: [.. returned])).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "slot");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: slot.ValidChoices[0])).Accepted);
+        PassResponses(game);
+
+        Assert.DoesNotContain(player.UsedAbilities,
+            key => key.StartsWith("trigger:limu-morale:", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Text.Contains("李牧", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void YangJianMaySummonXiaotianAfterReturningFourMorale()
     {
         var game = CreateWithFirstMaster("S01-01M1", 6331);

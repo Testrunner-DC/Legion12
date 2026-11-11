@@ -109,6 +109,24 @@ public sealed class AtomicReviewBatch6ERegressionTests
             Assert.Null(owner.PresentationFactSequences);
     }
 
+    private static void QueueDeferredCombatDeath(L12GameEngine game, int controller,
+        L12CardInstance source)
+    {
+        var remove = typeof(L12GameEngine).GetMethod("RemoveFromFieldWithCause",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(remove);
+        var removed = (bool)remove.Invoke(game,
+            [game.State.Players[controller], source, true, "阵亡", false,
+                L12FieldLeaveKind.Defeat, true, true, L12DefeatCause.Combat])!;
+        Assert.True(removed);
+        Assert.Contains(source, game.State.Players[controller].Resolving);
+
+        var queue = typeof(L12GameEngine).GetMethod("QueueCombatDeathTriggers",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(queue);
+        queue.Invoke(game, [controller, source.InstanceId]);
+    }
+
     private static int CountInstance(L12GameEngine game, string instanceId)
         => game.State.Players.Sum(player =>
             player.Field.SelectMany(row => row).Count(card => card?.InstanceId == instanceId)
@@ -379,6 +397,34 @@ public sealed class AtomicReviewBatch6ERegressionTests
 
         Assert.Same(bjorn, player.Field[0][1]);
         Assert.True(bjorn.Tapped);
+        Assert.DoesNotContain(bjorn, player.Graveyard);
+        Assert.Equal(1, CountInstance(game, bjorn.InstanceId));
+        Assert.Contains(game.State.Events, entry => entry.Type == "put"
+            && entry.Cards.Any(card => card.InstanceId == bjorn.InstanceId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0305")]
+    [Trait("L12Evidence", "entry:combat-death-resolving-zone-revival")]
+    public void BjornRevivesRestedWhenCombatDeathKeepsSourceInResolving()
+    {
+        var game = Create(79113);
+        var player = game.State.Players[0];
+        var bjorn = Card("S01-0305", "batch6e-bjorn-combat-resolving");
+        var costs = Enumerable.Range(1, 4)
+            .Select(index => Card($"S01-000{index}", $"batch6e-bjorn-combat-cost-{index}"))
+            .ToArray();
+        player.Field[0][0] = bjorn;
+        player.Graveyard.AddRange(costs);
+
+        QueueDeferredCombatDeath(game, 0, bjorn);
+        ResolveMany(game, costs.Select(card => card.InstanceId).ToArray());
+        Resolve(game, "0:1");
+        PassResponses(game);
+
+        Assert.Same(bjorn, player.Field[0][1]);
+        Assert.True(bjorn.Tapped);
+        Assert.DoesNotContain(bjorn, player.Resolving);
         Assert.DoesNotContain(bjorn, player.Graveyard);
         Assert.Equal(1, CountInstance(game, bjorn.InstanceId));
         Assert.Contains(game.State.Events, entry => entry.Type == "put"

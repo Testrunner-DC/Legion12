@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "20261112-rule-closeout",
+  "date": "2026-11-12",
+  "audience": "players",
+  "title": "卡牌结算与对局提示收口",
+  "changes": [
+    {
+      "category": "cards",
+      "text": "主宰返还4张及以上士气时，李牧会按统一规则追加1张休整士气；符合条件的主宰效果均可触发，不再按单张卡写死。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs"
+      ]
+    },
+    {
+      "category": "cards",
+      "text": "最终天灾造成的伤害按天灾规则结算，不会误触发安德华拉诺特的非天灾致命伤害替代；后续攻击按实际剩余兵力继续结算。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "TwelveLegions.Tests/DisasterDamagePriorityTests.cs"
+      ]
+    },
+    {
+      "category": "cards",
+      "text": "比约恩的阵亡返还、手牌打出限制与开场调度分别按各自生命周期处理；回合开始的调度不会被手牌限制错误拦截。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/Models.cs",
+        "TwelveLegions.Tests/AtomicReviewBatch6ERegressionTests.cs",
+        "TwelveLegions.Tests/HandPlayBlockLifecycleProfileTests.cs"
+      ]
+    }
+  ]
+}

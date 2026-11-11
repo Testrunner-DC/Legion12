@@ -409,6 +409,8 @@ public sealed class L12PlayerState
     public int LastActiveTacticTurnSerial { get; set; } = -1;
     public int ReturnedMoraleThisTurn { get; set; }
     public int MasterDamageTakenThisTurn { get; set; }
+    /// <summary>本回合已由非天灾来源实际造成的主宰伤害；安德华拉诺特的首次伤害替换只看这一项。</summary>
+    public int MasterDamageTakenOutsideDisasterThisTurn { get; set; }
     /// <summary>本回合是否曾由主宰来源令该玩家从手牌弃牌；由权威区域移动入口记录。</summary>
     public bool HandDiscardedByMasterThisTurn { get; set; }
     public int NextFactionLegionDiscount { get; set; }

@@ -9446,3 +9446,45 @@
 - 前端修正：站点内容与规则中心改用批量草稿接口；统一 `useActionGate` 防重复保存、预览、发布、分类新增/保存/排序；对局治理按记录行单飞并在保存期间禁用表单。
 - 回归守卫：`AdminTransactionSnapshotMemoryTests` 覆盖外层缓存复用、嵌套 staged 快照及草稿批量 CAS 原子性；`check-profile-admin-contracts.mjs` 增加批量接口与后台写入闸门契约。正式服当前版本未改变，未部署、未关闭玩家 Bug。
 - 状态：`local_fixed_not_deployed`。该条是运维容量/稳定性记录，不并入玩家 Bug 队列。
+
+## BUG-20261111-42C02224｜最终天灾伤害不消耗安德华拉诺特首次替换（本地已修复，未部署）
+
+- 现象与裁定：〈湮灭〉等最终天灾先对主宰造成的 1 点非致命伤害，不应消耗安德华拉诺特（血戒）“本回合首次受到伤害变为 2 点”的替换；随后 4000 兵力军团进攻主宰时，实际伤害应为 2 点。该口径同时覆盖同原文的 `BUG-20261109-4657fbaa`／`0e26bf56`（最早一条作为主取证）与独立的 `b5c3b372`；“挖机”按用户确认归一为瓦尔基里。
+- 根因：伤害状态只累计 `MasterDamageTakenThisTurn`，血戒把最终天灾的非致命伤害与普通来源混用，导致首次替换可能被提前消费。
+- 共享修复：玩家状态新增本回合“非天灾来源实际造成的主宰伤害”计数；普通／战斗伤害写入该计数，`DamageMasterNonLethalFromDisaster` 只写总伤害计数；血戒首次替换仅读取非天灾计数。回合切换清零，检查点恢复保持该事实，旧检查点缺字段按 0 兼容。
+- 防回归：`DisasterDamagePriorityTests` 完整 22/22；新增具名回归 `FinalDisasterDamageDoesNotConsumeAnderstorpFirstDamageReplacement` 验证最终天灾 1 点后后续攻击实际扣 2 点、总伤害与非天灾计数分离；`AnderstorpDamageFloorLifecycleProfileTests` 检查点恢复 1/1。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261112-42` 下对应 `test-fbbded75c1644b77933c2c4eb3980699` 与 `test-a9feb25859824d348507d7b587c517c8`。
+- 状态：`local_fixed_not_deployed`。未写线上 Bug 状态、未执行重复反馈合并；线上版本仍为 `f86db535…`。
+
+## BUG-CLOSEOUT-20261112-QUEUE-TRIAGE｜最新队列边界核对（持续收口，未部署）
+
+- 取证快照：复用 `D:/GPT/Legion12/artifacts/bug-queue-readonly-20261112-r2/bugs.current.sanitized.json` 与 `request-evidence.json`；采样正式版本 `f86db53550fa33526f130ebed53a3b43485be658`，不重新拉取、不写线上状态。
+- `BUG-20261111-bf0ac094` 与 `BUG-20261111-8d3a791d` 原文指纹相同，按最早 `8d3a791d` 作主取证、`bf0ac094` 记重复候选；比约恩“阵亡返4后登场”现行共享修复及具名回归已本地通过（31/31），未部署，不能关闭线上条目。
+- `BUG-20261109-4657fbaa` 与 `0e26bf56` 原文指纹相同，按最早 `4657fbaa` 作主取证；`b5c3b372` 保持独立但归入同一最终天灾／血戒证据簇。“挖机”已按用户确认归一为瓦尔基里；对应修复见 `BUG-20261111-42C02224`。
+- `BUG-20261109-1178f1ca`：卡表核对确认 `S02-0008` 是“万物统御之戒”，而“游戏开始时置入圣物区／起始手牌4张／我方无法从手牌打出圣物”是 `S02-0305` 安德华拉诺特的规则文本。现行调度协议允许手牌中的卡参与调度；`HandPlayBlockReason` 只服务 playCard 与手牌快照，`Mulligan` 不读取该限制。新增具名回归 `HandPlayBlockLifecycleProfileTests.AndvaranautHandPlayBlockDoesNotDisableOpeningMulligan`，直接验证存在安德华拉诺特禁手牌出圣物时，调度仍接受所选实例；既有 `test-match-opening-presentation.mjs` 亦覆盖真实 `cardInstanceId`、零选保留和桌面／移动可达。当前源未复现；老对局 `b4b221ad…` 的正文／回放仍未在本地隔离证据中，记 `rule_correct_checked_unreproduced_pending_original_replay`，不据此关闭。
+- `BUG-20261109-81cd4dec`：用户已明确“李牧追费”指印刷效果“我方士气因主宰效果返还4张及以上时，可从士气牌库追加1张休整的士气”，且孙悟空变身返还也属于该主宰效果返还，满足4张及以上时应触发。当前共享入口 `RegisterMasterEffectMoraleReturn` 只接受 `CardType == "master"` 的来源：主动效果的任意 `returnCost >= 4` 与孙悟空变身返还统一走该入口；李牧候选仍由 `QueueS2MasterMoraleReturnTriggers` 统一按 `returned >= 4` 与回合一次 pending/final 预约处理。嬴政（`S02-0101`）是军团而非主宰，其登场返还所有士气不触发李牧，保持独立的天廷追加限制链。当前源具名回归 `S2FactionRegressionTests.LiMuTriggersOnlyWhenFourMoraleAreReturnedByAMasterEffect` 与 `LiMuTriggersForFourMoraleReturnedByWukongTransform` 受管 Release 2/2 通过；证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261112-limu-source-r6/test-5856bbc6a63841cca62a21e658f3354c`，此前悟空单测 receipt `D:/GPT/Legion12/artifacts/bug-triage-81cd-20261112/test-ded4a8cd1fe747a1a0b0d0ed2da36547`。反馈对局 `21fd1f9e06bb4625b544076e9a686927` 的正文／回放不在本地隔离证据中，线上管理员只读读取被固定 DPAPI owner 会话阻断，因此当前结论为 `rule_correct_checked_unreproduced_pending_original_replay`，不擅自关闭、不改线上状态。
+- `BUG-20261109-81cd4dec` 最新当前源回归补充：嬴政 `S02-0101` 是军团，不属于主宰来源，不触发李牧；共享入口只接受 `CardType == "master"`。杨戬正向、悟空返还4张正向、悟空返还3张负向及嬴政非主宰负向受管 Release 4/4 通过，receipt：`D:/GPT/Legion12/artifacts/bug-closeout-20261112-limu-source-r8/test-481b50d0be5f4d05a83c1ad4dd268878/receipt.json`。未部署、未写线上状态。
+- `BUG-20261108-c3a6bede`：原文仅称“免死的草薙剑在下回合开局会自爆”，无对局号、致死来源、草薙剑所在区域或免死授予来源。现有生命周期回归证明免死在致死结算时先置为1000并在回合开始清理标记；不足以证明该反馈的实际故障，暂记 `insufficient_reproduction`。
+- 比约恩同类根因已在本地修复：阵亡触发进入结算区后，复活段原先只从手牌／墓地／牌库找实例，导致“阵亡返4不能登场”；仅对比约恩结算段允许从 `Resolving` 消费同一实例，其他召唤入口不放宽。具名回归 `AtomicReviewBatch6ERegressionTests.BjornRevivesRestedWhenCombatDeathKeepsSourceInResolving` 与该类全量 31/31 通过，证据 `D:/GPT/Legion12/artifacts/bjorn-local-20261112/bjorn-fix-local-acceptance.json`。两条同指纹反馈仍未部署，不能线上关单。
+- 本节仅登记分诊事实；只有补足规则／原局证据或完成具名线上读回后，才进入 `resolved`、`rule_correct`、`checked_unreproduced` 或 `material_insufficient` 终态。
+
+### 已确认的产品边界（不阻断其余 Bug 收口）
+
+- `BUG-20261108-ce37454b`（回合剩余30秒提醒、2分钟超时建议）：沿用现行连续计时口径；不新增夜间维护窗口；该建议按“现有维护／计时规则保持”记录，关闭建议部分，不改对局计时实现。
+- 仍需原局回放才能补足的证据：`BUG-20261109-81cd4dec`（对局 `21fd1f9e…` 的实际触发链）、`BUG-20261109-1178f1ca`（对局 `b4b221ad…` 的具体实例／时点）及 `BUG-20261108-c3a6bede`（免死来源与致死来源）。规则口径已由用户确认，不再重复提问；在原局正文可读前不擅自改规则或关闭。
+
+## BUG-CLOSEOUT-20261112-QUEUE-CONTINUATION｜新队列继续收口（本地核对，未部署）
+
+- 本轮继续使用只读快照 `D:/GPT/Legion12/artifacts/bug-queue-readonly-20261112-r2/bugs.current.sanitized.json`，不写线上状态。23 条 `new` 逐条保留原文与版本指纹；本段只记录分诊和当前源证据，不把本地通过冒称线上关闭。
+- `BUG-20261111-bf0ac094` 与 `BUG-20261111-8d3a791d`：原文指纹相同，`8d3a791d` 为主取证、`bf0ac094` 为重复候选；比约恩 Resolving 源实例复活修复的具名回归与 31/31 证据已在上一节登记，仍待部署级读回。
+- `BUG-20261109-42c02224`、`BUG-20261109-4657fbaa`、`BUG-20261109-0e26bf56`、`BUG-20261109-b5c3b372`：最终天灾／安德华拉诺特／瓦尔基里反馈已按用户裁定归入同一共享伤害规则；当前源新增的天灾伤害不消费首次替换回归与 22/22 共享回归已通过，未部署，不能关线上条目。
+- `BUG-20261109-1178f1ca`、`BUG-20261109-81cd4dec`、`BUG-20261108-c3a6bede`：规则含义已有用户裁定，分别为调度不受手牌禁用影响、李牧只接受主宰来源返还4张及以上、免死抵消致死伤害；原局正文／回放仍不可读，因此保持待原局证据，不重复询问口径。
+- `BUG-20261108-3ff960e1` 与 `BUG-20261108-84acf6af`：同一玩家行为主题但原文、处置建议不同，不能直接标 duplicate；两条均无对局号或违规序列证据，暂记材料不足待核，不作处罚，不改排行榜数据。
+- `BUG-20261108-ce37454b`：用户已确认沿用连续计时、关闭新增建议；记录为规则／产品建议关闭，不改计时实现。
+- `BUG-20261108-55cab8fc`、`BUG-20261107-d065c72c`、`BUG-20261029-521883f4`：分别为主宰技能不可点击、好友房禁限卡未生效、开局打出箱子卡死；虽有部分对局号或页面描述，当前隔离证据不足以确认具体技能、模式配置、箱子卡与首个阻塞命令，保留待具名场景／原局有界取证。
+- `BUG-20261107-54133c9a`：天地异变“手牌黑胡子 vs 牌库顶黑胡子”属于已有同兵种共享谓词覆盖范围；当前源天地异变手牌直打、效果从手牌拉入及服务端拒绝回归均通过，未部署，保留待测试服／正式具名读回。
+- `BUG-20261105-9170ea28`：芬尼亚“没能打出第四下”未说明指第一项减兵力重复发动还是第二项转活跃，当前不能选定规则含义；现有源已覆盖逐次1符文／1目标／独立堆叠与重复询问，保留待用户确认具体效果段或原局证据。
+- `BUG-20261105-8746df63` 与 `BUG-20261105-bd5c2b37`：月读勾玉、瓦尔基里血戒均落入同一“圣物触发虚构的圣杯”共享入口；当前源圣杯扣血、事件记录与卡图展示回归已通过（本轮共享根因回归 47/47），未部署，不能提前关闭。
+- `BUG-20261101-668e5183`：西施弃置后连弩兵登场修复及具名回归已存在，当前源覆盖 1/1；正式版本尚未包含该修复，保留未关闭。
+- `BUG-20261031-f30bb446`、`BUG-20261030-dd46e698`：移动结束回合误触、赵云伏击反杀守卫后贯穿提示分别保留既有 UI／贯穿边界；本轮相关回归未发现共享规则失败，原玩家场景仍需对应版本读回，未冒称已解决。
+- 本轮新增受管回归：`queue-shared-root-regressions` 47/47 通过，证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261112-queue/test-127210fe1f7e452db8c0171e8fa92c68/pass-proof.trx`；仅用于缩小分诊范围，不替代发布版本与线上具名读回。
+- 用户本轮裁定：`BUG-20261105-9170ea28` 按材料不足结束（未能确定“第四下”对应芬尼亚哪一段效果，未据此改规则）；`BUG-20261031-f30bb446` 按产品建议关闭（不新增结束回合二次确认或另行拆钮规则）。两项均保留原文与分诊证据，不标记 `fixed_verified`。

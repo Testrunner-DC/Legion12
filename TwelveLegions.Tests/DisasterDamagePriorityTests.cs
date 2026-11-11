@@ -443,6 +443,39 @@ public sealed class DisasterDamagePriorityTests
         Assert.Equal(0, resolvedZero);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "bug:BUG-20261111-42c02224")]
+    public void FinalDisasterDamageDoesNotConsumeAnderstorpFirstDamageReplacement()
+    {
+        var game = Create(83018);
+        var defender = game.State.Players[1];
+        defender.Hp = 8;
+        defender.Relic = Card("S02-0305", "final-disaster-anderstorp-ring", 1);
+        var attacker = Card("S01-0001", "final-disaster-4000-attacker", 0, troops: 4000);
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.ActiveDisaster = Card("S01-DS10", "final-disaster", -1);
+        game.State.ActivePlayer = 0;
+
+        InvokePrivate(game, "DamageMasterNonLethalFromDisaster", 1, 1, "〈湮灭〉");
+        Assert.Equal(7, defender.Hp);
+        Assert.Equal(1, defender.MasterDamageTakenThisTurn);
+        Assert.Equal(0, defender.MasterDamageTakenOutsideDisasterThisTurn);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Equal(0, game.State.ActivePlayer);
+        Assert.Equal("S02-0305", defender.Relic.CardId);
+        Assert.Equal(2, Assert.IsType<int>(InvokePrivate(game, "ResolveMasterDamageAmount", 1, 1, 0, false, null, 0)));
+
+        DeclareMasterAttack(game, attacker);
+        Assert.Equal(1, Assert.IsType<L12PendingDefense>(game.State.PendingDefense).MasterDamage);
+        SettleCombat(game);
+
+        Assert.Equal(5, defender.Hp);
+        Assert.Equal(3, defender.MasterDamageTakenThisTurn);
+        Assert.Equal(2, defender.MasterDamageTakenOutsideDisasterThisTurn);
+        Assert.Contains(game.State.Events, entry => entry.Type == "damage"
+            && entry.Text.Contains("失去 2 点血量", StringComparison.Ordinal));
+    }
+
     private static void DeclareMasterAttack(L12GameEngine game, L12CardInstance attacker)
     {
         var result = game.Handle(0, new L12Command("attack", attacker.InstanceId,

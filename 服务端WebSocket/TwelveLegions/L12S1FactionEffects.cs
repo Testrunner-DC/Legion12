@@ -513,7 +513,8 @@ public sealed partial class L12GameEngine
                             RecordTargetSettlementFailure(item, declaredBjornSlot,
                                 "勇士比约恩已声明的休整登场位置不再为空；已支付的主宰伤害与墓地费用不返还");
                         else if (!TrySummonFromAnyPrivateZone(player, player.PlayerIndex, card.InstanceId,
-                                     declaredBjornSlot, tapped: true, presentationOwner: item))
+                                     declaredBjornSlot, tapped: true, presentationOwner: item,
+                                     allowResolvingSource: true))
                             RecordTargetSettlementFailure(item, card.InstanceId,
                                 "勇士比约恩已离开可登场区域或位置在最终区域事务中失效；已支付的主宰伤害与墓地费用不返还");
                     }
@@ -2137,10 +2138,11 @@ public sealed partial class L12GameEngine
     }
 
     private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
-        string instanceId, string slotChoice, bool tapped, L12StackItem presentationOwner)
+        string instanceId, string slotChoice, bool tapped, L12StackItem presentationOwner,
+        bool allowResolvingSource = false)
     {
         if (!TrySummonFromAnyPrivateZone(sourceOwner, destinationPlayerIndex,
-                instanceId, slotChoice, tapped, out var presentationFactSequence))
+                instanceId, slotChoice, tapped, out var presentationFactSequence, allowResolvingSource))
             return false;
         if (presentationFactSequence is { } sequence)
             RegisterPresentationFact(presentationOwner, sequence);
@@ -2148,7 +2150,8 @@ public sealed partial class L12GameEngine
     }
 
     private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
-        string instanceId, string slotChoice, bool tapped, out long? presentationFactSequence)
+        string instanceId, string slotChoice, bool tapped, out long? presentationFactSequence,
+        bool allowResolvingSource = false)
     {
         presentationFactSequence = null;
         if (destinationPlayerIndex < 0 || destinationPlayerIndex >= State.Players.Length)
@@ -2165,6 +2168,7 @@ public sealed partial class L12GameEngine
         }
 
         var matches = sourceOwner.Hand.Concat(sourceOwner.Graveyard).Concat(sourceOwner.Library)
+            .Concat(allowResolvingSource ? sourceOwner.Resolving : Enumerable.Empty<L12CardInstance>())
             .Where(candidate => candidate.InstanceId == instanceId).ToArray();
         if (matches.Length != 1 || !IsFieldLegion(matches[0]))
         {
@@ -2196,6 +2200,7 @@ public sealed partial class L12GameEngine
         sourceOwner.Hand.Remove(card);
         sourceOwner.Graveyard.Remove(card);
         sourceOwner.Library.Remove(card);
+        if (allowResolvingSource) sourceOwner.Resolving.Remove(card);
         ResetCardForFieldEntry(card);
         card.OwnerIndex ??= sourceOwner.PlayerIndex;
         card.Tapped = tapped;

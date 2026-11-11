@@ -1447,6 +1447,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         foreach (var player in State.Players)
         {
             player.MasterDamageTakenThisTurn = 0;
+            player.MasterDamageTakenOutsideDisasterThisTurn = 0;
             player.HandDiscardedByMasterThisTurn = false;
             ResetTemporaryCardState(player, State.TurnSerial, playerIndex);
             player.UsedAbilities.Clear();
@@ -2576,6 +2577,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             declaredDisasterMasterDamageBonus: declaredDisasterMasterDamageBonus);
         player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
+        player.MasterDamageTakenOutsideDisasterThisTurn += Math.Max(0, amount);
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
         var damageText = $"{player.Name} 的主宰因{source}失去 {amount} 点血量";
         if (combatDamage)
@@ -2629,6 +2631,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         if (actual == 0) return;
         player.Hp -= actual;
         player.MasterDamageTakenThisTurn += actual;
+        if (!fromDisaster)
+            player.MasterDamageTakenOutsideDisasterThisTurn += actual;
         TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false,
             declaredSourceItem);
         var damageText = $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害";

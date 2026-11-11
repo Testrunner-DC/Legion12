@@ -78,6 +78,25 @@ public sealed class HandPlayBlockLifecycleProfileTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S02-0305:ability:continuous:26b824128ffced1a", "mulligan-is-not-hand-play", "opening-mulligan", "display-and-submit-parity")]
+    public void AndvaranautHandPlayBlockDoesNotDisableOpeningMulligan()
+    {
+        var game = Create(70301);
+        var player = game.State.Players[0];
+        player.Relic = Card("S02-0305", "andvaranaut-source-mulligan");
+        var candidate = Card("S02-0205", "artifact-candidate-mulligan");
+        player.Hand.Add(candidate);
+        player.Library.Add(Card("S01-0001", "mulligan-draw"));
+        game.State.Phase = L12Phase.Mulligan;
+
+        Assert.StartsWith("〈安德华拉诺特〉", L12StructuredCardRules.HandPlayBlockReason(player, candidate));
+        var result = game.Handle(0, new L12Command("mulligan", CardInstanceIds: [candidate.InstanceId]));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.True(player.MulliganDone);
+    }
+
+    [Fact]
     public void RemovingTheSourceImmediatelyRemovesTheDerivedBlock()
     {
         var player = Player();

@@ -318,6 +318,21 @@ public sealed class AtomicReviewBatch6LARegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "bug:BUG-20261109-81cd4dec")]
+    public void YingzhengMoraleReturnDoesNotTriggerLiMuBecauseSourceIsLegion()
+    {
+        var (game, player, _, _) = BeginYingzheng(8407);
+        player.Field[1][0] = Card("S02-0102", "batch6la-yingzheng-limu");
+
+        PassResponses(game);
+
+        Assert.DoesNotContain(player.UsedAbilities,
+            key => key.StartsWith("trigger:limu-morale:", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Text.Contains("李牧", StringComparison.Ordinal));
+    }
+
+    [Fact]
     [Trait("L12Evidence", "card:S02-0101")]
     public void YingzhengBlocksNonFactionMoraleButAllowsTiantingFactionRecovery()
     {

@@ -451,6 +451,9 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("选择的返还士气已失效或数量不正确");
         var excludedResourceIds = (declaredReturnIds ?? [])
             .Concat(reservedResourceIds).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        // 记录本次主动效果是否实际返还了足够的士气。触发资格只看来源
+        // 是否为主宰以及单次返还数量，不按具体主宰卡名分支。
+        var moraleReturnedByMasterEffect = 0;
         // 奥林匹斯阵营效果支付后还要从同一士气区选择翻转目标。只要存在多种
         // 支付结果，支付对象就会影响效果结果，必须让玩家先点击真正要消耗的资源。
         var forceManualResourcePayment = ability == "olympusMoraleFlip"
@@ -485,6 +488,8 @@ public sealed partial class L12GameEngine
         {
             if (!ReturnSelectedMoraleById(player, declaredReturnIds, returnCost, requireActiveReturn))
                 return CommandResult.Reject("选择的返还士气已失效或数量不正确");
+            if (source.CardType == "master" && returnCost >= 4)
+                moraleReturnedByMasterEffect = returnCost;
             returnPrepaid = true;
         }
         if (selectedResourceIds is not null)
@@ -508,10 +513,11 @@ public sealed partial class L12GameEngine
                 returnPrepaid = false;
                 return true;
             }
-            if (requireActive) return ReturnActiveMorale(player, cost);
-            return ReturnMorale(player, cost);
+            var returned = requireActive ? ReturnActiveMorale(player, cost) : ReturnMorale(player, cost);
+            if (returned && source.CardType == "master" && cost >= 4)
+                moraleReturnedByMasterEffect = cost;
+            return returned;
         }
-        var moraleReturnedByMasterEffect = 0;
         switch (ability)
         {
             case "isisVictory" when source.CardId is "S01-02M1" or "S01-02M2":
@@ -527,7 +533,6 @@ public sealed partial class L12GameEngine
                 RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "nonLethal" when source.CardId == "S01-01M1":
                 if (!ReturnMoraleCost(4)) return CommandResult.Reject("需要返还 4 张士气");
-                moraleReturnedByMasterEffect = 4;
                 RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "frontBuff" when source.CardId == "S01-04M2":
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要消耗 1 张活跃士气");
@@ -597,7 +602,7 @@ public sealed partial class L12GameEngine
                 data[pair.Key] = pair.Value;
         PushEffect(playerIndex, source, "active", "主动效果", data: data);
         if (moraleReturnedByMasterEffect > 0)
-            QueueS2MasterMoraleReturnTriggers(playerIndex, source, moraleReturnedByMasterEffect);
+            RegisterMasterEffectMoraleReturn(playerIndex, source, moraleReturnedByMasterEffect);
         return CommandResult.Ok();
     }
 

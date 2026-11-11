@@ -143,6 +143,12 @@ public sealed partial class L12GameEngine
         QueueTriggerCandidates(candidates);
     }
 
+    // Shared boundary for every master effect that returns morale.  Callers only
+    // report the source and the number returned; the Li Mu/Xiaotian threshold and
+    // once-per-turn reservation stay centralized above.
+    private void RegisterMasterEffectMoraleReturn(int playerIndex, L12CardInstance source, int returned)
+        => QueueS2MasterMoraleReturnTriggers(playerIndex, source, returned);
+
     private static L12CardInstance? ReusableDerivedSpecialCard(L12PlayerState player, string cardId)
         => player.Graveyard.LastOrDefault(card => card.CardId == cardId)
             ?? player.Removed.LastOrDefault(card => card.CardId == cardId);
