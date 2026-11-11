@@ -2149,6 +2149,14 @@ public sealed partial class L12GameEngine
         return true;
     }
 
+    // Preserve the six-parameter private entry point used by legacy reflection
+    // probes and older effect continuations; the resolving-source capability is
+    // opt-in through the overload above.
+    private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
+        string instanceId, string slotChoice, bool tapped, L12StackItem presentationOwner)
+        => TrySummonFromAnyPrivateZone(sourceOwner, destinationPlayerIndex, instanceId, slotChoice,
+            tapped, presentationOwner, allowResolvingSource: false);
+
     private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
         string instanceId, string slotChoice, bool tapped, out long? presentationFactSequence,
         bool allowResolvingSource = false)

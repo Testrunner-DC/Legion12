@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`193af077dd6248bc9ecfa8123bbe0c4fd2b4ad054e32e44009a95681976069d2`。
+内容指纹：`aa1b1a4522335d350c14eecfb9164b46cd71917e6aaf80fdc860adbce2e229e3`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1192,6 +1192,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0304 | authoritative-consumer, per-card-plan |
 | S02-0305:ability:game-setup:cf14affeb486a9f7 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0305 | authoritative-consumer, setup-defaults |
 | S02-0305:ability:game-setup:cf14affeb486a9f7 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.OptionalSetupPromptsRestoreAndApplyBeforeTheStartingHandIsDrawn / S02-0305 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.AndvaranautHandPlayBlockDoesNotDisableOpeningMulligan / S02-0305 | display-and-submit-parity, mulligan-is-not-hand-play, opening-mulligan |
 | S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.CurrentArtifactBlockReasonSurvivesRestoreAndRejectsRepeatedSubmissionWithoutPayment / S02-0305 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.HandPlayBlockDefinitionsMatchTheClosedFamily / S02-0305 | display-and-submit-parity, priority |
 | S02-0305:ability:master-damaged:a4a2c92cad3ad28c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0305 | authoritative-consumer, per-card-plan |

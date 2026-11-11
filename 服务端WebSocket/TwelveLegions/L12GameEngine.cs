@@ -2577,7 +2577,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             declaredDisasterMasterDamageBonus: declaredDisasterMasterDamageBonus);
         player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
-        player.MasterDamageTakenOutsideDisasterThisTurn += Math.Max(0, amount);
+        if (!neutralSource)
+            player.MasterDamageTakenOutsideDisasterThisTurn += Math.Max(0, amount);
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
         var damageText = $"{player.Name} 的主宰因{source}失去 {amount} 点血量";
         if (combatDamage)
