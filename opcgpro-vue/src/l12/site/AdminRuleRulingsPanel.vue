@@ -9,6 +9,7 @@ import SiteMediaPicker from './SiteMediaPicker.vue'
 import { loadSiteMediaReferences } from './siteMediaReferences'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 import { useAdminRiskAction } from './useAdminRiskAction'
+import { useActionGate } from '../useActionGate'
 import { cardProductsForIds, displayCardNumber, loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import { LEGACY_FAQ_SOURCES, RULE_TOPIC_DEFINITIONS, coreRuleBlockId, createRuleCenterDraft, createRulingsDraft, mergedRulings, parsePublishedRuleCenter, parseRulingDocument, serializeRulingDocument, withPendingRulingSeeds, type RuleCenterDocument, type RuleRuling, type RuleTopicId } from '@/l12/data/ruleCenterData'
 
@@ -17,6 +18,7 @@ type PublicationState = 'draft' | 'changed' | 'scheduled' | 'published' | 'super
 
 const emit = defineEmits<{ notice: [value: string] }>()
 const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
+const { pending: mutationBusy, run: runMutation } = useActionGate()
 const workspace = ref<Workspace>('drafts')
 const entries = ref<RuleRuling[]>([])
 const ruleCenterDocument = ref<RuleCenterDocument>(createRuleCenterDraft())
@@ -377,17 +379,23 @@ async function save(show = true) {
     notice('规则资料调序正在合并保存，请稍候')
     return false
   }
-  try {
-    normalizeAllRulingProducts()
-    const [rulings, center] = await Promise.all([
-      adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value), rulingVersion.value),
-      adminApi.saveContentDraft('rules.center', ruleCenterDraft.value, centerVersion.value),
-    ])
-    rulingVersion.value = rulings.version
-    centerVersion.value = center.version
-    if (show) notice('规则中心与裁定草稿已保存；玩家只会看到审核后正式发布的快照')
-    return true
-  } catch (error) { notice(error instanceof Error ? error.message : '规则草稿保存失败'); return false }
+  const result = await runMutation('rule-center:save', async () => {
+    try {
+      normalizeAllRulingProducts()
+      const saved = await adminApi.saveContentDraftBatch([
+        { key: 'rules.rulings', value: serializeRulingDocument(entries.value), expectedVersion: rulingVersion.value },
+        { key: 'rules.center', value: ruleCenterDraft.value, expectedVersion: centerVersion.value },
+      ])
+      const rulings = saved.find(item => item.key === 'rules.rulings')
+      const center = saved.find(item => item.key === 'rules.center')
+      if (!rulings || !center) throw new Error('规则草稿批次返回不完整')
+      rulingVersion.value = rulings.version
+      centerVersion.value = center.version
+      if (show) notice('规则中心与裁定草稿已保存；玩家只会看到审核后正式发布的快照')
+      return true
+    } catch (error) { notice(error instanceof Error ? error.message : '规则草稿保存失败'); return false }
+  }, 350)
+  return result ?? false
 }
 async function saveRulingItem(item: RuleRuling) {
   try { await saveRulings(`裁定 ${item.id} 已保存为草稿；公开版本未改变`) }
@@ -445,7 +453,7 @@ onMounted(load)
 <template>
   <section class="ruling-admin">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction" />
-    <header><div><small>RULE CENTER REVIEW</small><h3>规则中心与 FAQ 裁定库</h3><p>每条内容的预览、草稿保存和审核发布集中在同一工作区。玩家只读取已发布快照。</p></div><div class="actions"><button :disabled="centerReorderPending" @click="load">{{ busy ? '读取中…' : '刷新' }}</button><button v-if="canDraft" @click="addRuling()">＋ 新建裁定</button><button v-if="canDraft" :disabled="centerReorderPending" @click="save()">保存全部草稿</button><button v-if="canDraft" :disabled="centerReorderPending" @click="preview">预览全部差异</button></div></header>
+    <header><div><small>RULE CENTER REVIEW</small><h3>规则中心与 FAQ 裁定库</h3><p>每条内容的预览、草稿保存和审核发布集中在同一工作区。玩家只读取已发布快照。</p></div><div class="actions"><button :disabled="centerReorderPending || mutationBusy" @click="load">{{ busy ? '读取中…' : '刷新' }}</button><button v-if="canDraft" :disabled="mutationBusy" @click="addRuling()">＋ 新建裁定</button><button v-if="canDraft" :disabled="centerReorderPending || mutationBusy" @click="save()">保存全部草稿</button><button v-if="canDraft" :disabled="centerReorderPending || mutationBusy" @click="preview">预览全部差异</button></div></header>
     <nav class="workspace-tabs" aria-label="规则审核工作区"><button v-for="(_, id) in workspaceLabels" :key="id" :class="{ active: workspace === id }" @click="workspace = id"><b>{{ workspaceLabels[id] }}</b><span>{{ workspaceCounts[id] }}</span></button></nav>
     <div class="review-summary"><b>规则中心 {{ centerVersion }} · 裁定库 {{ rulingVersion }}</b><span>状态由草稿、已发布快照、生效时间、字段差异和替代关系自动派生。</span></div>
 

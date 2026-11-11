@@ -9,6 +9,7 @@ import SiteMediaPicker from './SiteMediaPicker.vue'
 import { loadSiteMediaReferences } from './siteMediaReferences'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 import { useAdminRiskAction } from './useAdminRiskAction'
+import { useActionGate } from '../useActionGate'
 import { createHomeHeroSlide, createHomeNotice, defaultHomeComposition, defaultSiteLegal, homeCompositionKey, parseHomeComposition, parseSiteLegal, serializeHomeComposition, serializeSiteLegal, siteLegalKey, type HomeComposition, type HomeNotice, type SiteLegalContent } from './homeContent'
 
 type SiteSection = 'media' | 'hero' | 'notices' | 'home-news' | 'home-product' | 'home-video' | 'news' | 'video' | 'product' | 'categories' | 'legal'
@@ -36,6 +37,7 @@ const categoryKind = ref<SiteContentKind>('news')
 const categoryMigration = reactive<Record<string, string>>({})
 const newCategory = reactive({ name: '', slug: '', active: true })
 const busy = ref(false)
+const { pending: mutationBusy, run: runMutation } = useActionGate()
 const canDraft = computed(() => hasPermission('admin.content.draft'))
 const canPublish = computed(() => hasPermission('admin.content.publish'))
 const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
@@ -124,40 +126,50 @@ async function load() {
 }
 async function saveHome(show = true) {
   if (!canDraft.value) { showNotice('当前账号没有保存内容草稿的权限'); return false }
-  try {
-    const entry = await adminApi.saveContentDraft(homeCompositionKey, serializeHomeComposition(composition))
-    contentEntries[homeCompositionKey] = entry
-    if (show) showNotice('首页编排草稿已保存，线上首页未改变')
-    return true
-  } catch (error) { showNotice(error instanceof Error ? error.message : '首页编排保存失败'); return false }
+  const result = await runMutation('site-content:home', async () => {
+    try {
+      const entry = await adminApi.saveContentDraft(homeCompositionKey, serializeHomeComposition(composition), contentEntries[homeCompositionKey]?.version)
+      contentEntries[homeCompositionKey] = entry
+      if (show) showNotice('首页编排草稿已保存，线上首页未改变')
+      return true
+    } catch (error) { showNotice(error instanceof Error ? error.message : '首页编排保存失败'); return false }
+  }, 350)
+  return result ?? false
 }
 async function saveLegal(show = true) {
   if (!canDraft.value) { showNotice('当前账号没有保存内容草稿的权限'); return false }
-  try {
-    const [footer, rules] = await Promise.all([
-      adminApi.saveContentDraft(siteLegalKey, serializeSiteLegal(legal)),
-      adminApi.saveContentDraft('rules.notice', ruleNotice.value),
-    ])
-    contentEntries[siteLegalKey] = footer; contentEntries['rules.notice'] = rules
-    if (show) showNotice('页尾、法务与规则公告草稿已保存')
-    return true
-  } catch (error) { showNotice(error instanceof Error ? error.message : '页尾与法务保存失败'); return false }
+  const result = await runMutation('site-content:legal', async () => {
+    try {
+      const entries = await adminApi.saveContentDraftBatch([
+        { key: siteLegalKey, value: serializeSiteLegal(legal), expectedVersion: contentEntries[siteLegalKey]?.version },
+        { key: 'rules.notice', value: ruleNotice.value, expectedVersion: contentEntries['rules.notice']?.version },
+      ])
+      entries.forEach(entry => { contentEntries[entry.key] = entry })
+      if (show) showNotice('页尾、法务与规则公告草稿已保存')
+      return true
+    } catch (error) { showNotice(error instanceof Error ? error.message : '页尾与法务保存失败'); return false }
+  }, 350)
+  return result ?? false
 }
 async function preview(keys: string[], saver: (show?: boolean) => Promise<boolean>) {
   if (!canDraft.value) { showNotice('当前账号没有预览内容变更的权限'); return }
-  if (!(await saver(false))) return
-  try {
-    const result = await adminApi.previewContent(keys)
-    showNotice(`发布预览完成：${result.items.filter(item => item.wouldChange).length} 项将更新，未写入线上内容`)
-  } catch (error) { showNotice(error instanceof Error ? error.message : '发布预览失败') }
+  await runMutation('site-content:preview', async () => {
+    if (!(await saver(false))) return
+    try {
+      const result = await adminApi.previewContent(keys)
+      showNotice(`发布预览完成：${result.items.filter(item => item.wouldChange).length} 项将更新，未写入线上内容`)
+    } catch (error) { showNotice(error instanceof Error ? error.message : '发布预览失败') }
+  }, 350)
 }
 async function performPublish(keys: string[], saver: (show?: boolean) => Promise<boolean>) {
-  if (!(await saver(false))) return
-  try {
-    await adminApi.publishContent(keys)
-    showNotice('站点内容已正式发布')
-    contentBatches.value = await adminApi.contentBatches()
-  } catch (error) { showNotice(error instanceof Error ? error.message : '内容发布失败'); throw error }
+  await runMutation('site-content:publish', async () => {
+    if (!(await saver(false))) return
+    try {
+      await adminApi.publishContent(keys)
+      showNotice('站点内容已正式发布')
+      contentBatches.value = await adminApi.contentBatches()
+    } catch (error) { showNotice(error instanceof Error ? error.message : '内容发布失败'); throw error }
+  }, 500)
 }
 function publish(keys: string[], saver: (show?: boolean) => Promise<boolean>) {
   if (!canPublish.value) return
@@ -184,27 +196,33 @@ function deleteMedia(item: SiteMedia) {
 async function createCategory() {
   if (!canDraft.value) return
   if (!newCategory.name.trim()) return
-  try {
-    const saved = await adminApi.saveSiteCategory({ kind: categoryKind.value, name: newCategory.name, slug: newCategory.slug, sortOrder: categoriesByKind.value.length, active: true })
-    categories.value.push(saved); newCategory.name = ''; newCategory.slug = ''; showNotice('分类已新增并写入审计')
-  } catch (error) { showNotice(error instanceof Error ? error.message : '分类新增失败') }
+  await runMutation(`site-category:create:${categoryKind.value}`, async () => {
+    try {
+      const saved = await adminApi.saveSiteCategory({ kind: categoryKind.value, name: newCategory.name, slug: newCategory.slug, sortOrder: categoriesByKind.value.length, active: true })
+      categories.value.push(saved); newCategory.name = ''; newCategory.slug = ''; showNotice('分类已新增并写入审计')
+    } catch (error) { showNotice(error instanceof Error ? error.message : '分类新增失败') }
+  }, 350)
 }
 async function saveCategory(item: SiteCategory) {
   if (!canDraft.value) return
-  try {
-    const saved = await adminApi.saveSiteCategory(item)
-    categories.value = categories.value.map(row => row.id === saved.id ? saved : row)
-    showNotice('分类已保存')
-  } catch (error) { showNotice(error instanceof Error ? error.message : '分类保存失败') }
+  await runMutation(`site-category:save:${item.id}`, async () => {
+    try {
+      const saved = await adminApi.saveSiteCategory(item)
+      categories.value = categories.value.map(row => row.id === saved.id ? saved : row)
+      showNotice('分类已保存')
+    } catch (error) { showNotice(error instanceof Error ? error.message : '分类保存失败') }
+  }, 350)
 }
 async function reorderCategory(index: number, direction: -1 | 1) {
   if (!canDraft.value) return
-  const rows = [...categoriesByKind.value]
-  move(rows, index, direction)
-  try {
-    const reordered = await adminApi.reorderSiteCategories(categoryKind.value, rows.map(item => item.id))
-    categories.value = [...categories.value.filter(item => item.kind !== categoryKind.value), ...reordered]
-  } catch (error) { showNotice(error instanceof Error ? error.message : '分类排序失败') }
+  await runMutation(`site-category:order:${categoryKind.value}`, async () => {
+    const rows = [...categoriesByKind.value]
+    move(rows, index, direction)
+    try {
+      const reordered = await adminApi.reorderSiteCategories(categoryKind.value, rows.map(item => item.id))
+      categories.value = [...categories.value.filter(item => item.kind !== categoryKind.value), ...reordered]
+    } catch (error) { showNotice(error instanceof Error ? error.message : '分类排序失败') }
+  }, 350)
 }
 async function performDeleteCategory(item: SiteCategory, target?: string) {
   try {
@@ -226,7 +244,7 @@ onMounted(load)
 <template>
   <section class="site-content-admin">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
-    <header class="site-content-head"><div><small>SITE CONTENT</small><h2>站点内容</h2><p>素材、首页、资讯、视频、商品、分类与法务由管理员直接维护，并保留权限、审计和持久化边界。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新全部' }}</button></header>
+    <header class="site-content-head"><div><small>SITE CONTENT</small><h2>站点内容</h2><p>素材、首页、资讯、视频、商品、分类与法务由管理员直接维护，并保留权限、审计和持久化边界。</p></div><button :disabled="busy || mutationBusy" @click="load">{{ busy ? '读取中…' : '刷新全部' }}</button></header>
     <nav v-horizontal-scroll-arrows="'站点内容模块'" class="site-content-nav" aria-label="站点内容模块"><button v-for="item in sections" :key="item.id" :class="{ active: section === item.id }" @click="section = item.id">{{ item.label }}</button></nav>
 
     <section v-if="section === 'media'" class="content-panel media-library">
@@ -236,7 +254,7 @@ onMounted(load)
     </section>
 
     <section v-else-if="section === 'hero'" class="content-panel home-compose">
-      <header><div><h3>首页轮播图</h3><p>每张轮播分别维护图片、可选文本与整图点击链接；启用项发布前必须绑定后台上传素材。</p></div><div class="panel-actions"><button v-if="canDraft" @click="addSlide">＋ 轮播</button><button v-if="canDraft" @click="saveHome()">保存草稿</button><button v-if="canDraft" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
+      <header><div><h3>首页轮播图</h3><p>每张轮播分别维护图片、可选文本与整图点击链接；启用项发布前必须绑定后台上传素材。</p></div><div class="panel-actions"><button v-if="canDraft" :disabled="mutationBusy" @click="addSlide">＋ 轮播</button><button v-if="canDraft" :disabled="mutationBusy" @click="saveHome()">保存草稿</button><button v-if="canDraft" :disabled="mutationBusy" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" :disabled="mutationBusy" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <h4>轮播主视觉 <em :data-status="contentEntries[homeCompositionKey]?.status">{{ contentEntries[homeCompositionKey]?.status === 'draft' ? '有未发布草稿' : '已发布' }}</em></h4>
       <article v-for="(slide, index) in composition.heroSlides" :key="slide.id" class="compose-row hero-compose-row">
         <div class="compose-order"><button @click="move(composition.heroSlides, index, -1)">↑</button><b>{{ index + 1 }}</b><button @click="move(composition.heroSlides, index, 1)">↓</button></div>
@@ -253,7 +271,7 @@ onMounted(load)
     </section>
 
     <section v-else-if="section === 'notices'" class="content-panel home-compose">
-      <header><div><h3>首页通知按钮</h3><p>通知按钮数量、内容、链接、颜色、排序和启停均独立维护。</p></div><div class="panel-actions"><button v-if="canDraft" @click="addNotice">＋ 通知按钮</button><button v-if="canDraft" @click="saveHome()">保存草稿</button><button v-if="canDraft" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
+      <header><div><h3>首页通知按钮</h3><p>通知按钮数量、内容、链接、颜色、排序和启停均独立维护。</p></div><div class="panel-actions"><button v-if="canDraft" :disabled="mutationBusy" @click="addNotice">＋ 通知按钮</button><button v-if="canDraft" :disabled="mutationBusy" @click="saveHome()">保存草稿</button><button v-if="canDraft" :disabled="mutationBusy" @click="preview([homeCompositionKey], saveHome)">预览</button><button v-if="canPublish" :disabled="mutationBusy" class="publish" @click="publish([homeCompositionKey], saveHome)">直接发布</button></div></header>
       <article v-for="(item, index) in composition.notices" :key="item.id" class="notice-compose-row"><b>{{ index + 1 }}</b><input v-model="item.label" maxlength="80" placeholder="通知显示文字"><select v-model="item.href" @change="syncNoticeLabel(item)"><option value="">选择一篇已发布资讯</option><option v-for="article in publishedNews" :key="article.id" :value="`/news/${article.id}`">{{ article.title }}</option></select><select v-model="item.tone"><option value="light">浅色</option><option value="dark">深色</option><option value="accent">强调</option></select><label><input v-model="item.enabled" type="checkbox">启用</label><button @click="move(composition.notices, index, -1)">↑</button><button @click="move(composition.notices, index, 1)">↓</button><button class="danger" @click="removeNotice(index)">删除</button></article>
       <p v-if="!composition.notices.length" class="empty">暂无通知按钮；点击“＋ 通知按钮”新增。</p>
     </section>
@@ -283,7 +301,7 @@ onMounted(load)
     </section>
 
     <section v-else class="content-panel legal-editor">
-      <header><div><h3>页尾与法务</h3><p>版权、商标、备案与联系信息独立于首页结构；与规则页公告同批预览并直接发布。</p></div><div class="panel-actions"><button v-if="canDraft" @click="saveLegal()">保存草稿</button><button v-if="canDraft" @click="preview([siteLegalKey, 'rules.notice'], saveLegal)">预览</button><button v-if="canPublish" class="publish" @click="publish([siteLegalKey, 'rules.notice'], saveLegal)">直接发布</button></div></header>
+      <header><div><h3>页尾与法务</h3><p>版权、商标、备案与联系信息独立于首页结构；与规则页公告同批预览并直接发布。</p></div><div class="panel-actions"><button v-if="canDraft" :disabled="mutationBusy" @click="saveLegal()">保存草稿</button><button v-if="canDraft" :disabled="mutationBusy" @click="preview([siteLegalKey, 'rules.notice'], saveLegal)">预览</button><button v-if="canPublish" :disabled="mutationBusy" class="publish" @click="publish([siteLegalKey, 'rules.notice'], saveLegal)">直接发布</button></div></header>
       <label>版权行<input v-model="legal.copyright" maxlength="300"></label><label>商标与权利声明<textarea v-model="legal.trademark" rows="5" maxlength="1200"></textarea></label><label>备案 / 登记信息<input v-model="legal.registration" maxlength="200"></label><label>联系标签<input v-model="legal.contactLabel" maxlength="100"></label><label>联系链接<input v-model="legal.contactHref" maxlength="2000" placeholder="mailto: 不允许；使用站内页或 https://"></label><label>规则页公告<textarea v-model="ruleNotice" rows="5"></textarea></label>
       <details class="batch-history"><summary>发布与回滚批次（{{ contentBatches.length }}）</summary><PagedCollection :items="contentBatches" v-slot="{ items: paged20499 }"><article v-for="batch in paged20499" :key="batch.id"><span><code>{{ batch.id }}</code><b>{{ batch.action }} · {{ batch.status }}</b><small>{{ batch.actorName }} · {{ new Date(batch.createdAt).toLocaleString() }} · {{ batch.items.length }} 项</small></span><button v-if="batch.action === 'publish' && batch.status === 'published' && hasPermission('admin.content.rollback')" @click="rollback(batch)">直接回滚</button></article></PagedCollection></details>
     </section>

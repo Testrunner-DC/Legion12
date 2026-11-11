@@ -4843,3 +4843,11 @@
 - 验收：独立验收先拦截高杉可取消缺陷，修正后最终接受；相关服务端399/399、独立定向74/74、UI350、Vue类型和12档 Edge 通过。完整 Focused 首轮 5766 项中只有能力台账／完成矩阵两份派生指纹过期，项目生成器重建后完整 Batch 通过：规则5766/5766、UI350、正式与 testrun 双构建。待提交级 Release 后推送。
 - 排队下一批：赛事授权裁判实时观战与管理员对局档案回放可见双方完整手牌和盖伏卡正面，但仍是只读视角，不开放牌库顺序、私密交互、私密事件、合法动作或GM面板；普通观战／回放隐私不变。该权限批不得与 Stage2B-1 混写或在未提交候选上并行修改核心投影。
 - 部署：无测试服或正式服部署授权。
+
+## 2026-11-12 后台写入压力统一收口交接
+
+- 根因已从规则板块扩展到共享后台写入路径：外层管理员事务原先每次重复序列化最近已提交的整个平台回滚快照；站点内容与规则中心一个动作可能并发发起多个草稿写入；分类排序和对局治理表单缺少重复提交闸门。
+- 本地修正：保留 `L12PlatformStore.AdminControlPlane.cs` 的精确事务边界快照与嵌套回滚语义；新增 `/api/admin/v1/content/draft-batch`，在单一管理员事务内逐项 CAS、校验、审计并一次持久化，避免一个 UI 动作重复整库提交。
+- 前端修正：`AdminSiteContentPanel.vue` 与 `AdminRuleRulingsPanel.vue` 改用批量草稿并接入 `useActionGate`；分类新增/保存/排序、预览/发布由同一闸门限制；`AdminMatchGovernancePanel.vue` 按记录行单飞并在保存期间禁用表单。
+- 验收入口：`AdminTransactionSnapshotMemoryTests`（精确快照、嵌套 staged 回滚、批量草稿 CAS 原子性）；`scripts/check-profile-admin-contracts.mjs`（批量端点及后台写入闸门）。本批尚未完成完整 Release，未部署、未写线上配置。
+- Bug 边界：`BUG-20261111-RULE-REORDER-TRANSACTION-STORM` 及本批 `OPS-20261112-ADMIN-MUTATION-PRESSURE` 是运维稳定性记录，不属于玩家反馈队列；玩家 Bug 仍按 `docs/BUG-MANAGEMENT-WORKFLOW.md` 独立分诊。

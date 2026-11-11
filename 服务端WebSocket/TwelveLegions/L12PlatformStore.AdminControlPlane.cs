@@ -11,6 +11,8 @@ internal sealed record L12StoredAdminApproval(string Status, L12AdminApprovalVie
 /// </summary>
 public sealed record L12ContentPublishItem(string Key, string DraftValue, string PublishedValue, long EntryVersion);
 public sealed record L12ContentPublishCommandPayload(IReadOnlyList<L12ContentPublishItem> Items);
+public sealed record L12ContentDraftBatchItem(string Key, string Value, long? ExpectedVersion = null);
+public sealed record L12ContentDraftBatchCommandPayload(IReadOnlyList<L12ContentDraftBatchItem> Items);
 public sealed record L12ContentRollbackItem(string Key, string TargetValue, long EntryVersion,
     string ExpectedPublishedVersionId, string? TargetVersionId);
 public sealed record L12ContentRollbackCommandPayload(string BatchId, IReadOnlyList<L12ContentRollbackItem> Items);
@@ -152,6 +154,10 @@ public sealed partial class L12PlatformStore
                 }
                 try
                 {
+                    // Capture the exact in-memory state at the transaction boundary.
+                    // The live store may contain staged compatibility edits that do not
+                    // advance the durable version, so a committed-byte cache cannot be
+                    // used as a rollback substitute here.
                     byte[] snapshot;
                     using (L12PlatformOperationMetrics.Measure(L12PlatformOperationPhase.SnapshotSerialize))
                         snapshot = SerializeCompleteInMemoryState(_data);
@@ -609,6 +615,58 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate) return _data.ContentBatches.OrderByDescending(row => row.CreatedAt)
             .Take(Math.Clamp(limit, 1, 500)).Select(ToView).ToArray();
+    }
+
+    /// <summary>
+    /// Applies several draft edits inside the caller's admin transaction so one UI action
+    /// performs one validation/audit/commit cycle instead of one cycle per content key.
+    /// </summary>
+    public IReadOnlyList<L12ContentEntryView> SaveContentDraftBatch(L12AccountView actor,
+        L12ContentDraftBatchCommandPayload payload, L12AdminAuditContext? context = null)
+    {
+        if (payload.Items is null || payload.Items.Count is < 1 or > 20)
+            throw new ArgumentException("内容草稿批次必须包含 1–20 项");
+        var keys = NormalizeContentKeys(payload.Items.Select(item => item.Key));
+        var result = new List<L12ContentEntryView>(payload.Items.Count);
+        for (var index = 0; index < payload.Items.Count; index++)
+        {
+            var item = payload.Items[index];
+            result.Add(SaveContentDraft(actor, keys[index], item.Value ?? string.Empty, context,
+                item.ExpectedVersion));
+        }
+        return result;
+    }
+
+    public IReadOnlyList<L12ContentEntryView> PreviewContentDraftBatch(
+        L12ContentDraftBatchCommandPayload payload)
+    {
+        if (payload.Items is null || payload.Items.Count is < 1 or > 20)
+            throw new ArgumentException("内容草稿批次必须包含 1–20 项");
+        var keys = NormalizeContentKeys(payload.Items.Select(item => item.Key));
+        lock (_gate)
+        {
+            var result = new List<L12ContentEntryView>(payload.Items.Count);
+            for (var index = 0; index < payload.Items.Count; index++)
+            {
+                var item = payload.Items[index];
+                var key = keys[index];
+                var existing = FindContentEntry(key);
+                if (item.ExpectedVersion.HasValue && item.ExpectedVersion.Value != (existing?.Version ?? 0))
+                    throw new L12ContentStateConflictException("内容草稿已被其他管理员修改，请刷新后重试");
+                var normalized = NormalizeRuleRulingProducts(key, item.Value ?? string.Empty);
+                ValidateSiteContentValue(key, normalized, false);
+                var current = existing is null
+                    ? new L12ContentEntryView(key, _data.Content.GetValueOrDefault(key, string.Empty),
+                        _data.Content.GetValueOrDefault(key, string.Empty), "published", null, null, null, null)
+                    : ToView(existing);
+                result.Add(current with
+                {
+                    DraftValue = normalized,
+                    Status = normalized == current.PublishedValue ? "published" : "draft",
+                });
+            }
+            return result;
+        }
     }
 
     private void ValidatePublishSnapshot(IReadOnlyList<L12ContentPublishItem> items)

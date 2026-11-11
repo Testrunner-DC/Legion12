@@ -113,6 +113,8 @@ public sealed record SiteCategoryRequest(string? Kind, string? Name, string? Slu
     bool Active = true, long? ExpectedVersion = null);
 public sealed record SiteCategoryOrderRequest(IReadOnlyList<string>? Ids);
 public sealed record ContentDraftCommandPayload(string Key, string Value);
+public sealed record ContentDraftBatchRequest(IReadOnlyList<L12ContentDraftBatchItem>? Items,
+    string? IdempotencyKey = null, bool DryRun = false, string? Reason = null);
 public sealed record ContentBatchRequest(IReadOnlyList<string>? Keys, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record ContentRollbackRequest(string? BatchId, string? IdempotencyKey = null,

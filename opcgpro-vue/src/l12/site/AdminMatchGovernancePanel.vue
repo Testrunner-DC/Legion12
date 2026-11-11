@@ -20,7 +20,11 @@ const search = ref(typeof route.query.search === 'string' ? route.query.search :
 const loading = ref(false)
 const notes = reactive<Record<string, string>>({})
 const comments = reactive<Record<string, string>>({})
+const saving = reactive<Record<string, boolean>>({})
 const canWrite = hasPermission('admin.match-governance.write')
+
+function mutationKey(kind: 'draw' | 'report', id: string) { return `${kind}:${id}` }
+function isSaving(kind: 'draw' | 'report', id: string) { return Boolean(saving[mutationKey(kind, id)]) }
 
 async function load() {
   loading.value = true
@@ -37,6 +41,9 @@ async function load() {
 }
 
 async function saveDraw(row: MatchDrawRecord) {
+  const key = mutationKey('draw', row.id)
+  if (!canWrite || saving[key]) return
+  saving[key] = true
   try {
     const updated = await matchGovernanceAdminApi.updateDrawRequest(row.id, {
       status: row.adminStatus, adminNotes: notes[row.id], comment: comments[row.id],
@@ -45,9 +52,13 @@ async function saveDraw(row: MatchDrawRecord) {
     comments[row.id] = ''
     emit('notice', `平局申请 ${row.id} 已更新并写入审计`)
   } catch (error) { emit('notice', error instanceof Error ? error.message : '平局申请更新失败') }
+  finally { saving[key] = false }
 }
 
 async function saveReport(row: PlayerMatchReport) {
+  const key = mutationKey('report', row.id)
+  if (!canWrite || saving[key]) return
+  saving[key] = true
   try {
     const updated = await matchGovernanceAdminApi.updatePlayerReport(row.id, {
       status: row.status, adminNotes: notes[row.id], comment: comments[row.id],
@@ -56,6 +67,7 @@ async function saveReport(row: PlayerMatchReport) {
     comments[row.id] = ''
     emit('notice', `玩家举报 ${row.id} 已更新并写入审计`)
   } catch (error) { emit('notice', error instanceof Error ? error.message : '玩家举报更新失败') }
+  finally { saving[key] = false }
 }
 
 function selectView(next: 'draws' | 'reports') {
@@ -87,7 +99,7 @@ onMounted(load)
           <AdminMatchContextLinks :match-id="row.matchId"/>
           <details><summary>审计记录（{{ row.history.length }}）</summary><ol><PagedCollection :items="row.history" v-slot="{ items: paged4517 }"><li v-for="audit in paged4517" :key="audit.id"><b>{{ audit.action }}</b> · {{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}<p v-if="audit.comment">{{ audit.comment }}</p></li></PagedCollection></ol></details>
         </div>
-        <form @submit.prevent="saveDraw(row)"><label>管理状态<select v-model="row.adminStatus" :disabled="!canWrite"><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select></label><label>管理备注<textarea v-model="notes[row.id]" :disabled="!canWrite" rows="3" maxlength="5000"/></label><label>本次审计说明<textarea v-model="comments[row.id]" :disabled="!canWrite" rows="2" maxlength="2000"/></label><button v-if="canWrite" type="submit">保存并审计</button></form>
+        <form @submit.prevent="saveDraw(row)"><label>管理状态<select v-model="row.adminStatus" :disabled="!canWrite || isSaving('draw', row.id)"><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select></label><label>管理备注<textarea v-model="notes[row.id]" :disabled="!canWrite || isSaving('draw', row.id)" rows="3" maxlength="5000"/></label><label>本次审计说明<textarea v-model="comments[row.id]" :disabled="!canWrite || isSaving('draw', row.id)" rows="2" maxlength="2000"/></label><button v-if="canWrite" :disabled="isSaving('draw', row.id)" type="submit">{{ isSaving('draw', row.id) ? '保存中…' : '保存并审计' }}</button></form>
       </article></PagedCollection>
       <div v-if="!loading && !draws.length" class="empty">当前筛选下没有平局申请</div>
     </div>
@@ -98,7 +110,7 @@ onMounted(load)
           <AdminMatchContextLinks :match-id="row.matchId" :account-id="row.reporterId || undefined"/>
           <details><summary>审计记录（{{ row.history.length }}）</summary><ol><PagedCollection :items="row.history" v-slot="{ items: paged6097 }"><li v-for="audit in paged6097" :key="audit.id"><b>{{ audit.action }}</b> · {{ audit.actorName }} · {{ new Date(audit.createdAt).toLocaleString() }}<p v-if="audit.comment">{{ audit.comment }}</p></li></PagedCollection></ol></details>
         </div>
-        <form @submit.prevent="saveReport(row)"><label>处理状态<select v-model="row.status" :disabled="!canWrite"><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select></label><label>管理备注<textarea v-model="notes[row.id]" :disabled="!canWrite" rows="3" maxlength="5000"/></label><label>本次审计说明<textarea v-model="comments[row.id]" :disabled="!canWrite" rows="2" maxlength="2000"/></label><button v-if="canWrite" type="submit">保存并审计</button></form>
+        <form @submit.prevent="saveReport(row)"><label>处理状态<select v-model="row.status" :disabled="!canWrite || isSaving('report', row.id)"><option value="new">新记录</option><option value="reviewing">处理中</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select></label><label>管理备注<textarea v-model="notes[row.id]" :disabled="!canWrite || isSaving('report', row.id)" rows="3" maxlength="5000"/></label><label>本次审计说明<textarea v-model="comments[row.id]" :disabled="!canWrite || isSaving('report', row.id)" rows="2" maxlength="2000"/></label><button v-if="canWrite" :disabled="isSaving('report', row.id)" type="submit">{{ isSaving('report', row.id) ? '保存中…' : '保存并审计' }}</button></form>
       </article></PagedCollection>
       <div v-if="!loading && !reports.length" class="empty">当前筛选下没有玩家举报</div>
     </div>

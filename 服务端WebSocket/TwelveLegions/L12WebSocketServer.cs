@@ -3569,6 +3569,52 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             });
             return AdminCommandResponse(request, command, outcome);
         });
+        _app.MapPost("/api/admin/content/draft-batch", (HttpRequest request, ContentDraftBatchRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            var payload = new L12ContentDraftBatchCommandPayload(body.Items ?? []);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "content.draft.batch",
+                "content:draft-batch", payload, body.IdempotencyKey, null, body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, current =>
+            {
+                try
+                {
+                    var entries = _platform.SaveContentDraftBatch(current.Actor, current.Payload, current.AuditContext);
+                    return L12AdminCommandResult<IReadOnlyList<L12ContentEntryView>>.Ok(entries,
+                        "内容草稿批次已保存");
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<IReadOnlyList<L12ContentEntryView>>.Fail(
+                        "content_version_conflict", error.Message, StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<IReadOnlyList<L12ContentEntryView>>.Fail(
+                        "content_validation_failed", error.Message, StatusCodes.Status400BadRequest);
+                }
+            }, current =>
+            {
+                try
+                {
+                    var entries = _platform.PreviewContentDraftBatch(current.Payload);
+                    return L12AdminCommandResult<IReadOnlyList<L12ContentEntryView>>.Ok(entries,
+                        "干运行验证通过");
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<IReadOnlyList<L12ContentEntryView>>.Fail(
+                        "content_version_conflict", error.Message, StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<IReadOnlyList<L12ContentEntryView>>.Fail(
+                        "content_validation_failed", error.Message, StatusCodes.Status400BadRequest);
+                }
+            });
+            return AdminCommandResponse(request, command, outcome);
+        });
         _app.MapPost("/api/admin/content/{key}/publish", (HttpRequest request, string key) =>
         {
             const L12Permission permission = L12Permission.AdminContentPublish;

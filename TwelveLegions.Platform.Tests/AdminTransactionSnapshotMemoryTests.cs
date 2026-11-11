@@ -100,6 +100,33 @@ public sealed class AdminTransactionSnapshotMemoryTests(ITestOutputHelper output
         Assert.True(optimizedBytes < previousBytes / 4);
     }
 
+    [Fact]
+    public void ContentDraftBatchUsesPerEntryCasAndCommitsAllEntriesAsOneTransaction()
+    {
+        using var fixture = new RankedIdentityFixture();
+        var context = new L12AdminAuditContext("draft-batch-test", "admin.content.draft");
+        var first = fixture.Store.GetContentEntry("home.headline");
+        var second = fixture.Store.GetContentEntry("home.introduction");
+        var payload = new L12ContentDraftBatchCommandPayload([
+            new("home.headline", "批量标题", first.Version),
+            new("home.introduction", "批量说明", second.Version),
+        ]);
+
+        var saved = fixture.Store.ExecuteAdminTransaction(() =>
+            fixture.Store.SaveContentDraftBatch(fixture.Admin, payload, context));
+        Assert.Equal(["home.headline", "home.introduction"], saved.Select(item => item.Key));
+        Assert.Equal("批量标题", fixture.Store.GetContentEntry("home.headline").DraftValue);
+        Assert.Equal("批量说明", fixture.Store.GetContentEntry("home.introduction").DraftValue);
+
+        var stale = new L12ContentDraftBatchCommandPayload([
+            new("home.headline", "不应覆盖", first.Version),
+            new("home.introduction", "不应覆盖", fixture.Store.GetContentEntry("home.introduction").Version),
+        ]);
+        Assert.Throws<L12ContentStateConflictException>(() => fixture.Store.ExecuteAdminTransaction(() =>
+            fixture.Store.SaveContentDraftBatch(fixture.Admin, stale, context)));
+        Assert.Equal("批量标题", fixture.Store.GetContentEntry("home.headline").DraftValue);
+    }
+
     private static object Data(L12PlatformStore store)
         => typeof(L12PlatformStore).GetProperty("_data", Private)!.GetValue(store)!;
     private static IDictionary Content(object data)

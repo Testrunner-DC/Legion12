@@ -15,6 +15,7 @@ const game = read('../src/l12/GamePage.vue')
 const siteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
 const alternateArts = read('../src/l12/site/AdminAlternateArtsPanel.vue')
 const ruleReview = read('../src/l12/site/AdminRuleRulingsPanel.vue')
+const governance = read('../src/l12/site/AdminMatchGovernancePanel.vue')
 const ruleData = read('../src/l12/data/ruleCenterData.ts')
 const riskDialog = read('../src/l12/site/AdminRiskActionDialog.vue')
 const riskAction = read('../src/l12/site/useAdminRiskAction.ts')
@@ -113,6 +114,13 @@ const checks = [
     && ruleData.match(/RULING-20260922-(?:FENIAN-REPEAT|SIWA-KABA)[^\n]+status: 'pending'/g)?.length === 2
     && ruleCenter.includes('parsePublishedRulings') && !ruleCenter.includes('createRulingsDraft'),
   '新增芬尼亚与锡瓦卡巴裁定只能合并到后台待审核草稿，玩家页不得读取内置草稿'],
+  [platform.includes("/api/admin/v1/content/draft-batch")
+    && siteContent.includes('useActionGate') && siteContent.includes('saveContentDraftBatch')
+    && siteContent.includes("runMutation('site-content:legal'")
+    && ruleReview.includes('saveContentDraftBatch') && ruleReview.includes("runMutation('rule-center:save'")
+    && governance.includes('const saving = reactive') && governance.includes("isSaving('draw'")
+    && governance.includes("isSaving('report'"),
+  '后台内容与规则多键草稿必须走单次批量事务；分类、规则审核和对局治理写入必须有共享/逐行重复提交闸门'],
 ]
 
 const failures = checks.filter(([ok]) => !ok).map(([, message]) => message)

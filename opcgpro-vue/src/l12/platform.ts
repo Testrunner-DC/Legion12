@@ -1618,6 +1618,9 @@ export const adminApi = {
   reorderSiteCategories: (kind: SiteContentKind, ids: string[]) => platformRequest<SiteCategory[]>(`/api/admin/site/categories/order/${kind}`, { method: 'PUT', body: JSON.stringify({ ids }) }),
   deleteSiteCategory: (id: string, migrateTo?: string) => platformRequest<void>(`/api/admin/site/categories/${encodeURIComponent(id)}${migrateTo ? `?migrateTo=${encodeURIComponent(migrateTo)}` : ''}`, { method: 'DELETE' }),
   saveContentDraft: (key: string, value: string, expectedVersion?: number) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value, expectedVersion })) }),
+  saveContentDraftBatch: (items: { key: string; value: string; expectedVersion?: number }[]) => platformRequest<ContentEntry[]>('/api/admin/v1/content/draft-batch', {
+    method: 'POST', body: JSON.stringify(commandBody('draft-batch', { items })),
+  }),
   previewContent: (keys: string[]) => platformRequest<ContentBatchPreview>('/api/admin/v1/content/preview', { method: 'POST', body: JSON.stringify({ keys }) }),
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
   publishRuleItem: (key: 'rules.rulings' | 'rules.center', collection: string, itemId: string, expectedVersion?: number) => platformRequest<ContentEntry>('/api/admin/rule-items/publish', {
