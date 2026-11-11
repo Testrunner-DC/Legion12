@@ -13,13 +13,14 @@ const statement = name => tree.statements.find(node => ts.isVariableStatement(no
 const fn = name => tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)
 const centerState = statement('publishingCenterIds')
 const rulingState = statement('publishingRulingIds')
+const centerReorderState = statement('centerReorderPending')
 const publishCenterItem = fn('publishCenterItem')
 const publishRuling = fn('publishRuling')
-assert(centerState && rulingState && publishCenterItem && publishRuling,
+assert(centerState && rulingState && centerReorderState && publishCenterItem && publishRuling,
   '发布忙碌状态必须按center/ruling文档分别建Set并保留两个真实handler')
 
 const code = ts.transpileModule([
-  centerState.getText(tree), rulingState.getText(tree),
+  centerState.getText(tree), rulingState.getText(tree), centerReorderState.getText(tree),
   publishCenterItem.getText(tree), publishRuling.getText(tree),
 ].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
 const deferred = () => {
