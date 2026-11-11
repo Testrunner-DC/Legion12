@@ -34,6 +34,12 @@ const openRulingEditors = ref<Set<string>>(new Set())
 const busy = ref(false)
 const publishingCenterIds = ref(new Set<string>())
 const publishingRulingIds = ref(new Set<string>())
+const centerReorderPending = ref(false)
+let centerReorderTimer: ReturnType<typeof setTimeout> | null = null
+let centerReorderInFlight = false
+let centerReorderDirty = false
+let centerReorderMessage = ''
+let centerReorderWaiters: Array<{ resolve: () => void; reject: (error: unknown) => void }> = []
 const selectedSource = ref('')
 const sourceQuery = ref('')
 const sourceStates = { 'pending-review': '待梳理', replaced: '已替代', 'conflict-flagged': '发现冲突' } as const
@@ -222,7 +228,7 @@ function applyCenterEntry(entry: ContentEntry) {
   publishedCenter.value = parsePublishedRuleCenter(entry.publishedValue)
 }
 async function addCenterItem(collection: string = activeCenterCollection.value) {
-  if (!canDraft.value) return
+  if (!canDraft.value || centerReorderPending.value) return
   try {
     const saved = await saveCenter('', false)
     if (!saved) return
@@ -235,6 +241,48 @@ async function addCenterItem(collection: string = activeCenterCollection.value) 
     if (itemId) await revealDraftItem(itemId)
   } catch (error) { notice(error instanceof Error ? error.message : '规则资料子板块新建失败') }
 }
+function settleCenterReorderWaiters(error?: unknown) {
+  const waiters = centerReorderWaiters
+  centerReorderWaiters = []
+  waiters.forEach(({ resolve, reject }) => error ? reject(error) : resolve())
+}
+function scheduleCenterReorderFlush() {
+  if (centerReorderTimer || centerReorderInFlight) return
+  centerReorderTimer = setTimeout(() => {
+    centerReorderTimer = null
+    void flushCenterReorderSave()
+  }, 220)
+}
+function scheduleCenterReorderSave(message: string): Promise<void> {
+  centerReorderPending.value = true
+  centerReorderDirty = true
+  centerReorderMessage = message
+  const promise = new Promise<void>((resolve, reject) => centerReorderWaiters.push({ resolve, reject }))
+  scheduleCenterReorderFlush()
+  return promise
+}
+async function flushCenterReorderSave() {
+  if (centerReorderInFlight || !centerReorderDirty) return
+  centerReorderInFlight = true
+  centerReorderDirty = false
+  const message = centerReorderMessage
+  try {
+    await saveCenter('', false)
+    if (!centerReorderDirty) {
+      centerReorderPending.value = false
+      settleCenterReorderWaiters()
+      notice(message)
+    }
+  } catch (error) {
+    centerReorderPending.value = false
+    centerReorderDirty = false
+    settleCenterReorderWaiters(error)
+    notice(error instanceof Error ? error.message : '规则资料调序保存失败')
+  } finally {
+    centerReorderInFlight = false
+    if (centerReorderDirty) scheduleCenterReorderFlush()
+  }
+}
 async function moveCenterItem(item: { collection: string; id: string; row: Record<string, any> }, direction: -1 | 1) {
   const document = ruleCenterDocument.value as unknown as Record<string, Array<Record<string, any>>>
   const items = document[item.collection] || []
@@ -245,11 +293,15 @@ async function moveCenterItem(item: { collection: string; id: string; row: Recor
   const [moved] = items.splice(index, 1)
   items.splice(target, 0, moved)
   try {
-    await saveCenter(`规则资料顺序已保存为草稿；稳定编号 ${item.id} 未改变`)
+    await scheduleCenterReorderSave(`规则资料顺序已保存为草稿；稳定编号 ${item.id} 未改变`)
     await revealDraftItem(item.id)
-  } catch (error) { notice(error instanceof Error ? error.message : '规则资料调序失败') }
+  } catch { /* flushCenterReorderSave emits one shared error for the coalesced batch */ }
 }
 function deleteCenterItem(item: { collection: string; id: string; title: string; state: PublicationState }) {
+  if (centerReorderPending.value) {
+    notice('规则资料调序正在合并保存，请稍候')
+    return
+  }
   const published = item.state !== 'draft'
   requestRiskAction({
     title: published ? '删除已发布规则资料' : '删除规则资料草稿',
@@ -275,6 +327,10 @@ async function revealDraftItem(itemId: string) {
   editor.scrollIntoView({ block: 'center' })
 }
 async function load() {
+  if (centerReorderPending.value) {
+    notice('规则资料调序正在合并保存，请稍候')
+    return
+  }
   busy.value = true
   try {
     const [rulings, center, batches] = await Promise.all([
@@ -317,6 +373,10 @@ async function saveCenter(message = '规则资料草稿已保存', show = true) 
   return saved
 }
 async function save(show = true) {
+  if (centerReorderPending.value) {
+    notice('规则资料调序正在合并保存，请稍候')
+    return false
+  }
   try {
     normalizeAllRulingProducts()
     const [rulings, center] = await Promise.all([
@@ -334,6 +394,10 @@ async function saveRulingItem(item: RuleRuling) {
   catch (error) { notice(error instanceof Error ? error.message : '裁定草稿保存失败') }
 }
 async function saveCenterItem(itemId: string) {
+  if (centerReorderPending.value) {
+    notice('规则资料调序正在合并保存，请稍候')
+    return
+  }
   try { await saveCenter(`规则资料 ${itemId} 已保存为草稿；公开版本未改变`) }
   catch (error) { notice(error instanceof Error ? error.message : '规则资料草稿保存失败') }
 }
@@ -362,7 +426,7 @@ async function publishRuling(item: RuleRuling) {
   finally { publishingRulingIds.value.delete(itemId) }
 }
 async function publishCenterItem(collection: string, itemId: string) {
-  if (publishingCenterIds.value.has(itemId)) return
+  if (publishingCenterIds.value.has(itemId) || centerReorderPending.value) return
   publishingCenterIds.value.add(itemId)
   try {
     const saved = await adminApi.saveContentDraft('rules.center', ruleCenterDraft.value, centerVersion.value)
@@ -381,7 +445,7 @@ onMounted(load)
 <template>
   <section class="ruling-admin">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction" />
-    <header><div><small>RULE CENTER REVIEW</small><h3>规则中心与 FAQ 裁定库</h3><p>每条内容的预览、草稿保存和审核发布集中在同一工作区。玩家只读取已发布快照。</p></div><div class="actions"><button @click="load">{{ busy ? '读取中…' : '刷新' }}</button><button v-if="canDraft" @click="addRuling()">＋ 新建裁定</button><button v-if="canDraft" @click="save()">保存全部草稿</button><button v-if="canDraft" @click="preview">预览全部差异</button></div></header>
+    <header><div><small>RULE CENTER REVIEW</small><h3>规则中心与 FAQ 裁定库</h3><p>每条内容的预览、草稿保存和审核发布集中在同一工作区。玩家只读取已发布快照。</p></div><div class="actions"><button :disabled="centerReorderPending" @click="load">{{ busy ? '读取中…' : '刷新' }}</button><button v-if="canDraft" @click="addRuling()">＋ 新建裁定</button><button v-if="canDraft" :disabled="centerReorderPending" @click="save()">保存全部草稿</button><button v-if="canDraft" :disabled="centerReorderPending" @click="preview">预览全部差异</button></div></header>
     <nav class="workspace-tabs" aria-label="规则审核工作区"><button v-for="(_, id) in workspaceLabels" :key="id" :class="{ active: workspace === id }" @click="workspace = id"><b>{{ workspaceLabels[id] }}</b><span>{{ workspaceCounts[id] }}</span></button></nav>
     <div class="review-summary"><b>规则中心 {{ centerVersion }} · 裁定库 {{ rulingVersion }}</b><span>状态由草稿、已发布快照、生效时间、字段差异和替代关系自动派生。</span></div>
 
@@ -399,7 +463,7 @@ onMounted(load)
             <div v-if="item.collection === 'coreBlocks'" class="wide rule-media-editor"><span>子板块图片（可选）</span><SiteMediaPicker v-model="item.row.mediaAssetId" kind="rule" :selected-media="mediaFor(item.row.mediaAssetId)" @selected="ruleMediaUploaded($event, item.row)"/><img v-if="mediaFor(item.row.mediaAssetId)" :src="mediaFor(item.row.mediaAssetId)?.thumbnailUrl" :alt="mediaFor(item.row.mediaAssetId)?.altText"><details><summary>上传新的规则图片</summary><MediaUploadField kind="rule" :initial-alt="item.row.chapter || '规则示意图'" @uploaded="ruleMediaUploaded($event, item.row)" @notice="notice"/></details></div>
             <label v-if="item.collection !== 'coreBlocks'">来源说明<input v-model.trim="item.row.sourceRef" maxlength="300"></label><label>生效时间（北京时间，可留空）<input :value="effectiveInput(String(item.row.effectiveAt || ''))" type="datetime-local" @input="setCenterEffective(item.row, ($event.target as HTMLInputElement).value)"></label>
           </div></fieldset>
-          <div class="item-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">下移</button><button v-if="canDraft" @click="saveCenterItem(item.id)">保存此项</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingCenterIds.has(item.id)" @click="publishCenterItem(item.collection, item.id)">{{ publishingCenterIds.has(item.id) ? '发布中…' : '审核并发布此项' }}</button></div></template>
+          <div class="item-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">下移</button><button v-if="canDraft" :disabled="centerReorderPending" @click="saveCenterItem(item.id)">保存此项</button><button v-if="canDraft" class="danger" :disabled="centerReorderPending" @click="deleteCenterItem(item)">删除</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingCenterIds.has(item.id)" @click="publishCenterItem(item.collection, item.id)">{{ publishingCenterIds.has(item.id) ? '发布中…' : '审核并发布此项' }}</button></div></template>
           <div v-if="workspace === 'published'" class="item-actions published-order-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">退回并上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">退回并下移</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除并取消公开</button></div>
         </details>
       </section>

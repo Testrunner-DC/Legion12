@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { ruleCenterGroups, ruleCenterTemplateContract } from './rule-center-template-contract.mjs'
 import './test-a3-rule-center-template-contract.mjs'
 import './test-rule-item-publication-busy.mjs'
+import './test-rule-center-reorder-save-queue.mjs'
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = resolve(frontendRoot, '..')
