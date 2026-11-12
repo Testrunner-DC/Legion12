@@ -14,6 +14,13 @@ if ($snapshot.schema -ne 1 -or [string]::IsNullOrWhiteSpace([string]$snapshot.sn
     [string]::IsNullOrWhiteSpace([string]$snapshot.snapshotSha256) -or $null -eq $snapshot.items) {
     throw 'Bug intake snapshot schema or immutable identity is invalid.'
 }
+$platformVersion = $null
+$platformVersionText = [string]$snapshot.platformVersion
+$parsedPlatformVersion = 0L
+if ([long]::TryParse($platformVersionText, [Globalization.NumberStyles]::Integer, [Globalization.CultureInfo]::InvariantCulture, [ref]$parsedPlatformVersion) -and $parsedPlatformVersion -ge 0) {
+    $platformVersion = $parsedPlatformVersion
+}
+$requiresFreshSnapshot = $null -eq $platformVersion
 
 function Get-SourceFingerprint {
     param($Item)
@@ -33,9 +40,11 @@ $workItems = @($snapshot.items | ForEach-Object {
     $terminal = [string]$_.status -in @('closed', 'resolved')
     [ordered]@{
         id = [string]$_.id
-        state = if ($terminal) { 'closed' } else { 'ready' }
+        state = if ($terminal) { 'closed' } elseif ($requiresFreshSnapshot) { 'blocked' } else { 'ready' }
         sourceSnapshotTag = [string]$snapshot.snapshotTag
-        sourcePlatformVersion = [int64]$snapshot.platformVersion
+        sourcePlatformVersion = $platformVersion
+        sourcePlatformVersionText = $platformVersionText
+        requiresFreshSnapshot = $requiresFreshSnapshot
         sourceFingerprint = Get-SourceFingerprint $_
         title = [string]$_.title
         matchId = $_.matchId
@@ -54,8 +63,8 @@ $workItems = @($snapshot.items | ForEach-Object {
 $workflow = [ordered]@{
     schema = 1; kind = 'bug-work-items'; createdAtUtc = [DateTimeOffset]::UtcNow.ToString('o')
     queueSnapshotPath = $snapshotPath; queueSnapshotTag = [string]$snapshot.snapshotTag
-    queueSnapshotSha256 = [string]$snapshot.snapshotSha256; platformVersion = [int64]$snapshot.platformVersion
-    counts = [ordered]@{ total = $workItems.Count; ready = @($workItems | Where-Object state -eq 'ready').Count; closed = @($workItems | Where-Object state -eq 'closed').Count; needsUserRuling = 0; needsRepro = 0; verifyLive = 0; blocked = 0 }
+    queueSnapshotSha256 = [string]$snapshot.snapshotSha256; platformVersion = $platformVersion; platformVersionText = $platformVersionText
+    counts = [ordered]@{ total = $workItems.Count; ready = @($workItems | Where-Object state -eq 'ready').Count; closed = @($workItems | Where-Object state -eq 'closed').Count; needsUserRuling = 0; needsRepro = 0; verifyLive = 0; blocked = @($workItems | Where-Object state -eq 'blocked').Count }
     items = $workItems
 }
 $outputDirectory = Split-Path -Parent $outputPath
@@ -66,7 +75,7 @@ if ($ReceiptPath) {
     $receiptPath = Assert-L12GeneratedPath -Path $ReceiptPath -Purpose 'Bug work-item receipt'
     $receiptDirectory = Split-Path -Parent $receiptPath
     if ($receiptDirectory) { New-Item -ItemType Directory -Force -Path $receiptDirectory | Out-Null }
-    $receipt = [ordered]@{ schema = 1; kind = 'bug-work-items'; status = 'initialized'; queueSnapshotTag = $snapshot.snapshotTag; queueSnapshotSha256 = $snapshot.snapshotSha256; workItemsPath = $outputPath; total = $workItems.Count; ready = $workflow.counts.ready; closed = $workflow.counts.closed; createdAtUtc = $workflow.createdAtUtc }
+    $receipt = [ordered]@{ schema = 1; kind = 'bug-work-items'; status = if ($requiresFreshSnapshot) { 'blocked-needs-fresh-live-snapshot' } else { 'initialized' }; queueSnapshotTag = $snapshot.snapshotTag; queueSnapshotSha256 = $snapshot.snapshotSha256; workItemsPath = $outputPath; total = $workItems.Count; ready = $workflow.counts.ready; closed = $workflow.counts.closed; blocked = $workflow.counts.blocked; platformVersion = $platformVersion; platformVersionText = $platformVersionText; createdAtUtc = $workflow.createdAtUtc }
     [IO.File]::WriteAllText($receiptPath, (ConvertTo-Json $receipt -Depth 10), [Text.UTF8Encoding]::new($false))
 }
 Write-Host "已生成 $($workItems.Count) 条离线 Bug 工作项；SnapshotTag=$($snapshot.snapshotTag)；未执行任何线上写入。"

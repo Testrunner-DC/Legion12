@@ -8,6 +8,13 @@
 - 验证：`AdminBugQueryTests` 12/12 通过（摘要不带历史、详情按 ID 读取、权限/CAS 原回归保留）；前端 `check-ui-contracts.mjs` 362 项通过，其中 Bug 页面 15/15、详情生命周期 11/11；`vue-tsc -b` 通过。工作清单脚本在 D 盘合成快照上完成 2 条离线生成，C 盘拒绝路径未写入。
 - 本批只改流程工具、接口和后台读取策略，不拉取线上新队列、不追加 Bug 审计、不关闭反馈、不部署；现有未提交的规则中心/站点内容改动仍保留，提交时需按文件范围分批。
 
+## 2026-11-12 新流程续办清单（离线分流，待新鲜 CAS 快照）
+
+- 当前可复用的生产只读快照为 `D:/GPT/Legion12/artifacts/bug-queue-readonly-20261112-r2/bugs.current.sanitized.json`，采样 968 条，正式版本字段为 `f86db535…`；按新流程重绑定到 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z`，工作清单 968 条，其中已有终态 945 条、非终态 23 条。
+- 该旧只读快照只有字符串版本指纹，没有服务端 CAS 所需的非负整数 `platformVersion`。`New-L12BugWorkItems.ps1` 已改为显式生成 `blocked-needs-fresh-live-snapshot` 回执：23 条非终态均阻塞于新鲜快照，不会拿提交哈希或旧版本号进行线上 preview/CAS。
+- 23 条的离线分流与用户既有裁定已登记在 `docs/BUGFIX-REGISTRY.md` 的 `BUG-CLOSEOUT-20261112-QUEUE-CONTINUATION`：重复候选、共享天灾／血戒规则、李牧／调度／草薙剑待原局证据、材料不足、已确认产品建议关闭、以及未部署本地修复分别保留，不冒充线上终态。
+- 当前进程读取 `D:/GPT/Legion12/secrets/codexops-admin.credential.xml` 触发 DPAPI owner mismatch；本轮没有更换凭据、绕过保护、追加审计或线上写入。恢复同一固定隔离管理员会话后，只需重新生成新鲜 intake，再按同一工作清单逐项 preview→单 CAS→独立读回。
+
 ## 2026-11-12 部署耗时复盘改进（本地已验，未部署）
 
 - 固化三项已确认的流程改进：服务器 `prepare-storage` 在上传前按“10 GiB 切换底线 + 本次运行包字节数 + 256 MiB 暂存余量”预检；内容寻址卡图未命中缓存时，在第二次大上传前再做剩余空间预检；生产启动健康窗口由固定 30 次改为有界 90 次（仍可用 `L12_DEPLOY_HEALTH_ATTEMPTS` 调整），测试服保持原短窗口。

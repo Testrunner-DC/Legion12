@@ -9488,3 +9488,10 @@
 - `BUG-20261031-f30bb446`、`BUG-20261030-dd46e698`：移动结束回合误触、赵云伏击反杀守卫后贯穿提示分别保留既有 UI／贯穿边界；本轮相关回归未发现共享规则失败，原玩家场景仍需对应版本读回，未冒称已解决。
 - 本轮新增受管回归：`queue-shared-root-regressions` 47/47 通过，证据 `D:/GPT/Legion12/artifacts/bug-closeout-20261112-queue/test-127210fe1f7e452db8c0171e8fa92c68/pass-proof.trx`；仅用于缩小分诊范围，不替代发布版本与线上具名读回。
 - 用户本轮裁定：`BUG-20261105-9170ea28` 按材料不足结束（未能确定“第四下”对应芬尼亚哪一段效果，未据此改规则）；`BUG-20261031-f30bb446` 按产品建议关闭（不新增结束回合二次确认或另行拆钮规则）。两项均保留原文与分诊证据，不标记 `fixed_verified`。
+
+## BUG-CLOSEOUT-20261112-WORK-ITEMS｜新流程离线续办绑定
+
+- 将既有只读生产快照重新绑定为 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z/intake.json`，并生成同目录 `work-items.json` 与阶段回执；原快照与请求回执的 SHA／采样时间均保留，未重新拉取、未写线上状态。
+- 工作清单总计 968 条：原已终态 945 条保持 `closed`，23 条非终态按 `blocked-needs-fresh-live-snapshot` 保留；原因是旧快照只有正式版本字符串指纹，没有服务端 CAS 所需的非负整数 `platformVersion`，不能把哈希冒充并发版本。
+- `New-L12BugWorkItems.ps1` 已补充该安全边界：缺少数字 CAS 版本时只生成阻塞态和明确回执，数字版本快照的原 `ready/closed` 路径保持不变；当前无任何 preview/CAS、审计追加或线上 Bug 状态变更。
+- 当前固定 DPAPI 管理员会话在隔离进程内仍报 owner mismatch；恢复同一会话后重新生成新鲜快照即可继续已有 23 项分流，不需要重做本地回归或重新询问已确认规则。
