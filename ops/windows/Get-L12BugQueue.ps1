@@ -90,9 +90,13 @@ if ($OutputPath) {
     if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
     [System.IO.File]::WriteAllText($resolved, $finalJson, [System.Text.UTF8Encoding]::new($false))
 }
+$snapshotPathForReceipt = $null
+if ($OutputPath) {
+    $snapshotPathForReceipt = $resolved
+}
 if ($ReceiptPath) {
     $receipt = [ordered]@{
-        schema = 1; kind = 'bug-intake'; snapshotTag = $SnapshotTag; snapshotPath = if ($OutputPath) { $resolved } else { $null }
+        schema = 1; kind = 'bug-intake'; snapshotTag = $SnapshotTag; snapshotPath = $snapshotPathForReceipt
         snapshotSha256 = $snapshotSha256; total = $total; pages = $pages; platformVersion = $platformVersion
         capturedAtUtc = $snapshot.capturedAtUtc; status = 'captured'
     }
