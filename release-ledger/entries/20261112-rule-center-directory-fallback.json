@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261112-rule-center-directory-fallback",
+  "date": "2026-11-12",
+  "audience": "players",
+  "title": "规则中心目录按二级板块聚合",
+  "changes": [
+    {
+      "category": "rules",
+      "text": "规则中心目录优先按二级板块聚合，同一板块的多条规则可以从目录直接定位；缺少二级板块时仍沿用一级章节显示。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/RuleCenterPage.vue"
+      ]
+    }
+  ]
+}
