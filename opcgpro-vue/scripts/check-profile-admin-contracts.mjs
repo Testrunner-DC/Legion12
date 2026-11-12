@@ -105,9 +105,9 @@ const checks = [
     && !alternateArtIdentityControls(alternateArts.replace("'选择原卡后自动带入'\" disabled>", "'选择原卡后自动带入'\">"))
     && !alternateArtIdentityControls(alternateArts.replace('if (base) artForm.displayName = base.nameZh', '')),
   '异画身份守卫必须拒绝移除原卡选择器、开放名称编辑或跳过原卡名称绑定'],
-  [ruleReview.includes('publishRuleItem') && ruleReview.includes('审核并发布此项')
-    && !ruleReview.includes('@click="publish">正式发布'),
-  '规则与裁定必须逐项审核发布，不得保留整批正式发布按钮'],
+  [ruleReview.includes('publishRuleItemsBatch') && ruleReview.includes('待审核 / 发布')
+    && ruleReview.includes('发布待审核项') && !ruleReview.includes('审核并发布此项'),
+  '规则与裁定必须由开关加入待发布队列，再通过一次批量发布更新'],
   [ruleReview.includes('withPendingRulingSeeds(parsedRulings)')
     && ruleData.includes("id: 'RULING-20260922-FENIAN-REPEAT'")
     && ruleData.includes("id: 'RULING-20260922-SIWA-KABA'")

@@ -12,7 +12,7 @@ const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cach
 fs.mkdirSync(output, { recursive: true })
 
 const entry = String.raw`
-import {createApp,h} from 'vue'
+import {createApp,h,ref} from 'vue'
 import {createWebHistory,createRouter} from 'vue-router'
 import RuleCenterPage from '/src/l12/site/RuleCenterPage.vue'
 import AdminRuleRulingsPanel from '/src/l12/site/AdminRuleRulingsPanel.vue'
@@ -73,17 +73,27 @@ const contentView=(key)=>key==='rules.rulings'
  : {key,draftValue:JSON.stringify(centerDraft),publishedValue:JSON.stringify(centerPublished),version:6}
 adminApi.getContent=async key=>contentView(key)
 adminApi.contentBatches=async()=>[]
+adminApi.saveContentDraftBatch=async(items)=>items.map(({key,value})=>({...contentView(key),draftValue:value,version:8}))
 adminApi.siteMedia=async()=>[{id:'rule-media-001',kind:'rule',altText:'规则示意图',contentHash:'rule-media-content-hash',thumbnailUrl:ruleImage,desktopUrl:ruleImage,mobileUrl:ruleImage,desktopWidth:960,desktopHeight:360,mobileWidth:960,mobileHeight:360}]
 window.__savedDrafts=[]
 adminApi.saveContentDraft=async(key,value)=>{window.__savedDrafts.push({key,value});return {...contentView(key),draftValue:value,version:8}}
 adminApi.previewContent=async()=>({items:[]})
-adminApi.publishRuleItem=async(key)=>contentView(key)
+adminApi.publishRuleItemsBatch=async(items)=>({entries:[...new Map(items.map(item=>[item.key,contentView(item.key)])).values()],publishedCount:items.length})
 platformState.account={id:'qa-admin',username:'验收管理员',role:'admin',createdAt:'2026-01-01',publicHistory:false,permissions:['admin.content.draft','admin.content.publish']}
 authState.initialized=true
 authState.verified=true
 
 const mode=new URLSearchParams(location.search).get('fixture')||'player'
-const component={render:()=>h('div',{class:'site-shell'},h('main',{class:'site-content'},mode==='admin'?h(AdminRuleRulingsPanel):h(RuleCenterPage)))}
+const fixtureNotice=ref('')
+const component={render:()=>{
+ const page=mode==='admin'
+   ? h(AdminRuleRulingsPanel,{onNotice:(value)=>{fixtureNotice.value=value}})
+   : h(RuleCenterPage)
+ return h('div',{class:'site-shell'},[
+   h('main',{class:'site-content'},page),
+   h('output',{class:'fixture-notice','aria-live':'polite'},fixtureNotice.value),
+ ])
+}}
 const router=createRouter({history:createWebHistory(),routes:[{path:'/:pathMatch(.*)*',component:{render:()=>null}}]})
 createApp(component).use(router).mount('#app')
 `
@@ -401,8 +411,11 @@ try {
       `draft object lost its inline preview at ${suffix(viewport)}`)
     assert.equal(await draftCard.locator('.item-actions').getByRole('button', { name: '保存此项' }).count(), 1,
       `save action is not adjacent to draft object at ${suffix(viewport)}`)
-    assert.equal(await draftCard.locator('.item-actions').getByRole('button', { name: '审核并发布此项' }).count(), 1,
-      `publish action is not adjacent to draft object at ${suffix(viewport)}`)
+    assert.equal(await draftCard.locator('.item-actions').getByRole('button', { name: '待审核 / 发布' }).count(), 1,
+      `publish queue toggle is not adjacent to draft object at ${suffix(viewport)}`)
+    await draftCard.locator('.item-actions').getByRole('button', { name: '待审核 / 发布' }).click()
+    await admin.getByRole('button', { name: /发布待审核项/ }).click()
+    await admin.getByText(/已一次性发布/).waitFor()
 
     await admin.getByRole('button', { name: /已发布/ }).click()
     const publishedCenterCard = admin.locator('.center-editor').first()
@@ -411,7 +424,7 @@ try {
       `published center object remained editable at ${suffix(viewport)}`)
     assert.equal(await publishedCenterCard.getByRole('button', { name: '保存此项' }).count(), 0,
       `published center object exposed save at ${suffix(viewport)}`)
-    assert.equal(await publishedCenterCard.getByRole('button', { name: '审核并发布此项' }).count(), 0,
+    assert.equal(await publishedCenterCard.getByRole('button', { name: '待审核 / 发布' }).count(), 0,
       `published center object exposed publish at ${suffix(viewport)}`)
     assert.equal(await publishedCenterCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).count(), 1,
       `return action is not adjacent to published center object at ${suffix(viewport)}`)
@@ -424,7 +437,7 @@ try {
       `published ruling remained editable at ${suffix(viewport)}`)
     assert.equal(await publishedRulingCard.getByRole('button', { name: '保存此项' }).count(), 0,
       `published ruling exposed save at ${suffix(viewport)}`)
-    assert.equal(await publishedRulingCard.getByRole('button', { name: '审核并发布此项' }).count(), 0,
+    assert.equal(await publishedRulingCard.getByRole('button', { name: '待审核 / 发布' }).count(), 0,
       `published ruling exposed publish at ${suffix(viewport)}`)
     assert.equal(await publishedRulingCard.locator('.item-actions').getByRole('button', { name: '退回修改' }).count(), 1,
       `return action is not adjacent to published ruling at ${suffix(viewport)}`)

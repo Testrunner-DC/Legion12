@@ -34,8 +34,8 @@ const detailCard = ref<DeckCard | null>(null)
 const ruleMedia = ref<SiteMedia[]>([])
 const openRulingEditors = ref<Set<string>>(new Set())
 const busy = ref(false)
-const publishingCenterIds = ref(new Set<string>())
-const publishingRulingIds = ref(new Set<string>())
+const pendingPublishTargets = ref(new Set<string>())
+const publishPendingBusy = ref(false)
 const centerReorderPending = ref(false)
 let centerReorderTimer: ReturnType<typeof setTimeout> | null = null
 let centerReorderInFlight = false
@@ -132,8 +132,27 @@ const workspaceCounts = computed<Record<Workspace, number>>(() => ({
     + rulingItems.value.filter(item => item.state === 'published' || item.state === 'scheduled').length,
   history: supersededCenterItems.value.length + supersededRulingItems.value.length + ruleHistory.value.length,
 }))
+const pendingPublishCount = computed(() => pendingPublishTargets.value.size)
 
 function notice(value: string) { emit('notice', value) }
+function publishTargetKey(key: string, collection: string, itemId: string) {
+  return key + '/' + collection + '/' + itemId
+}
+function isPublishQueued(key: string, collection: string, itemId: string) {
+  return pendingPublishTargets.value.has(publishTargetKey(key, collection, itemId))
+}
+function togglePublishQueue(key: 'rules.rulings' | 'rules.center', collection: string, itemId: string) {
+  const target = publishTargetKey(key, collection, itemId)
+  const next = new Set(pendingPublishTargets.value)
+  if (next.has(target)) next.delete(target)
+  else next.add(target)
+  pendingPublishTargets.value = next
+}
+function dropPublishQueue(key: 'rules.rulings' | 'rules.center', collection: string, itemId: string) {
+  const next = new Set(pendingPublishTargets.value)
+  next.delete(publishTargetKey(key, collection, itemId))
+  pendingPublishTargets.value = next
+}
 function split(value: string) { return value.split(',').map(item => item.trim()).filter(Boolean) }
 function join(value: string[]) { return value.join(', ') }
 function toggleTopic(item: RuleRuling, topic: RuleTopicId) {
@@ -214,7 +233,11 @@ function addRuling(sourceId = '') {
   workspace.value = 'drafts'
 }
 function startFromSource(sourceId: string) { selectedSource.value = sourceId; addRuling(sourceId) }
-function removeRuling(index: number) { entries.value.splice(index, 1) }
+function removeRuling(index: number) {
+  const item = entries.value[index]
+  if (item) dropPublishQueue('rules.rulings', 'entries', item.id)
+  entries.value.splice(index, 1)
+}
 function mediaFor(id: unknown) { return ruleMedia.value.find(item => item.id === id) }
 function centerCollectionLength(collection: string) {
   const document = ruleCenterDocument.value as unknown as Record<string, unknown[]>
@@ -314,6 +337,7 @@ function deleteCenterItem(item: { collection: string; id: string; title: string;
     run: async () => {
       const deleted = await adminApi.deleteRuleItem(item.collection, item.id, centerVersion.value)
       applyCenterEntry(deleted)
+      dropPublishQueue('rules.center', item.collection, item.id)
       history.value = await adminApi.contentBatches()
       notice(published ? '规则资料已删除并同步从玩家端移除；审计历史已保留' : '规则资料草稿已删除；稳定编号不会复用')
     },
@@ -359,6 +383,7 @@ async function load() {
     centerVersion.value = center.version
     ruleMedia.value = await loadSiteMediaReferences((collections.coreBlocks || [])
       .flatMap(block => typeof block.mediaAssetId === 'string' && block.mediaAssetId ? [block.mediaAssetId] : []))
+    pendingPublishTargets.value = new Set()
   } catch (error) { notice(error instanceof Error ? error.message : '裁定草稿读取失败') }
   finally { busy.value = false }
 }
@@ -417,35 +442,37 @@ async function preview() {
     notice(`发布预览完成：${result.items.filter(item => item.wouldChange).length} 项将更新；未写入玩家端`)
   } catch (error) { notice(error instanceof Error ? error.message : '发布预览失败') }
 }
-async function publishRuling(item: RuleRuling) {
-  const itemId = item.id
-  if (publishingRulingIds.value.has(itemId)) return
-  publishingRulingIds.value.add(itemId)
+async function publishPending() {
+  if (!pendingPublishCount.value || centerReorderPending.value || publishPendingBusy.value) return
+  publishPendingBusy.value = true
   try {
-    normalizeAllRulingProducts()
-    const saved = await adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value), rulingVersion.value)
-    const published = await adminApi.publishRuleItem('rules.rulings', 'entries', itemId, saved.version)
-    rulingVersion.value = published.version
-    entries.value = parseRulingDocument(published.draftValue)
-    publishedRulings.value = parseRulingDocument(published.publishedValue)
+    // Persist the current editor state once, then publish the queued targets against
+    // the two returned versions in one server transaction.
+    if (!await save(false)) return
+    const targets = [...pendingPublishTargets.value].map(value => {
+      const [key, collection, ...idParts] = value.split('/')
+      return { key: key as 'rules.rulings' | 'rules.center', collection, itemId: idParts.join('/') }
+    })
+    const result = await adminApi.publishRuleItemsBatch(targets, rulingVersion.value, centerVersion.value)
+    for (const entry of result.entries) {
+      if (entry.key === 'rules.rulings') {
+        rulingVersion.value = entry.version
+        entries.value = parseRulingDocument(entry.draftValue)
+        publishedRulings.value = parseRulingDocument(entry.publishedValue)
+      } else if (entry.key === 'rules.center') {
+        centerVersion.value = entry.version
+        ruleCenterDocument.value = JSON.parse(entry.draftValue) as RuleCenterDocument
+        publishedCenter.value = parsePublishedRuleCenter(entry.publishedValue)
+      }
+    }
     history.value = await adminApi.contentBatches()
-    notice(`裁定 ${itemId} 已单独审核并发布；其他草稿未受影响`)
-  } catch (error) { notice(error instanceof Error ? error.message : '裁定逐项发布失败') }
-  finally { publishingRulingIds.value.delete(itemId) }
-}
-async function publishCenterItem(collection: string, itemId: string) {
-  if (publishingCenterIds.value.has(itemId) || centerReorderPending.value) return
-  publishingCenterIds.value.add(itemId)
-  try {
-    const saved = await adminApi.saveContentDraft('rules.center', ruleCenterDraft.value, centerVersion.value)
-    const published = await adminApi.publishRuleItem('rules.center', collection, itemId, saved.version)
-    centerVersion.value = published.version
-    ruleCenterDocument.value = JSON.parse(published.draftValue) as RuleCenterDocument
-    publishedCenter.value = parsePublishedRuleCenter(published.publishedValue)
-    history.value = await adminApi.contentBatches()
-    notice(`规则中心条目 ${itemId} 已单独审核并发布；其他草稿未受影响`)
-  } catch (error) { notice(error instanceof Error ? error.message : '规则条目逐项发布失败') }
-  finally { publishingCenterIds.value.delete(itemId) }
+    pendingPublishTargets.value = new Set()
+    notice('已一次性发布 ' + result.publishedCount + ' 项待审核内容；未列入队列的草稿保持不公开')
+  } catch (error) {
+    notice(error instanceof Error ? error.message : '待审核内容批量发布失败')
+  } finally {
+    publishPendingBusy.value = false
+  }
 }
 onMounted(load)
 </script>
@@ -453,13 +480,14 @@ onMounted(load)
 <template>
   <section class="ruling-admin">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction" />
-    <header><div><small>RULE CENTER REVIEW</small><h3>规则中心与 FAQ 裁定库</h3><p>每条内容的预览、草稿保存和审核发布集中在同一工作区。玩家只读取已发布快照。</p></div><div class="actions"><button :disabled="centerReorderPending || mutationBusy" @click="load">{{ busy ? '读取中…' : '刷新' }}</button><button v-if="canDraft" :disabled="mutationBusy" @click="addRuling()">＋ 新建裁定</button><button v-if="canDraft" :disabled="centerReorderPending || mutationBusy" @click="save()">保存全部草稿</button><button v-if="canDraft" :disabled="centerReorderPending || mutationBusy" @click="preview">预览全部差异</button></div></header>
+    <header><div><small>RULE CENTER REVIEW</small><h3>规则中心与 FAQ 裁定库</h3><p>每条内容的预览、草稿保存和审核发布集中在同一工作区。玩家只读取已发布快照。</p></div><div class="actions"><button :disabled="centerReorderPending || mutationBusy || publishPendingBusy" @click="load">{{ busy ? '读取中…' : '刷新' }}</button><button v-if="canDraft" :disabled="mutationBusy || publishPendingBusy" @click="addRuling()">＋ 新建裁定</button><button v-if="canDraft" :disabled="centerReorderPending || mutationBusy || publishPendingBusy" @click="save()">保存全部草稿</button><button v-if="canDraft" :disabled="centerReorderPending || mutationBusy || publishPendingBusy" @click="preview">预览全部差异</button><button v-if="hasPermission('admin.content.publish')" class="publish batch-publish" :disabled="!pendingPublishCount || centerReorderPending || mutationBusy || publishPendingBusy" @click="publishPending">{{ publishPendingBusy ? '发布中…' : `发布待审核项（${pendingPublishCount}）` }}</button></div></header>
     <nav class="workspace-tabs" aria-label="规则审核工作区"><button v-for="(_, id) in workspaceLabels" :key="id" :class="{ active: workspace === id }" @click="workspace = id"><b>{{ workspaceLabels[id] }}</b><span>{{ workspaceCounts[id] }}</span></button></nav>
     <div class="review-summary"><b>规则中心 {{ centerVersion }} · 裁定库 {{ rulingVersion }}</b><span>状态由草稿、已发布快照、生效时间、字段差异和替代关系自动派生。</span></div>
 
     <section v-if="workspace === 'drafts' || workspace === 'published'" class="workspace-panel">
       <header><div><small>{{ workspace === 'drafts' ? 'DRAFT REVIEW' : 'PUBLISHED' }}</small><h4>{{ workspaceLabels[workspace] }}</h4></div><p>{{ workspace === 'drafts' ? '待审核和已发布后修改的对象在这里处理。' : '当前已生效和已审核待生效的对象在这里查看。' }}</p></header>
       <nav class="center-collection-tabs" aria-label="规则资料板块"><button v-for="group in centerCollectionDefinitions" :key="group.id" type="button" :class="{ active: activeCenterCollection === group.id }" @click="activeCenterCollection = group.id"><span>{{ group.label }}</span><b>{{ centerCollectionCounts[group.id] || 0 }}</b></button></nav>
+      <section v-if="canDraft && workspace === 'drafts'" class="center-create-bar"><span>新建规则资料子板块</span><div><button v-for="group in centerCollectionDefinitions" :key="group.id" type="button" @click="addCenterItem(group.id)">＋ {{ group.label }}</button></div></section>
       <section v-if="activeCenterGroup" class="item-group"><header class="center-group-heading"><div><h4>{{ activeCenterGroup.label }} · {{ activeCenterGroup.items.length }} 项</h4><p>当前只显示这个板块的内容。</p></div><button v-if="canDraft && workspace === 'drafts'" type="button" @click="addCenterItem()">＋ 新增</button></header>
         <details v-for="item in activeCenterGroup.items" :id="`admin-rule-item-${item.id}`" :key="`${item.collection}-${item.id}`" class="admin-item-card center-editor">
           <summary><span><b>{{ item.title }}</b><small>{{ stateLabels[item.state] }}</small></span><em>{{ workspace === 'published' ? '查看已发布内容' : '查看与操作' }}</em></summary>
@@ -471,7 +499,7 @@ onMounted(load)
             <div v-if="item.collection === 'coreBlocks'" class="wide rule-media-editor"><span>子板块图片（可选）</span><SiteMediaPicker v-model="item.row.mediaAssetId" kind="rule" :selected-media="mediaFor(item.row.mediaAssetId)" @selected="ruleMediaUploaded($event, item.row)"/><img v-if="mediaFor(item.row.mediaAssetId)" :src="mediaFor(item.row.mediaAssetId)?.thumbnailUrl" :alt="mediaFor(item.row.mediaAssetId)?.altText"><details><summary>上传新的规则图片</summary><MediaUploadField kind="rule" :initial-alt="item.row.chapter || '规则示意图'" @uploaded="ruleMediaUploaded($event, item.row)" @notice="notice"/></details></div>
             <label v-if="item.collection !== 'coreBlocks'">来源说明<input v-model.trim="item.row.sourceRef" maxlength="300"></label><label>生效时间（北京时间，可留空）<input :value="effectiveInput(String(item.row.effectiveAt || ''))" type="datetime-local" @input="setCenterEffective(item.row, ($event.target as HTMLInputElement).value)"></label>
           </div></fieldset>
-          <div class="item-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">下移</button><button v-if="canDraft" :disabled="centerReorderPending" @click="saveCenterItem(item.id)">保存此项</button><button v-if="canDraft" class="danger" :disabled="centerReorderPending" @click="deleteCenterItem(item)">删除</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingCenterIds.has(item.id)" @click="publishCenterItem(item.collection, item.id)">{{ publishingCenterIds.has(item.id) ? '发布中…' : '审核并发布此项' }}</button></div></template>
+          <div class="item-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">下移</button><button v-if="canDraft" :disabled="centerReorderPending" @click="saveCenterItem(item.id)">保存此项</button><button v-if="canDraft" class="danger" :disabled="centerReorderPending" @click="deleteCenterItem(item)">删除</button><button v-if="hasPermission('admin.content.publish')" class="publish-toggle" :aria-checked="isPublishQueued('rules.center', item.collection, item.id)" @click="togglePublishQueue('rules.center', item.collection, item.id)">{{ isPublishQueued('rules.center', item.collection, item.id) ? '已列入待发布' : '待审核 / 发布' }}</button></div></template>
           <div v-if="workspace === 'published'" class="item-actions published-order-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">退回并上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">退回并下移</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除并取消公开</button></div>
         </details>
       </section>
@@ -489,7 +517,7 @@ onMounted(load)
             <div class="derived-products"><span>自动归属产品</span><div><b v-for="product in row.item.productIds" :key="product">{{ product }}</b><em v-if="!row.item.productIds.length">选择关联卡牌后自动生成</em></div><small>保存与发布时按规范卡牌目录重新计算，不可手工修改。</small></div>
             <label>搜索标签（逗号分隔）<input :value="join(row.item.tags)" @change="normalizeList(row.item, 'tags', ($event.target as HTMLInputElement).value)"></label><label>原始来源 ID（逗号分隔）<input :value="join(row.item.sourceIds)" @change="normalizeList(row.item, 'sourceIds', ($event.target as HTMLInputElement).value)"></label><label class="wide">替代的旧条目 ID（逗号分隔）<input :value="join(row.item.supersedes)" @change="normalizeList(row.item, 'supersedes', ($event.target as HTMLInputElement).value)"></label>
           </div></fieldset>
-          <div class="item-actions"><button v-if="canDraft" @click="saveRulingItem(row.item)">保存此项</button><button v-if="canDraft && row.state === 'draft'" class="danger" @click="removeRuling(row.index)">移除草稿</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingRulingIds.has(row.item.id)" @click="publishRuling(row.item)">{{ publishingRulingIds.has(row.item.id) ? '发布中…' : '审核并发布此项' }}</button></div></template></template>
+          <div class="item-actions"><button v-if="canDraft" @click="saveRulingItem(row.item)">保存此项</button><button v-if="canDraft && row.state === 'draft'" class="danger" @click="removeRuling(row.index)">移除草稿</button><button v-if="hasPermission('admin.content.publish')" class="publish-toggle" :aria-checked="isPublishQueued('rules.rulings', 'entries', row.item.id)" @click="togglePublishQueue('rules.rulings', 'entries', row.item.id)">{{ isPublishQueued('rules.rulings', 'entries', row.item.id) ? '已列入待发布' : '待审核 / 发布' }}</button></div></template></template>
         </details>
       </section>
       <p v-if="!activeCenterItems.length && !activeRulingItems.length" class="empty">此工作区暂无对象</p>
@@ -520,4 +548,5 @@ onMounted(load)
 @media(max-width:900px){.workspace-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.ruling-admin>header,.workspace-panel>header,.source-list article,.center-create-bar,.center-group-heading{align-items:flex-start;flex-direction:column}.actions,.center-create-bar>div{justify-content:flex-start}.form-grid{grid-template-columns:1fr}.workspace-tabs{grid-template-columns:1fr}.center-collection-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.review-summary{flex-direction:column}.item-actions{justify-content:flex-start}.rule-media-editor>details :deep(.media-upload-field){margin:6px}}
 @media(max-width:380px){.ruling-admin{padding:14px}.ruling-admin>header{margin:-14px -14px 14px;padding:14px}.workspace-panel{padding:10px}.form-grid{padding:8px}.admin-item-preview{margin:0 8px;padding:8px}}
+.publish-toggle{border-color:#66734c!important;background:#202819!important;color:#d5e98e!important}.publish-toggle[aria-checked="true"]{border-color:#2f785e!important;background:#0d251c!important;color:#7fe0b9!important}.batch-publish{border-color:#2f785e!important;background:#0d251c!important;color:#7fe0b9!important}
 </style>

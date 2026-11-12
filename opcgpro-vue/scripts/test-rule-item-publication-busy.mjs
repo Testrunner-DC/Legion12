@@ -11,17 +11,20 @@ const tree = ts.createSourceFile('AdminRuleRulingsPanel.ts', descriptor.scriptSe
 const statement = name => tree.statements.find(node => ts.isVariableStatement(node)
   && node.declarationList.declarations.some(item => item.name.getText(tree) === name))
 const fn = name => tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)
-const centerState = statement('publishingCenterIds')
-const rulingState = statement('publishingRulingIds')
-const centerReorderState = statement('centerReorderPending')
-const publishCenterItem = fn('publishCenterItem')
-const publishRuling = fn('publishRuling')
-assert(centerState && rulingState && centerReorderState && publishCenterItem && publishRuling,
-  '发布忙碌状态必须按center/ruling文档分别建Set并保留两个真实handler')
+const queueState = statement('pendingPublishTargets')
+const publishBusyState = statement('publishPendingBusy')
+const queueCount = statement('pendingPublishCount')
+const reorderState = statement('centerReorderPending')
+const publishTargetKey = fn('publishTargetKey')
+const togglePublishQueue = fn('togglePublishQueue')
+const publishPending = fn('publishPending')
+assert(queueState && publishBusyState && queueCount && reorderState && publishTargetKey && togglePublishQueue && publishPending,
+  '批量发布必须保留队列状态、切换入口和统一发布handler')
 
 const code = ts.transpileModule([
-  centerState.getText(tree), rulingState.getText(tree), centerReorderState.getText(tree),
-  publishCenterItem.getText(tree), publishRuling.getText(tree),
+  queueState.getText(tree), publishBusyState.getText(tree), queueCount.getText(tree),
+  reorderState.getText(tree), publishTargetKey.getText(tree), togglePublishQueue.getText(tree),
+  publishPending.getText(tree),
 ].join('\n'), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
 const deferred = () => {
   let resolve, reject
@@ -29,51 +32,45 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 const calls = [], notices = []
+const pendingApi = deferred()
 const adminApi = {
   saveContentDraft: async key => ({ version: key === 'rules.center' ? 8 : 6 }),
-  publishRuleItem: (key, collection, id) => {
-    const pending = deferred(); calls.push({ key, collection, id, ...pending }); return pending.promise
+  publishRuleItemsBatch: (items, rulingsVersion, centerVersion) => {
+    calls.push({ items, rulingsVersion, centerVersion })
+    return pendingApi.promise
   },
   contentBatches: async () => [],
 }
 const environment = {
-  ref: value => ({ value }), adminApi, notices,
+  ref: value => ({ value }), computed: fn => ({ get value() { return fn() } }), adminApi, notices,
   entries: { value: [] }, rulingVersion: { value: 5 }, publishedRulings: { value: [] },
   centerVersion: { value: 7 }, ruleCenterDraft: { value: '{}' }, ruleCenterDocument: { value: {} },
   publishedCenter: { value: {} }, history: { value: [] },
   notice: value => notices.push(value), normalizeAllRulingProducts: () => {},
   serializeRulingDocument: () => '{}', parseRulingDocument: () => [], parsePublishedRuleCenter: () => ({}),
+  save: async () => true, load: async () => {}, mutationBusy: { value: false },
 }
 const runtime = new Function(...Object.keys(environment), `${code};return {
-  publishingCenterIds,publishingRulingIds,publishCenterItem,publishRuling}`)(...Object.values(environment))
-const settle = async count => {
-  for (let index = 0; index < 10 && calls.length < count; index++) await Promise.resolve()
-  assert.equal(calls.length, count, `expected ${count} publish API calls`)
-}
-const published = { version: 9, draftValue: '{}', publishedValue: '{}' }
+  pendingPublishTargets,togglePublishQueue,publishPending}`)(...Object.values(environment))
 
-const first = runtime.publishCenterItem('coreBlocks', 'CENTER-A')
-const second = runtime.publishCenterItem('terms', 'CENTER-B')
-await settle(2)
-assert.deepEqual([...runtime.publishingCenterIds.value].sort(), ['CENTER-A', 'CENTER-B'])
-await runtime.publishCenterItem('coreBlocks', 'CENTER-A')
-assert.equal(calls.length, 2, 'same center item must no-op while pending')
-calls[0].resolve(published); await first
-assert.deepEqual([...runtime.publishingCenterIds.value], ['CENTER-B'], 'success cleared another center item')
-calls[1].reject(new Error('synthetic center failure')); await second
-assert.equal(runtime.publishingCenterIds.value.size, 0, 'failed center item did not clear itself')
+runtime.togglePublishQueue('rules.center', 'coreBlocks', 'CENTER-A')
+runtime.togglePublishQueue('rules.rulings', 'entries', 'RULING-A')
+assert.deepEqual([...runtime.pendingPublishTargets.value].sort(), [
+  'rules.center/coreBlocks/CENTER-A', 'rules.rulings/entries/RULING-A',
+])
 
-const sameCenter = runtime.publishCenterItem('coreBlocks', 'SAME-ID')
-const sameRuling = runtime.publishRuling({ id: 'SAME-ID' })
-await settle(4)
-assert(runtime.publishingCenterIds.value.has('SAME-ID'))
-assert(runtime.publishingRulingIds.value.has('SAME-ID'), 'same ID across documents must not collide')
-await runtime.publishRuling({ id: 'SAME-ID' })
-assert.equal(calls.length, 4, 'same ruling item must no-op while pending')
-calls[2].resolve(published); await sameCenter
-assert(runtime.publishingRulingIds.value.has('SAME-ID'), 'center success cleared ruling busy state')
-calls[3].reject(new Error('版本冲突')); await sameRuling
-assert.equal(runtime.publishingRulingIds.value.size, 0, 'ruling failure did not clear itself')
-assert(notices.some(value => value.includes('版本冲突')), 'existing version conflict must remain visible')
+const publishing = runtime.publishPending()
+for (let index = 0; index < 10 && calls.length < 1; index++) await Promise.resolve()
+assert.equal(calls.length, 1, 'queued items must be published with one API call')
+assert.equal(calls[0].rulingsVersion, 5)
+assert.equal(calls[0].centerVersion, 7)
+assert.deepEqual(calls[0].items, [
+  { key: 'rules.center', collection: 'coreBlocks', itemId: 'CENTER-A' },
+  { key: 'rules.rulings', collection: 'entries', itemId: 'RULING-A' },
+])
+pendingApi.resolve({ entries: [], publishedCount: 2 })
+await publishing
+assert.equal(runtime.pendingPublishTargets.value.size, 0, 'successful batch clears the queue')
+assert(notices.some(value => value.includes('一次性发布')), 'batch success remains visible to the operator')
 
-console.log('Rule item per-document busy sets, duplicate guards, independent finally cleanup and conflict reporting passed')
+console.log('Rule item queue toggles and one-shot publication dispatch passed')

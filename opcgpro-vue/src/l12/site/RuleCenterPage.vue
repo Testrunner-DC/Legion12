@@ -158,7 +158,7 @@ const ruleResults = computed(() => ruleCenter.value.coreBlocks.filter(block => b
 const coreTableOfContents = computed(() => {
   const chapters = new Map<string, { chapter: string; firstId: string; count: number }>()
   for (const block of ruleResults.value) {
-    const chapter = block.topic?.trim() || '其他规则'
+    const chapter = block.chapter?.trim() || block.topic?.trim() || '其他规则'
     const existing = chapters.get(chapter)
     if (existing) existing.count++
     else chapters.set(chapter, { chapter, firstId: block.id, count: 1 })

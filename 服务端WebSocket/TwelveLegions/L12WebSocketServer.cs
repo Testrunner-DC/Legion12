@@ -3821,6 +3821,39 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             });
             return AdminCommandResponse(request, command, outcome);
         });
+        _app.MapPost("/api/admin/rule-items/publish-batch", (HttpRequest request, L12RuleItemsPublishRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentPublish;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var command = CommandEnvelope(request, authenticated.Account, permission, "rule-items.publish-batch",
+                "content:rule-items", body, body.IdempotencyKey, null, body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, current =>
+            {
+                try
+                {
+                    var result = _platform.PublishRuleItemsBatch(current.Actor, current.Payload,
+                        current.AuditContext);
+                    NotifyRulesContentChanged();
+                    return L12AdminCommandResult<L12RuleItemsPublishResult>.Ok(result, "规则待发布项已批量发布");
+                }
+                catch (KeyNotFoundException error)
+                {
+                    return L12AdminCommandResult<L12RuleItemsPublishResult>.Fail("rule_item_not_found",
+                        error.Message, StatusCodes.Status404NotFound);
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<L12RuleItemsPublishResult>.Fail("content_version_conflict",
+                        error.Message, StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<L12RuleItemsPublishResult>.Fail("invalid_rule_items",
+                        error.Message, StatusCodes.Status400BadRequest);
+                }
+            });
+            return AdminCommandResponse(request, command, outcome);
+        });
         _app.MapPost("/api/admin/rule-items/create", (HttpRequest request, L12RuleItemCreateRequest body) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;

@@ -139,41 +139,34 @@ reject('center raw object binding fails closed', 'adminCenterImmutableFields', c
 reject('center dynamic row field fails closed', 'adminCenterImmutableFields', changed('admin', centerForm,
   `${centerForm}<input v-model="item.row[field]">`))
 
-reject('center publish wrong permission', 'adminCenterPublishOwnership', changed('admin',
-  'v-if="hasPermission(\'admin.content.publish\')" class="publish"',
-  'v-if="canDraft" class="publish"', 1))
-reject('center publish loses busy disabled state', 'adminCenterPublishOwnership', changed('admin',
-  'class="publish" :disabled="publishingCenterIds.has(item.id)" @click="publishCenterItem',
-  'class="publish" @click="publishCenterItem'))
-reject('center publish cannot be statically disabled', 'adminCenterPublishOwnership', changed('admin',
-  'class="publish" :disabled="publishingCenterIds.has(item.id)" @click="publishCenterItem',
-  'class="publish" disabled :disabled="publishingCenterIds.has(item.id)" @click="publishCenterItem'))
-reject('center publish cannot borrow ruling document busy state', 'adminCenterPublishOwnership', changed('admin',
-  'publishingCenterIds.has(item.id)', 'publishingRulingIds.has(item.id)', 1))
-reject('center publish cannot borrow another item busy state', 'adminCenterPublishOwnership', changed('admin',
-  'publishingCenterIds.has(item.id)', 'publishingCenterIds.has(other.id)', 1))
-reject('center publish label must use the same owner and document', 'adminCenterPublishOwnership', changed('admin',
-  "publishingCenterIds.has(item.id) ? '发布中…'", "publishingRulingIds.has(item.id) ? '发布中…'"))
-reject('center publish swaps handler arguments', 'adminCenterPublishOwnership', changed('admin',
-  'publishCenterItem(item.collection, item.id)', 'publishCenterItem(item.id, item.collection)'))
-reject('center publish duplicated outside local actions', 'adminCenterPublishOwnership', changed('admin',
-  '<header><div><small>RULE CENTER REVIEW</small>',
-  '<header><button @click="publishCenterItem(item.collection, item.id)">detached</button><div><small>RULE CENTER REVIEW</small>'))
+reject('center queue wrong permission', 'adminCenterPublishOwnership', changed('admin',
+  'v-if="hasPermission(\'admin.content.publish\')" class="publish-toggle"',
+  'v-if="canDraft" class="publish-toggle"', 1))
+reject('center queue swaps handler arguments', 'adminCenterPublishOwnership', changed('admin',
+  "togglePublishQueue('rules.center', item.collection, item.id)",
+  "togglePublishQueue('rules.center', item.id, item.collection)", 1))
+reject('center queue binds the wrong target state', 'adminCenterPublishOwnership', changed('admin',
+  ":aria-checked=\"isPublishQueued('rules.center', item.collection, item.id)\"",
+  ":aria-checked=\"isPublishQueued('rules.rulings', 'entries', item.id)\"", 1))
+reject('center batch handler can publish one item only', 'adminCenterPublishOwnership', changed('admin',
+  '@click="publishPending"', '@click="save"', 1))
+reject('batch publish loses permission ownership', 'adminCenterPublishOwnership', changed('admin',
+  'v-if="hasPermission(\'admin.content.publish\')" class="publish batch-publish"',
+  'v-if="canDraft" class="publish batch-publish"', 1))
 reject('admin root hidden from all object actions', 'adminCenterPublishOwnership', changed('admin',
   '<section class="ruling-admin">', '<section hidden class="ruling-admin">'))
 
-reject('ruling publish wrong permission', 'adminRulingPublishOwnership', changed('admin',
-  'v-if="hasPermission(\'admin.content.publish\')" class="publish"',
-  'v-if="canDraft" class="publish"', 2))
-reject('ruling publish binds center item busy state', 'adminRulingPublishOwnership', changed('admin',
-  ':disabled="publishingRulingIds.has(row.item.id)" @click="publishRuling(row.item)"',
-  ':disabled="publishingCenterIds.has(row.item.id)" @click="publishRuling(row.item)"'))
-reject('ruling publish cannot borrow another row busy state', 'adminRulingPublishOwnership', changed('admin',
-  'publishingRulingIds.has(row.item.id)', 'publishingRulingIds.has(other.item.id)', 1))
-reject('ruling publish label must use the same owner and document', 'adminRulingPublishOwnership', changed('admin',
-  "publishingRulingIds.has(row.item.id) ? '发布中…'", "publishingCenterIds.has(row.item.id) ? '发布中…'"))
-reject('ruling publish uses wrong handler argument', 'adminRulingPublishOwnership', changed('admin',
-  'publishRuling(row.item)', 'publishRuling(item)'))
+reject('ruling queue wrong permission', 'adminRulingPublishOwnership', changed('admin',
+  'v-if="hasPermission(\'admin.content.publish\')" class="publish-toggle"',
+  'v-if="canDraft" class="publish-toggle"', 2))
+reject('ruling queue swaps handler arguments', 'adminRulingPublishOwnership', changed('admin',
+  "togglePublishQueue('rules.rulings', 'entries', row.item.id)",
+  "togglePublishQueue('rules.rulings', row.item.id, 'entries')", 1))
+reject('ruling queue binds center state', 'adminRulingPublishOwnership', changed('admin',
+  ":aria-checked=\"isPublishQueued('rules.rulings', 'entries', row.item.id)\"",
+  ":aria-checked=\"isPublishQueued('rules.center', 'coreBlocks', row.item.id)\"", 1))
+reject('ruling batch handler can publish one item only', 'adminRulingPublishOwnership', changed('admin',
+  '@click="publishPending"', '@click="save"', 1))
 reject('ruling publish hidden by conditional ancestor', 'adminRulingPublishOwnership', changed('admin',
   '<div class="item-actions"><button v-if="canDraft" @click="saveRulingItem(row.item)">',
   '<div v-show="false" class="item-actions"><button v-if="canDraft" @click="saveRulingItem(row.item)">'))

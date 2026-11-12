@@ -19,6 +19,7 @@ assert(ruleRows.length === 123, `expected 123 official rule blocks, found ${rule
 assert(blankPages.length === 98, `expected 98 blank-page official rule blocks, found ${blankPages.length}`)
 
 const data = readFrontend('src/l12/data/ruleCenterData.ts')
+const platform = readFrontend('src/l12/platform.ts')
 assert(data.includes("return `core-rule-${String(index + 1).padStart(3, '0')}`"), 'core blocks need stable generated IDs')
 assert(data.includes("typeof row.page === 'string'") && !data.includes('text(row.page, 20)'), 'blank page values must stay compatible')
 assert(data.includes('RULE_TOPIC_DEFINITIONS') && data.includes('schemaVersion: 2'), 'schema v2 fixed topics must remain explicit')
@@ -62,10 +63,12 @@ assert(/watch\(\[tab, faqMode\],[\s\S]*?ensureCardCatalog\(\)[\s\S]*?\}, \{ imme
   'direct card FAQ entry must initialize card title metadata immediately')
 for (const token of ['coreTableOfContents', 'scrollToCoreChapter', 'rule-block-image', 'block.image.mobileUrl'])
   assert(player.includes(token), `core rule chapter directory or managed image presentation missing ${token}`)
-assert(player.includes('ruleResults.value') && player.includes("const chapter = block.topic?.trim() || '其他规则'"),
+assert(player.includes('ruleResults.value') && player.includes("const chapter = block.chapter?.trim() || block.topic?.trim() || '其他规则'"),
   'core directory must derive from the currently filtered published blocks')
 
-for (const token of ['SingleCardPicker', 'rule-item-publish', 'ruleHistory', 'historyChanges', '审核并发布此项', '高级：查看原始结构（只读）'])
+assert(platform.includes('/api/admin/rule-items/publish-batch') && platform.includes('rule-items-publish-batch'),
+  'platform admin API must expose the batch rule-item publication endpoint')
+for (const token of ['SingleCardPicker', 'publishRuleItemsBatch', 'ruleHistory', 'historyChanges', '待审核 / 发布', '发布待审核项', '高级：查看原始结构（只读）'])
   assert(admin.includes(token), `admin rule workflow missing ${token}`)
 for (const token of ["'drafts'", "'sources'", "'published'", "'history'", 'workspaceCounts', 'admin-item-preview', '退回修改', '保存此项'])
   assert(admin.includes(token), `admin workspaces missing ${token}`)

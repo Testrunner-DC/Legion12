@@ -755,7 +755,9 @@ export interface AuditArchiveRecovery {
 export interface AdminCommandAccepted { commandId: string; status: 'requested'; message: string; command: AdminCommand }
 export interface AdminCommandPage { items: AdminCommand[]; page: number; pageSize: number; total: number }
 export interface ContentBatchItem { key: string; previousValue: string; publishedValue: string; previousVersionId?: string; publishedVersionId: string }
-export interface ContentBatch { id: string; action: 'publish' | 'rollback' | 'rule-item-publish'; sourceBatchId?: string; status: string; actorId: string; actorName: string; createdAt: string; items: ContentBatchItem[] }
+export interface ContentBatch { id: string; action: 'publish' | 'rollback' | 'rule-item-publish' | 'rule-item-publish-batch'; sourceBatchId?: string; status: string; actorId: string; actorName: string; createdAt: string; items: ContentBatchItem[] }
+export interface RuleItemPublishTarget { key: 'rules.rulings' | 'rules.center'; collection: string; itemId: string }
+export interface RuleItemsPublishResult { entries: ContentEntry[]; publishedCount: number }
 export interface ContentPreviewItem { key: string; draftValue: string; publishedValue: string; entryVersion: number; wouldChange: boolean }
 export interface ContentBatchPreview { action: 'publish' | 'rollback'; sourceBatchId?: string; items: ContentPreviewItem[] }
 export interface ContentBatchOperation { applied: boolean; batch?: ContentBatch; preview?: ContentBatchPreview }
@@ -1626,6 +1628,11 @@ export const adminApi = {
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
   publishRuleItem: (key: 'rules.rulings' | 'rules.center', collection: string, itemId: string, expectedVersion?: number) => platformRequest<ContentEntry>('/api/admin/rule-items/publish', {
     method: 'POST', body: JSON.stringify(commandBody('rule-item-publish', { key, collection, itemId, expectedVersion })),
+  }),
+  publishRuleItemsBatch: (items: RuleItemPublishTarget[], rulingsVersion?: number, centerVersion?: number) => platformRequest<RuleItemsPublishResult>('/api/admin/rule-items/publish-batch', {
+    method: 'POST', body: JSON.stringify(commandBody('rule-items-publish-batch', {
+      items, rulingsVersion, centerVersion, reason: '管理员确认批量发布待审核规则中心与 FAQ 裁定项',
+    })),
   }),
   createRuleItem: (collection: string, expectedVersion: number) => platformRequest<ContentEntry>('/api/admin/rule-items/create', {
     method: 'POST', body: JSON.stringify(commandBody('rule-item-create', { key: 'rules.center', collection, expectedVersion })),

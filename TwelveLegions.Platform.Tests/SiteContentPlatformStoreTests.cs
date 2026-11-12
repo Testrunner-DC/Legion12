@@ -1736,6 +1736,73 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void RuleItemsCanBePublishedAcrossCenterAndFaqInOneAtomicBatch()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rule-batch-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var rulings = JsonSerializer.Serialize(new
+            {
+                entries = new[]
+                {
+                    new { id = "RULING-BATCH-ONE", scope = "general", question = "第一条？", answer = "第一条裁定。",
+                        category = "通用规则", sourceKind = "user-ruling", sourceRef = "管理员复核",
+                        recordedAt = "2026-09-19", status = "pending", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), topics = new[] { "battle" },
+                        sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>() },
+                    new { id = "RULING-BATCH-TWO", scope = "general", question = "第二条？", answer = "第二条裁定。",
+                        category = "通用规则", sourceKind = "user-ruling", sourceRef = "管理员复核",
+                        recordedAt = "2026-09-19", status = "pending", cardIds = Array.Empty<string>(),
+                        productIds = Array.Empty<string>(), tags = Array.Empty<string>(), topics = new[] { "battle" },
+                        sourceIds = Array.Empty<string>(), supersedes = Array.Empty<string>() },
+                },
+            });
+            var center = JsonSerializer.Serialize(new
+            {
+                coreBlocks = Array.Empty<object>(), quickStart = Array.Empty<object>(),
+                tournament = Array.Empty<object>(), versions = Array.Empty<object>(),
+                terms = new[]
+                {
+                    new { id = "term-batch-one", title = "术语一", body = "术语一说明。",
+                        sourceRef = "管理员复核", tags = Array.Empty<string>(), status = "pending" },
+                    new { id = "term-batch-two", title = "术语二", body = "术语二说明。",
+                        sourceRef = "管理员复核", tags = Array.Empty<string>(), status = "pending" },
+                },
+            });
+            var savedRulings = store.SaveContentDraft(admin, "rules.rulings", rulings);
+            var savedCenter = store.SaveContentDraft(admin, "rules.center", center);
+
+            var result = store.PublishRuleItemsBatch(admin, new(
+                [
+                    new("rules.rulings", "entries", "RULING-BATCH-ONE"),
+                    new("rules.center", "terms", "term-batch-one"),
+                ],
+                RulingsVersion: savedRulings.Version, CenterVersion: savedCenter.Version));
+
+            Assert.Equal(2, result.PublishedCount);
+            Assert.Equal(new[] { "rules.center", "rules.rulings" },
+                result.Entries.Select(item => item.Key).Order(StringComparer.Ordinal));
+            using var publicRulings = JsonDocument.Parse(store.GetContent("rules.rulings"));
+            Assert.Equal("RULING-BATCH-ONE", Assert.Single(publicRulings.RootElement.GetProperty("entries")
+                .EnumerateArray()).GetProperty("id").GetString());
+            using var publicCenter = JsonDocument.Parse(store.GetContent("rules.center"));
+            Assert.Equal("term-batch-one", Assert.Single(publicCenter.RootElement.GetProperty("terms")
+                .EnumerateArray()).GetProperty("id").GetString());
+            var batch = Assert.Single(store.ContentBatches().Where(item => item.Action == "rule-item-publish-batch"));
+            Assert.Equal(2, batch.Items.Count);
+            Assert.Throws<L12ContentStateConflictException>(() => store.PublishRuleItemsBatch(admin, new(
+                [new("rules.rulings", "entries", "RULING-BATCH-TWO")],
+                RulingsVersion: savedRulings.Version, CenterVersion: savedCenter.Version)));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void RuleItemPublicationCreatesReadableContentHistory()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-rule-history-{Guid.NewGuid():N}");

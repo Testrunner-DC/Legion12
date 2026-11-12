@@ -341,17 +341,15 @@ export function ruleCenterTemplateContract(sources) {
   const centerControls = centerDraft ? admin.nodes.filter(node => ['input', 'select', 'textarea'].includes(node.tag)
     && (admin.parents.get(node) || []).includes(centerDraft)) : []
 
-  const centerPublishButtons = eventButtons(admin, 'publishCenterItem')
-  const centerPublish = centerPublishButtons.length === 1 ? centerPublishButtons[0] : null
-  const centerActions = centerPublish && (admin.parents.get(centerPublish) || []).find(node => node.type === 1
-    && node.tag === 'div' && hasClass(node, 'item-actions'))
-  const centerPublishValid = Boolean(centerPublish && centerDraft && centerActions
+  const centerPublishButtons = eventButtons(admin, 'togglePublishQueue')
+  const centerPublish = centerPublishButtons.find(node => exactDirective(node, 'on', 'click',
+    "togglePublishQueue('rules.center', item.collection, item.id)")) || null
+  const centerPublishValid = Boolean(centerPublish && centerDraft
     && pathAllows(admin, centerPublish, centerEditor, new Set([centerDraft])))
-    && hasClass(centerPublish, 'publish')
-    && exactSurface(centerPublish, ['disabled'], ['click'], { name: 'if', expected: "hasPermission('admin.content.publish')" })
-    && exactDirective(centerPublish, 'bind', 'disabled', 'publishingCenterIds.has(item.id)')
-    && exactDirective(centerPublish, 'on', 'click', 'publishCenterItem(item.collection, item.id)')
-    && singleInterpolation(centerPublish, "publishingCenterIds.has(item.id) ? '发布中…' : '审核并发布此项'")
+    && hasClass(centerPublish, 'publish-toggle')
+    && exactSurface(centerPublish, ['aria-checked'], ['click'], { name: 'if', expected: "hasPermission('admin.content.publish')" })
+    && exactDirective(centerPublish, 'bind', 'aria-checked',
+      "isPublishQueued('rules.center', item.collection, item.id)")
 
   const rulingGroup = workspacePanel && unique(admin.nodes, node => node.tag === 'section' && hasClass(node, 'item-group')
     && exactVisibility(node, 'if', 'activeRulingItems.length') && pathAllows(admin, node, workspacePanel))
@@ -363,17 +361,24 @@ export function ruleCenterTemplateContract(sources) {
     && exactVisibility(node, 'if', 'openRulingEditors.has(row.item.id)') && !hasRenderingOverride(node))
   const rulingDraft = rulingOpen && unique(renderedChildren(rulingOpen), node => node.tag === 'template'
     && exactVisibility(node, 'else', undefined) && !hasRenderingOverride(node))
-  const rulingPublishButtons = eventButtons(admin, 'publishRuling')
-  const rulingPublish = rulingPublishButtons.length === 1 ? rulingPublishButtons[0] : null
-  const rulingActions = rulingPublish && (admin.parents.get(rulingPublish) || []).find(node => node.type === 1
-    && node.tag === 'div' && hasClass(node, 'item-actions'))
-  const rulingPublishValid = Boolean(rulingPublish && rulingDraft && rulingActions
+  const rulingPublishButtons = eventButtons(admin, 'togglePublishQueue')
+  const rulingPublish = rulingPublishButtons.find(node => exactDirective(node, 'on', 'click',
+    "togglePublishQueue('rules.rulings', 'entries', row.item.id)")) || null
+  const rulingPublishValid = Boolean(rulingPublish && rulingDraft
     && pathAllows(admin, rulingPublish, rulingEditor, new Set([rulingOpen, rulingDraft])))
-    && hasClass(rulingPublish, 'publish')
-    && exactSurface(rulingPublish, ['disabled'], ['click'], { name: 'if', expected: "hasPermission('admin.content.publish')" })
-    && exactDirective(rulingPublish, 'bind', 'disabled', 'publishingRulingIds.has(row.item.id)')
-    && exactDirective(rulingPublish, 'on', 'click', 'publishRuling(row.item)')
-    && singleInterpolation(rulingPublish, "publishingRulingIds.has(row.item.id) ? '发布中…' : '审核并发布此项'")
+    && hasClass(rulingPublish, 'publish-toggle')
+    && exactSurface(rulingPublish, ['aria-checked'], ['click'], { name: 'if', expected: "hasPermission('admin.content.publish')" })
+    && exactDirective(rulingPublish, 'bind', 'aria-checked',
+      "isPublishQueued('rules.rulings', 'entries', row.item.id)")
+
+  const batchPublish = unique(admin.nodes, node => node.tag === 'button' && hasClass(node, 'batch-publish')
+    && exactVisibility(node, 'if', "hasPermission('admin.content.publish')")
+    && exactDirective(node, 'on', 'click', 'publishPending')
+    && directives(node, 'bind', 'disabled').length === 1
+    && (directives(node, 'bind', 'disabled')[0].exp?.content || '').includes('!pendingPublishCount'))
+  const batchPublishValid = Boolean(batchPublish && hasClass(batchPublish, 'batch-publish')
+    && exactSurface(batchPublish, ['disabled'], ['click'], { name: 'if', expected: "hasPermission('admin.content.publish')" })
+    && exactDirective(batchPublish, 'on', 'click', 'publishPending'))
 
   return {
     publicCoreDirectory: Boolean(playerRoot && coreBranch && coreDirectory && coreButton),
@@ -382,8 +387,8 @@ export function ruleCenterTemplateContract(sources) {
       && hasDefaultImport(player.script, 'CardImage', '@/l12/CardImage.vue') && toggleLoadsLinkedCatalog(player.script)),
     adminCenterImmutableFields: Boolean(adminRoot && centerEditor && centerDraft && centerControls.length
       && !centerControls.some(forbiddenCenterControl)),
-    adminCenterPublishOwnership: Boolean(centerEditor && centerDraft && centerActions && centerPublishValid),
-    adminRulingPublishOwnership: Boolean(rulingEditor && rulingOpen && rulingDraft && rulingActions && rulingPublishValid),
+    adminCenterPublishOwnership: Boolean(centerEditor && centerDraft && centerPublishValid && batchPublishValid),
+    adminRulingPublishOwnership: Boolean(rulingEditor && rulingOpen && rulingDraft && rulingPublishValid && batchPublishValid),
   }
 }
 
