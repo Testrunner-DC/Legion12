@@ -9497,6 +9497,12 @@
 - 当前固定 DPAPI 管理员会话在隔离进程内仍报 owner mismatch；恢复同一会话后重新生成新鲜快照即可继续已有 23 项分流，不需要重做本地回归或重新询问已确认规则。
 - 23 条逐项分流清单见 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z/triage-manifest.json`；统计为 9 条本地修复待部署读回、2 条重复候选、2 条规则正确待原局、4 条具名场景待取证、3 条材料不足、2 条产品边界关闭。别名只保留在本地引用，未新增线上写入。
 
+## BUG-CLOSEOUT-20261112-FRESH-SNAPSHOT｜新鲜 CAS 快照已接续（只读）
+
+- 快照：`D:/GPT/Legion12/artifacts/bug-queue-readonly-manual-20261112/bugs.json`；`SnapshotTag=intake-20261112T120426Z-4dee100aaab9`；`platformVersion=66455`；`SHA256=fd5b2a62ac5b4e6e34a8875c93a0bd70e15d2978a339ed0cc29e07e401794aed`；共 23 条，ID 与既有分诊清单完全一致。
+- 已由 `New-L12BugWorkItems.ps1` 生成 `D:/GPT/Legion12/artifacts/bug-intake-manual-20261112/work-items.json` 与回执；本次 `ready=23, blocked=0, closed=0`，并保留 `onlineWrites=0`。随后生成同目录 `triage-manifest.json`，仅更新快照来源／平台版本／指纹锚点，既有用户裁定和证据不变。
+- 这一步仍是只读接续，不代表任何线上 Bug 已关闭；后续线上终态必须逐项使用同一数字 `platformVersion=66455` 做预演、一次 CAS 和独立读回，失败或版本变化就停止该项并保留真实错误。
+
 ## BUG-CLOSEOUT-20261112-CLARIFICATION｜三条反馈重新定性（本地证据，未部署）
 
 - `BUG-20261109-1178f1ca`：用户明确该反馈指向安德华拉诺特（`S02-0305`）的开局规则“在游戏开始时可将此圣物从牌库置入圣物区”，不是万物统御之戒（`S02-0008`），也不是调度／换牌禁用。现行 `L12PromptsAndSetup.cs` 已有 `setup-s2-ring` 开局可选提示、从牌库移入圣物区、设置起始手牌4张及完成后续开局流程；但当前没有 `S02-0305` 的具名后端回归，原局 `b4b221ad…` 仍未取得正文／回放。因此改记为“源实现已在、具名回归缺失”，不把旧的调度回归冒充该反馈已解决。

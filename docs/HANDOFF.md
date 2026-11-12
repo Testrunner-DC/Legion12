@@ -4890,6 +4890,12 @@
 - `BUG-20261030-dd46e698` 按用户确认的规则正确收口：贯穿被进攻时不可发动；贯穿仍正常进入防御／伤害流程，只抑制【进攻时】触发。无代码修改，待新鲜 CAS 才能写入规则正确终态。
 - 已同步 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z/triage-manifest.json` 与 `docs/BUGFIX-REGISTRY.md`；本轮 0 次线上写入、0 次部署。
 
+## 2026-11-12 新鲜 Bug 快照接续（只读，未写线上）
+
+- 已成功取得当前正式服务数字 CAS 快照：`SnapshotTag=intake-20261112T120426Z-4dee100aaab9`、`platformVersion=66455`、`total=23`、`SHA256=fd5b2a62ac5b4e6e34a8875c93a0bd70e15d2978a339ed0cc29e07e401794aed`。
+- 原 23 个队列 ID 与本次快照逐项一致；既有用户裁定、重复关系和本地证据保留，不用旧快照哈希冒充新 CAS。新的离线工作项与清单位于 `D:/GPT/Legion12/artifacts/bug-intake-manual-20261112/`，其中 `work-items-receipt.json` 显示 `ready=23, blocked=0, onlineWrites=0`。
+- 本轮只完成“新鲜读取→指纹校验→离线工作项绑定”；没有 preview、CAS、审计写入、线上终态或部署。后续按每条 `next` 分流：先处理可由现有证据确认的规则／材料不足／产品边界项；本地修复项必须等具名测试服／正式服读回；原局依赖项保持待原局证据，不猜测关闭。
+
 ## 2026-11-12 固定管理员 DPAPI owner mismatch 根因与恢复路径
 
 - 根因核实：当前执行进程身份为 `DESKTOP-LCCQGHU\\CodexSandboxOffline`，而 `D:/GPT/Legion12/secrets/codexops-admin.credential.xml` 的受管归属为 `DESKTOP-LCCQGHU\\nep`；文件内用户名仍为 `CodexOps`。凭据是 Windows DPAPI `CurrentUser` 密文，`Import-Clixml` 在发起任何 HTTP、preview 或 CAS 前即因用户主密钥不匹配失败。当前 `USERPROFILE` 显示为 `C:\\Users\\neptu` 不能替代 Windows 身份判断。
