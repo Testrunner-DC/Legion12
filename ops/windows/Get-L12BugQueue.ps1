@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$ApiBase = "https://legion-12.com",
     [string]$Username = "Admin",
