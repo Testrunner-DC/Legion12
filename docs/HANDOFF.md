@@ -6,7 +6,7 @@
 - 正式部署默认消费已批准的长期边界：在线 WebSocket 连接不阻塞；真实对局、准入、持久化／待恢复／结算／命令状态及未知围栏仍由服务器强制阻塞。rollback 继续走严格排空消费者，不继承默认放行。
 - 修改文件：`ops/server/deploy-l12-release.sh`、`ops/windows/deploy-l12.ps1`、`scripts/test-l12-deploy-behavior.ps1`、`docs/DEPLOY-HK.md`。不触碰当前正式服务、不改变维护、不改业务数据。
 - 验证：PowerShell 入口解析通过；部署行为夹具在 D 盘受管根 `D:/GPT/Legion12/artifacts/deploy-flow-tests-20261112` 完成 76 个隔离服务器场景；`git diff --check` 通过。首次 C 盘夹具被路径权限保护拒绝，未把该失败算作产品失败。
-- 当前仍有其他工作树未提交改动，提交时只纳入上述部署流程文件；本改进批次未生成 Release、未部署，待 Git 远端同 SHA 核对后提交推送。
+- 当前仍有其他工作树未提交改动，提交时只纳入上述部署流程文件；本改进批次未生成 Release、未部署。已提交 `cc7116236844568cbe2261e206c0166ff3a7cef7` 并非强制推送 `origin/main`，远端读回同 SHA。
 
 ## 2026-11-12 统一规则收口候选（待本次正式发布）
 
