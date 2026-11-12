@@ -4897,3 +4897,10 @@
 - 首选恢复：在同一台机器以 `DESKTOP-LCCQGHU\\nep` 的真实交互会话运行现有只读队列脚本，先确认 `whoami` 为 `nep`，再 `Import-Clixml` 成功，输出新的 D 盘治理快照并读取数字 `platformVersion`。后续 preview→单次 CAS→独立读回也必须由同一 `nep` 会话或受控、同归属的 helper 执行；不需要浏览器桥接。
 - 若 `nep` 会话仍无法解密：保留原 XML 不动，在 `nep` 会话内由人类通过 `Get-Credential` 安全输入管理员密码，先导出一份新的 `nep` 归属凭据到受管私有路径，独立 `Import-Clixml` 读回成功后再替换读取入口；原文件在验证前不得删除。若连 `nep` 的 DPAPI 主密钥也已损坏，只能走该 Windows 账户的正式 profile/密钥恢复或重新录入凭据，不能从现有 XML 反推密码。
 - 当前影响仅限新鲜线上快照和线上 Bug 终态写入；本地回归、离线分流和既有证据无需重做。恢复后先做一次新鲜只读快照，再按既有 CAS 合同续办 23 条，不重新询问已确认裁定。
+
+### DPAPI 不可用时的受控替代路线
+
+- 首选不依赖 DPAPI 的一次性只读路径：直接运行 `ops/windows/Get-L12BugQueue.ps1`，省略 `-Password`，让脚本在本地 `Read-Host -AsSecureString` 提示中接收 `CodexOps` 密码；密码只在进程内存中使用，快照仍写入受管 D 盘，随后照常校验数字 `platformVersion`。不得把密码放命令行、环境变量、聊天或日志。
+- 若固定 SSH 指纹控制会话仍可用，只能复用已有、文档化的服务器内部只读 helper；当前仓库没有发现可直接替代登录的现成 Bug 队列 helper，不能临时读取服务数据库、复制服务 token 或提取浏览器 cookie 来“绕过”登录。
+- 若希望恢复自动化，可在当前受控 Windows 账户中由人类通过安全提示重新录入密码，先写入新的 DPAPI 凭据副本并独立读回，再切换 wrapper；原 `nep` 归属 XML 在新副本验证前保留。该路线改变凭据归属，必须保持私有 ACL，不扩大 API 权限。
+- 当前 Windows Credential Manager 查询为无条目；因此“直接复用系统已保存凭据”暂不可用。三条替代路线都只解决新鲜只读快照／CAS 的认证入口，不改变 Bug 规则或部署权限。
