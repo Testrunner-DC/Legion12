@@ -4889,3 +4889,11 @@
 - `BUG-20261107-d065c72c` 的好友房运营禁限卡路径已由受管 Release 具名回归 1/1 验证：显式启用限制时拒绝禁卡，关闭限制／邀请房保持原行为，沙盒不受影响。证据在 `D:/GPT/Legion12/artifacts/bug-closeout-20261112-d065-friend`；仍缺正式服具名配置读回，不能冒充线上关闭。
 - `BUG-20261030-dd46e698` 按用户确认的规则正确收口：贯穿被进攻时不可发动；贯穿仍正常进入防御／伤害流程，只抑制【进攻时】触发。无代码修改，待新鲜 CAS 才能写入规则正确终态。
 - 已同步 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z/triage-manifest.json` 与 `docs/BUGFIX-REGISTRY.md`；本轮 0 次线上写入、0 次部署。
+
+## 2026-11-12 固定管理员 DPAPI owner mismatch 根因与恢复路径
+
+- 根因核实：当前执行进程身份为 `DESKTOP-LCCQGHU\\CodexSandboxOffline`，而 `D:/GPT/Legion12/secrets/codexops-admin.credential.xml` 的受管归属为 `DESKTOP-LCCQGHU\\nep`；文件内用户名仍为 `CodexOps`。凭据是 Windows DPAPI `CurrentUser` 密文，`Import-Clixml` 在发起任何 HTTP、preview 或 CAS 前即因用户主密钥不匹配失败。当前 `USERPROFILE` 显示为 `C:\\Users\\neptu` 不能替代 Windows 身份判断。
+- 不能采用的“修复”：不改 ACL 冒充解密、不复制或改名 XML、不手工搬运 Protect 主密钥、不用 `ConvertTo-SecureString -Key` 改成另一套密钥、不在聊天或命令行传递管理员密码；这些都不能恢复原 DPAPI 归属，或会扩大凭据边界。
+- 首选恢复：在同一台机器以 `DESKTOP-LCCQGHU\\nep` 的真实交互会话运行现有只读队列脚本，先确认 `whoami` 为 `nep`，再 `Import-Clixml` 成功，输出新的 D 盘治理快照并读取数字 `platformVersion`。后续 preview→单次 CAS→独立读回也必须由同一 `nep` 会话或受控、同归属的 helper 执行；不需要浏览器桥接。
+- 若 `nep` 会话仍无法解密：保留原 XML 不动，在 `nep` 会话内由人类通过 `Get-Credential` 安全输入管理员密码，先导出一份新的 `nep` 归属凭据到受管私有路径，独立 `Import-Clixml` 读回成功后再替换读取入口；原文件在验证前不得删除。若连 `nep` 的 DPAPI 主密钥也已损坏，只能走该 Windows 账户的正式 profile/密钥恢复或重新录入凭据，不能从现有 XML 反推密码。
+- 当前影响仅限新鲜线上快照和线上 Bug 终态写入；本地回归、离线分流和既有证据无需重做。恢复后先做一次新鲜只读快照，再按既有 CAS 合同续办 23 条，不重新询问已确认裁定。
