@@ -9514,3 +9514,8 @@
 - `BUG-20261107-d065c72c`：按“验证好友房禁用运营禁限卡是否生效”执行了受管 Release 具名测试 `OperationsRestrictionsOnlyApplyToOptInFriendlyRoomsWhileDeckStorageAndSandboxStayOpen`，1/1 通过。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261112-d065-friend/test-ee027505db99481ead972962617a03f7/pass-proof.trx` 与同目录 `receipt.json`。测试确认：好友房显式启用 `UseCardRestrictions=true` 时服务端拒绝禁限卡；关闭该开关及邀请建房保持原可用行为；沙盒不受影响。线上正式配置尚未读回，故只记“本地已验证、待线上具名配置读回”，不提前关单。
 - `BUG-20261030-dd46e698`：用户确认贯穿在被进攻时本来就不能发动，按规则正确收口。源码核对显示贯穿仍进入正常防御／伤害流程，但 `SuppressAttackTriggers=true`，且贯穿触发事实要求主动进攻军团完成击杀；被进攻场景不满足条件。无代码修改，建议终态为规则正确／产品边界关闭；线上状态仍需既有新鲜 CAS 合同才能写入。
 - 本次澄清已同步到离线 manifest；未执行线上 preview/CAS、未改审计、未部署。
+
+## BUG-CLOSEOUT-20261112-LIMU-RULE-UPDATE｜李牧主宰返还口径（本地证据，未部署）
+
+- `BUG-20261109-81cd4dec` 已按用户确认的统一规则核对：李牧只响应主宰效果返还 4 张及以上；孙悟空变身返还属于主宰效果并可触发；嬴政 `S02-0101` 是军团，不属于主宰来源，不触发该入口。
+- 受管 Release 具名回归 4/4 通过，证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261112-limu-source-r8/test-481b50d0be5f4d05a83c1ad4dd268878/receipt.json`。当前分类为 `rule_correct_checked_unreproduced`；原局正文／回放仍未读，但按现行流程不再以历史回放作为关闭前置。线上 CAS 终态尚未写入，不能冒充正式服关闭。
