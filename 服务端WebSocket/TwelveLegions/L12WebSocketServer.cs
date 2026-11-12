@@ -3123,19 +3123,26 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return Results.Ok(_platform.Bugs(status, priority, assignee, search));
         });
         _app.MapGet("/api/admin/bugs/query", (HttpRequest request, int? page, int? pageSize,
-            string? status, string? priority, string? assignee, string? search) =>
+            string? status, string? priority, string? assignee, string? search, bool? includeDetails) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminBugsRead, out _, out var failure)) return failure;
             try
             {
                 return Results.Ok(_platform.QueryBugs(page ?? 1, pageSize ?? 10, status, priority,
-                    assignee, search, request.HttpContext.RequestAborted));
+                    assignee, search, request.HttpContext.RequestAborted, includeDetails ?? true));
             }
             catch (ArgumentException)
             {
                 return ApiError(request, "invalid_bug_query", "Bug搜索最多200个字符",
                     StatusCodes.Status400BadRequest);
             }
+        });
+        _app.MapGet("/api/admin/bugs/{id}", (HttpRequest request, string id) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminBugsRead, out _, out var failure)) return failure;
+            var bug = _platform.GetBug(id);
+            return bug is null ? ApiError(request, "bug_not_found", "Bug 不存在", StatusCodes.Status404NotFound)
+                : Results.Ok(bug);
         });
         _app.MapPatch("/api/admin/bugs/{id}", (HttpRequest request, string id, BugUpdateRequest body) =>
         {

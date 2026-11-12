@@ -5,12 +5,14 @@ public sealed record L12AdminBugPageView(IReadOnlyList<L12BugReportView> Items,
 
 public sealed partial class L12PlatformStore
 {
-    // Legacy Bugs() stays complete for intake/closure consumers. Only the
-    // explicit page query copies history for selected rows. Version and rows
-    // are sampled together for the existing bug.update business-version CAS.
+    // Legacy Bugs() stays complete for intake/closure consumers. The admin
+    // page can explicitly request a light summary so history/diagnostics are
+    // not fanned out for every row; version and rows remain sampled together
+    // for the existing bug.update business-version CAS.
     public L12AdminBugPageView QueryBugs(int page = 1, int pageSize = 10,
         string? status = null, string? priority = null, string? assignee = null,
-        string? search = null, CancellationToken cancellationToken = default)
+        string? search = null, CancellationToken cancellationToken = default,
+        bool includeDetails = true)
     {
         search = search?.Trim() ?? string.Empty;
         if (search.Length > 200) throw new ArgumentException("Bug搜索最多200个字符", nameof(search));
@@ -28,10 +30,20 @@ public sealed partial class L12PlatformStore
             var items = matching.Skip((page - 1) * pageSize).Take(pageSize).Select(row =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return ToView(row);
+                return includeDetails ? ToView(row) : ToSummaryView(row);
             }).ToArray();
             cancellationToken.ThrowIfCancellationRequested();
             return new(items, page, pageSize, matching.Length, Version);
+        }
+    }
+
+    public L12BugReportView? GetBug(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        lock (_gate)
+        {
+            var row = _data.BugReports.FirstOrDefault(item => item.Id == id.Trim());
+            return row is null ? null : ToView(row);
         }
     }
 

@@ -62,6 +62,28 @@ public sealed class AdminBugQueryTests
     }
 
     [Fact]
+    public async Task LightQueryLeavesHistoryAndDiagnosticsForExplicitDetailRead()
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var actor = f.Store.AuthenticateTokenSession(f.AdminToken)!.Account;
+        var bug = f.Store.AddBug(actor, "lazy detail target", "synthetic description", "/synthetic", "ROOM", "MATCH", "synthetic");
+        f.Store.UpdateBug(actor, bug.Id, "new", "normal", null, null, "detail history retained");
+
+        using var summary = await Get(f, "/api/admin/bugs/query?includeDetails=false");
+        var summaryRow = Assert.Single(summary.RootElement.GetProperty("items").EnumerateArray(),
+            item => item.GetProperty("id").GetString() == bug.Id);
+        Assert.Equal(0, summaryRow.GetProperty("history").GetArrayLength());
+        Assert.False(summaryRow.TryGetProperty("diagnostic", out var diagnostic) && diagnostic.ValueKind != JsonValueKind.Null);
+
+        using var detail = await Get(f, $"/api/admin/bugs/{bug.Id}");
+        var detailRow = detail.RootElement;
+        Assert.Equal(bug.Id, detailRow.GetProperty("id").GetString());
+        Assert.Equal(2, detailRow.GetProperty("history").GetArrayLength());
+        Assert.Equal("ROOM", detailRow.GetProperty("roomCode").GetString());
+        Assert.Equal("MATCH", detailRow.GetProperty("matchId").GetString());
+    }
+
+    [Fact]
     public async Task SharedFiltersKeepRawStatusesAndSearchMeaningAcrossPages()
     {
         await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);

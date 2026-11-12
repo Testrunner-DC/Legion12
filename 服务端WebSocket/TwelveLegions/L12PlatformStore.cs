@@ -2128,6 +2128,14 @@ public sealed partial class L12PlatformStore
         row.RegressionTest, row.DeployedVersion, row.VerifiedBy, row.VerifiedAt, row.DuplicateOf,
         row.ClosureDisposition);
 
+    private static L12BugReportView ToSummaryView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,
+        row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes,
+        Array.Empty<L12BugAuditView>(), row.CreatedAt, row.UpdatedAt,
+        null, row.ClientVersion ?? row.Version, row.ServerVersion ?? "legacy-unknown",
+        row.EngineVersion ?? "legacy-unknown", null, null, row.FixCommit,
+        row.RegressionTest, row.DeployedVersion, row.VerifiedBy, row.VerifiedAt, row.DuplicateOf,
+        row.ClosureDisposition);
+
     private static L12ClientConnectionDiagnosticView? NormalizeClientDiagnostic(
         L12ClientConnectionDiagnosticView? value, string page, string? roomCode, string? matchId)
     {

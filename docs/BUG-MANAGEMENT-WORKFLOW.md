@@ -2,6 +2,13 @@
 
 服务器 Bug 管理是玩家反馈、管理员审计和 Codex 修复工作的共同入口。它不授权自动修改代码或自动关闭反馈。
 
+## 2026-11-12 流程优化：新鲜快照、摘要/详情分离、可续办工作项
+
+- 拉取入口 `ops/windows/Get-L12BugQueue.ps1` 现在只使用分页查询接口，固定带 `includeDetails=false`，在同一 `platformVersion` 下收齐全部页；页总量或版本在读取期间变化会拒绝生成混合快照。输出是不可变 `schema=1` intake 快照，包含 `SnapshotTag`、过滤条件、总量、平台版本和快照 SHA256；输出/回执路径必须通过 `L12GeneratedStorage.ps1` 的物理 D/E 路径校验，令牌只存在于进程内存。
+- 列表页只读取摘要；处理时间线和诊断通过受权限保护的 `/api/admin/bugs/{id}` 按需读取，避免打开后台页面就把每页所有历史和运行诊断全部展开。旧 `/api/admin/bugs/query` 默认详情行为保留，旧调用方不被静默改变；新调用方必须显式 `includeDetails=false`。
+- `ops/windows/New-L12BugWorkItems.ps1` 从唯一 intake 快照生成可续办 `work-items.json` 和阶段回执。它只建立 `ready/closed` 初态、原文 15 字段指纹、对局/房间证据引用与 `SnapshotTag` 绑定，不猜规则、不自动标记 `needs_user_ruling`，也不执行线上写入。后续执行器仍必须对每一项单独完成“预览→一次 CAS→独立读回”，409 或不确定结果只读核对、不盲重试；局部成功可以从同一工作清单续办。
+- 进度以工作清单回执为准：`queueSnapshotTag`、`queueSnapshotSha256`、`platformVersion`、逐项状态和实际成功子集一起保存，不能用旧摘要文件名、待办净变化或整批 `completed=true` 冒充新鲜事实。
+
 ## 旧反馈以当前版本为准（用户2026-10-17更新，优先于下方历史取证流程）
 
 - 用户明确：很多旧Bug已经随版本更新解决，不必逐条追究旧成因，当前版本正确即可收口。先复用现行正式提交、具名当前回归及已有用户裁定；同源有效证据可以同时覆盖多条旧反馈，不重跑完整套件，也不因有matchId就强制提取旧录像、私牌、旧检查点或补齐“报告版本→修复”的历史DAG。
@@ -67,10 +74,13 @@
 
 ```powershell
 $env:L12_ADMIN_PASSWORD = '<服务器管理员密码>'
-powershell -ExecutionPolicy Bypass -File .\ops\windows\Get-L12BugQueue.ps1 -Status new -OutputPath D:\GPT\L12-bug-queue.json
+$snapshot = 'D:\GPT\Legion12\artifacts\bug-intake-20261112\intake.json'
+$receipt = 'D:\GPT\Legion12\artifacts\bug-intake-20261112\intake-receipt.json'
+powershell -ExecutionPolicy Bypass -File .\ops\windows\Get-L12BugQueue.ps1 -Status new -OutputPath $snapshot -ReceiptPath $receipt
+powershell -ExecutionPolicy Bypass -File .\ops\windows\New-L12BugWorkItems.ps1 -IntakeSnapshotPath $snapshot -OutputPath 'D:\GPT\Legion12\artifacts\bug-intake-20261112\work-items.json' -ReceiptPath 'D:\GPT\Legion12\artifacts\bug-intake-20261112\work-items-receipt.json'
 ```
 
-可用筛选参数：`-Status`、`-Priority`、`-Search`。脚本只调用登录和 Bug 查询接口，不包含更新、关闭或删除操作。
+可用筛选参数：`-Status`、`-Priority`、`-Search`、`-PageSize`、`-SnapshotTag`。脚本只调用登录和 Bug 查询接口，不包含更新、关闭或删除操作；工作项脚本完全离线，不会补拉队列或写服务器。
 
 ## 管理后台闭环
 

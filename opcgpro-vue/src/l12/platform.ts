@@ -1508,11 +1508,12 @@ export const adminApi = {
     return platformRequest<BugReport[]>(`/api/admin/bugs${params.size ? `?${params}` : ''}`)
   },
   updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes' | 'fixCommit' | 'regressionTest' | 'deployedVersion' | 'duplicateOf' | 'closureDisposition'>> & { comment?: string; expectedVersion?: number; dryRun?: boolean; reason?: string }) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
-  bugsPage: (query: { page?: number; pageSize?: number; status?: string; priority?: string; assignee?: string; search?: string } = {}) => {
+  bugsPage: (query: { page?: number; pageSize?: number; status?: string; priority?: string; assignee?: string; search?: string; includeDetails?: boolean } = {}) => {
     const params = new URLSearchParams()
     Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminBugPage>(`/api/admin/bugs/query${params.size ? `?${params}` : ''}`)
   },
+  bugDetail: (id: string) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`),
   getContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`),
   articles: (query: { status?: string; category?: string; search?: string; kind?: SiteContentKind } = {}) => {
     const params = new URLSearchParams()

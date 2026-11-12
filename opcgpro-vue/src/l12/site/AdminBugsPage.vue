@@ -25,6 +25,9 @@ const notice = ref('')
 const loading = ref(false)
 const loadError = ref('')
 const saving = reactive<Record<string, boolean>>({})
+const detailLoading = reactive<Record<string, boolean>>({})
+const detailErrors = reactive<Record<string, string>>({})
+const details = reactive<Record<string, BugReport | undefined>>({})
 // Cache only unsaved editor fields, not full reports/history or a second list.
 // Bases and latestRows hold the current page's authoritative read only.
 const drafts = new Map<string, Draft>()
@@ -61,6 +64,8 @@ function installRow(row: BugReport, version: number) {
 }
 function invalidateRead() {
   ++requestSequence; result.value = null; bugs.value = []; bases.clear(); latestRows.clear(); loadError.value = ''; loading.value = false
+  Object.keys(details).forEach(key => delete details[key])
+  Object.keys(detailErrors).forEach(key => delete detailErrors[key])
 }
 function currentRow(item: BugReport) { return actorOwner()() && bugs.value.includes(item) && bases.has(item.id) }
 function draftConflict(item: BugReport) { return result.value && bases.get(item.id)?.version !== result.value.platformVersion }
@@ -89,13 +94,30 @@ const displayHistoryValue = (value?: string) => value && (dispositionLabels[valu
 const closureLabel = (item: BugReport) => item.status !== 'closed' && item.status !== 'resolved'
   ? '处理中'
   : item.closureDisposition ? dispositionLabels[item.closureDisposition] : '历史关闭'
+const historyFor = (id: string) => details[id]?.history ?? []
+
+async function loadHistory(item: BugReport, event: Event) {
+  const target = event.target as HTMLDetailsElement | null
+  if (!target?.open || details[item.id] || detailLoading[item.id]) return
+  const ownsActor = actorOwner()
+  detailLoading[item.id] = true; delete detailErrors[item.id]
+  try {
+    const detail = await adminApi.bugDetail(item.id)
+    if (!ownsActor()) return
+    details[item.id] = detail
+  } catch (cause) {
+    if (ownsActor()) detailErrors[item.id] = cause instanceof Error ? cause.message : '处理记录读取失败'
+  } finally {
+    if (ownsActor()) detailLoading[item.id] = false
+  }
+}
 
 async function load(nextPage = page.value) {
   if (!actorOwner()()) return
   captureDrafts(); invalidateRead()
   page.value = Math.max(1, Math.trunc(nextPage) || 1)
   const request = requestSequence, ownsActor = actorOwner()
-  const query = { page: page.value, pageSize, status: status.value, priority: priority.value, search: search.value.trim() }
+  const query = { page: page.value, pageSize, status: status.value, priority: priority.value, search: search.value.trim(), includeDetails: false }
   const isCurrent = () => ownsActor() && request === requestSequence
   loading.value = true
   try {
@@ -221,7 +243,7 @@ onBeforeUnmount(() => { disposed = true; retireActor() })
             <template v-if="item.verifiedBy && item.verifiedAt"><dt>{{ item.closureDisposition === 'data_corrected_verified' ? '核验记录' : '复测记录' }}</dt><dd>{{ item.verifiedBy }} · {{ new Date(item.verifiedAt).toLocaleString() }}</dd></template>
             <template v-if="item.duplicateOf"><dt>关联反馈</dt><dd>{{ item.duplicateOf }}</dd></template>
           </dl>
-          <details><summary>处理记录（{{ item.history.length }}）</summary><ol><li v-for="entry in item.history" :key="entry.id"><b>{{ actionLabel(entry.action) }}</b><span>{{ entry.actorName }} · {{ new Date(entry.createdAt).toLocaleString() }}</span><p>{{ entry.comment || `${displayHistoryValue(entry.fromValue) || '无'} → ${displayHistoryValue(entry.toValue) || '无'}` }}</p></li></ol></details>
+          <details @toggle="loadHistory(item, $event)"><summary>处理记录{{ details[item.id] ? `（${historyFor(item.id).length}）` : '（按需读取）' }}</summary><p v-if="detailLoading[item.id]">正在读取处理记录…</p><p v-else-if="detailErrors[item.id]" class="notice">{{ detailErrors[item.id] }}</p><ol v-else-if="details[item.id]" ><li v-for="entry in historyFor(item.id)" :key="entry.id"><b>{{ actionLabel(entry.action) }}</b><span>{{ entry.actorName }} · {{ new Date(entry.createdAt).toLocaleString() }}</span><p>{{ entry.comment || `${displayHistoryValue(entry.fromValue) || '无'} → ${displayHistoryValue(entry.toValue) || '无'}` }}</p></li></ol></details>
         </div>
         <fieldset v-if="hasPermission('admin.bugs.write')" :disabled="saving[item.id]" class="editor">
           <p v-if="draftConflict(item)" class="notice">服务器版本已变化；本条未保存草稿和原提交版本已保留。请核对当前记录，或<button type="button" @click="discardDraft(item)">放弃本条未保存草稿并用当前服务端记录</button>。</p>

@@ -52,12 +52,13 @@ function compile(content, imports, render) {
   return component
 }
 async function fixture(render = false) {
-  const calls = [], legacyCalls = [], writes = [], errors = []
+  const calls = [], detailCalls = [], legacyCalls = [], writes = [], errors = []
   const route = Vue.reactive({ params: {} }), platformState = Vue.reactive({ account: { id: 'actor-A', permissionVersion: 1 }, token: 'synthetic-token-A' })
   const allowed = Vue.ref(true)
   const adminApi = {
     bugs: async () => { legacyCalls.push(1); return Array.from({ length: 25 }, (_, i) => row(i + 1)) },
     bugsPage: query => { const call = { query: { ...query }, ...deferred() }; calls.push(call); return call.promise },
+    bugDetail: id => { const call = { id, ...deferred() }; detailCalls.push(call); return call.promise },
     updateBug: (id, body) => { const call = { id, body: { ...body }, ...deferred() }; writes.push(call); return call.promise },
   }
   const paged = compile(pagedSource, {}, true)
@@ -66,7 +67,7 @@ async function fixture(render = false) {
   app.component('router-link', { props: ['to'], setup: (props, { slots }) => () => Vue.h('a', { href: props.to }, slots.default?.()) })
   app.config.errorHandler = error => errors.push(error)
   app.mount(root); await flush()
-  return { state: app._instance.setupState, calls, legacyCalls, writes, errors, root, route, platformState, allowed, unmount: () => app.unmount() }
+  return { state: app._instance.setupState, calls, detailCalls, legacyCalls, writes, errors, root, route, platformState, allowed, unmount: () => app.unmount() }
 }
 async function ready(render = false) {
   const f = await fixture(render)
@@ -80,7 +81,7 @@ async function test(name, run) { try { await run(); results.push({ name, passed:
 
 try {
   await test('initial bounded query and page 2/server last-page clamp', () => use(async f => {
-    assert.deepEqual(f.calls[0].query, { page: 1, pageSize: 10, status: '', priority: '', search: '' })
+    assert.deepEqual(f.calls[0].query, { page: 1, pageSize: 10, status: '', priority: '', search: '', includeDetails: false })
     assert.equal(f.state.bugs.length, 10); await resolveLoad(f, 2); assert.equal(f.state.bugs[0].id, 'synthetic-bug-11')
     const over = f.state.load(99); f.calls.at(-1).resolve(pageFor(3)); await over; await flush(); assert.equal(f.state.page, 3); assert.equal(f.state.bugs.length, 5)
   }))
@@ -88,7 +89,7 @@ try {
     const old = f.state.load(2); f.state.search = 'other'; f.state.search = ''; f.calls[1].resolve(pageFor(2)); await old; await flush()
     assert.equal(f.state.result, null); assert.equal(f.state.loading, false)
     f.state.search = ' exact '; f.state.status = 'resolved'; f.state.priority = 'high'
-    const current = f.state.load(); assert.deepEqual(f.calls.at(-1).query, { page: 1, pageSize: 10, status: 'resolved', priority: 'high', search: 'exact' })
+    const current = f.state.load(); assert.deepEqual(f.calls.at(-1).query, { page: 1, pageSize: 10, status: 'resolved', priority: 'high', search: 'exact', includeDetails: false })
     f.calls.at(-1).resolve(pageFor(1)); await current
     f.route.params.bugId = 'synthetic-bug-4'; await flush(); assert.equal(f.calls.at(-1).query.page, 1); assert.equal(f.calls.at(-1).query.search, 'synthetic-bug-4')
   }))
@@ -193,6 +194,11 @@ try {
       history: [{ id: 'synthetic-data-proof', action: 'data-correction-proof', actorName: 'synthetic-verifier',
         createdAt: '2026-10-27T01:00:00Z', comment: 'synthetic operator evidence binding only' }] }
     f.calls.at(-1).resolve(incoming); await pending; await flush()
+    const historyDetails = walk(f.root).find(child => child.tag === 'details')
+    assert.ok(historyDetails?.props.onToggle)
+    historyDetails.props.onToggle({ target: { open: true } }); await flush()
+    assert.equal(f.detailCalls.length, 1)
+    f.detailCalls[0].resolve(incoming.items[0]); await flush()
     assert.match(text(f.root), /数据修正已核验/)
     const definitions = walk(f.root).filter(child => child.tag === 'dt').map(text)
     assert.deepEqual(definitions, ['数据核验', '核验时版本', '核验记录'])
