@@ -61,6 +61,10 @@ else
   readonly stage_parent="${test_root}/opt"
 fi
 readonly system_min_available_bytes=$((10 * 1024 * 1024 * 1024))
+# Reserve space for the incoming package (and, when needed, the content-addressed
+# card bundle) before any upload starts.  This prevents the old "passes at 10.8
+# GiB, then drops below 10 GiB during scp" failure mode.
+readonly system_upload_reserve_bytes=$((256 * 1024 * 1024))
 readonly external_policy_floor_bytes=$((4 * 1024 * 1024 * 1024))
 readonly external_prepare_min_bytes=$((14 * 1024 * 1024 * 1024))
 readonly external_backup_max_bytes=$((4 * 1024 * 1024 * 1024))
@@ -92,7 +96,10 @@ else
   readonly public_base="https://${public_host}"
   readonly local_base="http://127.0.0.1:8083"
   readonly health_verifier="/usr/local/libexec/verify-legion12-health.mjs"
-  readonly health_attempts="30"
+  # Production startup can legitimately need more than the old 30-second
+  # window after a large runtime snapshot.  Keep it bounded and overridable
+  # for operations, while leaving the isolated test run at 30 attempts.
+  readonly health_attempts="${L12_DEPLOY_HEALTH_ATTEMPTS:-90}"
   readonly health_delay_seconds="1"
 fi
 readonly service_user="legion12"
@@ -142,11 +149,16 @@ system_available_bytes() {
 }
 
 validate_system_capacity() {
-  local available
+  local incoming_bytes="${1:-0}"
+  local reserve_bytes="${2:-0}"
+  local available required
+  [[ "$incoming_bytes" =~ ^[0-9]+$ && "$reserve_bytes" =~ ^[0-9]+$ ]] \
+    || { fail "系统盘容量预检参数无效"; return 1; }
   available="$(system_available_bytes)" || return 1
-  log "固定路径容量报告：release=${releases_dir}; runtime=${runtime_dir}; backup=${runtime_backup_dir}; systemAvailableBytes=${available}; systemMinimumBytes=${system_min_available_bytes}"
-  if (( available < system_min_available_bytes )); then
-    fail "系统盘可用容量不足 10 GiB；停止发布，不清理 runtime、快照或事故证据"
+  required=$((system_min_available_bytes + incoming_bytes + reserve_bytes))
+  log "固定路径容量报告：release=${releases_dir}; runtime=${runtime_dir}; backup=${runtime_backup_dir}; systemAvailableBytes=${available}; systemMinimumBytes=${system_min_available_bytes}; systemIncomingBytes=${incoming_bytes}; systemReserveBytes=${reserve_bytes}; systemRequiredBytes=${required}"
+  if (( available < required )); then
+    fail "系统盘可用容量不足 10 GiB 或无法预留完整切换空间（至少 ${required} 字节）；停止上传，不清理 runtime、快照或事故证据"
     return 1
   fi
 }
@@ -220,7 +232,7 @@ validate_external_prepare_capacity() {
 }
 
 prepare_storage_paths() {
-  validate_system_capacity || return 1
+  validate_system_capacity "${1:-0}" "${2:-0}" || return 1
   if [[ "$external_artifact_mode" == "1" ]]; then
     if ! validate_external_mount; then return 1; fi
     # 14 GiB and the later 8 GiB residual plan remain stronger than the named 4 GiB policy floor.
@@ -774,16 +786,20 @@ fi
 
 if [[ "$requested_mode" == "prepare-storage" ]]; then
   if [[ "$artifact_root_option" != "/opt" && "$artifact_root_option" != "/www/legion12" ]]; then
-    fail "用法：$0 prepare-storage </opt|/www/legion12>"
+    fail "用法：$0 prepare-storage </opt|/www/legion12> [incomingBytes] [reserveBytes]"
     exit 2
   fi
+  prepare_incoming_bytes="${3:-0}"
+  prepare_reserve_bytes="${4:-$system_upload_reserve_bytes}"
+  [[ "$prepare_incoming_bytes" =~ ^[0-9]+$ && "$prepare_reserve_bytes" =~ ^[0-9]+$ ]] \
+    || { fail "prepare-storage 容量预检参数无效"; exit 2; }
   if [[ "${L12_DEPLOY_LOCKED:-0}" != "1" ]]; then
     export L12_DEPLOY_LOCKED=1
     exec flock --close --nonblock "$lock_file" "$0" "$@"
   fi
   assert_deployment_unblocked
   self_test
-  prepare_storage_paths
+  prepare_storage_paths "$prepare_incoming_bytes" "$prepare_reserve_bytes"
   log "服务器制品目录已通过固定路径、挂载与容量预检：${artifact_root_option}"
   exit 0
 fi

@@ -501,6 +501,11 @@ stop_service_and_confirm
         $serverDeploySource.Contains('deployment_recovery_reserve_seconds=900') -and
         $serverDeploySource.Contains('"rollback"') -and $serverDeploySource.Contains('systemctl show --property MainPID --value')) `
         "服务器标准 deploy/rollback 没有接入有界排空消费者、截止时间或精确进程更换证明。"
+    Assert-True ($serverDeploySource.Contains('health_attempts="${L12_DEPLOY_HEALTH_ATTEMPTS:-90}"') -and
+        $serverDeploySource.Contains('system_upload_reserve_bytes=$((256 * 1024 * 1024))') -and
+        $serverDeploySource.Contains('systemIncomingBytes=${incoming_bytes}') -and
+        $serverDeploySource.Contains('prepare-storage </opt|/www/legion12> [incomingBytes] [reserveBytes]')) `
+        "服务器标准入口没有延长生产健康窗口或在上传前记录包体/暂存余量容量预检。"
     Assert-True ($serverDeploySource.Contains('runtimeSourceCompatibility') -and
         $serverDeploySource.Contains('target_runtime_source_compatibility') -and
         $serverDeploySource.Contains('current_runtime_source_compatibility')) `

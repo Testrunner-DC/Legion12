@@ -480,6 +480,12 @@ try {
     if ((Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.releaseSha256) {
         throw "运行包校验失败"
     }
+    $releaseArchiveBytes = (Get-Item -LiteralPath $releaseArchive -Force).Length
+    if ($releaseArchiveBytes -le 0) { throw "运行包大小无效" }
+    # Must be reserved before the first scp; this closes the gap where the
+    # server had just enough free space before upload but fell below its cutover
+    # floor while the package was being staged.
+    $systemUploadReserveBytes = 256L * 1024L * 1024L
     $cardAssetsHashValue = if ($manifest.PSObject.Properties['cardAssetsHash']) { [string]$manifest.cardAssetsHash } else { "" }
     $cardAssetsArchiveValue = if ($manifest.PSObject.Properties['cardAssetsArchive']) { [string]$manifest.cardAssetsArchive } else { "" }
     $cardAssetsSha256Value = if ($manifest.PSObject.Properties['cardAssetsSha256']) { [string]$manifest.cardAssetsSha256 } else { "" }
@@ -528,7 +534,7 @@ try {
         "ops/server/activate-l12-web-assets.sh" `
         "ops/server/nginx-l12-web-assets.conf"
     Invoke-External scp @sshOptions $toolBundle "${Server}:$remoteToolBundle"
-    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && install -m 0644 '$remoteRuntimeVerifier' /usr/local/libexec/verify-legion12-runtime-backup.py && install -m 0755 '$remoteDrainConsumer' /usr/local/libexec/l12-deployment-drain-consumer.py && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteRuntimeVerifier' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot'"
+    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && install -m 0644 '$remoteRuntimeVerifier' /usr/local/libexec/verify-legion12-runtime-backup.py && install -m 0755 '$remoteDrainConsumer' /usr/local/libexec/l12-deployment-drain-consumer.py && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteRuntimeVerifier' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot' '$releaseArchiveBytes' '$systemUploadReserveBytes'"
 
     Write-Host "[L12 部署] 上传预构建运行包..."
     Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"
@@ -564,6 +570,12 @@ try {
         }
         else {
             Write-Host "[L12 部署] 上传内容寻址优化卡图包（二进制完整后才切换 release manifest）..."
+            $cardAssetsArchiveBytes = (Get-Item -LiteralPath $cardAssetsArchive -Force).Length
+            if ($cardAssetsArchiveBytes -le 0) { throw "优化卡图包大小无效" }
+            # The release package is already staged at this point.  Recheck the
+            # remaining headroom before the second large upload so card assets
+            # cannot consume the cutover floor halfway through deployment.
+            Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot' '$cardAssetsArchiveBytes' '$systemUploadReserveBytes'"
             $cardAssetsSha = $cardAssetsSha256Value
             Invoke-External scp @sshOptions $cardAssetsArchive "${Server}:$remoteCardAssets"
             $cardAssetsPath = $remoteCardAssets
@@ -583,7 +595,10 @@ try {
     }
     else {
         Write-Host "[L12 部署] 启用主页与资讯分享信息路由..."
-        $forcePrefix = if ($AllowActivityDuringDrain) { 'L12_DEPLOY_ALLOW_ACTIVITY=1 ' } else { '' }
+        $forcePrefix = if (-not $Rollback -or $AllowActivityDuringDrain) { 'L12_DEPLOY_ALLOW_ACTIVITY=1 ' } else { '' }
+        if (-not $Rollback -and -not $AllowActivityDuringDrain) {
+            Write-Host "[L12 部署] 使用长期授权：WebSocket 活动连接不阻塞；真实对局、准入、持久化和未知围栏仍阻塞。"
+        }
         Invoke-External -NoRetry -SecureStandardInput $DeploymentControlSessionToken ssh @sshOptions $Server `
             "${forcePrefix}/usr/local/sbin/deploy-legion12-release $mode $commit $($manifest.releaseSha256) $remoteRelease - - - $cardAssetsHash $cardAssetsSha $cardAssetsPath '$ServerArtifactRoot' $deploymentDeadlineEpoch && sed -i 's/\r$//' '$remoteSharePageActivator' && chmod 0755 '$remoteSharePageActivator' && '$remoteSharePageActivator' '$remoteSharePageSnippet' && rm -f '$remoteSharePageActivator' && rmdir '$remoteToolDir/ops/server' '$remoteToolDir/ops' '$remoteToolDir' && curl -fsS --connect-timeout 5 --max-time 10 https://legion-12.com/ | grep -Fq 'og:title'"
         Write-Host "[L12 部署] $mode 成功：https://legion-12.com/"
