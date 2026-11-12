@@ -14,6 +14,7 @@
 - 该旧只读快照只有字符串版本指纹，没有服务端 CAS 所需的非负整数 `platformVersion`。`New-L12BugWorkItems.ps1` 已改为显式生成 `blocked-needs-fresh-live-snapshot` 回执：23 条非终态均阻塞于新鲜快照，不会拿提交哈希或旧版本号进行线上 preview/CAS。
 - 23 条的离线分流与用户既有裁定已登记在 `docs/BUGFIX-REGISTRY.md` 的 `BUG-CLOSEOUT-20261112-QUEUE-CONTINUATION`：重复候选、共享天灾／血戒规则、李牧／调度／草薙剑待原局证据、材料不足、已确认产品建议关闭、以及未部署本地修复分别保留，不冒充线上终态。
 - 当前进程读取 `D:/GPT/Legion12/secrets/codexops-admin.credential.xml` 触发 DPAPI owner mismatch；本轮没有更换凭据、绕过保护、追加审计或线上写入。恢复同一固定隔离管理员会话后，只需重新生成新鲜 intake，再按同一工作清单逐项 preview→单 CAS→独立读回。
+- 23 条逐项分流已落在 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z/triage-manifest.json`：9 条本地修复待部署级读回、2 条重复候选、2 条规则正确但待原局回放、4 条待具名场景、3 条材料不足、2 条已确认产品边界关闭；manifest 仅是离线证据，不是线上终态。
 
 ## 2026-11-12 部署耗时复盘改进（本地已验，未部署）
 

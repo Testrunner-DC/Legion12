@@ -9495,3 +9495,4 @@
 - 工作清单总计 968 条：原已终态 945 条保持 `closed`，23 条非终态按 `blocked-needs-fresh-live-snapshot` 保留；原因是旧快照只有正式版本字符串指纹，没有服务端 CAS 所需的非负整数 `platformVersion`，不能把哈希冒充并发版本。
 - `New-L12BugWorkItems.ps1` 已补充该安全边界：缺少数字 CAS 版本时只生成阻塞态和明确回执，数字版本快照的原 `ready/closed` 路径保持不变；当前无任何 preview/CAS、审计追加或线上 Bug 状态变更。
 - 当前固定 DPAPI 管理员会话在隔离进程内仍报 owner mismatch；恢复同一会话后重新生成新鲜快照即可继续已有 23 项分流，不需要重做本地回归或重新询问已确认规则。
+- 23 条逐项分流清单见 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z/triage-manifest.json`；统计为 9 条本地修复待部署读回、2 条重复候选、2 条规则正确待原局、4 条具名场景待取证、3 条材料不足、2 条产品边界关闭。别名只保留在本地引用，未新增线上写入。
