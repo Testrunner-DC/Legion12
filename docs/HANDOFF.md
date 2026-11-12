@@ -4882,3 +4882,10 @@
 - 前端修正：`AdminSiteContentPanel.vue` 与 `AdminRuleRulingsPanel.vue` 改用批量草稿并接入 `useActionGate`；分类新增/保存/排序、预览/发布由同一闸门限制；`AdminMatchGovernancePanel.vue` 按记录行单飞并在保存期间禁用表单。
 - 验收入口：`AdminTransactionSnapshotMemoryTests`（精确快照、嵌套 staged 回滚、批量草稿 CAS 原子性）；`scripts/check-profile-admin-contracts.mjs`（批量端点及后台写入闸门）。本批尚未完成完整 Release，未部署、未写线上配置。
 - Bug 边界：`BUG-20261111-RULE-REORDER-TRANSACTION-STORM` 及本批 `OPS-20261112-ADMIN-MUTATION-PRESSURE` 是运维稳定性记录，不属于玩家反馈队列；玩家 Bug 仍按 `docs/BUG-MANAGEMENT-WORKFLOW.md` 独立分诊。
+
+## 2026-11-12 三条玩家反馈澄清后的收口状态（离线登记，未部署）
+
+- `BUG-20261109-1178f1ca` 已改按安德华拉诺特（`S02-0305`）开局置入圣物区规则核对：源码已有可选 `setup-s2-ring`、牌库移入圣物区和起始手牌4张处理，但缺少该规则的具名后端回归，原局 `b4b221ad…` 未读，不能关闭。
+- `BUG-20261107-d065c72c` 的好友房运营禁限卡路径已由受管 Release 具名回归 1/1 验证：显式启用限制时拒绝禁卡，关闭限制／邀请房保持原行为，沙盒不受影响。证据在 `D:/GPT/Legion12/artifacts/bug-closeout-20261112-d065-friend`；仍缺正式服具名配置读回，不能冒充线上关闭。
+- `BUG-20261030-dd46e698` 按用户确认的规则正确收口：贯穿被进攻时不可发动；贯穿仍正常进入防御／伤害流程，只抑制【进攻时】触发。无代码修改，待新鲜 CAS 才能写入规则正确终态。
+- 已同步 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z/triage-manifest.json` 与 `docs/BUGFIX-REGISTRY.md`；本轮 0 次线上写入、0 次部署。

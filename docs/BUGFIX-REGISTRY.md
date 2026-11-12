@@ -9496,3 +9496,10 @@
 - `New-L12BugWorkItems.ps1` 已补充该安全边界：缺少数字 CAS 版本时只生成阻塞态和明确回执，数字版本快照的原 `ready/closed` 路径保持不变；当前无任何 preview/CAS、审计追加或线上 Bug 状态变更。
 - 当前固定 DPAPI 管理员会话在隔离进程内仍报 owner mismatch；恢复同一会话后重新生成新鲜快照即可继续已有 23 项分流，不需要重做本地回归或重新询问已确认规则。
 - 23 条逐项分流清单见 `D:/GPT/Legion12/artifacts/bug-intake-resume-20261112T075502Z/triage-manifest.json`；统计为 9 条本地修复待部署读回、2 条重复候选、2 条规则正确待原局、4 条具名场景待取证、3 条材料不足、2 条产品边界关闭。别名只保留在本地引用，未新增线上写入。
+
+## BUG-CLOSEOUT-20261112-CLARIFICATION｜三条反馈重新定性（本地证据，未部署）
+
+- `BUG-20261109-1178f1ca`：用户明确该反馈指向安德华拉诺特（`S02-0305`）的开局规则“在游戏开始时可将此圣物从牌库置入圣物区”，不是万物统御之戒（`S02-0008`），也不是调度／换牌禁用。现行 `L12PromptsAndSetup.cs` 已有 `setup-s2-ring` 开局可选提示、从牌库移入圣物区、设置起始手牌4张及完成后续开局流程；但当前没有 `S02-0305` 的具名后端回归，原局 `b4b221ad…` 仍未取得正文／回放。因此改记为“源实现已在、具名回归缺失”，不把旧的调度回归冒充该反馈已解决。
+- `BUG-20261107-d065c72c`：按“验证好友房禁用运营禁限卡是否生效”执行了受管 Release 具名测试 `OperationsRestrictionsOnlyApplyToOptInFriendlyRoomsWhileDeckStorageAndSandboxStayOpen`，1/1 通过。证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261112-d065-friend/test-ee027505db99481ead972962617a03f7/pass-proof.trx` 与同目录 `receipt.json`。测试确认：好友房显式启用 `UseCardRestrictions=true` 时服务端拒绝禁限卡；关闭该开关及邀请建房保持原可用行为；沙盒不受影响。线上正式配置尚未读回，故只记“本地已验证、待线上具名配置读回”，不提前关单。
+- `BUG-20261030-dd46e698`：用户确认贯穿在被进攻时本来就不能发动，按规则正确收口。源码核对显示贯穿仍进入正常防御／伤害流程，但 `SuppressAttackTriggers=true`，且贯穿触发事实要求主动进攻军团完成击杀；被进攻场景不满足条件。无代码修改，建议终态为规则正确／产品边界关闭；线上状态仍需既有新鲜 CAS 合同才能写入。
+- 本次澄清已同步到离线 manifest；未执行线上 preview/CAS、未改审计、未部署。
