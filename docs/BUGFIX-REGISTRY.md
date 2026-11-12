@@ -9503,6 +9503,11 @@
 - 已由 `New-L12BugWorkItems.ps1` 生成 `D:/GPT/Legion12/artifacts/bug-intake-manual-20261112/work-items.json` 与回执；本次 `ready=23, blocked=0, closed=0`，并保留 `onlineWrites=0`。随后生成同目录 `triage-manifest.json`，仅更新快照来源／平台版本／指纹锚点，既有用户裁定和证据不变。
 - 这一步仍是只读接续，不代表任何线上 Bug 已关闭；后续线上终态必须逐项使用同一数字 `platformVersion=66455` 做预演、一次 CAS 和独立读回，失败或版本变化就停止该项并保留真实错误。
 
+## BUG-20261109-1178f1ca｜安德华拉诺特开局置入具名回归（本地，未部署）
+
+- 具名回归：`GameSetupLifecycleProfileTests.OptionalSetupPromptsRestoreAndApplyBeforeTheStartingHandIsDrawn` 已绑定该 Bug、`S02-0305` 和 `andvaranaut-opening-relic-placement`；覆盖牌库中的安德华拉诺特被选择后移入圣物区、起始手牌固定为 4、检查点恢复后仍可继续，以及重复提交被拒绝。
+- 结果：受管定向回归 `1/1` 通过；证据目录 `D:/GPT/Legion12/artifacts/bug-closeout-20261112-1178f1ca/test-2bad40b3448c4613b21602541bfe798a`。该证据只证明当前源行为，不证明线上版本，条目分类从“具名回归缺失”更新为“local_fixed_not_deployed”，下一步为统一 Release 后测试服／正式服具名读回。
+
 ## BUG-CLOSEOUT-20261112-CLARIFICATION｜三条反馈重新定性（本地证据，未部署）
 
 - `BUG-20261109-1178f1ca`：用户明确该反馈指向安德华拉诺特（`S02-0305`）的开局规则“在游戏开始时可将此圣物从牌库置入圣物区”，不是万物统御之戒（`S02-0008`），也不是调度／换牌禁用。现行 `L12PromptsAndSetup.cs` 已有 `setup-s2-ring` 开局可选提示、从牌库移入圣物区、设置起始手牌4张及完成后续开局流程；但当前没有 `S02-0305` 的具名后端回归，原局 `b4b221ad…` 仍未取得正文／回放。因此改记为“源实现已在、具名回归缺失”，不把旧的调度回归冒充该反馈已解决。

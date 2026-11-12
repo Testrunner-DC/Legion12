@@ -39,6 +39,9 @@ public sealed class GameSetupLifecycleProfileTests
     [Fact]
     [L12AbilityEvidence(RingAbilityId, "normal", "reconnect", "duplicate-submit", "presentation-consumers")]
     [L12AbilityEvidence(ThorAbilityId, "normal", "reconnect", "duplicate-submit", "presentation-consumers")]
+    [Trait("L12Evidence", "bug:BUG-20261109-1178f1ca")]
+    [Trait("L12Evidence", "entry:andvaranaut-opening-relic-placement")]
+    [Trait("L12Evidence", "card:S02-0305")]
     public void OptionalSetupPromptsRestoreAndApplyBeforeTheStartingHandIsDrawn()
     {
         var baseDeck = Catalog.DeckAt(0);

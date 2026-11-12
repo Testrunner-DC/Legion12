@@ -4896,6 +4896,11 @@
 - 原 23 个队列 ID 与本次快照逐项一致；既有用户裁定、重复关系和本地证据保留，不用旧快照哈希冒充新 CAS。新的离线工作项与清单位于 `D:/GPT/Legion12/artifacts/bug-intake-manual-20261112/`，其中 `work-items-receipt.json` 显示 `ready=23, blocked=0, onlineWrites=0`。
 - 本轮只完成“新鲜读取→指纹校验→离线工作项绑定”；没有 preview、CAS、审计写入、线上终态或部署。后续按每条 `next` 分流：先处理可由现有证据确认的规则／材料不足／产品边界项；本地修复项必须等具名测试服／正式服读回；原局依赖项保持待原局证据，不猜测关闭。
 
+## 2026-11-12 1178f1ca 具名回归补齐（本地，未部署）
+
+- `GameSetupLifecycleProfileTests.OptionalSetupPromptsRestoreAndApplyBeforeTheStartingHandIsDrawn` 已绑定 `BUG-20261109-1178f1ca`、`S02-0305` 与 `andvaranaut-opening-relic-placement`，覆盖开局从牌库置入圣物区、起始手牌 4 张、恢复后继续及重复提交拒绝。
+- 定向回归 `1/1` 通过；证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261112-1178f1ca/test-2bad40b3448c4613b21602541bfe798a`。仍未部署、未做线上 CAS，条目保持待部署读回。
+
 ## 2026-11-12 固定管理员 DPAPI owner mismatch 根因与恢复路径
 
 - 根因核实：当前执行进程身份为 `DESKTOP-LCCQGHU\\CodexSandboxOffline`，而 `D:/GPT/Legion12/secrets/codexops-admin.credential.xml` 的受管归属为 `DESKTOP-LCCQGHU\\nep`；文件内用户名仍为 `CodexOps`。凭据是 Windows DPAPI `CurrentUser` 密文，`Import-Clixml` 在发起任何 HTTP、preview 或 CAS 前即因用户主密钥不匹配失败。当前 `USERPROFILE` 显示为 `C:\\Users\\neptu` 不能替代 Windows 身份判断。
