@@ -1998,7 +1998,7 @@ exit 255
         Assert-BaseStatePreserved $backupFailure
         Assert-RootBackupsPreserved $backupFailure
     }
-    Assert-True ($backupFailures[3].Output.Contains("超过 4 GiB 硬上限")) "外置备份超上限没有明确 fail-closed。"
+    Assert-True ($backupFailures[3].Output.Contains("超过 6 GiB 硬上限")) "外置备份超上限没有明确 fail-closed。"
 
     $proofFailureReasons = [ordered]@{
         "rejected" = "PROOF_REJECTED"

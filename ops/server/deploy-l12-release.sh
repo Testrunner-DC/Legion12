@@ -67,7 +67,12 @@ readonly system_min_available_bytes=$((10 * 1024 * 1024 * 1024))
 readonly system_upload_reserve_bytes=$((256 * 1024 * 1024))
 readonly external_policy_floor_bytes=$((4 * 1024 * 1024 * 1024))
 readonly external_prepare_min_bytes=$((14 * 1024 * 1024 * 1024))
-readonly external_backup_max_bytes=$((4 * 1024 * 1024 * 1024))
+# The current production runtime contains a verified persistent history larger
+# than the historical 4 GiB single-archive ceiling. Keep the complete
+# runtime snapshot contract (no exclusions), but raise the bounded external
+# ceiling to the approved 6 GiB value. Capacity preflight still reserves this
+# allowance, package/card unpack space, and the 8 GiB residual floor.
+readonly external_backup_max_bytes=$((6 * 1024 * 1024 * 1024))
 readonly external_reserve_bytes=$((8 * 1024 * 1024 * 1024))
 readonly external_release_unpacked_max_bytes=$((1 * 1024 * 1024 * 1024))
 readonly external_card_unpacked_max_bytes=$((512 * 1024 * 1024))
@@ -941,11 +946,11 @@ backup_runtime() {
       backup_limit="$L12_DEPLOY_TEST_BACKUP_MAX_BYTES"
     fi
     if ! ( tar -czf - -C "$runtime_dir" . | head -c "$((backup_limit + 1))" > "$runtime_backup_partial" ); then
-      fail "外置 runtime 快照创建失败或超过 4 GiB 硬上限"
+      fail "外置 runtime 快照创建失败或超过 6 GiB 硬上限"
       return 1
     fi
     if (( $(stat -c '%s' "$runtime_backup_partial") > backup_limit )); then
-      fail "外置 runtime 快照超过 4 GiB 硬上限"
+      fail "外置 runtime 快照超过 6 GiB 硬上限"
       return 1
     fi
   else
