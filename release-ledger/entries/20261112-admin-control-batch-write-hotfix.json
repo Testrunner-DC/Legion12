@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261112-admin-control-batch-write-hotfix",
+  "date": "2026-11-12",
+  "audience": "internal",
+  "reason": "后台规则中心批次写入与动作门控的兼容性修正，统一前端契约、幂等提交和服务端批次边界；不改变玩家公开快照或业务数据语义。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}
