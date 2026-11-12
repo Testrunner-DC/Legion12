@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$IntakeSnapshotPath,
     [Parameter(Mandatory)][string]$OutputPath,
@@ -38,9 +38,15 @@ function Get-SourceFingerprint {
 
 $workItems = @($snapshot.items | ForEach-Object {
     $terminal = [string]$_.status -in @('closed', 'resolved')
+    $itemState = 'ready'
+    if ($terminal) {
+        $itemState = 'closed'
+    } elseif ($requiresFreshSnapshot) {
+        $itemState = 'blocked'
+    }
     [ordered]@{
         id = [string]$_.id
-        state = if ($terminal) { 'closed' } elseif ($requiresFreshSnapshot) { 'blocked' } else { 'ready' }
+        state = $itemState
         sourceSnapshotTag = [string]$snapshot.snapshotTag
         sourcePlatformVersion = $platformVersion
         sourcePlatformVersionText = $platformVersionText
@@ -75,7 +81,11 @@ if ($ReceiptPath) {
     $receiptPath = Assert-L12GeneratedPath -Path $ReceiptPath -Purpose 'Bug work-item receipt'
     $receiptDirectory = Split-Path -Parent $receiptPath
     if ($receiptDirectory) { New-Item -ItemType Directory -Force -Path $receiptDirectory | Out-Null }
-    $receipt = [ordered]@{ schema = 1; kind = 'bug-work-items'; status = if ($requiresFreshSnapshot) { 'blocked-needs-fresh-live-snapshot' } else { 'initialized' }; queueSnapshotTag = $snapshot.snapshotTag; queueSnapshotSha256 = $snapshot.snapshotSha256; workItemsPath = $outputPath; total = $workItems.Count; ready = $workflow.counts.ready; closed = $workflow.counts.closed; blocked = $workflow.counts.blocked; platformVersion = $platformVersion; platformVersionText = $platformVersionText; createdAtUtc = $workflow.createdAtUtc }
+    $receiptStatus = 'initialized'
+    if ($requiresFreshSnapshot) {
+        $receiptStatus = 'blocked-needs-fresh-live-snapshot'
+    }
+    $receipt = [ordered]@{ schema = 1; kind = 'bug-work-items'; status = $receiptStatus; queueSnapshotTag = $snapshot.snapshotTag; queueSnapshotSha256 = $snapshot.snapshotSha256; workItemsPath = $outputPath; total = $workItems.Count; ready = $workflow.counts.ready; closed = $workflow.counts.closed; blocked = $workflow.counts.blocked; platformVersion = $platformVersion; platformVersionText = $platformVersionText; createdAtUtc = $workflow.createdAtUtc }
     [IO.File]::WriteAllText($receiptPath, (ConvertTo-Json $receipt -Depth 10), [Text.UTF8Encoding]::new($false))
 }
 Write-Host "已生成 $($workItems.Count) 条离线 Bug 工作项；SnapshotTag=$($snapshot.snapshotTag)；未执行任何线上写入。"
