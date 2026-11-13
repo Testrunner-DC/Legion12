@@ -105,8 +105,12 @@ function receiver(l12State) {
       return l12State.recoveryPhase === 'snapshot-acknowledged'
     }
     if (message.type === 'gameStateDelta') {
+      const cloneDeltaContainer = actualFunction('net', 'cloneDeltaContainer', {})
+      const cloneDeltaPath = actualFunction('net', 'cloneDeltaPath', { cloneDeltaContainer })
+      const cloneDeltaValue = actualFunction('net', 'cloneDeltaValue', {})
       message = actualFunction('net', 'rebuildDeltaGameState', {
         lastGameStateEnvelope: baseline, negotiatedEventWindowDelta: true, negotiatedHandArrayDelta: false,
+        cloneDeltaContainer, cloneDeltaPath, cloneDeltaValue,
       })(message)
       if (!message) return false
     }
