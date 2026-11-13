@@ -41,6 +41,10 @@ public static class L12ActiveDisasterRules
     public static bool LibraryFlipped(string? activeDisasterId)
         => activeDisasterId == "S02-DS01";
 
+    // S02-DS01 天地异变：牌库顺序与牌库顶信息均进入公开信息范围。
+    public static bool LibraryInformationPublic(string? activeDisasterId)
+        => activeDisasterId == "S02-DS01";
+
     // S02-DS01 天地异变：无法从手牌打出与牌库顶部相同兵种的军团。
     public static bool HandLegionBlockedMatchingLibraryTop(string? activeDisasterId)
         => activeDisasterId == "S02-DS01";

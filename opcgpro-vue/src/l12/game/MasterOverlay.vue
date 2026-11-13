@@ -44,7 +44,7 @@ const abilities = computed<AbilityEntry[]>(() => {
           <p v-if="!abilities.length" class="l12-effect-body">{{ player.master.effectText || '暂无效果文字' }}</p>
           <article v-if="player.master.masterId === 'S01-01M1'" class="master-related-card">
             <CardImage card-id="S02-01S1" legacy-url="/cards/faces/天廷/哮天犬·稚.png" alt="哮天犬·稚" intent="board" eager />
-            <div><strong>【杨戬专属】哮天犬·稚</strong><p class="l12-effect-body l12-effect-body--compact">我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。\n阵亡时 可从士气牌库追加1张休整的士气。</p></div>
+            <div><strong>【杨戬专属】哮天犬·稚</strong><p class="l12-effect-body l12-effect-body--compact">我方 回合1次 我方士气因主宰返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。\n阵亡时 可从士气牌库追加1张休整的士气。</p></div>
           </article>
           <div v-if="abilities.length" class="master-abilities" data-ui-contract="equal-option-group">
             <button v-for="entry in abilities" :key="entry.id"

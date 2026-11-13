@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import ts from 'typescript'
 
 const source = fs.readFileSync(new URL('../src/l12/net.ts', import.meta.url), 'utf8')
-const body = source.slice(source.indexOf('function rebuildDeltaGameState('), source.indexOf('function clearReconnectTimer('))
+const body = source.slice(source.indexOf('function cloneDeltaContainer('), source.indexOf('function clearReconnectTimer('))
 const compiled = ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
 const rebuild = (baseline, delta, negotiated = true) => new Function('lastGameStateEnvelope', 'negotiatedEventWindowDelta', `${compiled}; return rebuildDeltaGameState(${JSON.stringify(delta)})`)(baseline, negotiated)
 const frame = (revision, sequences) => ({ type: 'gameState', state: { matchId: 'window-client', revision,

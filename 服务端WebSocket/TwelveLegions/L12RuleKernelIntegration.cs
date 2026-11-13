@@ -1954,7 +1954,7 @@ public sealed partial class L12GameEngine
             "tsukuyomiFrontAttackBuff" => ["后排位移至前排时"],
             "tsukuyomiReadyMorale" => ["前排位移至后排时"],
             "tsukuyomiFollowMove" => ["军团位移时"],
-            "margaretMasterDamage" => ["主宰因效果受到伤害时"],
+            "margaretMasterDamage" => ["主宰受到伤害时"],
             _ => trigger switch
             {
                 "promotion-enter" => ["晋升登场"],

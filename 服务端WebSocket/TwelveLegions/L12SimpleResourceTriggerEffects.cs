@@ -81,7 +81,7 @@ internal static class L12SimpleResourceTriggerEffects
             EventText: "莫瑞甘因对方军团阵亡使我方获得1符文"),
         new("S02-0102", 1, "master-morale-return", "李牧", AddRestedMorale, 1,
             Optional: true, RequiresOnceReservation: true,
-            SettlementText: "我方 回合1次 我方士气因主宰效果返还4张及以上时，可从士气牌库追加1张休整的士气。",
+            SettlementText: "我方 回合1次 我方士气因主宰返还4张及以上时，可从士气牌库追加1张休整的士气。",
             EventText: "李牧从士气牌库追加1张休整士气",
             CandidateCondition: "morale-deck-not-empty", DataMode: "limu"),
         new("S02-06S4", 2, "friendly-round-table-enter", "寻找圣杯之旅", GainRunes, 1,

@@ -31,7 +31,7 @@ for(const path of [['state'],['state','players'],['state','players',0],['state',
 assert.equal(restore(baseline,frame(2,['a','b']),clone(wire),[{path:['state','players',0,'morale'],value:[]}]),true);cases++
 const next=frame(2,['a','c','b']);assert.equal(restore(next,frame(2,['a','c','b']),wire,[]),false);cases++
 const netSource=fs.readFileSync(new URL('../src/l12/net.ts',import.meta.url),'utf8')
-const start=netSource.indexOf('function rebuildDeltaGameState('),end=netSource.indexOf('function clearReconnectTimer(',start)
+const start=netSource.indexOf('function cloneDeltaContainer('),end=netSource.indexOf('function clearReconnectTimer(',start)
 assert(start>=0&&end>start)
 const netBody=ts.transpileModule(netSource.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText
 const rebuild=(base,delta,enabled=true)=>new Function('lastGameStateEnvelope','negotiatedEventWindowDelta','negotiatedHandArrayDelta','restoreHandSplices','validHandDeltaChangePath','delta',

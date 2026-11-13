@@ -1497,6 +1497,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var result = L12LibraryOps.Draw(player, count, card =>
         {
             ResetCardForPrivateZone(card);
+            if (L12ActiveDisasterRules.LibraryInformationPublic(State.ActiveDisaster?.CardId))
+                AddEvent("reveal", player.PlayerIndex,
+                    $"〈天地异变〉公开{player.Name}抽到的〈{card.Name}〉", card);
             TrackCardFact("draw", player.PlayerIndex, card, "library", "hand");
             if (origin is not null)
                 NotifyCardAddedToHandByEffect(player, card, "library", $"{player.Name}因效果将{card.Name}加入手牌");
@@ -2573,12 +2576,20 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         int? sourcePlayer, bool neutralSource, bool combatDamage, int declaredDisasterMasterDamageBonus)
     {
         var player = State.Players[playerIndex];
+        var declaredDisasterBonus = Math.Clamp(declaredDisasterMasterDamageBonus, 0, 1);
+        // 进攻伤害把天灾加成冻结在声明中；玛格丽特/密米尔只统计其中的非天灾部分。
+        // 不能在替换（例如血戒或平阳）之后倒推，否则会把天灾部分误算成普通伤害。
+        var declaredNonDisasterDamage = neutralSource
+            ? 0
+            : Math.Max(0, amount - declaredDisasterBonus);
         amount = ResolveMasterDamageAmount(playerIndex, amount, sourcePlayer, neutralSource,
-            declaredDisasterMasterDamageBonus: declaredDisasterMasterDamageBonus);
+            declaredDisasterMasterDamageBonus: declaredDisasterBonus);
+        var actual = Math.Min(Math.Max(0, amount), Math.Max(0, player.Hp));
         player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
-        if (!neutralSource)
-            player.MasterDamageTakenOutsideDisasterThisTurn += Math.Max(0, amount);
+        var nonDisasterDamage = Math.Min(actual, declaredNonDisasterDamage);
+        if (nonDisasterDamage > 0)
+            player.MasterDamageTakenOutsideDisasterThisTurn += nonDisasterDamage;
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
         var damageText = $"{player.Name} 的主宰因{source}失去 {amount} 点血量";
         if (combatDamage)
@@ -2592,7 +2603,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             SetWinner(1 - playerIndex, $"{player.Name}的主宰因{source}血量降至0");
         if (State.Phase != L12Phase.GameOver)
         {
-            QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource), !combatDamage);
+            QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource),
+                nonDisasterDamage > 0);
         }
     }
 
@@ -2643,7 +2655,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 PublicReasonCode: "effect-damage", MasterDamage: actual));
         if (!fromDisaster && !IsDisasterAuthorityActive())
             QueueS1MasterDamageReactionCore(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource),
-                effectDamage: true, allowDamageTriggeredRelicEffects);
+                allowDamageTriggeredRelicEffects: allowDamageTriggeredRelicEffects,
+                hasNonDisasterDamage: true);
     }
 
     private void HealMaster(int playerIndex, int amount, string source, bool legionEffect = false)

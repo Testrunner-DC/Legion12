@@ -1275,7 +1275,7 @@ public sealed partial class L12GameEngine
             "S02-0013" => declared.GetValueOrDefault("artifactTarget", []).SingleOrDefault() is { } artifactId
                 && new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
                     .Any(target => target?.InstanceId == artifactId && target.CardType == "artifact"),
-            "S02-0306" => (effectOnlyRepeat || player.MasterDamageTakenThisTurn >= 2
+            "S02-0306" => (effectOnlyRepeat || player.MasterDamageTakenOutsideDisasterThisTurn >= 2
                 && !L12CardNameUsageRules.HasUsed(player, card.CardId))
                 && declared.Count == 0,
             "S02-0522" => EnemyOrSkippableEmpty("primaryTarget"),

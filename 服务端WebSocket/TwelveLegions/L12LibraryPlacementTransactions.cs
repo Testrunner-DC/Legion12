@@ -84,8 +84,9 @@ public sealed partial class L12GameEngine
         FinishStackItem(item);
     }
 
-    private static bool LibraryPlacementIdentitiesPublic(L12StackItem item)
-        => item.Data.GetValueOrDefault("library-return-identities-public") == "true";
+    private bool LibraryPlacementIdentitiesPublic(L12StackItem item)
+        => L12ActiveDisasterRules.LibraryInformationPublic(State.ActiveDisaster?.CardId)
+            || item.Data.GetValueOrDefault("library-return-identities-public") == "true";
 
     private bool ReconcileLibraryPlacementPrompts()
     {

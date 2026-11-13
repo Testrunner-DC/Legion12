@@ -2436,6 +2436,14 @@ public sealed partial class L12RoomManager
         var snapshotStartedAt = L12PerformanceMetrics.Start();
         Guid[] spectators;
         lock (room.Spectators) spectators = [.. room.Spectators];
+        var spectatorViews = new List<object>(spectators.Length);
+        foreach (var spectatorId in spectators)
+        {
+            if (!_sessions.TryGetValue(spectatorId, out var spectator)
+                || !spectator.IsSpectator || spectator.IsVirtual || !spectator.Connected
+                || spectator.RoomCode != room.Code) continue;
+            spectatorViews.Add(new { accountId = spectator.AccountId, name = spectator.Name });
+        }
         var rankedClock = RankedClockView(room);
         var platformView = GamePlatformView(room);
         var playerBadges = platformView?.Badges ?? [];
@@ -2458,6 +2466,7 @@ public sealed partial class L12RoomManager
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId,
                 playerBadges,
+                spectators = spectatorViews,
                 rankedClock,
                 matchGovernance,
                 responsePreference = viewer.IsSpectator || viewer.PlayerIndex is null ? null : new
@@ -2506,6 +2515,7 @@ public sealed partial class L12RoomManager
                 observerView = referee ? "referee" : "public",
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId, playerBadges, rankedClock,
+                spectators = spectatorViews,
                 state = referee ? L12KernelProjection.ForReferee(room.Game!)
                     : L12KernelProjection.ForSpectator(room.Game!),
             };

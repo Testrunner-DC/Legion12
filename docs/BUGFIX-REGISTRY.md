@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261114-HEAVEN-EARTH-PUBLIC-LIBRARY-INFO｜天地异变期间抽牌与牌库顶查看公开
+
+- 反馈：〈天地异变〉生效期间，抽到的牌以及查看牌库顶／牌库顶多张牌的卡面应当属于公开信息；原实现只公开翻转后的牌库顶快照，普通抽牌仍按隐藏信息处理，牌库顶查看提示也默认仅控制者可见。
+- 修改：在 `L12ActiveDisasterRules` 增加统一的天地异变牌库信息公开判定；`Draw` 在该天灾期间为每张抽牌生成公开 `reveal` 事件；所有携带 `displayCardIds` 的牌库顶查看提示自动将对应牌公开并取消私有提示；牌库整理的回库身份事实同步沿用该判定。其他天灾、手牌和墓地私有信息保持原有可见性。
+- 同类扫描：检索 `Draw`、`Library.Take/FirstOrDefault`、`displayCardIds`、牌库整理提示及牌库顶展示事件；已有明确 `reveal` 呈现的卡效保持原路径，新增逻辑覆盖统一抽牌出口和统一提示出口。
+- 回归：`DisasterContinuousRuleLifecycleProfileTests.HeavenEarthChangePublishesDrawnCardsAndInspectedLibraryTop` 验证双方玩家与观战者均收到抽牌和牌库顶查看的公开卡面；受影响持续天灾类 13/13 通过，后端编译 0 警告、0 错误。证据：`D:/GPT/Legion12/artifacts/bug-20261114-heaven-earth-public/class-evidence/test-b17d28948304409aa1cb1f7f5cf4dfd6/pass-proof.trx`。
+- 状态：当前源已修复并通过本地回归；尚未部署测试服，线上状态不提前关闭。
+
 ## FIX-20261111-DECK-COVER-CAPABILITY-V2｜代表卡摘要缺失
 
 - 现象与根因：用户测试服截图只有主宰横幅。客户端 `getRepresentativeDeckRequestHeaders` 发送精确能力 `2`，共享 `L12DeckCoverCapability.IsEnabled` 仅接受 `1`；薄摘要没有正文卡号，省略 `coverCardIds` 后无法在封面本地推导。

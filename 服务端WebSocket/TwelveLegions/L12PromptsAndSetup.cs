@@ -232,6 +232,8 @@ public sealed partial class L12GameEngine
         ExpandGraveyardSelectionDisplay(playerIndex, kind, validChoices, data);
         var explicitlyDisplayedIds = data.GetValueOrDefault("displayCardIds")?
             .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        var publicLibraryCards = PubliclyExposeHeavenEarthLibraryCards(playerIndex, explicitlyDisplayedIds);
+        if (publicLibraryCards.Length > 0) isPrivate = false;
         string[] previewCardIds = string.IsNullOrWhiteSpace(data.GetValueOrDefault("previewCardId"))
             ? []
             : [data["previewCardId"]];
@@ -281,6 +283,23 @@ public sealed partial class L12GameEngine
         AddEvent(data.ContainsKey(PrivateTriggerDeclaration) ? "private-trigger-prompt" : "prompt",
             playerIndex, $"等待 {State.Players[playerIndex].Name}：{playerText}");
         return prompt;
+    }
+
+    private L12CardInstance[] PubliclyExposeHeavenEarthLibraryCards(int controller,
+        IEnumerable<string> instanceIds)
+    {
+        if (!L12ActiveDisasterRules.LibraryInformationPublic(State.ActiveDisaster?.CardId)) return [];
+        var ids = instanceIds.Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (ids.Count == 0) return [];
+        var cards = State.Players.SelectMany(player => player.Library)
+            .Where(card => ids.Contains(card.InstanceId))
+            .DistinctBy(card => card.InstanceId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        foreach (var card in cards)
+            AddEvent("reveal", controller,
+                $"〈天地异变〉公开查看牌库顶的〈{card.Name}〉", card);
+        return cards;
     }
 
     private L12PromptPresentation BuildPromptPresentation(int playerIndex, string kind, string playerText,

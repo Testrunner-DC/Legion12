@@ -88,6 +88,13 @@ public sealed class S2FactionRegressionTests
             [controller, source, trigger, text, null, data]));
     }
 
+    private static void InvokePrivate(L12GameEngine game, string methodName, params object?[] args)
+    {
+        var method = typeof(L12GameEngine).GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        method.Invoke(game, args);
+    }
+
     [Fact]
     public void ArthurDeathDeclaresHandCardAndBattlefieldSlotBeforeEnteringStack()
     {
@@ -3257,6 +3264,7 @@ public sealed class S2FactionRegressionTests
         AddMorale(player, spring.Cost);
         player.Hp = player.MaxHp - 2;
         player.MasterDamageTakenThisTurn = 1;
+        player.MasterDamageTakenOutsideDisasterThisTurn = 1;
         game.State.Phase = L12Phase.Main;
 
         var tooEarly = game.Handle(playerIndex, new L12Command("playCard", spring.InstanceId));
@@ -3264,6 +3272,7 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(spring, player.Hand);
 
         player.MasterDamageTakenThisTurn = 2;
+        player.MasterDamageTakenOutsideDisasterThisTurn = 2;
         Assert.True(game.Handle(playerIndex, new L12Command("playCard", spring.InstanceId)).Accepted);
         var declaration = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", declaration.Continuation);
@@ -3276,6 +3285,55 @@ public sealed class S2FactionRegressionTests
         Assert.Contains(millOne, player.Graveyard);
         Assert.Contains(millTwo, player.Graveyard);
         Assert.Contains("s2-mimir-used", player.UsedAbilities);
+    }
+
+    [Fact]
+    public void MimirSpringIgnoresDisasterOnlyDamage()
+    {
+        var game = Create(63131);
+        var player = game.State.Players[game.State.ActivePlayer];
+        var spring = Card("S02-0306", "mimir-disaster-only");
+        player.Hand.Clear();
+        player.Hand.Add(spring);
+        AddMorale(player, spring.Cost);
+        player.MasterDamageTakenThisTurn = 2;
+        player.MasterDamageTakenOutsideDisasterThisTurn = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var result = game.Handle(game.State.ActivePlayer, new L12Command("playCard", spring.InstanceId));
+
+        Assert.False(result.Accepted);
+        Assert.Contains(spring, player.Hand);
+        Assert.Contains("累计伤害不足", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MargaretReactsToOrdinaryCombatDamageButNotDisasterOnlyDamage()
+    {
+        var ordinary = Create(63132);
+        var ordinaryPlayer = ordinary.State.Players[0];
+        ordinaryPlayer.Field[0][0] = Card("S02-0304", "margaret-ordinary-damage");
+        ordinary.State.ActivePlayer = 0;
+        ordinary.State.Phase = L12Phase.Main;
+        InvokePrivate(ordinary, "DamageMaster", 0, 1, "普通战斗伤害", 1, false, true);
+
+        Assert.Equal(1, ordinaryPlayer.MasterDamageTakenOutsideDisasterThisTurn);
+        Assert.True(ordinary.State.PendingTriggerStackCandidates.Count > 0
+            || ordinary.State.PendingTriggerBatches.Count > 0
+            || ordinary.State.PendingActivations.Count > 0);
+
+        var disasterOnly = Create(63133);
+        var disasterPlayer = disasterOnly.State.Players[0];
+        disasterPlayer.Field[0][0] = Card("S02-0304", "margaret-disaster-only");
+        disasterOnly.State.ActivePlayer = 0;
+        disasterOnly.State.Phase = L12Phase.Main;
+        InvokePrivate(disasterOnly, "DamageMasterWithDeclaredDisasterBonus",
+            0, 1, "仅天灾加成", 1, false, true, 1);
+
+        Assert.Equal(0, disasterPlayer.MasterDamageTakenOutsideDisasterThisTurn);
+        Assert.Empty(disasterOnly.State.PendingTriggerStackCandidates);
+        Assert.Empty(disasterOnly.State.PendingTriggerBatches);
+        Assert.Empty(disasterOnly.State.PendingActivations);
     }
 
     [Fact]

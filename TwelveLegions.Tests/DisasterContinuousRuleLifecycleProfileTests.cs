@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
@@ -50,6 +51,36 @@ public sealed class DisasterContinuousRuleLifecycleProfileTests
         Assert.Equal(cardId, game.State.ActiveDisaster?.CardId);
         AssertRegisteredRule(cardId);
         Assert.Contains(cardId, JsonSerializer.Serialize(game.SnapshotFor(1)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HeavenEarthChangePublishesDrawnCardsAndInspectedLibraryTop()
+    {
+        var game = Create(70399);
+        var player = game.State.Players[0];
+        var drawn = Card("S02-0604", "heaven-earth-public-draw");
+        player.Library.Clear();
+        player.Library.Add(drawn);
+        game.State.ActiveDisaster = Card("S02-DS01", "heaven-earth-public-info");
+
+        var draw = typeof(L12GameEngine).GetMethod("Draw", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(draw);
+        Assert.True((bool)draw!.Invoke(game, [player, 1, true])!);
+        foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1), game.SnapshotForSpectator() })
+            Assert.Contains(snapshot.RecentEvents, entry => entry.Type == "reveal"
+                && entry.Cards.Any(card => card.InstanceId == drawn.InstanceId));
+
+        var createPrompt = typeof(L12GameEngine).GetMethod("CreatePrompt", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(createPrompt);
+        var inspected = Card("S02-0605", "heaven-earth-public-top");
+        player.Library.Insert(0, inspected);
+        var data = new Dictionary<string, string> { ["displayCardIds"] = inspected.InstanceId };
+        _ = createPrompt!.Invoke(game, [0, "card", "查看牌库顶", new[] { inspected.InstanceId }, 1, 1,
+            "card-effect", null, true, data]);
+        Assert.False(Assert.Single(game.State.PendingPrompts).IsPrivate);
+        foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1), game.SnapshotForSpectator() })
+            Assert.Contains(snapshot.RecentEvents, entry => entry.Type == "reveal"
+                && entry.Cards.Any(card => card.InstanceId == inspected.InstanceId));
     }
 
     private static void AssertRegisteredRule(string cardId)

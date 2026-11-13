@@ -286,6 +286,36 @@ function cancelPendingAction() {
   l12State.pendingAction = false
 }
 
+function cloneDeltaContainer(value: any) {
+  if (Array.isArray(value)) return value.slice()
+  if (value && typeof value === 'object') return { ...value }
+  return value
+}
+
+function cloneDeltaValue(value: any): any {
+  if (Array.isArray(value)) return value.map(cloneDeltaValue)
+  if (value && typeof value === 'object') {
+    const copy: Record<string, any> = {}
+    for (const key of Object.keys(value)) copy[key] = cloneDeltaValue(value[key])
+    return copy
+  }
+  return value
+}
+
+function cloneDeltaPath(root: any, path: Array<string | number>) {
+  let source = root
+  let target = root
+  for (const segment of path.slice(0, -1)) {
+    if (source == null || !(segment in source)) return null
+    const sourceChild = source[segment]
+    const targetChild = cloneDeltaContainer(sourceChild)
+    target[segment] = targetChild
+    source = sourceChild
+    target = targetChild
+  }
+  return target
+}
+
 function rebuildDeltaGameState(delta: any) {
   try {
   const baseline = lastGameStateEnvelope
@@ -293,7 +323,10 @@ function rebuildDeltaGameState(delta: any) {
     || String(baseline.state?.matchId || '') !== String(delta.matchId || '')
     || Number(baseline.state?.revision ?? -1) !== Number(delta.baseRevision ?? -2)
     || !Array.isArray(delta.changes)) return null
-  const rebuilt = JSON.parse(JSON.stringify(baseline))
+  // Delta frames are frequent; clone only the root and mutated paths so the
+  // authoritative baseline stays immutable without copying the whole state graph.
+  const rebuilt = cloneDeltaContainer(baseline)
+  rebuilt.state = cloneDeltaContainer(baseline.state)
   const hasWindow = Object.hasOwn(delta, 'eventWindow')
   const hasHands = Object.hasOwn(delta, 'handSplices')
   if (hasHands && (!negotiatedHandArrayDelta || typeof delta.matchId !== 'string' || !delta.matchId
@@ -304,11 +337,8 @@ function rebuildDeltaGameState(delta: any) {
     if (hasHands && !validHandDeltaChangePath(rebuilt, change.path)) return null
     if (hasWindow && change.path[0] === 'state'
       && (change.path.length === 1 || change.path[1] === 'recentEvents')) return null
-    let target: any = rebuilt
-    for (const segment of change.path.slice(0, -1)) {
-      if (target == null || !(segment in target)) return null
-      target = target[segment]
-    }
+    const target = cloneDeltaPath(rebuilt, change.path)
+    if (target == null || (typeof target !== 'object' && typeof target !== 'function')) return null
     const key = change.path.at(-1) as string | number
     if (change.remove) delete target[key]
     else target[key] = change.value
@@ -337,13 +367,23 @@ function rebuildDeltaGameState(delta: any) {
       || !equals(sequences(events), window.baseSequences)
       || !Number.isSafeInteger(window.removeFirst) || window.removeFirst < 0
       || window.removeFirst >= events.length || sequences(window.append) === null) return null
-    const next = [...events.slice(window.removeFirst), ...JSON.parse(JSON.stringify(window.append))]
+    const next = [...events.slice(window.removeFirst), ...window.append.slice()]
     if (!equals(sequences(next), window.resultSequences)) return null
     rebuilt.state.recentEvents = next
   }
   if (Number(rebuilt.state?.revision ?? -1) !== Number(delta.revision ?? -2)) return null
-  if (hasHands && (rebuilt.state?.matchId !== delta.matchId
-    || !restoreHandSplices(baseline, rebuilt, delta.handSplices, delta.changes))) return null
+  if (hasHands) {
+    // Hand splices mutate the resulting array and its card objects in place;
+    // isolate only those bounded hand branches before the shared-state restore.
+    if (!Array.isArray(delta.handSplices?.edits)) return null
+    for (const edit of delta.handSplices.edits) {
+      const player = cloneDeltaPath(rebuilt, ['state', 'players', edit?.playerIndex, 'hand'])
+      if (!player || typeof player !== 'object' || !Array.isArray(player.hand)) return null
+      player.hand = player.hand.map(cloneDeltaValue)
+    }
+    if (rebuilt.state?.matchId !== delta.matchId
+      || !restoreHandSplices(baseline, rebuilt, delta.handSplices, delta.changes)) return null
+  }
   return rebuilt
   } catch {
     // Bad paths or shapes must request authoritative full recovery, not partially publish a window.
@@ -1080,6 +1120,7 @@ export function connect(): Promise<void> {
           incoming.tournamentMatchId = message.tournamentMatchId
         }
         incoming.playerBadges = (message.playerBadges as GameState['playerBadges']) || []
+        incoming.spectators = Array.isArray(message.spectators) ? message.spectators as GameState['spectators'] : []
         const current = l12State.game
         // 同一对局只接受不低于当前 revision 的权威快照；新对局可从较小 revision 重新开始。
         if (!current || current.matchId !== incoming.matchId || incoming.revision >= current.revision) {

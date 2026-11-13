@@ -113,7 +113,7 @@ public sealed partial class L12GameEngine
         if (L12ActiveDisasterRules.HandLegionBlockReason(State.ActiveDisaster?.CardId,
                 card, player.Library.FirstOrDefault()) is { } disasterBlockReason)
             return CommandResult.Reject(disasterBlockReason);
-        if (card.CardId == "S02-0306" && player.MasterDamageTakenThisTurn < 2)
+        if (card.CardId == "S02-0306" && player.MasterDamageTakenOutsideDisasterThisTurn < 2)
             return CommandResult.Reject("本回合我方主宰受到的累计伤害不足2点");
         if (card.CardId == "S02-0306" && L12CardNameUsageRules.HasUsed(player, card.CardId))
             return CommandResult.Reject("〈密米尔之泉〉每回合只可使用1次");

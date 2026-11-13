@@ -269,6 +269,8 @@ export interface GameState {
   winnerReason?: string | null
   matchGovernance?: MatchGovernanceClientState
   players: PlayerView[]
+  /** Current connected observers; names are public room presence only. */
+  spectators?: Array<{ accountId?: string | null; name: string }>
   playerBadges?: Array<{ playerIndex: number; faction?: string; rank?: number; tier: string; placementTitle?: string; masterTitle?: string; highestTier?: boolean }>
   lastAction?: ActionEvent | null
   recentEvents?: ActionEvent[]

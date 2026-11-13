@@ -72,7 +72,7 @@ public static partial class L12StructuredCardRules
                 H("continuous", "continuous", "「位于前排」我方主宰无法被兵力不高于2000的军团进攻。"),
                 H("enter", "triggered", "登场时 弃置手牌中1张费用为8的军团：击杀除此军团以外的所有军团。随后返还所有士气，且本回合我方无法因阵营效果以外的方式追加士气。若未能满足登场时效果的发动条件，则展示我方所有手牌。")),
             "S02-0102" => HumanCard(
-                H("master-morale-return", "triggered", "我方 回合1次 我方士气因主宰效果返还4张及以上时，可从士气牌库追加1张休整的士气。"),
+                H("master-morale-return", "triggered", "我方 回合1次 我方士气因主宰返还4张及以上时，可从士气牌库追加1张休整的士气。"),
                 H("enter", "triggered", "登场时 可展示牌库顶部1张牌。若其为费用不高于4的<主动战术>，可无需消耗费用将其打出；否则将其返回牌库底部。随后可抽取1张牌。")),
             "S02-0103" => HumanCard(
                 H("enter", "triggered", "登场时 本回合我方主宰对对方主宰造成的下一次伤害变为2。"),
@@ -86,7 +86,7 @@ public static partial class L12StructuredCardRules
                 HWithTarget("opponent-attack-or-effect", "reaction", "对方 进攻或发动效果时：展示牌库顶部1张牌。若其为费用不高于3的【天廷】军团，将其弃置。随后选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力，否则将其返回牌库底部。",
                     "controller.field", "card-type=legion;public=true")),
             "S02-01S1" => HumanCard(
-                H("master-morale-return", "triggered", "「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，<哮天犬·稚>可在前排活跃登场，视为1张兵力2000的【特殊】军团。"),
+                H("master-morale-return", "triggered", "「主宰为杨戬时」我方 回合1次 我方士气因主宰返还4张及以上时，<哮天犬·稚>可在前排活跃登场，视为1张兵力2000的【特殊】军团。"),
                 H("death", "triggered", "阵亡时 可从士气牌库追加1张休整的士气。")),
             "S02-0201" => HumanCard(
                 H("continuous", "rule", "规则上，此军团构筑时不计入卡组数量，不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地。"),
@@ -138,7 +138,7 @@ public static partial class L12StructuredCardRules
             "S02-0304" => HumanCard(
                 H("continuous", "continuous", "进攻距离+1，远程进攻无损。"),
                 H("enter", "triggered", "登场时 可弃置我方牌库顶部1张牌。"),
-                H("master-damaged-by-effect", "triggered", "我方回合 我方主宰因效果受到伤害时，可将此军团转为休整：我方主宰增加1点血量。随后本回合我方主宰血量无法因军团效果增加。")),
+                H("master-damaged-by-effect", "triggered", "我方回合 我方主宰受到伤害时，可将此军团转为休整：我方主宰增加1点血量。随后本回合我方主宰血量无法因军团效果增加。")),
             "S02-0305" => HumanCard(
                 H("game-setup", "setup", "规则上，在游戏开始时可将此圣物从牌库置入圣物区，起始手牌数量为4张，且我方回合结束时弃置手牌，直至手牌数量不高于6张。"),
                 H("continuous", "continuous", "我方无法从手牌打出圣物。"),
@@ -146,7 +146,7 @@ public static partial class L12StructuredCardRules
                 H("master-damaged", "replacement", "对方回合 我方主宰受到的第一次伤害变为2。")),
             "S02-0306" => HumanCard(
                 H("continuous", "rule", "<密米尔之泉>每回合只可使用1次。"),
-                H("master-effect-damage-threshold", "triggered", "若本回合我方主宰因效果受到累计2点及更多伤害：我方主宰可增加1点血量，抽取1张牌。随后可弃置我方牌库顶部2张牌。")),
+                H("master-effect-damage-threshold", "triggered", "若本回合我方主宰受到累计2点及更多伤害：我方主宰可增加1点血量，抽取1张牌。随后可弃置我方牌库顶部2张牌。")),
             "S02-0307" => HumanCard(
                 HWithTarget("play", "spell", "弃置我方牌库顶部1张牌：选择对方1张军团，本回合兵力-3000。",
                     "opponent.field", "card-type=legion;public=true")),

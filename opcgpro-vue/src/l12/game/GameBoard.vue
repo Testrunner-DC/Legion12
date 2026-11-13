@@ -15,6 +15,7 @@ import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
 import BattleEventLog from './BattleEventLog.vue'
 import BattleUtilityDock from './BattleUtilityDock.vue'
+import BattleSpectatorSummary from './BattleSpectatorSummary.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import CardStateTransitionLayer from './CardStateTransitionLayer.vue'
@@ -1708,6 +1709,7 @@ function statusTexts(card: Card) {
                 <div class="board-rail inspector-style-scope">
                 <section class="grand-panel card-inspector archive-detail" data-ui-contract="selected-card-inspector" :data-inspector-provenance="inspectorProvenance" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': inspectorFocusCard && isHorizontalCardType(inspectorFocusCard.cardType), 'card-inspector-auto-face-suppressed': autoInspectorFaceSuppressed }">
                   <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
+                  <BattleSpectatorSummary :spectators="game.spectators" />
                   <template v-if="inspectorFocusCard && focusDetailCard">
                     <CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />
                     <section v-if="statusTexts(inspectorFocusCard).length" class="archive-effect battle-card-status"><b>当前状态</b><ul class="inspector-statuses"><li v-for="text in statusTexts(inspectorFocusCard)" :key="text">{{ text }}</li></ul></section>

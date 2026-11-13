@@ -4924,3 +4924,10 @@
 
 - `BUG-20261109-81cd4dec` 已从“待原局回放”推进为“当前源已核对、未复现”：李牧只接受主宰效果返还 4 张及以上；孙悟空变身返还满足条件；嬴政 `S02-0101` 是军团而非主宰，不触发该入口。
 - 受管 Release 具名回归 4/4 通过，证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261112-limu-source-r8/test-481b50d0be5f4d05a83c1ad4dd268878/receipt.json`。尚未执行线上 CAS 终态写入；下一步仍需基于新鲜 `platformVersion=66455` 做一次预演、CAS 和独立读回，不能把离线结果冒充正式服关闭。
+
+## 2026-11-14 全站／对战卡顿 B0–B6 专项（本地未部署）
+
+- 主线已完成 B0–B6 专项收口。B0–B5 既有全站预算、固定性能阶段、公开牌库摘要投影、对局房间闸门、HTTP／平台阶段观测、出站／聊天有界队列均通过新增 `check-latency-specialist.mjs` 的 `19/19` 契约检查。
+- B6 修改 `opcgpro-vue/src/l12/net.ts`：`gameStateDelta` 改为根／路径写时复制；手牌差量仅隔离相关手牌数组与卡对象；事件窗口追加不再全量 JSON 深拷贝。B6 `10/10`、事件窗口 `32/32`、手牌差量 `29` 案例通过。
+- 性能架构整组门禁、D 盘受控缓存工作负载 `88` 案例、Vue TypeScript、后端 `GrandUMIServer.csproj --no-restore`、production／testrun 双构建均通过。详细记录：`docs/PERFORMANCE-B0-B6-20261114.md`。
+- 本批未部署、未写线上配置、未产生真实对局／容量统计；线上延迟、FPS 和公网容量仍须另行实测，不把本地契约通过冒充线上改善。

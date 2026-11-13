@@ -1405,12 +1405,13 @@ public sealed partial class L12GameEngine
         QueueTriggerCandidates(candidates);
     }
 
-    private void QueueS1MasterDamageReaction(int damagedPlayer, int? sourcePlayer, bool effectDamage)
-        => QueueS1MasterDamageReactionCore(damagedPlayer, sourcePlayer, effectDamage,
-            allowDamageTriggeredRelicEffects: true);
+    private void QueueS1MasterDamageReaction(int damagedPlayer, int? sourcePlayer,
+        bool hasNonDisasterDamage)
+        => QueueS1MasterDamageReactionCore(damagedPlayer, sourcePlayer,
+            allowDamageTriggeredRelicEffects: true, hasNonDisasterDamage: hasNonDisasterDamage);
 
-    private void QueueS1MasterDamageReactionCore(int damagedPlayer, int? sourcePlayer, bool effectDamage,
-        bool allowDamageTriggeredRelicEffects)
+    private void QueueS1MasterDamageReactionCore(int damagedPlayer, int? sourcePlayer,
+        bool allowDamageTriggeredRelicEffects, bool hasNonDisasterDamage)
     {
         var player = State.Players[damagedPlayer];
         var candidates = new List<L12TriggerCandidate>();
@@ -1426,11 +1427,11 @@ public sealed partial class L12GameEngine
             var master = CreateCard(player.MasterId, $"master-{damagedPlayer}");
             candidates.Add(CreateTriggerCandidate(damagedPlayer, master, "medjed-master-damage", "【主宰受到伤害时】效果"));
         }
-        if (effectDamage && State.ActivePlayer == damagedPlayer)
+        if (hasNonDisasterDamage && State.ActivePlayer == damagedPlayer)
         {
             candidates.AddRange(PublicLegions(player)
                 .Where(card => card.CardId == "S02-0304" && !card.Tapped)
-                .Select(card => CreateTriggerCandidate(damagedPlayer, card, "master-damaged-by-effect", "【我方主宰因效果受到伤害时】效果",
+                .Select(card => CreateTriggerCandidate(damagedPlayer, card, "master-damaged-by-effect", "【我方主宰受到伤害时】效果",
                     new Dictionary<string, string> { ["ability"] = "margaretMasterDamage" })));
         }
         if (allowDamageTriggeredRelicEffects && BuildAnderstorpRingDrawCandidate(damagedPlayer) is { } ringDraw)
