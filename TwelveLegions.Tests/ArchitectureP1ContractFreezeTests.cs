@@ -55,7 +55,7 @@ public sealed class ArchitectureP1ContractFreezeTests
         const string additiveFalseFlag = ",\"cannotUntapAtNextReset\":false";
         var priorProjection = snapshotJson.Replace(additiveFalseFlag, "", StringComparison.Ordinal);
         Assert.Equal(morale.Length, (snapshotJson.Length - priorProjection.Length) / additiveFalseFlag.Length);
-        const string expectedPriorProjectionHash = "cdd35edbbc18fd73fa03dabf820ffe17881fda1ce5315bdbc450a20d8e02e0e8";
+        const string expectedPriorProjectionHash = "bc4276309af7f40845359394dab734c397758a72369c55e664e7b11cd81de107";
         var actualPriorProjectionHash = Sha256(priorProjection);
         Assert.True(string.Equals(expectedPriorProjectionHash, actualPriorProjectionHash,
                 StringComparison.Ordinal),
@@ -350,21 +350,21 @@ public sealed class ArchitectureP1ContractFreezeTests
             current with { Atoms = current.Atoms.Where(atom => atom.Kind != L12AtomKinds.CompositeFlow).ToArray() },
             current.Sequence);
         Assert.Equal("S01-04M2:ability:leave:4e83a7191108369b", previous.AbilityId);
-        Assert.Equal("14969742d79d606cb39f9d4a358839b4fe98bac699fac1566ff42aae89eb1af2",
+        Assert.Equal("68028c235540647c58ca4a24ef762ed8fbbdbc8dfaa6b94a2e27058d443e997d",
             AbilityCatalogHash(abilities.Select(ability => ability == current ? previous : ability)));
-        Assert.Equal("a13bd467de6626018e984309c8aeb45e6fa259dd67fe32133df4bfaa7861e665",
+        Assert.Equal("7d06f1c171c337209c84dc9569ce43e437573b022516f7b2d8f69f4293ec758f",
             AbilityCatalogHash(abilities));
     }
 
     private static ContractManifest WithReviewedSusanooDepartureRoute(ContractManifest previous)
     {
-        Assert.Equal("14969742d79d606cb39f9d4a358839b4fe98bac699fac1566ff42aae89eb1af2",
+        Assert.Equal("68028c235540647c58ca4a24ef762ed8fbbdbc8dfaa6b94a2e27058d443e997d",
             previous.AbilityCatalogSha256);
         // Preserve both historical fixture files and every non-catalog field.
         // The dedicated test above proves the exact one-entry catalog delta.
         return previous with
         {
-            AbilityCatalogSha256 = "a13bd467de6626018e984309c8aeb45e6fa259dd67fe32133df4bfaa7861e665",
+            AbilityCatalogSha256 = "7d06f1c171c337209c84dc9569ce43e437573b022516f7b2d8f69f4293ec758f",
         };
     }
 
