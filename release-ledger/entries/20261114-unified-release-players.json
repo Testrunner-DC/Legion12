@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "20261114-unified-release-players",
+  "date": "2026-11-14",
+  "audience": "players",
+  "title": "对局规则、卡效展示与社交界面整合",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "天地异变期间牌库顶/底与同兵种限制按权威抽牌结果结算；由天灾或圣物触发的伤害会写入对局记录并展示对应卡图，其他触发型卡效沿用同一展示规则。李牧的士气追加条件按所有符合条件的主宰返还效果统一处理，卡片说明同步更新。",
+      "paths": [
+        "opcgpro-vue/public/data/l12/cards.lookup.json",
+        "opcgpro-vue/public/data/l12/cards.s1.json",
+        "opcgpro-vue/public/data/l12/cards.s2.json",
+        "服务端WebSocket/TwelveLegions/Data/cards.s1.json",
+        "服务端WebSocket/TwelveLegions/Data/cards.s2.json",
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12ActiveDisasterRules.cs",
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12LibraryPlacementTransactions.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12SimpleResourceTriggerEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StructuredCardRules.S02HumanAssisted.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "对战界面支持从好友入口与正在对战的对手对话，并在宽屏对局侧栏显示正在观战的玩家；超出可见数量时省略，打开好友面板可查看完整列表。响应提示、对局记录与卡牌展示保持连续更新。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/BattleSpectatorSummary.vue",
+        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/MasterOverlay.vue",
+        "opcgpro-vue/src/l12/net.ts",
+        "opcgpro-vue/src/l12/site/SocialPopover.vue",
+        "opcgpro-vue/src/l12/types.ts"
+      ]
+    }
+  ]
+}
