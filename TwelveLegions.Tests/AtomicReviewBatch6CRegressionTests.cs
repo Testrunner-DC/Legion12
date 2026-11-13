@@ -96,6 +96,7 @@ public sealed class AtomicReviewBatch6CRegressionTests
         if (cardId == "S02-0306")
         {
             player.MasterDamageTakenThisTurn = 2;
+            player.MasterDamageTakenOutsideDisasterThisTurn = 2;
             player.Hp = player.MaxHp - 2;
         }
         if (cardId == "S01-0419")

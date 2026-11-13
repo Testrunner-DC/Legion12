@@ -1803,7 +1803,7 @@ internal static class EffectLifecycleProfiles
     // TryResolveSimpleResourceTrigger，来源经 morale-identities 归一）。
     private static readonly (string Id, string Phrase)[] PipelinePublicTriggerChecks =
     [
-        ("S01-01M1:ability:static:0924c3a5995ba164", "哮天犬·稚"),
+        ("S01-01M1:ability:static:8a4cd28da75a7d65", "哮天犬·稚"),
         ("S01-01M1:ability:death:ee5adb706424f233", "追加1张休整的士气"),
         ("S01-04M2:ability:leave:47290d11c9fa259d", "放回牌库顶部"),
         ("S01-0204:ability:leave:a59801f7c2874f4a", "陵墓守卫"),
@@ -1811,7 +1811,7 @@ internal static class EffectLifecycleProfiles
         ("S01-0311:ability:after-attack:65ce2315ff4c0465", "转为活跃"),
         ("S01-0414:ability:static:e001b352b3693d93", "此军团"),
         ("S02-0001:ability:after-opponent-tactic:6d30a9b672845491", "回到手牌"),
-        ("S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b", "增加1点血量"),
+        ("S02-0304:ability:master-damaged-by-effect:19d1551b63e0128d", "增加1点血量"),
         ("S02-0305:ability:master-damaged:a4a2c92cad3ad28c", "可抽取1张牌"),
         ("S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29", "增殖的甲虫"),
         ("S02-06M2:ability:tactic-effect-resolved:7869c48f01e64d83", "试炼+1"),
@@ -1835,7 +1835,7 @@ internal static class EffectLifecycleProfiles
         ("S01-01D1:ability:static:103012fd4239104f", "追加2张休整的士气"),
         ("S02-0401:ability:continuous:9601da1d8445f865", "无法因主宰效果转为活跃"),
         ("S02-0006:ability:discarded:89d3ee4207648aa1", "无视消耗触发1次"),
-        ("S02-01S1:ability:master-morale-return:8d098fe32e7b253b", "可在前排活跃登场"),
+        ("S02-01S1:ability:master-morale-return:58c8bd809fa9c8db", "可在前排活跃登场"),
         ("S02-04M1:ability:friendly-legion-moves:654df25d049352f7", "进行1格位移"),
         ("S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3", "本回合进攻时兵力+1000"),
         ("S02-04M1:ability:friendly-front-to-back:e46218b2ac936410", "将我方1张士气转为活跃"),
@@ -1875,7 +1875,7 @@ internal static class EffectLifecycleProfiles
         ("S02-0206:ability:play:f6c0e9a69b3184b7", "兵力+3000"),
         ("S02-0206:ability:play:bd784d08e38e0ed8", "回合结束时弃置此军团"),
         ("S02-0307:ability:play:e2a8efcc4ba499ee", "弃置我方牌库顶部1张牌"),
-        ("S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c", "累计2点"),
+        ("S02-0306:ability:master-effect-damage-threshold:44ae840bd06cea2a", "累计2点"),
         ("S02-0405:ability:play:0a13775c2081e642", "牌库顶部5张牌"),
         ("S02-0405:ability:play:b03190adf1322a1a", "登场费用-2"),
         ("S02-0406:ability:play:35815c7115c7ce71", "选择ABILITY 2"),

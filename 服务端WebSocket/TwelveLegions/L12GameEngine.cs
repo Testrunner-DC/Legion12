@@ -2587,7 +2587,12 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var actual = Math.Min(Math.Max(0, amount), Math.Max(0, player.Hp));
         player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
-        var nonDisasterDamage = Math.Min(actual, declaredNonDisasterDamage);
+        // If no disaster bonus was declared, the complete resolved amount is
+        // ordinary damage.  A replacement (for example Anderstorp changing
+        // 1 to 2) must not make the ordinary-damage ledger under-count.
+        var nonDisasterDamage = declaredDisasterBonus > 0
+            ? Math.Min(actual, declaredNonDisasterDamage)
+            : actual;
         if (nonDisasterDamage > 0)
             player.MasterDamageTakenOutsideDisasterThisTurn += nonDisasterDamage;
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);

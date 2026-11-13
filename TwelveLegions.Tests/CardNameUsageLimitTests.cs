@@ -253,6 +253,7 @@ public sealed class CardNameUsageLimitTests
         }).ToArray();
         player.Hand.AddRange(copies);
         player.MasterDamageTakenThisTurn = 2;
+        player.MasterDamageTakenOutsideDisasterThisTurn = 2;
         for (var i = 0; i < 10; i++) player.Morale.Add(new L12MoraleCard
             { InstanceId = $"mimir-morale-{i}", CardId = "S01-01C1" });
         var result = game.Handle(0, new L12Command("playCard", copies[0].InstanceId));
