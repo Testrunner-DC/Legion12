@@ -107,12 +107,16 @@ assert(operations.includes('OptionalOperationsMultilineText(item.Content, 1000)'
 assert(operations.includes("character != '\\n' && char.IsControl(character)"))
 
 const directRevealCount = (backend.match(/AddEvent\(\s*"reveal"/g) ?? []).length
-assert.equal(directRevealCount, 3,
+// These two 天地异变 reveals are system-level public-information facts, not
+// card-effect animation scenes; keep them explicit so the rule is auditable.
+assert.equal(directRevealCount, 5,
   'Every new card-producing reveal must use AddPresentationEvent; update the explicit scene catalog or exemption list')
 for (const exemption of [
   '刘备检索未命中，向对手展示牌库',
   '〈荣耀之路〉查看牌库但未找到【奥林匹斯】卡牌',
   '在触发效果入栈时翻开',
+  '〈天地异变〉公开{player.Name}抽到的',
+  '〈天地异变〉公开查看牌库顶的',
 ]) assert(backend.includes(exemption), `Documented non-card-text reveal exemption disappeared: ${exemption}`)
 assert.equal((backend.match(/AddEvent\(\s*"disaster-reveal"/g) ?? []).length, 1,
   'Disaster reveal is the sole generic system animation exemption')
