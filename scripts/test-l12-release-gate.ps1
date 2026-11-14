@@ -62,17 +62,84 @@ function Invoke-GitChecked {
 function Write-CardManifest {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$AssetVersion
+        [Parameter(Mandatory = $true)][string]$Seed
     )
 
+    function Get-Sha256Hex {
+        param([Parameter(Mandatory = $true)][string]$Text)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text)))).Replace('-', '').ToLowerInvariant()
+        }
+        finally { $sha.Dispose() }
+    }
+
+    $root = Split-Path -Parent $Path
+    $catalogRoot = Join-Path $fixtureRepo "服务端WebSocket\TwelveLegions\Data"
+    $catalogVersion = "fixture-$Seed"
+    $cards = [ordered]@{}
+    $playable = [Collections.Generic.List[object]]::new()
+    $presentation = [Collections.Generic.List[object]]::new()
+    for ($index = 1; $index -le 324; $index++) {
+        $id = "fixture-playable-{0:D3}" -f $index
+        $contentHash = Get-Sha256Hex "$Seed|$id"
+        $hashShort = $contentHash.Substring(0, 20)
+        $relative = "cards/$catalogVersion/$id/$hashShort/original.webp"
+        $full = Join-Path $root ($relative -replace '/', '\\')
+        New-Item -ItemType Directory -Path (Split-Path -Parent $full) -Force | Out-Null
+        [IO.File]::WriteAllBytes($full, [byte[]](0x41))
+        $cards[$id] = [ordered]@{
+            cardId = $id
+            contentHash = $contentHash
+            variants = [ordered]@{ original = $relative }
+            bytes = [ordered]@{ original = 1 }
+        }
+        $playable.Add([ordered]@{ id = $id })
+    }
+    for ($index = 1; $index -le 42; $index++) {
+        $id = "fixture-presentation-{0:D3}" -f $index
+        $baseCardId = "fixture-playable-{0:D3}" -f $index
+        $contentHash = Get-Sha256Hex "$Seed|$id"
+        $hashShort = $contentHash.Substring(0, 20)
+        $relative = "cards/$catalogVersion/$id/$hashShort/original.webp"
+        $full = Join-Path $root ($relative -replace '/', '\\')
+        New-Item -ItemType Directory -Path (Split-Path -Parent $full) -Force | Out-Null
+        [IO.File]::WriteAllBytes($full, [byte[]](0x42))
+        $cards[$id] = [ordered]@{
+            cardId = $id
+            contentHash = $contentHash
+            presentationOnly = $true
+            baseCardId = $baseCardId
+            variants = [ordered]@{ original = $relative }
+            bytes = [ordered]@{ original = 1 }
+        }
+        $presentation.Add([ordered]@{ id = $id; baseCardId = $baseCardId })
+    }
+    @(
+        @{ Path = (Join-Path $catalogRoot 'cards.s1.json'); Items = @($playable | Select-Object -First 133) }
+        @{ Path = (Join-Path $catalogRoot 'cards.s2.json'); Items = @($playable | Select-Object -Skip 133 -First 115) }
+        @{ Path = (Join-Path $catalogRoot 'cards.st.json'); Items = @($playable | Select-Object -Skip 248 -First 76) }
+    ) | ForEach-Object {
+        [IO.File]::WriteAllText($_.Path, ($_.Items | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+    }
+    [IO.File]::WriteAllText((Join-Path $catalogRoot 'card-archive-assets.json'),
+        ([ordered]@{ cards = @($presentation) } | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+    $assetVersion = Get-Sha256Hex (($cards.GetEnumerator() | ForEach-Object {
+        $entry = $_.Value
+        "{0}:{1}:{2}:{3}" -f $_.Key, $entry.contentHash, ($(if ($entry.Contains('presentationOnly') -and $entry.presentationOnly) { 'presentation' } else { 'playable' })), ($(if ($entry.Contains('baseCardId')) { $entry.baseCardId } else { '' }))
+    } | Sort-Object) -join "`n")
     [ordered]@{
         schemaVersion = 3
         complete = $true
         cardCount = 366
         playableCardCount = 324
         presentationCardCount = 42
-        assetVersion = $AssetVersion
-    } | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
+        catalogVersion = $catalogVersion
+        totalBytes = 366
+        assetVersion = $assetVersion
+        cards = $cards
+    } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8
+    return $assetVersion
 }
 
 function Write-FakeCommand {
@@ -363,7 +430,7 @@ $originalPath = $env:PATH
 $originalCommandLog = $env:L12_TEST_COMMAND_LOG
 
 try {
-    New-Item -ItemType Directory -Path (Join-Path $fixtureRepo "ops\windows"), (Join-Path $fixtureRepo "scripts"), (Join-Path $fixtureRepo "TwelveLegions.Tests"), (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site"), $fixtureOutput, $fixtureCardAssets, $fakeBin -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $fixtureRepo "ops\windows"), (Join-Path $fixtureRepo "scripts"), (Join-Path $fixtureRepo "TwelveLegions.Tests"), (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site"), (Join-Path $fixtureRepo "opcgpro-vue\scripts"), (Join-Path $fixtureRepo "服务端WebSocket\TwelveLegions\Data"), $fixtureOutput, $fixtureCardAssets, $fakeBin -Force | Out-Null
     Copy-Item -LiteralPath $verifyScript -Destination (Join-Path $fixtureRepo "ops\windows\verify-l12.ps1") -Force
     New-Item -ItemType Directory -Path (Join-Path $fixtureRepo 'scripts/lib') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/l12-test-storage.ps1') -Destination (Join-Path $fixtureRepo 'scripts/lib/l12-test-storage.ps1')
@@ -373,8 +440,19 @@ try {
     Copy-Item -LiteralPath $performanceExceptions -Destination (Join-Path $fixtureRepo "ops\performance-exceptions.json") -Force
     Copy-Item -LiteralPath $changeGateScript -Destination (Join-Path $fixtureRepo "scripts\verify-l12-change.ps1") -Force
     Copy-Item -LiteralPath $releaseLedgerScript -Destination (Join-Path $fixtureRepo "scripts\release-ledger.mjs") -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/release-status.mjs') -Destination (Join-Path $fixtureRepo "scripts\release-status.mjs") -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/test-release-status.mjs') -Destination (Join-Path $fixtureRepo "scripts\test-release-status.mjs") -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'opcgpro-vue/scripts/audit-l12-card-cdn.mjs') -Destination (Join-Path $fixtureRepo "opcgpro-vue\scripts\audit-l12-card-cdn.mjs") -Force
+    foreach ($catalogFile in @('cards.s1.json','cards.s2.json','cards.st.json','card-archive-assets.json')) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot "服务端WebSocket\TwelveLegions\Data\$catalogFile") `
+            -Destination (Join-Path $fixtureRepo "服务端WebSocket\TwelveLegions\Data\$catalogFile") -Force
+    }
     Copy-Item -LiteralPath $releaseLedgerRoot -Destination (Join-Path $fixtureRepo "release-ledger") -Recurse -Force
     Copy-Item -LiteralPath $generatedPlayerRelease -Destination (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site\generatedPlayerRelease.ts") -Force
+    $cardManifestPath = Join-Path $fixtureCardAssets "card-assets.manifest.json"
+    $assetVersionA = Write-CardManifest -Path $cardManifestPath -Seed 'A'
+    $assetVersionB = Write-CardManifest -Path $cardManifestPath -Seed 'B'
+    $assetVersionA = Write-CardManifest -Path $cardManifestPath -Seed 'A'
     [IO.File]::WriteAllText((Join-Path $fixtureRepo "tracked.txt"), "clean fixture`n", [Text.Encoding]::ASCII)
 
     Invoke-GitChecked $fixtureRepo @("init", "--quiet")
@@ -431,11 +509,7 @@ try {
     $env:PATH = "$fakeBin$([IO.Path]::PathSeparator)$originalPath"
     $env:L12_TEST_COMMAND_LOG = $commandLog
 
-    $assetVersionA = "a" * 64
-    $assetVersionB = "b" * 64
     $runtimeSourceCompatibility = "f" * 64
-    $cardManifestPath = Join-Path $fixtureCardAssets "card-assets.manifest.json"
-    Write-CardManifest -Path $cardManifestPath -AssetVersion $assetVersionA
 
     $artifactDirectory = Join-Path $fixtureOutput $fixtureCommit
     New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
@@ -480,7 +554,7 @@ try {
 
     # A still-valid archive hash must not make a cache entry reusable after the
     # current card asset version changes.
-    Write-CardManifest -Path $cardManifestPath -AssetVersion $assetVersionB
+    Write-CardManifest -Path $cardManifestPath -Seed 'B' | Out-Null
     Remove-Item -LiteralPath $commandLog -Force -ErrorAction SilentlyContinue
     $staleCardCache = Invoke-ChildPowerShell -ScriptPath $fixtureVerify -Arguments $verifyArguments
     Assert-True ($staleCardCache.ExitCode -ne 0) "Stale cardAssetsHash cache was incorrectly reused."
@@ -534,7 +608,7 @@ try {
 
     # Both entry points must fail before audit/build/cache reuse when any tracked
     # or untracked content makes the commit identity ambiguous.
-    Write-CardManifest -Path $cardManifestPath -AssetVersion $assetVersionA
+    Write-CardManifest -Path $cardManifestPath -Seed 'A' | Out-Null
     [IO.File]::WriteAllText((Join-Path $fixtureRepo "dirty-untracked.txt"), "dirty`n", [Text.Encoding]::ASCII)
     Remove-Item -LiteralPath $commandLog -Force -ErrorAction SilentlyContinue
     $dirtyVerify = Invoke-ChildPowerShell -ScriptPath $fixtureVerify -Arguments $verifyArguments
