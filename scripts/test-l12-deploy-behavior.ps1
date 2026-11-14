@@ -490,8 +490,9 @@ stop_service_and_confirm
         "正式前端哈希资源路由激活器缺少唯一站点定位或失败回滚。"
     Assert-True (([regex]::Matches($sharePagesNginxSource, 'proxy_hide_header Cache-Control;')).Count -eq 4 -and ([regex]::Matches($sharePagesNginxSource, 'add_header Cache-Control "no-cache" always;')).Count -eq 4) `
         "正式分享页 HTML 没有统一覆盖为 no-cache。"
-    Assert-True ($serverDeploySource.Contains('timeout 310 python3 -B "$runtime_verifier"')) `
-        "停服数据库证明没有保留 300 秒内部预算与 310 秒外层硬超时。"
+    Assert-True ($serverDeploySource.Contains('runtime_proof_timeout_seconds="${L12_RUNTIME_PROOF_TIMEOUT_SECONDS:-900}"') -and
+        $serverDeploySource.Contains('timeout "$runtime_proof_timeout_seconds" python3 -B "$runtime_verifier"')) `
+        "停服数据库证明没有使用受界 900 秒可配置外层超时。"
     Assert-True ($serverDeploySource.Contains('runtimeProofFailureCode=%s')) `
         "停服数据库证明失败现场没有持久化常量原因码。"
     Assert-True ($drainConsumerSource.Contains('LOOPBACK_PORT = 8083') -and
@@ -2009,7 +2010,7 @@ exit 255
     foreach ($proofFault in $proofFailureReasons.Keys) {
         $proofFailure = Invoke-ServerScenario -Name "stopped-runtime-proof-$proofFault" -ArtifactRoot "/www/legion12" -RuntimeProofFault $proofFault
         Assert-True ($proofFailure.ExitCode -ne 0) "停服数据库证明错误被接受：$proofFault"
-        Assert-True ($proofFailure.Commands.Contains("systemctl stop") -and $proofFailure.Commands.Contains("timeout 310 python3 -B")) "证明拒绝没有到达停服备份后边界。"
+        Assert-True ($proofFailure.Commands.Contains("systemctl stop") -and $proofFailure.Commands.Contains("timeout 900 python3 -B")) "证明拒绝没有到达停服备份后边界。"
         Assert-True ($proofFailure.Output.Contains("上一版本已恢复并通过")) "证明失败后原服务未经过身份核验。"
         $expectedReason = $proofFailureReasons[$proofFault]
         Assert-True ($proofFailure.Output.Contains("停服校验拒绝原因：$expectedReason")) `
@@ -2032,7 +2033,7 @@ exit 255
         $proofFailure = Invoke-ServerScenario -Name "stopped-runtime-proof-contract-$proofFault" `
             -ArtifactRoot "/www/legion12" -RuntimeProofFault $proofFault
         Assert-True ($proofFailure.ExitCode -ne 0) "停服数据库成功合同错误被接受：$proofFault"
-        Assert-True ($proofFailure.Commands.Contains("systemctl stop") -and $proofFailure.Commands.Contains("timeout 310 python3 -B")) `
+        Assert-True ($proofFailure.Commands.Contains("systemctl stop") -and $proofFailure.Commands.Contains("timeout 900 python3 -B")) `
             "成功合同拒绝没有到达停服备份后边界：$proofFault"
         Assert-True ($proofFailure.Output.Contains("上一版本已恢复并通过")) `
             "成功合同拒绝后原服务未经过身份核验：$proofFault"

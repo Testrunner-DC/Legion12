@@ -85,9 +85,12 @@ readonly runtime_backup_keep_groups="${L12_RUNTIME_BACKUP_KEEP_GROUPS:-2}"
 [[ "$runtime_backup_keep_groups" =~ ^[1-9][0-9]*$ ]] \
   || { fail "runtime 快照保留组数必须为正整数"; exit 2; }
 readonly web_asset_retention_minutes="${L12_WEB_ASSET_RETENTION_MINUTES:-2880}"
-# Includes the unchanged 310-second runtime proof, release switch, exact health
+# Includes the bounded runtime proof, release switch, exact health
 # checks, and a bounded old-process restart/cancel attempt before the outer cutoff.
 readonly deployment_recovery_reserve_seconds=900
+readonly runtime_proof_timeout_seconds="${L12_RUNTIME_PROOF_TIMEOUT_SECONDS:-900}"
+[[ "$runtime_proof_timeout_seconds" =~ ^[0-9]+$ ]] && (( runtime_proof_timeout_seconds >= 310 && runtime_proof_timeout_seconds <= 900 )) \
+  || { fail "runtime 停服证明超时必须在 310—900 秒范围内"; exit 2; }
 [[ "$web_asset_retention_minutes" =~ ^[0-9]+$ ]] \
   && (( web_asset_retention_minutes >= 1440 && web_asset_retention_minutes <= 2880 )) \
   || { fail "前端哈希资源保留窗口只允许 1440—2880 分钟"; exit 2; }
@@ -984,7 +987,7 @@ capture_stopped_runtime_proof() {
   # Atomic exclusive creation preserves collisions, including symlink races.
   if ( umask 077; set -o noclobber; exec 3> "$candidate" || exit 1
        set +o noclobber
-       if timeout 310 python3 -B "$runtime_verifier" "$runtime_dir" "$runtime_backup" "$runtime_backup_sha256" >&3; then
+       if timeout "$runtime_proof_timeout_seconds" python3 -B "$runtime_verifier" "$runtime_dir" "$runtime_backup" "$runtime_backup_sha256" >&3; then
          proof_status=0
        else
          proof_status=$?

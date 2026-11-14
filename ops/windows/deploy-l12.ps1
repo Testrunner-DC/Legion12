@@ -586,7 +586,7 @@ try {
     $mode = if ($DryRun) { "dry-run" } elseif ($Rollback) { "rollback" } else { "deploy" }
     $deploymentDeadlineEpoch = $deploymentDeadlineUtc.ToUnixTimeSeconds()
     if (-not $DryRun -and [DateTimeOffset]::UtcNow.AddSeconds(901) -ge $deploymentDeadlineUtc) {
-        throw "距部署截止时间不足 901 秒，无法保留 310 秒数据库证明及有界取消/恢复预算。"
+        throw "距部署截止时间不足 901 秒，无法保留最长 900 秒数据库证明及有界取消/恢复预算。"
     }
     Write-Host "[L12 部署] 服务器执行快速 $mode（不重复构建和全量测试）..."
     if ($DryRun) {
