@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-11-14 观战摘要锚定卡牌详情下沿（本地已验，未部署）
+
+- `GameBoard.vue` 新增 `inspector-stack`：卡牌详情框作为上层内容，`BattleSpectatorSummary` 作为同栈下层，与详情框同宽并以零间距贴合，避免摘要出现在详情框顶部。
+- 浮动详情仍由原 `inspectorAnchor` 定位；Teleported 详情与摘要一起移动，不改变好友按钮、完整观战名单或移动端隐藏策略。
+- 验证：`scripts/test-battle-social-spectators.mjs` 通过；`scripts/check-ui-contracts.mjs` 362 项通过；`vue-tsc --noEmit` 通过；`git diff --check` 通过。未生成 Release、未部署测试服或正式服。
+
 ## 2026-11-12 Bug 拉取与收口流程优化（本地已验，未拉取线上队列／未部署）
 
 - 拉取工具改为分页 `GET /api/admin/bugs/query?includeDetails=false`，校验所有页的 `total` 与 `platformVersion` 不变后才生成唯一 intake 快照；快照带完整 `SnapshotTag`、过滤条件、平台版本和 SHA256，输出与回执均经过 D/E 物理路径守卫，令牌不落盘。

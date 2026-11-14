@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-11-14 观战摘要锚定卡牌详情下沿（本地已验，未部署）
+
+- 将观战摘要从卡牌详情面板内部移至同一详情栈的下沿，与详情框同宽、零间距贴合；移动端既有隐藏策略、好友按钮及完整观战名单逻辑不变。
+- 新增 `selected-card-inspector-stack` 结构契约，防止摘要回到详情框顶部；观战摘要专项契约、`check-ui-contracts.mjs` 与 `vue-tsc --noEmit` 通过。
+- 修改范围：`opcgpro-vue/src/l12/game/GameBoard.vue`、`opcgpro-vue/scripts/test-battle-social-spectators.mjs`；本批只做本地源码整合，未生成 Release、未部署两服。
+
 ## 2026-11-12 统一规则收口并入正式候选
 
 - 已将当前工作树的 12 个变更文件纳入同一交付边界：李牧通用主宰返还、最终天灾伤害优先级、比约恩返还与手牌限制生命周期、具名回归及 Bug 登记。
