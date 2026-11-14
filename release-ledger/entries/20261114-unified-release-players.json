@@ -39,6 +39,14 @@
         "opcgpro-vue/src/l12/site/SocialPopover.vue",
         "opcgpro-vue/src/l12/types.ts"
       ]
+    },
+    {
+      "category": "card-effects",
+      "text": "安德华拉诺特只要位于我方圣物区就会持续生效：回合结束时手牌超过6张需弃置至6张，且不能从手牌打出圣物；从手牌或其他额外圣物区进入后同样适用。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12StructuredCardRules.cs"
+      ]
     }
   ]
 }

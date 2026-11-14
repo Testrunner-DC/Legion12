@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261114-ANDERSTORP-RELIC-ZONE-LIFECYCLE｜安德华拉诺特按当前圣物区持续生效
+
+- 反馈：〈安德华拉诺特〉即使不是开局从牌库置入，只要后来进入圣物区，也应持续生效：我方回合结束时将手牌弃置至不高于6张，且我方不能从手牌打出圣物。
+- 根因：手牌打出限制已经通过结构化规则读取当前圣物区，但回合结束弃牌只检查主圣物槽 `Relic`，没有复用“圣物区包含主槽与额外圣物”的统一区域判定；因此额外圣物存储或非开局入场路径可能漏掉回合结束限制。
+- 修改：新增 `L12StructuredCardRules.RelicZoneCards/HasRelicInRelicZone`，把主圣物槽与 `ExtraRelics` 统一视为当前圣物区；手牌打出限制和回合结束弃牌均从该入口读取。开局置入仍只影响起始手牌数量，卡牌后来从手牌或效果进入圣物区时不再依赖开局标记。
+- 同类扫描：检索 `S02-0305`、`Relic`、`ExtraRelics`、`HandPlayBlockReason`、回合结束弃牌和圣物置入入口；已覆盖直接打出、开局可选置入、效果置入、主圣物槽、额外圣物存储、快照展示与权威提交，未发现仍按“是否开局置入”判断的同类分支。
+- 回归：`AnderstorpDamageFloorLifecycleProfileTests.AnderstorpEndTurnRestrictionStartsWhenTheRelicIsPlayedFromHand` 验证非开局从手牌打出后在回合结束触发弃牌提示；`AnderstorpDamageFloorLifecycleProfileTests.AnderstorpEndTurnRestrictionAlsoObservesTheExtraRelicStorage` 验证额外圣物存储；对应类 3/3、手牌打出限制类 10/10 通过。证据：`D:/GPT/Legion12/artifacts/bug-20261114-anderstorp-relic-zone/focused/test-e2385416fec0446baeee83f21f51ebe8/pass-proof.trx`、`D:/GPT/Legion12/artifacts/bug-20261114-anderstorp-relic-zone/hand-play/test-84f1107c95544fcc980403b4211a9827/pass-proof.trx`。
+- 状态：当前源已修复并通过本地回归；尚未部署测试服，线上状态不提前关闭。
+
 ## FIX-20261114-HEAVEN-EARTH-PUBLIC-LIBRARY-INFO｜天地异变期间抽牌与牌库顶查看公开
 
 - 反馈：〈天地异变〉生效期间，抽到的牌以及查看牌库顶／牌库顶多张牌的卡面应当属于公开信息；原实现只公开翻转后的牌库顶快照，普通抽牌仍按隐藏信息处理，牌库顶查看提示也默认仅控制者可见。

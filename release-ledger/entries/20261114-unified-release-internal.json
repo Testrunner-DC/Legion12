@@ -7,6 +7,7 @@
   "paths": [
     "TwelveLegions.Tests/ArchitectureP1ContractFreezeTests.cs",
     "TwelveLegions.Tests/AtomicReviewBatch6CRegressionTests.cs",
+    "TwelveLegions.Tests/AnderstorpDamageFloorLifecycleProfileTests.cs",
     "TwelveLegions.Tests/CardNameUsageLimitTests.cs",
     "TwelveLegions.Tests/DisasterContinuousRuleLifecycleProfileTests.cs",
     "TwelveLegions.Tests/EffectLifecycleProfiles.cs",
@@ -30,5 +31,7 @@
     "opcgpro-vue/scripts/test-response-prompt-visibility-20261028.mjs",
     "ops/server/deploy-l12-release.sh",
     "scripts/test-l12-deploy-behavior.ps1"
+    ,"服务端WebSocket/TwelveLegions/L12GameEngine.cs"
+    ,"服务端WebSocket/TwelveLegions/L12StructuredCardRules.cs"
   ]
 }

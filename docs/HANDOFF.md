@@ -6,6 +6,13 @@
 - 浮动详情仍由原 `inspectorAnchor` 定位；Teleported 详情与摘要一起移动，不改变好友按钮、完整观战名单或移动端隐藏策略。
 - 验证：`scripts/test-battle-social-spectators.mjs` 通过；`scripts/check-ui-contracts.mjs` 362 项通过；`vue-tsc --noEmit` 通过；`git diff --check` 通过。未生成 Release、未部署测试服或正式服。
 
+## 2026-11-14 安德华拉诺特圣物区生命周期修复（候选整合中，未部署）
+
+- 反馈边界：安德华拉诺特不只在开局由牌库置入时生效；只要当前位于我方圣物区，回合结束弃牌上限与“不能从手牌打出圣物”均应生效。
+- 根因与修复：原回合结束分支只读取主圣物槽 `Relic`，没有与 `ExtraRelics` 共享圣物区判定；新增 `RelicZoneCards/HasRelicInRelicZone`，手牌限制和回合结束弃牌统一读取主槽与额外圣物。
+- 回归：具名生命周期类 3/3、手牌打出限制类 10/10 通过；效果清单已按导出入口同步，指纹由旧值更新为当前运行定义指纹。证据位于 `D:/GPT/Legion12/artifacts/bug-20261114-anderstorp-relic-zone/`。
+- 状态：本地源与证据已纳入当前候选范围，仍待完整 Focused/Release 门禁、干净提交与远端同 SHA；未部署、未改维护、未关闭线上反馈。
+
 ## 2026-11-12 Bug 拉取与收口流程优化（本地已验，未拉取线上队列／未部署）
 
 - 拉取工具改为分页 `GET /api/admin/bugs/query?includeDetails=false`，校验所有页的 `total` 与 `platformVersion` 不变后才生成唯一 intake 快照；快照带完整 `SnapshotTag`、过滤条件、平台版本和 SHA256，输出与回执均经过 D/E 物理路径守卫，令牌不落盘。

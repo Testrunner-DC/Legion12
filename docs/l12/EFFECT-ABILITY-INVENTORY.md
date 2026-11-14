@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`060e2479e2ae917823d3b22dd7f7645cf69fdbb0813f9ac9c6fa260fff7a3d30`。
+内容指纹：`d1d842691e45219e9434176837d3137743f3b4a5c2f205f14aead8fa74235eb2`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1192,6 +1192,8 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0304:ability:master-damaged-by-effect:19d1551b63e0128d | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0304 | authoritative-consumer, per-card-plan |
 | S02-0305:ability:game-setup:cf14affeb486a9f7 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0305 | authoritative-consumer, setup-defaults |
 | S02-0305:ability:game-setup:cf14affeb486a9f7 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.OptionalSetupPromptsRestoreAndApplyBeforeTheStartingHandIsDrawn / S02-0305 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.AnderstorpDamageFloorLifecycleProfileTests.AnderstorpEndTurnRestrictionAlsoObservesTheExtraRelicStorage / S02-0305 | end-turn-discard, extra-relic-zone |
+| S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.AnderstorpDamageFloorLifecycleProfileTests.AnderstorpEndTurnRestrictionStartsWhenTheRelicIsPlayedFromHand / S02-0305 | end-turn-discard, non-opening-entry |
 | S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.AndvaranautHandPlayBlockDoesNotDisableOpeningMulligan / S02-0305 | display-and-submit-parity, mulligan-is-not-hand-play, opening-mulligan |
 | S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.CurrentArtifactBlockReasonSurvivesRestoreAndRejectsRepeatedSubmissionWithoutPayment / S02-0305 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.HandPlayBlockDefinitionsMatchTheClosedFamily / S02-0305 | display-and-submit-parity, priority |

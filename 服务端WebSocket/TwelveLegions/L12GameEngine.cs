@@ -1405,7 +1405,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     {
         if (!CanAct(playerIndex)) return CommandResult.Reject("只能在自己的主要阶段结束回合");
         var endingPlayer = State.Players[playerIndex];
-        if (endingPlayer.Relic?.CardId == "S02-0305" && endingPlayer.Hand.Count > 6)
+        if (L12StructuredCardRules.HasRelicInRelicZone(endingPlayer, "S02-0305")
+            && endingPlayer.Hand.Count > 6)
         {
             CreatePrompt(playerIndex, "hand-cards", "安德华拉诺特：弃置手牌直至手牌数量为6张",
                 endingPlayer.Hand.Select(card => card.InstanceId), endingPlayer.Hand.Count - 6, endingPlayer.Hand.Count - 6,

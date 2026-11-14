@@ -345,12 +345,25 @@ public static partial class L12StructuredCardRules
     public static bool CannotBeRangedInAnyRow(L12CardInstance card)
         => AnyRowFlags(card).CannotBeRanged;
 
+    /// <summary>
+    /// Returns the cards that are currently in a player's relic area.  The
+    /// primary relic slot and the extra relic collection are one rules zone;
+    /// effects that depend on a relic being present must observe both storage
+    /// representations, regardless of how the card entered the zone.
+    /// </summary>
+    public static IEnumerable<L12CardInstance> RelicZoneCards(L12PlayerState controller)
+    {
+        if (controller.Relic is { } relic) yield return relic;
+        foreach (var extraRelic in controller.ExtraRelics) yield return extraRelic;
+    }
+
+    public static bool HasRelicInRelicZone(L12PlayerState controller, string cardId)
+        => RelicZoneCards(controller).Any(card =>
+            string.Equals(card.CardId, cardId, StringComparison.OrdinalIgnoreCase));
+
     public static string? HandPlayBlockReason(L12PlayerState controller, L12CardInstance card)
     {
-        var artifactZone = controller.Relic is null
-            ? controller.ExtraRelics
-            : controller.ExtraRelics.Prepend(controller.Relic);
-        var blockers = artifactZone
+        var blockers = RelicZoneCards(controller)
             .Select(source => (Source: source, Rule: L12StructuredCardSemantics.HandPlayBlockRule(source.CardId)))
             .Where(entry => entry.Rule is not null)
             .OrderBy(entry => entry.Rule!.Priority);

@@ -43,6 +43,55 @@ public sealed class AnderstorpDamageFloorLifecycleProfileTests
             && entry.Text.Contains("失去 1 点血量", StringComparison.Ordinal));
     }
 
+    [Fact]
+    [L12AbilityEvidence("S02-0305:ability:continuous:26b824128ffced1a", "non-opening-entry", "end-turn-discard")]
+    public void AnderstorpEndTurnRestrictionStartsWhenTheRelicIsPlayedFromHand()
+    {
+        var game = Create(72501);
+        game.State.Phase = L12Phase.Main;
+        game.State.ActivePlayer = 0;
+        var player = game.State.Players[0];
+        var ring = Card("S02-0305", "anderstorp-played-from-hand", 0);
+        player.Hand.Add(ring);
+
+        var play = game.Handle(0, new L12Command("playCard", ring.InstanceId));
+        Assert.True(play.Accepted, play.Error);
+        Assert.Same(ring, player.Relic);
+
+        for (var index = 0; index < 7; index++)
+            player.Hand.Add(Card("S01-0001", $"anderstorp-end-hand-{index}", 0));
+
+        var endTurn = game.Handle(0, new L12Command("endTurn"));
+        Assert.True(endTurn.Accepted, endTurn.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-ring-end-discard", prompt.Continuation);
+        Assert.Equal(1, prompt.MinChoose);
+        Assert.Equal(1, prompt.MaxChoose);
+
+        var resolve = game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: [player.Hand[0].InstanceId]));
+        Assert.True(resolve.Accepted, resolve.Error);
+        Assert.Equal(6, player.Hand.Count);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-0305:ability:continuous:26b824128ffced1a", "extra-relic-zone", "end-turn-discard")]
+    public void AnderstorpEndTurnRestrictionAlsoObservesTheExtraRelicStorage()
+    {
+        var game = Create(72502);
+        game.State.Phase = L12Phase.Main;
+        game.State.ActivePlayer = 0;
+        var player = game.State.Players[0];
+        player.ExtraRelics.Add(Card("S02-0305", "anderstorp-extra-relic", 0));
+        for (var index = 0; index < 7; index++)
+            player.Hand.Add(Card("S01-0001", $"anderstorp-extra-hand-{index}", 0));
+
+        var endTurn = game.Handle(0, new L12Command("endTurn"));
+        Assert.True(endTurn.Accepted, endTurn.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-ring-end-discard", prompt.Continuation);
+    }
+
     private static void AttackMasterAndResolve(L12GameEngine game, string attackerId)
     {
         var result = game.Handle(1, new L12Command("attack", attackerId,
