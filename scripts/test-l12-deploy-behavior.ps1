@@ -1213,7 +1213,18 @@ if [ "${L12_TEST_FAIL_BACKUP_VALIDATION:-0}" = "1" ]; then
     case "$argument" in *runtime-before-*.partial) exit 93 ;; esac
   done
 fi
-exec "$L12_TEST_REAL_TAR" "$@"
+translated=()
+for argument in "$@"; do
+  case "$argument" in
+    /[A-Za-z]/*)
+      drive="${argument:1:1}"
+      rest="${argument:3}"
+      translated+=("${drive^^}:/${rest}")
+      ;;
+    *) translated+=("$argument") ;;
+  esac
+done
+exec "$L12_TEST_REAL_TAR" "${translated[@]}"
 '@ | Out-Null
 
         $rootPosix = ConvertTo-MsysPath $root

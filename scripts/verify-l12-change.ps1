@@ -282,11 +282,12 @@ try {
         if ([string]::IsNullOrWhiteSpace($deploymentCacheRoot)) {
             $deploymentCacheRoot = if ($CacheRoot) { $CacheRoot } elseif (Test-Path "D:\GPT\Legion12") { "D:\GPT\Legion12\cache\primary" } else { Join-Path $repoRoot ".l12-cache" }
         }
-        $deploymentFixtureBase = if ([string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE)) {
-            Join-Path $deploymentCacheRoot "temp"
-        } else {
-            Join-Path $env:L12_WORK_CACHE "temp"
-        }
+        # Keep the synthetic deployment fixture root short.  The external-card
+        # staging name is intentionally long and native Windows tar has a
+        # MAX_PATH boundary; nesting it below the full run cache otherwise
+        # causes a false Release failure before any product code is exercised.
+        $deploymentFixtureParent = Split-Path -Parent $deploymentCacheRoot
+        $deploymentFixtureBase = Join-Path $deploymentFixtureParent "t"
         Invoke-Checked "Deployment target, health and failure-preservation behavior" "pwsh" @(
             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
             (Join-Path $repoRoot "scripts\test-l12-deploy-behavior.ps1"),
