@@ -5,7 +5,7 @@
 - Windows 正式入口默认服务器制品根改为 `/opt`；`/www/legion12` 仍可显式传入，并继续经过挂载、权限、容量和持久化门禁。
 - `prepare-storage` 的容量检查现在按本次发布包大小、暂存余量和切换底线执行，并以 `preflight-receipt.txt` 原子写入同源包 SHA、检查次数、制品根和最近可用空间。第二次上传复用同源回执；候选 SHA 不一致时拒绝继续，避免长时间上传后才失败。
 - 失败产生的 `deployment-blocked.txt` 只有在 schema、候选提交、包 SHA、部署动作全部匹配，并且实时读回服务 active、房间/对局/租约为 0、围栏 open 且无未知状态时，才归档到 `reconciled-failures/` 并移除；旧格式、不同候选或状态不确定仍保持 fail-closed。
-- 回归：PowerShell 与 shell 解析通过；部署行为夹具 77 个隔离场景通过（含同候选陈旧阻断自动收口）；本批尚未重新生成 Release、未部署、未改变正式服维护或业务数据。
+- 回归：PowerShell 与 shell 解析通过；部署行为夹具 77 个隔离场景通过（含同候选陈旧阻断自动收口）；完整 Release 门禁已通过（规则 8793/8793、平台 3151/3151、排空消费者 34/34、运行时备份 30/30，前端契约与生产/测试构建通过）。证据根为 `D:/GPT/Legion12/artifacts/deploy/verification-evidence/4c408b1653c8d1707658ae7a8b4ae04dc630145a/20261115T061445Z-d21a48e22d6446458bbe7ee4b51ccc7a/`；本批未部署、未改变正式服维护或业务数据。
 
 ## 2026-11-14 观战摘要锚定卡牌详情下沿（本地已验，未部署）
 
