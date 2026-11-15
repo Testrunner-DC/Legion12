@@ -505,8 +505,8 @@ stop_service_and_confirm
     Assert-True ($serverDeploySource.Contains('health_attempts="${L12_DEPLOY_HEALTH_ATTEMPTS:-90}"') -and
         $serverDeploySource.Contains('system_upload_reserve_bytes=$((256 * 1024 * 1024))') -and
         $serverDeploySource.Contains('systemIncomingBytes=${incoming_bytes}') -and
-        $serverDeploySource.Contains('prepare-storage </opt|/www/legion12> [incomingBytes] [reserveBytes]')) `
-        "服务器标准入口没有延长生产健康窗口或在上传前记录包体/暂存余量容量预检。"
+        $serverDeploySource.Contains('prepare-storage </opt|/www/legion12> [incomingBytes] [reserveBytes] [sourceSha256]')) `
+        "服务器标准入口没有延长生产健康窗口或在上传前记录同源容量预检回执。"
     Assert-True ($serverDeploySource.Contains('runtimeSourceCompatibility') -and
         $serverDeploySource.Contains('target_runtime_source_compatibility') -and
         $serverDeploySource.Contains('current_runtime_source_compatibility')) `
@@ -593,8 +593,8 @@ stop_service_and_confirm
     Assert-True ($artifactRootValidateSet.Count -eq 2) "服务器制品根参数不是精确双值白名单。"
     Assert-True ($artifactRootValidateSet -contains "/opt") "服务器制品根参数缺少兼容 /opt。"
     Assert-True ($artifactRootValidateSet -contains "/www/legion12") "服务器制品根参数缺少固定 /www/legion12。"
-    Assert-True ((Get-Content -Raw -LiteralPath $windowsDeploy).Contains('[string]$ServerArtifactRoot = "/www/legion12"')) `
-        "Windows 正式部署入口没有默认使用当前生产制品根 /www/legion12。"
+    Assert-True ((Get-Content -Raw -LiteralPath $windowsDeploy).Contains('[string]$ServerArtifactRoot = "/opt"')) `
+        "Windows 正式部署入口没有默认使用稳定 /opt 制品根。"
     $emptyKnownHosts = Join-Path $sshFixture "empty_known_hosts"
     Write-Utf8NoBom $emptyKnownHosts ""
     $missingTrustRejected = $false
@@ -675,6 +675,7 @@ stop_service_and_confirm
             [switch]$WriteOnStart,
             [switch]$DisabledService,
             [switch]$PreexistingBlock,
+            [switch]$SameCandidateStaleBlock,
             [ValidateSet("none", "opt-cache", "external-archive")][string]$CardAssetsScenario = "none",
             [switch]$ExternalMountSymlink,
             [ValidateSet("", "final", "partial", "sha", "sha-partial")][string]$ExistingBackupTarget = "",
@@ -805,6 +806,20 @@ stop_service_and_confirm
         )
         Assert-True ($tarResult.ExitCode -eq 0) "无法创建服务器发布夹具：$($tarResult.Output)"
         $archiveSha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($SameCandidateStaleBlock) {
+            Write-Utf8NoBom (Join-Path $root "opt\legion12-deployment\deployment-blocked.txt") @"
+markerSchema=2
+status=failed
+failedCommit=$commitB
+releaseSha256=$archiveSha
+deploymentOperationId=$(([string]('3' * 32)))
+deploymentAction=deploy
+failureStage=cancel-open
+drainFailureCode=CANCEL_FAILED
+drainFailureDisposition=closed
+recordedAt=2026-09-09T00:00:00Z
+"@
+        }
 
         $cardAssetsHash = "c" * 64
         $cardAssetsSha = "-"
@@ -1015,6 +1030,15 @@ if [ "${1:-}" = "--" ]; then shift; fi
 url=""
 for argument in "$@"; do url="$argument"; done
 printf 'curl %s\n' "$url" >> "$L12_TEST_COMMAND_LOG"
+if [ "$url" = "$L12_DEPLOY_LOCAL_BASE/api/admin/runtime/status" ]; then
+  printf '{"roomCount":0,"activeGameCount":0}\n'
+  exit 0
+fi
+if [ "$url" = "$L12_DEPLOY_LOCAL_BASE/api/admin/deployment-drain/status" ]; then
+  served_commit="$(tr -d '\r\n' < "$L12_TEST_ACTIVE_DIR/.deployment-commit")"
+  printf '{"phase":"open","epoch":0,"processInstance":"11111111111111111111111111111111","activeCommit":"%s","owner":null,"admissionLeases":0,"activityLeases":0,"fenceSynchronized":true,"fenceUnknown":false,"stopConsumed":false}\n' "$served_commit"
+  exit 0
+fi
 if [ "$url" = "$L12_DEPLOY_LOCAL_BASE/health" ] || [ "$url" = "$L12_DEPLOY_PUBLIC_BASE/health" ]; then
   served_commit="$(tr -d '\r\n' < "$L12_TEST_ACTIVE_DIR/.deployment-commit")"
   active_commit="$served_commit"
@@ -1541,8 +1565,8 @@ exit 255
         "排空会话泄漏到 argv、环境、错误或产品日志路径。"
     $artifactRootAst = $deployCommand.ScriptBlock.Ast.ParamBlock.Parameters |
         Where-Object { $_.Name.VariablePath.UserPath -eq "ServerArtifactRoot" }
-    Assert-True ($artifactRootAst.DefaultValue.Extent.Text -eq '"/www/legion12"') `
-        "Windows 发布入口默认制品根不是当前生产目录 /www/legion12。"
+    Assert-True ($artifactRootAst.DefaultValue.Extent.Text -eq '"/opt"') `
+        "Windows 发布入口默认制品根不是稳定 /opt 目录。"
     $invalidArtifactRootEntrypoint = Invoke-NativeCapture -Executable $powerShellPath.Source -Arguments @(
         "-NoProfile", "-File", $windowsDeploy, "-ServerArtifactRoot", "/tmp", "-DryRun"
     )
@@ -1908,8 +1932,16 @@ exit 255
         Assert-True (-not ((Get-Item -LiteralPath $blockedActive).Attributes -band [IO.FileAttributes]::ReparsePoint)) "已有阻断时活动入口被替换。"
         Assert-True ((Get-Content -LiteralPath (Join-Path $blockedRuntime "authoritative-before.txt") -Raw) -eq "preserve") "已有阻断时 runtime 发生变化。"
         Assert-True ((Get-Content -LiteralPath $blockedMarker -Raw) -eq "manual-reconciliation-required`n") "已有阻断标记被改写或删除。"
-        Assert-True (-not (Test-Path -LiteralPath (Join-Path $blockedRetry.Root "opt\legion12-releases"))) "已有阻断时仍创建了 release staging 边界。"
+        $blockedReleaseMarkers = @(Get-ChildItem -LiteralPath (Join-Path $blockedRetry.Root "opt\legion12-releases") -Recurse -Filter ".deployment-commit" -File -ErrorAction SilentlyContinue)
+        Assert-True ($blockedReleaseMarkers.Count -eq 0) "已有阻断时仍创建了可切换 release。"
     }
+
+    $sameCandidateBlock = Invoke-ServerScenario -Name "same-candidate-stale-block" -SameCandidateStaleBlock
+    $sameCandidateMarker = Join-Path $sameCandidateBlock.Root "opt\legion12-deployment\deployment-blocked.txt"
+    $sameCandidateReceipts = @(Get-ChildItem -LiteralPath (Join-Path $sameCandidateBlock.Root "opt\legion12-deployment\reconciled-failures") -Filter "*-reconciled.json" -File -ErrorAction SilentlyContinue)
+    Assert-True ($sameCandidateBlock.ExitCode -eq 0) "同候选、服务已 open/zero-lease 的陈旧阻断标记没有自动收口：$($sameCandidateBlock.Output)"
+    Assert-True (-not (Test-Path -LiteralPath $sameCandidateMarker)) "已验证可收口的同候选阻断标记仍被保留。"
+    Assert-True ($sameCandidateReceipts.Count -eq 1) "同候选阻断标记没有写入唯一 reconciliation 回执。"
 
     $localStale = Invoke-ServerScenario -Name "local-stale" -LocalCommitOverride $commitA -WriteOnStart
     Assert-True ($localStale.ExitCode -ne 0) "本机仍运行旧提交时部署被错误判定成功。"

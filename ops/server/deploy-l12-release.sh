@@ -28,6 +28,8 @@ readonly runtime_dir="${test_root}/opt/legion12-runtime"
 readonly sandbox_fence="${runtime_dir}/.maintenance-sandbox-drain"
 readonly deployment_dir="${test_root}/opt/legion12-deployment"
 readonly failure_dir="${deployment_dir}/failures"
+readonly reconciled_failure_dir="${deployment_dir}/reconciled-failures"
+readonly preflight_receipt="${deployment_dir}/preflight-receipt.txt"
 readonly runtime_verifier="${test_root}/usr/local/libexec/verify-legion12-runtime-backup.py"
 readonly drain_consumer="${test_root}/usr/local/libexec/l12-deployment-drain-consumer.py"
 readonly service_name="legion12-test.service"
@@ -240,7 +242,8 @@ validate_external_prepare_capacity() {
 }
 
 prepare_storage_paths() {
-  validate_system_capacity "${1:-0}" "${2:-0}" || return 1
+  local incoming_bytes="${1:-0}" reserve_bytes="${2:-0}" source_sha256="${3:--}" available_bytes
+  validate_system_capacity "$incoming_bytes" "$reserve_bytes" || return 1
   if [[ "$external_artifact_mode" == "1" ]]; then
     if ! validate_external_mount; then return 1; fi
     # 14 GiB and the later 8 GiB residual plan remain stronger than the named 4 GiB policy floor.
@@ -278,7 +281,47 @@ prepare_storage_paths() {
     if ! chmod 0755 "$(dirname "$static_card_assets_dir")" "$static_card_assets_dir" "$static_web_assets_dir" "$static_web_assets_dir/assets" "$releases_dir"; then return 1; fi
   fi
   if ! mkdir -p "$deployment_dir"; then return 1; fi
+  available_bytes="$(system_available_bytes)" || return 1
+  if [[ ! "$source_sha256" =~ ^[0-9a-f]{64}$ ]]; then source_sha256="-"; fi
+  local previous_source checks receipt_temp
+  previous_source=""
+  checks=0
+  if [[ -f "$preflight_receipt" && ! -L "$preflight_receipt" ]]; then
+    previous_source="$(awk -F= '$1=="sourceSha256"{print $2; exit}' "$preflight_receipt")"
+    checks="$(awk -F= '$1=="checks"{print $2; exit}' "$preflight_receipt")"
+    [[ "$checks" =~ ^[0-9]+$ ]] || checks=0
+    if [[ "$source_sha256" != "-" && -n "$previous_source" && "$previous_source" != "-" && "$previous_source" != "$source_sha256" ]]; then
+      fail "预检回执已绑定其他运行包，拒绝复用"
+      return 1
+    fi
+  fi
+  receipt_temp="${preflight_receipt}.tmp"
+  {
+    printf 'schema=1\n'
+    printf 'artifactRoot=%s\n' "$artifact_root_option"
+    printf 'sourceSha256=%s\n' "$(if [[ "$source_sha256" != "-" ]]; then printf '%s' "$source_sha256"; else printf '%s' "${previous_source:--}"; fi)"
+    printf 'checks=%s\n' "$((checks + 1))"
+    printf 'lastIncomingBytes=%s\n' "$incoming_bytes"
+    printf 'lastReserveBytes=%s\n' "$reserve_bytes"
+    printf 'lastAvailableBytes=%s\n' "$available_bytes"
+    printf 'capturedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$receipt_temp" || return 1
+  chmod 0600 "$receipt_temp" || return 1
+  mv -f "$receipt_temp" "$preflight_receipt" || return 1
+  log "容量预检回执已更新：${preflight_receipt}（第 $((checks + 1)) 次，同源包可复用）"
   return 0
+}
+
+assert_preflight_receipt() {
+  local expected_sha256="$1" actual_sha256 checks root_value
+  [[ "$expected_sha256" =~ ^[0-9a-f]{64}$ ]] || { fail "运行包 SHA256 无效，无法绑定容量预检回执"; return 1; }
+  [[ -f "$preflight_receipt" && ! -L "$preflight_receipt" ]] || { fail "缺少容量预检回执，拒绝继续发布"; return 1; }
+  actual_sha256="$(awk -F= '$1=="sourceSha256"{print $2; exit}' "$preflight_receipt")"
+  checks="$(awk -F= '$1=="checks"{print $2; exit}' "$preflight_receipt")"
+  root_value="$(awk -F= '$1=="artifactRoot"{print $2; exit}' "$preflight_receipt")"
+  [[ "$actual_sha256" == "$expected_sha256" && "$checks" =~ ^[1-9][0-9]*$ && "$root_value" == "$artifact_root_option" ]] \
+    || { fail "容量预检回执与本次运行包、制品根或检查次数不一致，拒绝继续发布"; return 1; }
+  log "复用同源容量预检回执：${preflight_receipt}（checks=${checks}）"
 }
 
 validate_web_assets_tree() {
@@ -489,6 +532,49 @@ assert_deployment_unblocked() {
   if [[ -e "$blocked_file" || -L "$blocked_file" ]]; then
     fail "检测到未完成人工对账的发布阻断标记：${blocked_file}；拒绝继续。请先完成对账，再由人工移除该标记"
   fi
+}
+
+reconcile_same_candidate_blocked_marker() {
+  local blocked_file="${deployment_dir}/deployment-blocked.txt"
+  local marker_schema marker_commit marker_sha marker_mode marker_operation marker_hash
+  local runtime_json drain_json state_hash receipt_file receipt_temp
+  [[ -e "$blocked_file" || -L "$blocked_file" ]] || return 0
+  [[ -f "$blocked_file" && ! -L "$blocked_file" ]] || return 1
+  marker_schema="$(awk -F= '$1=="markerSchema"{print $2; exit}' "$blocked_file")"
+  marker_commit="$(awk -F= '$1=="failedCommit"{print $2; exit}' "$blocked_file")"
+  marker_sha="$(awk -F= '$1=="releaseSha256"{print $2; exit}' "$blocked_file")"
+  marker_mode="$(awk -F= '$1=="deploymentAction"{print $2; exit}' "$blocked_file")"
+  marker_operation="$(awk -F= '$1=="deploymentOperationId"{print $2; exit}' "$blocked_file")"
+  # Legacy or unrelated blockers remain fail-closed. Only a fresh marker emitted
+  # by this release entry, for the same candidate and package, is eligible for
+  # read-only reconciliation after the server has returned to open/zero-lease.
+  [[ "$marker_schema" == "2" && "$marker_commit" == "$commit" && "$marker_sha" == "$release_sha256" \
+    && "$marker_mode" == "$mode" && "$marker_operation" =~ ^[0-9a-f]{32}$ ]] || return 1
+  systemctl is-active --quiet "$service_name" || return 1
+  runtime_json="$(curl -fsS --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${deployment_control_token}" "${local_base}/api/admin/runtime/status")" || return 1
+  drain_json="$(curl -fsS --connect-timeout 5 --max-time 10 -H "Authorization: Bearer ${deployment_control_token}" "${local_base}/api/admin/deployment-drain/status")" || return 1
+  state_hash="$(node - "$runtime_json" "$drain_json" "$commit" <<'NODE'
+const crypto=require('crypto'); const runtime=JSON.parse(process.argv[2]); const drain=JSON.parse(process.argv[3]);
+if(runtime.roomCount!==0||runtime.activeGameCount!==0)process.exit(2)
+if(drain.phase!=='open'||drain.admissionLeases!==0||drain.activityLeases!==0||drain.fenceUnknown||drain.stopConsumed||drain.owner!==null)process.exit(3)
+process.stdout.write(crypto.createHash('sha256').update(JSON.stringify({activeCommit:drain.activeCommit,epoch:drain.epoch,processInstance:drain.processInstance,phase:drain.phase,roomCount:runtime.roomCount,activeGameCount:runtime.activeGameCount})).digest('hex'))
+NODE
+)" || return 1
+  marker_hash="$(sha256sum -- "$blocked_file" | awk '{print $1}')" || return 1
+  mkdir -p "$reconciled_failure_dir" || return 1
+  chmod 0700 "$reconciled_failure_dir" || return 1
+  receipt_file="${reconciled_failure_dir}/deployment-blocked-${short_commit}-${marker_hash:0:12}-reconciled.json"
+  receipt_temp="${receipt_file}.tmp"
+  install -m 0600 "$blocked_file" "${receipt_file}.marker" || return 1
+  {
+    printf '{"schema":1,"action":"reconcile-same-candidate-blocker","markerSha256":"%s","stateReadbackSha256":"%s","candidate":"%s","packageSha256":"%s","operationId":"%s","sourceRemoved":true}\n' \
+      "$marker_hash" "$state_hash" "$commit" "$release_sha256" "$marker_operation"
+  } > "$receipt_temp" || return 1
+  chmod 0600 "$receipt_temp" || return 1
+  mv -f "$receipt_temp" "$receipt_file" || return 1
+  rm -f -- "${receipt_file}.marker" "$blocked_file" || return 1
+  [[ ! -e "$blocked_file" && ! -L "$blocked_file" ]] || return 1
+  log "已验证同源包、同候选阻断标记对应服务已恢复 open/zero-lease；已归档并移除旧阻断标记：${receipt_file}"
 }
 
 self_test() {
@@ -794,20 +880,25 @@ fi
 
 if [[ "$requested_mode" == "prepare-storage" ]]; then
   if [[ "$artifact_root_option" != "/opt" && "$artifact_root_option" != "/www/legion12" ]]; then
-    fail "用法：$0 prepare-storage </opt|/www/legion12> [incomingBytes] [reserveBytes]"
+    fail "用法：$0 prepare-storage </opt|/www/legion12> [incomingBytes] [reserveBytes] [sourceSha256]"
     exit 2
   fi
   prepare_incoming_bytes="${3:-0}"
   prepare_reserve_bytes="${4:-$system_upload_reserve_bytes}"
+  prepare_source_sha256="${5:--}"
   [[ "$prepare_incoming_bytes" =~ ^[0-9]+$ && "$prepare_reserve_bytes" =~ ^[0-9]+$ ]] \
     || { fail "prepare-storage 容量预检参数无效"; exit 2; }
+  [[ "$prepare_source_sha256" == "-" || "$prepare_source_sha256" =~ ^[0-9a-f]{64}$ ]] \
+    || { fail "prepare-storage 源包 SHA256 参数无效"; exit 2; }
   if [[ "${L12_DEPLOY_LOCKED:-0}" != "1" ]]; then
     export L12_DEPLOY_LOCKED=1
     exec flock --close --nonblock "$lock_file" "$0" "$@"
   fi
-  assert_deployment_unblocked
   self_test
-  prepare_storage_paths "$prepare_incoming_bytes" "$prepare_reserve_bytes"
+  # This phase is non-disruptive. A stale blocker is reconciled only after the
+  # candidate-bound deploy call has a fresh admin session and live state read;
+  # do not reject an otherwise safe upload before that read exists.
+  prepare_storage_paths "$prepare_incoming_bytes" "$prepare_reserve_bytes" "$prepare_source_sha256"
   log "服务器制品目录已通过固定路径、挂载与容量预检：${artifact_root_option}"
   exit 0
 fi
@@ -850,14 +941,19 @@ if [[ "${L12_DEPLOY_LOCKED:-0}" != "1" ]]; then
   exec flock --close --nonblock "$lock_file" "$0" "$@"
 fi
 
-assert_deployment_unblocked
+if [[ "$mode" == "dry-run" ]]; then
+  assert_deployment_unblocked
+fi
 self_test
 if [[ "$card_assets_hash" != "-" ]]; then
   nginx_dump="$(nginx -T 2>&1)"
   grep -Fq 'location = /card-assets/card-assets.manifest.json' <<<"$nginx_dump" || fail "Nginx 未接入优化卡图 manifest 缓存片段"
   grep -Fq 'max-age=31536000, immutable' <<<"$nginx_dump" || fail "Nginx 未接入内容寻址长缓存策略"
 fi
-prepare_storage_paths
+release_archive_bytes="$(stat -c '%s' "$release_archive")" || fail "无法读取运行包大小"
+[[ "$release_archive_bytes" =~ ^[0-9]+$ && "$release_archive_bytes" -gt 0 ]] || fail "运行包大小无效"
+prepare_storage_paths "$release_archive_bytes" "$system_upload_reserve_bytes" "$release_sha256"
+assert_preflight_receipt "$release_sha256"
 [[ "$(sha256sum "$release_archive" | awk '{print $1}')" == "$release_sha256" ]] || fail "运行包 SHA256 校验失败"
 validate_archive "$release_archive"
 
@@ -1322,8 +1418,11 @@ write_failure_record() {
     active_target="$(readlink -f "$active_dir" 2>/dev/null || printf '%s' "$active_dir")"
   fi
   {
+    printf 'markerSchema=2\n'
     printf 'status=failed\n'
     printf 'failedCommit=%s\n' "$commit"
+    printf 'releaseSha256=%s\n' "$release_sha256"
+    printf 'deploymentOperationId=%s\n' "${deployment_operation_id:--}"
     printf 'failureStage=%s\n' "$failure_stage"
     printf 'runtimeProofFailureCode=%s\n' "$runtime_proof_failure_code"
     printf 'runtimeProofFile=%s\n' "$runtime_proof_file"
@@ -1631,6 +1730,9 @@ if ! IFS= read -r deployment_control_token; then
   fail "缺少标准输入中的部署排空会话"
 fi
 [[ "$deployment_control_token" =~ ^[0-9a-f]{64}$ ]] || { deployment_control_token=""; fail "部署排空会话格式无效"; }
+if ! reconcile_same_candidate_blocked_marker; then
+  assert_deployment_unblocked
+fi
 drain_wait_seconds=$((deployment_deadline_epoch - $(date -u +%s) - deployment_recovery_reserve_seconds))
 (( drain_wait_seconds > 0 )) || fail "部署截止时间不足以等待排空"
 if (( drain_wait_seconds > 1800 )); then drain_wait_seconds=1800; fi

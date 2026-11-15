@@ -11,7 +11,7 @@ param(
     [Security.SecureString]$DeploymentControlSessionToken = $null,
     [switch]$AllowActivityDuringDrain,
     [ValidateSet("/opt", "/www/legion12")]
-    [string]$ServerArtifactRoot = "/www/legion12",
+    [string]$ServerArtifactRoot = "/opt",
     [switch]$DryRun,
     [switch]$Rollback,
     # 兼容旧调用；隔离工作树现在会自动通过 HEAD == origin/main 的强校验，
@@ -534,7 +534,7 @@ try {
         "ops/server/activate-l12-web-assets.sh" `
         "ops/server/nginx-l12-web-assets.conf"
     Invoke-External scp @sshOptions $toolBundle "${Server}:$remoteToolBundle"
-    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && install -m 0644 '$remoteRuntimeVerifier' /usr/local/libexec/verify-legion12-runtime-backup.py && install -m 0755 '$remoteDrainConsumer' /usr/local/libexec/l12-deployment-drain-consumer.py && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteRuntimeVerifier' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot' '$releaseArchiveBytes' '$systemUploadReserveBytes'"
+    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && install -m 0644 '$remoteRuntimeVerifier' /usr/local/libexec/verify-legion12-runtime-backup.py && install -m 0755 '$remoteDrainConsumer' /usr/local/libexec/l12-deployment-drain-consumer.py && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteRuntimeVerifier' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot' '$releaseArchiveBytes' '$systemUploadReserveBytes' '$($manifest.releaseSha256)'"
 
     Write-Host "[L12 部署] 上传预构建运行包..."
     Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"
@@ -575,7 +575,7 @@ try {
             # The release package is already staged at this point.  Recheck the
             # remaining headroom before the second large upload so card assets
             # cannot consume the cutover floor halfway through deployment.
-            Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot' '$cardAssetsArchiveBytes' '$systemUploadReserveBytes'"
+            Invoke-External ssh @sshOptions $Server "/usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot' '$cardAssetsArchiveBytes' '$systemUploadReserveBytes' '$($manifest.releaseSha256)'"
             $cardAssetsSha = $cardAssetsSha256Value
             Invoke-External scp @sshOptions $cardAssetsArchive "${Server}:$remoteCardAssets"
             $cardAssetsPath = $remoteCardAssets
