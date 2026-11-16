@@ -91,16 +91,18 @@ location ^~ /testrun/assets/ {
     add_header Cache-Control "public, max-age=31536000, immutable" always;
 }
 
-location ~ "^/testrun/data/l12/(?:cards\.(?:s1|lookup|st)|preset-decks\.s[12])\.json$" {
-    alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/data/l12/;
-    try_files $uri =404;
+location ~ "^/testrun/data/l12/(?<l12_catalog_file>cards\.(?:s1|lookup|st)|preset-decks\.s[12])\.json$" {
+    # Regex locations with alias must bind the captured filename directly.
+    # Using `try_files $uri` here prepends /testrun to the aliased path and
+    # returns 404 even though the release contains the catalog file.
+    alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/data/l12/$l12_catalog_file.json;
     etag on;
     add_header Cache-Control "public, max-age=300, must-revalidate" always;
     add_header X-Content-Type-Options nosniff always;
 }
 
-location ~ "^/testrun/data/((?:imageManifest|allCards|(?:OP|EB|ST|P|PRB|OPD|TY)[A-Z0-9]*)\.json)$" {
-    alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/data/$1;
+location ~ "^/testrun/data/(?<l12_data_file>(?:imageManifest|allCards|(?:OP|EB|ST|P|PRB|OPD|TY)[A-Z0-9]*)\.json)$" {
+    alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/data/$l12_data_file;
     etag on;
     add_header Cache-Control "public, max-age=300, must-revalidate" always;
     add_header X-Content-Type-Options nosniff always;

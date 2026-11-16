@@ -49,4 +49,15 @@ for (const config of [webNginx, testNginx, pathNginx]) {
   assert.match(config, /imageManifest\|allCards/, 'battle card JSON must have a static cache route')
   assert.match(config, /public, max-age=300, must-revalidate/, 'catalog route must use a bounded revalidation window')
 }
+assert.match(pathNginx, /<l12_catalog_file>cards\\\.\(\?:s1\|lookup\|st\)\|preset-decks\\\.s\[12\]/,
+  'mounted test catalog route must capture the filename for regex alias resolution')
+assert.match(pathNginx, /alias \/opt\/legion12-testrun\/opcgpro-vue\/dist-testrun\/data\/l12\/\$l12_catalog_file\\?\.json;/,
+  'mounted test catalog route must alias the captured file directly')
+assert.match(pathNginx, /<l12_data_file>\(\?:imageManifest\|allCards\|/,
+  'mounted test card-data route must capture the filename for regex alias resolution')
+assert.match(pathNginx, /alias \/opt\/legion12-testrun\/opcgpro-vue\/dist-testrun\/data\/\$l12_data_file;/,
+  'mounted test card-data route must alias the captured file directly')
+assert.ok(!pathNginx.includes('alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/data/l12/;\r\n    try_files $uri =404;')
+  && !pathNginx.includes('alias /opt/legion12-testrun/opcgpro-vue/dist-testrun/data/l12/;\n    try_files $uri =404;'),
+  'mounted test regex alias must not reapply the full URI through try_files')
 console.log('Public read cache contract passed: static catalogs, card manifest, gallery projections and anonymous deck directory are bounded; account/match/admin reads remain uncached')
