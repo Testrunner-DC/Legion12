@@ -1599,13 +1599,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         };
         _app.MapGet("/api/deck-library/summaries", (HttpRequest request) =>
         {
-            request.HttpContext.Response.Headers.CacheControl = "no-store";
             var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
             if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
             if (!L12PublicDeckSummaryQuery.TryParse(request.Query, out var query))
                 return Results.BadRequest(new { message = "公开牌库摘要查询参数无效" });
             try
             {
+                // Anonymous pages contain only public/official projections and no
+                // account-specific like/cover fields. Let browsers reuse this
+                // short-lived directory; authenticated or cover-enabled reads
+                // stay no-store because their projection is viewer-specific.
+                request.HttpContext.Response.Headers.CacheControl = viewer is null
+                    && !L12DeckCoverCapability.IsEnabled(request.Headers)
+                    ? "public,max-age=30,stale-while-revalidate=120"
+                    : "no-store";
                 var result = _platform.DeckLibrarySummaries(_catalog, query, viewer,
                     includeCover: L12DeckCoverCapability.IsEnabled(request.Headers));
                 return result.Status switch

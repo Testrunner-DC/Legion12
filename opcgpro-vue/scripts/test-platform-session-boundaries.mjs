@@ -467,7 +467,7 @@ for (const route of ['/api/alternate-arts', '/api/gallery/presentation']) {
     assert.equal(request.init.redirect, 'error')
     assert.equal(new Headers(request.init.headers).has('Authorization'), false)
     assert.equal(request.init.credentials, 'omit')
-    assert.equal(request.init.cache, 'no-store')
+    assert.equal(request.init.cache, 'default')
     assert.equal(runtime.platformState.token, 'test-only-token')
   })
 }

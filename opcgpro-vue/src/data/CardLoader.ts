@@ -31,20 +31,35 @@ const TYPE_MAP: Record<string, CardData["type"]> = {
 };
 
 const cardCache = new Map<string, CardData>();
+const cardSetCache = new Map<string, CardData[]>();
+const cardSetPromises = new Map<string, Promise<CardData[]>>();
 
 // 图片 manifest：cardNumber → 所有版本 URL（正画在 [0]）
 let imageManifest: Record<string, string[]> = {};
 let manifestLoaded = false;
+let manifestPromise: Promise<void> | null = null;
+let manifestRetryAfter = 0;
+const MANIFEST_RETRY_DELAY_MS = 30_000;
 
 async function ensureManifest(): Promise<void> {
   if (manifestLoaded) return;
-  try {
-    const res = await fetch(deploymentPath("/data/imageManifest.json"));
-    if (res.ok) imageManifest = await res.json();
-  } catch {
-    // manifest 加载失败时降级：每张卡只有默认正画
-  }
-  manifestLoaded = true;
+  if (manifestPromise) return manifestPromise;
+  if (Date.now() < manifestRetryAfter) return;
+  const request = fetch(deploymentPath("/data/imageManifest.json"), { cache: "default" })
+    .then(async res => {
+      if (!res.ok) throw new Error(`加载卡图清单失败 (${res.status})`);
+      imageManifest = await res.json();
+      manifestLoaded = true;
+    })
+    .catch(() => {
+      // 卡图清单加载失败时降级：每张卡只有默认正画；后续请求按退避自动重试。
+      manifestRetryAfter = Date.now() + MANIFEST_RETRY_DELAY_MS;
+    })
+    .finally(() => {
+      if (manifestPromise === request) manifestPromise = null;
+    });
+  manifestPromise = request;
+  return request;
 }
 
 function parseCard(raw: RawCardData): CardData {
@@ -82,16 +97,27 @@ function parseCard(raw: RawCardData): CardData {
 export async function loadCardSet(setName: string): Promise<CardData[]> {
   const path = CARD_SET_PATHS[setName];
   if (!path) throw new Error(`未知卡集: ${setName}`);
+  const cached = cardSetCache.get(setName);
+  if (cached) return cached;
+  const pending = cardSetPromises.get(setName);
+  if (pending) return pending;
 
-  await ensureManifest();
+  const request = (async () => {
+    await ensureManifest();
+    const res = await fetch(deploymentPath(path), { cache: "default" });
+    if (!res.ok) throw new Error(`加载卡集失败: ${setName} (${res.status})`);
 
-  const res = await fetch(deploymentPath(path));
-  if (!res.ok) throw new Error(`加载卡集失败: ${setName} (${res.status})`);
-
-  const raw: RawCardData[] = await res.json();
-  const cards = raw.map(parseCard);
-  cards.forEach((c) => cardCache.set(c.number, c));
-  return cards;
+    const raw: RawCardData[] = await res.json();
+    const cards = raw.map(parseCard);
+    cards.forEach((c) => cardCache.set(c.number, c));
+    cardSetCache.set(setName, cards);
+    return cards;
+  })();
+  cardSetPromises.set(setName, request);
+  void request.catch(() => {
+    if (cardSetPromises.get(setName) === request) cardSetPromises.delete(setName);
+  });
+  return request;
 }
 
 export function getCard(number: string): CardData | undefined {

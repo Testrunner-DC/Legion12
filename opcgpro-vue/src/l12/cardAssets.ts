@@ -89,7 +89,10 @@ export async function loadCardAssetManifest(force = false): Promise<CardAssetMan
 
   const previousManifest = manifestValue
 
-  manifestPromise = fetch(manifestUrl(force), { cache: force ? 'reload' : 'no-cache', credentials: 'same-origin' })
+  // The manifest is public deploy metadata with a bounded revalidation window.
+  // Normal page revisits should use the browser's local cache; a missing card
+  // entry still takes the explicit reload path below.
+  manifestPromise = fetch(manifestUrl(force), { cache: force ? 'reload' : 'default', credentials: 'same-origin' })
     .then(async response => {
       if (!response.ok) throw new Error(`卡图清单加载失败（${response.status}）`)
       const value: unknown = await response.json()

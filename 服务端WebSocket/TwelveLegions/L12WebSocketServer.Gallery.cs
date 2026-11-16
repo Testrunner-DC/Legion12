@@ -9,8 +9,16 @@ public sealed partial class L12WebSocketServer
     {
         var app = _app ?? throw new InvalidOperationException("WebSocket server app is not initialized");
         // 画廊是公开展示；权益只在构筑选用和开局二次校验时生效。
-        app.MapGet("/api/alternate-arts", () => Results.Ok(_platform.AlternateArts()));
-        app.MapGet("/api/gallery/presentation", () => Results.Ok(_platform.GalleryPresentationCatalog()));
+        app.MapGet("/api/alternate-arts", (HttpResponse response) =>
+        {
+            response.Headers.CacheControl = "public,max-age=60,stale-while-revalidate=300";
+            return Results.Ok(_platform.AlternateArts());
+        });
+        app.MapGet("/api/gallery/presentation", (HttpResponse response) =>
+        {
+            response.Headers.CacheControl = "public,max-age=60,stale-while-revalidate=300";
+            return Results.Ok(_platform.GalleryPresentationCatalog());
+        });
         app.MapGet("/api/admin/alternate-art-products", (HttpRequest request, bool? includeInactive) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;

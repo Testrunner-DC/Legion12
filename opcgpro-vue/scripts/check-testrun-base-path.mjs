@@ -27,7 +27,10 @@ function assertDeckDataPaths(source) {
   const tree = ts.createSourceFile('decks.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   assert.equal(tree.parseDiagnostics.length, 0, 'deck source must parse')
   const paths = []
-  const noStore = new Set(['/data/l12/cards.s1.json', '/data/l12/cards.lookup.json', '/data/l12/cards.st.json'])
+  const cacheable = new Set([
+    '/data/l12/cards.s1.json', '/data/l12/cards.lookup.json', '/data/l12/cards.st.json',
+    '/data/l12/preset-decks.s1.json', '/data/l12/preset-decks.s2.json',
+  ])
   function visit(node) {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'fetch') {
       const path = node.arguments[0]
@@ -36,20 +39,20 @@ function assertDeckDataPaths(source) {
         && ts.isStringLiteral(path.arguments[0]), 'each deck fetch must bind its literal path through deploymentPath')
       const value = path.arguments[0].text
       paths.push(value)
-      if (noStore.has(value)) {
+      if (cacheable.has(value)) {
         const options = node.arguments[1]
         assert.ok(options && ts.isObjectLiteralExpression(options), `${value} must preserve request options`)
         const cache = options.properties.filter(item => ts.isPropertyAssignment(item)
           && (ts.isIdentifier(item.name) || ts.isStringLiteral(item.name)) && item.name.text === 'cache')
         assert.equal(cache.length, 1, `${value} must have one explicit cache policy`)
-        assert.ok(ts.isStringLiteral(cache[0].initializer) && cache[0].initializer.text === 'no-store',
-          `${value} must preserve no-store refresh semantics`)
+        assert.ok(ts.isStringLiteral(cache[0].initializer) && cache[0].initializer.text === 'default',
+          `${value} must allow the browser's bounded local cache`)
       } else assert.equal(node.arguments.length, 1, `${value} must preserve its default fetch policy`)
     }
     ts.forEachChild(node, visit)
   }
   visit(tree)
-  assert.deepEqual(paths.sort(), [...noStore, '/data/l12/preset-decks.s1.json', '/data/l12/preset-decks.s2.json'].sort(),
+  assert.deepEqual(paths.sort(), [...cacheable].sort(),
     'all five unique deck data sources must remain, without a second raw lookup fetch')
   const functions = new Map(tree.statements.filter(ts.isFunctionDeclaration).map(node => [node.name?.text, node]))
   const helper = functions.get('loadLookupCatalog')
@@ -79,7 +82,7 @@ const deckPathMutations = [
   ['lookup deployment prefix removed', source => source.replace("deploymentPath('/data/l12/cards.lookup.json')", "'/data/l12/cards.lookup.json'")],
   ['lookup redirected externally', source => source.replace("'/data/l12/cards.lookup.json'", "'https://example.invalid/cards.lookup.json'")],
   ['lookup path changed', source => source.replace("'/data/l12/cards.lookup.json'", "'/data/l12/cards.st.json'")],
-  ['lookup cache weakened', source => source.replace("{ cache: 'no-store' })\n    .then", "{ cache: 'force-cache' })\n    .then")],
+  ['lookup cache weakened', source => source.replace("{ cache: 'default' })\n    .then", "{ cache: 'no-store' })\n    .then")],
   ['playable loader bypasses helper', source => source.replace('    loadLookupCatalog(),', '    Promise.resolve([]),')],
   ['archive loader bypasses helper', source => source.replace(/(export async function loadCardArchiveCatalog\(\)[\s\S]*?)loadLookupCatalog\(\)/, '$1Promise.resolve([])')],
 ]

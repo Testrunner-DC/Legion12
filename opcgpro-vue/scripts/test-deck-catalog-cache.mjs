@@ -115,7 +115,7 @@ try {
     const module = await fresh(); const calls = []; const body = deferred(); let jsonReads = 0
     globalThis.fetch = async (input, init) => {
       const url = String(input); calls.push(url)
-      assert.equal(init.cache, 'no-store', '读取仍须保留no-store刷新语义')
+      assert.equal(init.cache, 'default', '部署拥有的目录读取必须允许浏览器复用本地缓存')
       if (url.endsWith('cards.lookup.json')) return { ok: true, json: async () => { jsonReads++; return body.promise } }
       return good(url)
     }

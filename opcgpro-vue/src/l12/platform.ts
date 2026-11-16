@@ -973,6 +973,42 @@ type PlatformRequestInit = RequestInit & { reliability?: PlatformRequestReliabil
 const platformRequestCoordinator = createRequestCoordinator(PLATFORM_MAX_CONCURRENT_REQUESTS)
 let platformSessionVersion = 0
 
+type PublicReadCacheEntry = {
+  value?: unknown
+  expiresAt: number
+  request?: Promise<unknown>
+}
+
+// Only immutable/anonymous public projections use this cache. Authenticated
+// account, admin, match and deck-editing reads continue through the normal
+// coordinator with their existing no-store semantics.
+const publicReadCache = new Map<string, PublicReadCacheEntry>()
+const PUBLIC_READ_CACHE_TTL_MS = 60_000
+
+function cachedPublicRead<T>(key: string, read: () => Promise<T>, ttlMs = PUBLIC_READ_CACHE_TTL_MS): Promise<T> {
+  const now = Date.now()
+  const entry = publicReadCache.get(key) ?? { expiresAt: 0 }
+  if (entry.value !== undefined && entry.expiresAt > now) return Promise.resolve(entry.value as T)
+  if (entry.request) return entry.request as Promise<T>
+
+  // Serve an expired public projection immediately and refresh it in the
+  // background. A first load still waits for authoritative data.
+  const request = read().then(value => {
+    entry.value = value
+    entry.expiresAt = Date.now() + ttlMs
+    return value
+  }).finally(() => {
+    if (entry.request === request) entry.request = undefined
+  })
+  entry.request = request
+  publicReadCache.set(key, entry)
+  if (entry.value !== undefined) {
+    void request.catch(() => undefined)
+    return Promise.resolve(entry.value as T)
+  }
+  return request
+}
+
 function loadAccount(): PlatformAccount | null {
   try { return JSON.parse(localStorage.getItem(deploymentStorageKey('l12-account')) || 'null') as PlatformAccount | null } catch { return null }
 }
@@ -1113,6 +1149,7 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
   // Public projections are identity-independent, even while an administrator browses.
   const anonymousPublicRead = safeRead && (path.startsWith('/api/public/')
     || path === '/api/alternate-arts' || path === '/api/gallery/presentation')
+  const browserCacheablePublicRead = path === '/api/alternate-arts' || path === '/api/gallery/presentation'
   const requestToken = anonymousCredentialRequest || anonymousPublicRead ? '' : platformState.token
   const requestSessionVersion = platformSessionVersion
   const headerKey = Array.from(new Headers(fetchInit.headers).entries())
@@ -1165,7 +1202,9 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
         if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
         const response = await fetch(`${requestBase}${path}`, { ...fetchInit, signal, headers,
           ...(sharedGalleryRead ? { redirect: 'error' as const } : {}),
-          ...(anonymousPublicRead ? { credentials: 'omit' as const, cache: 'no-store' as const } : {}) })
+          ...(anonymousPublicRead ? { credentials: 'omit' as const } : {}),
+          ...(browserCacheablePublicRead ? { cache: 'default' as const }
+            : anonymousPublicRead ? { cache: 'no-store' as const } : {}) })
         const payload = responseType === 'blob' && response.ok
           ? await response.blob() : await response.json().catch(() => ({}))
         if (requestToken && (platformState.token !== requestToken || platformSessionVersion !== requestSessionVersion))
@@ -2132,8 +2171,8 @@ export const telemetryApi = {
 /** 玩家自己的异画库存；卡图选择仍由服务端在开局时二次校验。 */
 export const alternateArtApi = {
   mine: () => platformRequest<AlternateArt[]>('/api/me/alternate-arts'),
-  gallery: () => platformRequest<AlternateArt[]>('/api/alternate-arts'),
-  presentationCatalog: () => platformRequest<GalleryPresentationCatalog>('/api/gallery/presentation'),
+  gallery: () => cachedPublicRead('alternate-arts', () => platformRequest<AlternateArt[]>('/api/alternate-arts')),
+  presentationCatalog: () => cachedPublicRead('gallery-presentation', () => platformRequest<GalleryPresentationCatalog>('/api/gallery/presentation')),
   notifications: () => platformRequest<AlternateArtGrantNotification[]>('/api/me/alternate-art-grant-notifications'),
   acknowledgeNotification: (id: string) => platformRequest<void>(`/api/me/alternate-art-grant-notifications/${encodeURIComponent(id)}/acknowledge`, { method: 'POST' }),
 }

@@ -166,7 +166,7 @@ const newlyCompletedPresentationVersions = [
 const contracts = [
   [s1.length === 133 && s2.length === 115 && st.length === 76 && cards.length === 324 && ids.size === 324, 'S01/S02/ST 必须保持 133+115+76=324 张唯一卡号'],
   [cardAssets.includes('card-assets.manifest.json') && cardAssets.includes('resolveCardAsset') && !cardAssets.includes("kind: 'legacy'") && !cardAssets.includes("{ kind: 'legacy'"), '必须按逻辑卡号解析完整内容寻址图库，且不得重新请求已退役的 /cards 旧卡图'],
-  [cardAssets.includes('missingEntryRefreshAfter') && cardAssets.includes('loadCardAssetManifest(true)') && cardAssets.includes("cache: force ? 'reload' : 'no-cache'") && cardAssets.includes('if (manifestPromise)'), '已加载旧清单但缺少新卡号时必须共享一次强制刷新，避免旧页面永久显示占位图或并发重复请求'],
+  [cardAssets.includes('missingEntryRefreshAfter') && cardAssets.includes('loadCardAssetManifest(true)') && cardAssets.includes("cache: force ? 'reload' : 'default'") && cardAssets.includes('if (manifestPromise)'), '已加载旧清单但缺少新卡号时必须共享一次强制刷新，避免旧页面永久显示占位图或并发重复请求'],
   [cardAssets.includes("CARD_IMAGE_PLACEHOLDER = deploymentPath('/assets/l12/card-back-official.png')")
     && !cardAssets.includes('CARD IMAGE') && !cardAssets.includes('data:image/svg+xml'), '缺图与隐藏卡的唯一降级图必须是主牌库官方卡背，不得向玩家显示 XII/CARD IMAGE 诊断占位图'],
   [cardAssets.includes('explicitCdnBaseUrl') && cardAssets.includes('manifestCdnBaseUrl') && cardAssets.indexOf("sourceFor('sameOrigin'") < cardAssets.indexOf("!explicitCdnBaseUrl && manifestCdnBaseUrl") && cardAssets.includes('placeholder'), '未显式启用 CDN 时必须优先使用同源优化资源，清单 CDN 仅作后备'],

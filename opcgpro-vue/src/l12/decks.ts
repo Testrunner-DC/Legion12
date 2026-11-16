@@ -364,6 +364,7 @@ function lookupDeckCard(card: LookupCard): DeckCard {
 
 let catalogPromise: Promise<DeckCard[]> | null = null
 let lookupCatalogRequest: Promise<LookupCard[]> | null = null
+let officialPresetDecksPromise: Promise<OfficialL12PresetDeck[]> | null = null
 
 function legacyStorageKey(accountId = platformState.account?.id) {
   return accountId ? `${STORAGE_KEY}:${accountId}` : STORAGE_KEY
@@ -825,9 +826,11 @@ export async function loadPrivatePublicationSource(publicationId: string,
 
 function loadLookupCatalog(): Promise<LookupCard[]> {
   if (lookupCatalogRequest) return lookupCatalogRequest
-  // Share raw lookup only while reading it. A later archive visit still reads
-  // fresh presentation data instead of inheriting the playable catalog cache.
-  const request: Promise<LookupCard[]> = fetch(deploymentPath('/data/l12/cards.lookup.json'), { cache: 'no-store' })
+  // The lookup is deploy-owned public data. Let the browser reuse its bounded
+  // HTTP cache; the server publishes this file with ETag/max-age and a new
+  // release changes the response body. We still clear the in-flight promise so
+  // a failed read can recover and a later archive visit can revalidate.
+  const request: Promise<LookupCard[]> = fetch(deploymentPath('/data/l12/cards.lookup.json'), { cache: 'default' })
     .then(async response => {
       if (!response.ok) throw new Error('卡牌版本数据加载失败')
       return await response.json() as LookupCard[]
@@ -842,9 +845,9 @@ function loadLookupCatalog(): Promise<LookupCard[]> {
 export function loadDeckCatalog(): Promise<DeckCard[]> {
   if (catalogPromise) return catalogPromise
   const request = Promise.all([
-    fetch(deploymentPath('/data/l12/cards.s1.json'), { cache: 'no-store' }),
+    fetch(deploymentPath('/data/l12/cards.s1.json'), { cache: 'default' }),
     loadLookupCatalog(),
-    fetch(deploymentPath('/data/l12/cards.st.json'), { cache: 'no-store' }),
+    fetch(deploymentPath('/data/l12/cards.st.json'), { cache: 'default' }),
   ]).then(async ([s1Response, lookup, stResponse]) => {
     if (!s1Response.ok || !stResponse.ok) throw new Error('卡牌数据加载失败')
     const seasonOne: DeckCard[] = await s1Response.json()
@@ -969,17 +972,27 @@ export async function syncSavedDecksFromAccount(): Promise<Record<string, SavedL
 }
 
 export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]> {
-  const responses = await Promise.all([
-    fetch(deploymentPath('/data/l12/preset-decks.s1.json')),
-    fetch(deploymentPath('/data/l12/preset-decks.s2.json')),
-  ])
-  if (responses.some(response => !response.ok)) throw new Error('官方预组加载失败')
-  const seasons = await Promise.all(responses.map(response => response.json() as Promise<OfficialL12PresetDeck[]>))
-  return seasons.flat().map(deck => ({
-    ...deck,
-    moraleIds: deck.moraleIds.map(canonicalMoraleCardId),
-    specialIds: deck.specialIds ?? [],
-  }))
+  if (officialPresetDecksPromise) return officialPresetDecksPromise
+  // Preset decks are deploy-owned public data. Share one in-flight/fulfilled
+  // promise across lobby, archive and editor routes; the browser HTTP cache
+  // still handles revalidation after a full reload or a new deployment.
+  const request = Promise.all([
+    fetch(deploymentPath('/data/l12/preset-decks.s1.json'), { cache: 'default' }),
+    fetch(deploymentPath('/data/l12/preset-decks.s2.json'), { cache: 'default' }),
+  ]).then(async responses => {
+    if (responses.some(response => !response.ok)) throw new Error('官方预组加载失败')
+    const seasons = await Promise.all(responses.map(response => response.json() as Promise<OfficialL12PresetDeck[]>))
+    return seasons.flat().map(deck => ({
+      ...deck,
+      moraleIds: deck.moraleIds.map(canonicalMoraleCardId),
+      specialIds: deck.specialIds ?? [],
+    }))
+  })
+  officialPresetDecksPromise = request
+  void request.catch(() => {
+    if (officialPresetDecksPromise === request) officialPresetDecksPromise = null
+  })
+  return request
 }
 
 export async function ensureOfficialPrebuiltDecks() {

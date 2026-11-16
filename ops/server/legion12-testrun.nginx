@@ -130,6 +130,22 @@ server {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
     }
 
+    location ~ "^/data/l12/(?:cards\.(?:s1|lookup|st)|preset-decks\.s[12])\.json$" {
+        root /opt/legion12-testrun/opcgpro-vue/dist-testrun;
+        try_files $uri =404;
+        etag on;
+        add_header Cache-Control "public, max-age=300, must-revalidate" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    location ~ "^/data/(?:imageManifest|allCards|(?:OP|EB|ST|P|PRB|OPD|TY)[A-Z0-9]*)\.json$" {
+        root /opt/legion12-testrun/opcgpro-vue/dist-testrun;
+        try_files $uri =404;
+        etag on;
+        add_header Cache-Control "public, max-age=300, must-revalidate" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
     location = /index.html {
         root /opt/legion12-testrun/opcgpro-vue/dist;
         try_files /index.html =404;

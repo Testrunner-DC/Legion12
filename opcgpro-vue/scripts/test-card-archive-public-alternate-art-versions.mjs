@@ -39,7 +39,7 @@ assert.doesNotMatch(archive, /alternateArtApi\.mine\(|ownedArts|authState|platfo
 assert.match(archive, /archiveBaseCardId: base\.id/,
   '公开异画仍须绑定原卡身份，进入同一版本组')
 assert.match(serverSource,
-  /MapGet\("\/api\/alternate-arts", \(\) => Results\.Ok\(_platform\.AlternateArts\(\)\)\)/,
+  /MapGet\("\/api\/alternate-arts", \(HttpResponse response\) =>[\s\S]*?Results\.Ok\(_platform\.AlternateArts\(\)\)/,
   '公开版本集合必须继续来自只返回启用异画的公开接口')
 assert.match(store,
   /public IReadOnlyList<L12AlternateArtView> AlternateArts\(bool includeInactive = false\)[\s\S]*?_data\.AlternateArts\.Where\(row => includeInactive \|\| row\.Active\)/,
