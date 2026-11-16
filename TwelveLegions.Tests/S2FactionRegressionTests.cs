@@ -589,6 +589,49 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    public void FaithZealotDiscardedByEffectCannotBypassThorChargeHealthCondition()
+    {
+        var game = CreateWithFirstMaster("S02-03M1", 63101);
+        var player = game.State.Players[0];
+        player.Hp = 4;
+        player.Hand.Clear();
+        var heracles = Card("S02-0502", "faith-thor-heracles");
+        var zealot = Card("S02-0006", "faith-thor-zealot");
+        player.Hand.AddRange([heracles, zealot]);
+        AddMorale(player, heracles.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", heracles.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var optional = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: optional.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId,
+            Choice: zealot.InstanceId)).Accepted);
+        PassResponses(game);
+
+        var faithDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: faithDeclaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
+        var faith = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-faith-zealot");
+        Assert.Contains("thorCharge", faith.ValidChoices);
+        var result = game.Handle(0, new L12Command("resolvePrompt", PromptId: faith.PromptId,
+            Choice: "thorCharge"));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不高于3", StringComparison.Ordinal));
+        Assert.Null(game.State.FreeMasterActivation);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.Data.GetValueOrDefault("ability") == "thorCharge");
+        Assert.DoesNotContain(player.UsedAbilities, key => key.Contains("thorCharge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void FaithZealotDiscardedAsAColonCostDoesNotTrigger()
     {
         var game = Create(6311);
