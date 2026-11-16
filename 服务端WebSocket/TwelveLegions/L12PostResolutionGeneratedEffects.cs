@@ -101,6 +101,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[completed.Controller];
         // 只按卡面身份生成固定选项；不得依据当下手牌、墓地或隐藏候选裁剪公开 Prompt。
+        // 公开可判定的发动条件可以通过 disabledChoice 呈现，避免玩家点击后才得知失败。
         var abilities = GetFaithZealotEligibleAbilities(player.MasterId);
         if (abilities.Length == 0)
         {
@@ -114,7 +115,12 @@ public sealed partial class L12GameEngine
             ["sourceInstanceId"] = completed.SourceInstanceId,
             ["skip"] = "不发动",
         };
-        foreach (var ability in abilities) data[ability.Id] = ability.Label;
+        foreach (var ability in abilities)
+        {
+            data[ability.Id] = ability.Label;
+            if (ability.Id == "thorCharge" && player.Hp > 3)
+                data[$"disabledChoice:{ability.Id}"] = "我方主宰血量需要不高于3";
+        }
         CreatePrompt(completed.Controller, "option",
             "信仰狂热者已结算：选择1个需要消耗士气的主宰效果，无视全部消耗发动且不计入使用次数",
             choices, 1, 1, "faith-zealot-post-resolution", isPrivate: false, data: data);

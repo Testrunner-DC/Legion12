@@ -619,6 +619,7 @@ public sealed class S2FactionRegressionTests
         var faith = Assert.Single(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "s2-faith-zealot");
         Assert.Contains("thorCharge", faith.ValidChoices);
+        Assert.Equal("我方主宰血量需要不高于3", faith.Data["disabledChoice:thorCharge"]);
         var result = game.Handle(0, new L12Command("resolvePrompt", PromptId: faith.PromptId,
             Choice: "thorCharge"));
 
