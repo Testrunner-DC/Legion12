@@ -354,7 +354,8 @@ public sealed class PrivateDeckObjectPersistenceTests
 
             var error = Assert.ThrowsAny<L12PlatformStorageUnavailableException>(() =>
                 stale.Register("不得覆盖", "password-123"));
-            Assert.Contains("请", error.Message);
+            Assert.Contains("当前编辑已保留，可继续编辑后提交", error.Message);
+            Assert.DoesNotContain("请刷新后重试", error.Message);
             Assert.Equal(databaseBefore, ReadPlatformProjection(writer.TransactionalStoragePath));
             Assert.Equal(mirrorBefore, SHA256.HashData(File.ReadAllBytes(path)));
             Assert.DoesNotContain(stale.Accounts(), account => account.Username == "不得覆盖");
