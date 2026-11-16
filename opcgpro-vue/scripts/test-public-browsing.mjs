@@ -28,7 +28,7 @@ class RequestDeadlineError extends Error {}
 const scope={platformState,authState,platformSessionVersion:1,PlatformRequestError,RequestDeadlineError,
  usesSharedGallery:false,location:{origin:'https://fixture.invalid'},
  PLATFORM_UPLOAD_TIMEOUT_MS:10000,PLATFORM_READ_TIMEOUT_MS:10000,PLATFORM_MUTATION_TIMEOUT_MS:10000,PLATFORM_READ_MAX_ATTEMPTS:1,
- requestFingerprint:async()=>undefined,retryableReadFailure:()=>false,retryAfterMilliseconds:()=>0,apiBase:()=> 'https://fixture.invalid',
+  requestFingerprint:async()=>undefined,hasIdempotencyKey:()=>false,newLogicalCorrelationId:()=> 'fixture-correlation',retryableReadFailure:()=>false,retryAfterMilliseconds:()=>0,apiBase:()=> 'https://fixture.invalid',
  forgetAccount:()=>{forgotten++},refreshCurrentAccount:async()=>{refreshed++},platformRequestCoordinator:{execute:options=>options.run(new AbortController().signal)}}
 const request = new Function(...Object.keys(scope),`${js};return platformRequest`)(...Object.values(scope))
 const originalFetch=globalThis.fetch
