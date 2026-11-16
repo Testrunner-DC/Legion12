@@ -70,7 +70,7 @@ public sealed partial class L12PlatformStore
                 || prepared.Actor.Role != actor.Role
                 || prepared.Snapshot is not PasswordSnapshot snapshot || !snapshot.MatchesValues(row)
                 || prepared.Disabled != row.Disabled || prepared.Deleted != row.Deleted || prepared.Role != row.Role)
-                throw new L12SecurityPolicyException("account_changed", "账号信息已更新，请刷新后重试");
+                throw new L12SecurityPolicyException("account_changed", "账号信息已更新，未覆盖最新状态；当前编辑已保留，可继续操作");
             EnsureAccountAdministrationAllowed(actor, accountId, reason, action);
             if (action == "delete")
                 DeleteAccountPersonalDataCore(actor, accountId, reason, new("credential-validation"), false, null);

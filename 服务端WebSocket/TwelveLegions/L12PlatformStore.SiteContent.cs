@@ -73,7 +73,7 @@ public sealed partial class L12PlatformStore
         {
             var row = EnsureContentEntry(key);
             if (request.ExpectedVersion.HasValue && request.ExpectedVersion.Value != row.Version)
-                throw new L12ContentStateConflictException("规则草稿已被其他管理员修改，请刷新后重试");
+                throw new L12ContentStateConflictException("规则草稿已被其他管理员修改，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
             var draft = JsonNode.Parse(NormalizeRuleRulingProducts(key, row.DraftValue)) as JsonObject
                 ?? throw new ArgumentException("规则草稿不是有效对象");
             var draftItems = draft[collection] as JsonArray ?? throw new ArgumentException("规则草稿缺少指定分组");
@@ -307,7 +307,7 @@ public sealed partial class L12PlatformStore
     private static void EnsureRuleItemVersion(ContentRow row, long? expectedVersion)
     {
         if (expectedVersion.HasValue && expectedVersion.Value != row.Version)
-            throw new L12ContentStateConflictException("规则草稿已被其他管理员修改，请刷新后重试");
+            throw new L12ContentStateConflictException("规则草稿已被其他管理员修改，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
     }
 
     private string NextRuleCenterItemId(string collection, ContentRow row, JsonObject draft)
@@ -576,7 +576,7 @@ public sealed partial class L12PlatformStore
                 ? null : _data.SiteCategories.FirstOrDefault(item => item.Id == draft.Id.Trim());
             if (row is not null && row.Kind != kind) throw new ArgumentException("分类所属内容类型不能修改");
             if (row is not null && draft.ExpectedVersion is not null && row.Version != draft.ExpectedVersion)
-                throw new L12SiteContentConflictException("分类已被其他操作更新，请刷新后重试");
+            throw new L12SiteContentConflictException("分类已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
             if (_data.SiteCategories.Any(item => item.Id != row?.Id && item.Kind == kind &&
                 (string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(item.Slug, slug, StringComparison.OrdinalIgnoreCase))))
@@ -669,7 +669,7 @@ public sealed partial class L12PlatformStore
                 throw new L12SecurityPolicyException("authentication_required", "登录已失效，请重新登录");
             if (current.Account.PermissionVersion != authenticated.Account.PermissionVersion ||
                 !L12Authorization.HasPermission(current.Account, L12Permission.AdminContentDraft))
-                throw new L12SecurityPolicyException("permission_denied", "账号权限已更新，请刷新后重试");
+                throw new L12SecurityPolicyException("permission_denied", "账号权限已更新，未覆盖最新状态；当前编辑已保留，可继续操作");
             return current.Account;
         });
 

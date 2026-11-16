@@ -1685,7 +1685,7 @@ public sealed partial class L12PlatformStore
             var canonical = ContentKeys().First(item => string.Equals(item, key.Trim(), StringComparison.OrdinalIgnoreCase));
             var existing = FindContentEntry(canonical);
             if (expectedVersion.HasValue && expectedVersion.Value != (existing?.Version ?? 0))
-                throw new L12ContentStateConflictException("内容草稿已被其他管理员修改，请刷新后重试");
+                throw new L12ContentStateConflictException("内容草稿已被其他管理员修改，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
             value = NormalizeRuleRulingProducts(canonical, value);
             ValidateSiteContentValue(canonical, value, false);
             var row = EnsureContentEntry(canonical);

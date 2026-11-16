@@ -96,15 +96,86 @@ let checks = 0
 
 {
   const coordinator = createRequestCoordinator(1)
+  let attempts = 0
+  const result = await coordinator.execute({
+    key: 'replayable-write', method: 'POST', correlationId: 'replayable-write-correlation',
+    timeoutMs: 1_000, maxAttempts: 3,
+    shouldRetry: error => error instanceof TypeError, retryDelayMs: () => 0,
+    run: async () => { attempts += 1; if (attempts < 3) throw new TypeError('temporary'); return 'applied' },
+  })
+  assert.equal(result, 'applied'); checks += 1
+  assert.equal(attempts, 3); checks += 1
+}
+
+{
+  const coordinator = createRequestCoordinator(1)
+  let attempts = 0
+  const result = await coordinator.execute({
+    key: 'replayable-timeout', method: 'PUT', correlationId: 'replayable-timeout-correlation',
+    timeoutMs: 10, maxAttempts: 2, retryOnDeadline: true,
+    shouldRetry: () => false, retryDelayMs: () => 0,
+    run: signal => {
+      attempts += 1
+      if (attempts === 2) return Promise.resolve('after-timeout-replay')
+      return new Promise((_, reject) => signal.addEventListener('abort', () => {
+        reject(new DOMException('aborted', 'AbortError'))
+      }, { once: true }))
+    },
+  })
+  assert.equal(result, 'after-timeout-replay'); checks += 1
+  assert.equal(attempts, 2); checks += 1
+}
+
+{
+  const coordinator = createRequestCoordinator(1)
+  let attempts = 0
+  const result = await coordinator.execute({
+    key: 'read-timeout-replay', method: 'GET', correlationId: 'read-timeout-correlation',
+    timeoutMs: 10, maxAttempts: 2, retryOnDeadline: true,
+    shouldRetry: () => true, retryDelayMs: () => 0,
+    run: signal => {
+      attempts += 1
+      if (attempts === 2) return Promise.resolve('read-after-timeout-replay')
+      return new Promise((_, reject) => signal.addEventListener('abort', () => {
+        reject(new DOMException('aborted', 'AbortError'))
+      }, { once: true }))
+    },
+  })
+  assert.equal(result, 'read-after-timeout-replay'); checks += 1
+  assert.equal(attempts, 2); checks += 1
+}
+
+{
+  const coordinator = createRequestCoordinator(1)
+  let attempts = 0
+  await assert.rejects(coordinator.execute({
+    key: 'retry-deadline-correlation', method: 'GET', correlationId: 'retry-correlation',
+    timeoutMs: 15, maxAttempts: 3,
+    shouldRetry: error => error instanceof TypeError, retryDelayMs: () => 0,
+    run: signal => {
+      attempts += 1
+      if (attempts === 1) throw new TypeError('retry-me')
+      return new Promise((_, reject) => signal.addEventListener('abort', () => {
+        reject(new DOMException('aborted', 'AbortError'))
+      }, { once: true }))
+    },
+  }), error => error instanceof RequestDeadlineError && error.correlationId === 'retry-correlation')
+  assert.equal(attempts, 2); checks += 1
+}
+
+{
+  const coordinator = createRequestCoordinator(1)
   let observedAbort = false
   await assert.rejects(coordinator.execute({
     key: 'deadline', method: 'GET', timeoutMs: 10, maxAttempts: 1,
+    correlationId: 'deadline-correlation',
     shouldRetry: () => false, retryDelayMs: () => 0,
     run: signal => new Promise((_, reject) => signal.addEventListener('abort', () => {
       observedAbort = true
       reject(new DOMException('aborted', 'AbortError'))
     }, { once: true })),
-  }), RequestDeadlineError)
+  }), error => error instanceof RequestDeadlineError && error.correlationId === 'deadline-correlation'
+    && error.attempt === 1 && error.queueWaitMs >= 0)
   assert.equal(observedAbort, true); checks += 1
 }
 
@@ -141,14 +212,17 @@ let checks = 0
     run: () => new Promise(resolve => { releaseFirst = resolve }),
   })
   await tick()
-  await assert.rejects(coordinator.execute({
+  const queued = coordinator.execute({
     method: 'GET', timeoutMs: 10, maxAttempts: 1,
     shouldRetry: () => false, retryDelayMs: () => 0,
-    run: async () => { queuedRuns += 1; return 'unexpected' },
-  }), RequestDeadlineError)
-  assert.equal(queuedRuns, 0); checks += 1
+    run: async () => { queuedRuns += 1; return 'queued-success' },
+  })
+  // A request may wait behind the concurrency gate without consuming its
+  // network deadline. This is the regression for the false timeout burst.
   releaseFirst('released')
   await first
+  assert.equal(await queued, 'queued-success'); checks += 1
+  assert.equal(queuedRuns, 1); checks += 1
 }
 
 {
@@ -178,7 +252,29 @@ let checks = 0
 }
 
 const platform = fs.readFileSync(new URL('../src/l12/platform.ts', import.meta.url), 'utf8')
+const serverRoot = new URL('../../服务端WebSocket/TwelveLegions/', import.meta.url)
+const serverConflictText = fs.readdirSync(serverRoot, { withFileTypes: true })
+  .filter(entry => entry.isFile() && entry.name.endsWith('.cs'))
+  .map(entry => fs.readFileSync(new URL(entry.name, serverRoot), 'utf8'))
+  .join('\n')
 assert(platform.includes('PLATFORM_MAX_CONCURRENT_REQUESTS = 4')); checks += 1
+assert(platform.includes('PLATFORM_REPLAYABLE_MUTATION_MAX_ATTEMPTS = 3')); checks += 1
+assert(platform.includes('function hasIdempotencyKey(init: RequestInit)')); checks += 1
+assert(platform.includes('init.body instanceof FormData')); checks += 1
+assert(platform.includes('const replayableMutation = !safeRead && hasIdempotencyKey(fetchInit)')); checks += 1
+assert(platform.includes('retryOnDeadline: safeRead || replayableMutation')); checks += 1
+assert(!platform.includes('请求超时，请稍后重试')); checks += 1
+assert(!serverConflictText.includes('资源版本已变化，请刷新后重试')); checks += 1
+assert(!serverConflictText.includes('请刷新后重试')); checks += 1
+assert(platform.includes('retryBaseDelayMs')); checks += 1
+assert(platform.includes('写入执行超时，请先核对操作状态后再提交')); checks += 1
+assert(platform.includes('读取执行超时，系统已自动重试')); checks += 1
+assert(platform.includes('const logicalCorrelationId = newLogicalCorrelationId()')); checks += 1
+assert(platform.includes("error.correlationId)")); checks += 1
+assert(platform.includes('async function saveContentDraftWithRecovery')); checks += 1
+assert(platform.includes('async function saveContentDraftBatchWithRecovery')); checks += 1
+assert(platform.includes("const idempotencyKey = commandKey('draft-rebase')")
+  || platform.includes("idempotencyKey = commandKey('draft-rebase')")); checks += 1
 assert(platform.includes('Math.min(reliability.maxAttempts ?? PLATFORM_READ_MAX_ATTEMPTS, PLATFORM_READ_MAX_ATTEMPTS)')); checks += 1
 assert(platform.includes('Math.min(reliability.timeoutMs ?? maximumTimeoutMs, maximumTimeoutMs)')); checks += 1
 assert(!platform.includes('dedupe?: boolean')); checks += 1

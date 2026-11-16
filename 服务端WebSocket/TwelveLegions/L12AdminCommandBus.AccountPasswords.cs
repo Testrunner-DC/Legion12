@@ -83,7 +83,7 @@ public sealed partial class L12AdminCommandBus
             {
                 if (preparationFailure is not null) return preparationFailure;
                 if (prepared is null)
-                    return L12AdminCommandResult<T>.Fail("account_changed", "账号信息已更新，请刷新后重试", StatusCodes.Status409Conflict);
+                    return L12AdminCommandResult<T>.Fail("account_changed", "账号信息已更新，未覆盖最新状态；当前编辑已保留，可继续操作", StatusCodes.Status409Conflict);
                 try
                 {
                     // Before any deletion recorder/chat side effect, and again in Store apply.

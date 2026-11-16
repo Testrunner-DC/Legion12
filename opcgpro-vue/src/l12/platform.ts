@@ -959,10 +959,14 @@ export const PLATFORM_READ_TIMEOUT_MS = 10_000
 export const PLATFORM_MUTATION_TIMEOUT_MS = 20_000
 export const PLATFORM_UPLOAD_TIMEOUT_MS = 60_000
 export const PLATFORM_READ_MAX_ATTEMPTS = 2
+export const PLATFORM_REPLAYABLE_MUTATION_MAX_ATTEMPTS = 3
 
 interface PlatformRequestReliabilityOptions {
   timeoutMs?: number
   maxAttempts?: number
+  /** Backoff for an explicitly replayable (idempotent) request. */
+  retryBaseDelayMs?: number
+  retryMaxDelayMs?: number
 }
 
 type PlatformRequestInit = RequestInit & { reliability?: PlatformRequestReliabilityOptions; responseType?: 'json' | 'blob' }
@@ -1063,6 +1067,24 @@ function retryableReadFailure(error: unknown) {
     && [408, 425, 500, 502, 503, 504].includes(error.status)
 }
 
+function hasIdempotencyKey(init: RequestInit) {
+  // FormData/stream bodies are not safely replayable in the browser even if a
+  // caller happens to attach an idempotency header; keep uploads single-flight.
+  if (typeof FormData !== 'undefined' && init.body instanceof FormData) return false
+  const headerKey = new Headers(init.headers).get('Idempotency-Key')?.trim()
+  if (headerKey) return true
+  if (typeof init.body !== 'string' || !init.body.trim()) return false
+  try {
+    const body = JSON.parse(init.body) as { idempotencyKey?: unknown }
+    return typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim().length > 0
+  } catch { return false }
+}
+
+function newLogicalCorrelationId() {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
+}
+
 async function requestFingerprint(value: string) {
   const subtle = globalThis.crypto?.subtle
   if (!subtle) return undefined
@@ -1074,6 +1096,10 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
   const { reliability = {}, responseType = 'json', ...fetchInit } = init
   const method = String(fetchInit.method || 'GET').toUpperCase()
   const safeRead = method === 'GET' || method === 'HEAD'
+  // A mutation is replayable only when its contract carries an idempotency key.
+  // This avoids duplicating one-shot operations while allowing command-backed
+  // writes to recover from a lost response with the same logical command.
+  const replayableMutation = !safeRead && hasIdempotencyKey(fetchInit)
   const sharedGalleryRead = usesSharedGallery && safeRead
     && (path === '/api/alternate-arts' || path === '/api/gallery/presentation')
   // Bind shared content to this site's root, never to an editable game endpoint.
@@ -1100,29 +1126,42 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
   const maximumTimeoutMs = path === '/api/admin/site/media'
     ? PLATFORM_UPLOAD_TIMEOUT_MS : safeRead ? PLATFORM_READ_TIMEOUT_MS : PLATFORM_MUTATION_TIMEOUT_MS
   const timeoutMs = Math.max(1, Math.min(reliability.timeoutMs ?? maximumTimeoutMs, maximumTimeoutMs))
-  // 写入即使调用方误配 maxAttempts 也只执行一次；只有 GET/HEAD 允许有限重试。
+  // 无幂等键的写入即使调用方误配 maxAttempts 也只执行一次；只有 GET/HEAD
+  // 与显式幂等键的写入允许有限重试。
   const maxAttempts = safeRead
     ? Math.max(1, Math.min(reliability.maxAttempts ?? PLATFORM_READ_MAX_ATTEMPTS, PLATFORM_READ_MAX_ATTEMPTS))
-    : 1
+    : replayableMutation
+      ? Math.max(1, Math.min(reliability.maxAttempts ?? PLATFORM_REPLAYABLE_MUTATION_MAX_ATTEMPTS, PLATFORM_REPLAYABLE_MUTATION_MAX_ATTEMPTS))
+      : 1
+  const retryBaseDelayMs = Math.max(0, Math.min(
+    reliability.retryBaseDelayMs ?? (safeRead ? 250 : 1_000), 15_000))
+  const retryMaxDelayMs = Math.max(retryBaseDelayMs, Math.min(
+    reliability.retryMaxDelayMs ?? (safeRead ? 2_000 : 10_000), 30_000))
+  // One logical request keeps one correlation ID across queueing, retries and
+  // timeout reporting; the scheduler must not make each retry look unrelated.
+  const logicalCorrelationId = newLogicalCorrelationId()
 
   try {
     return await platformRequestCoordinator.execute<T>({
       key: requestKey,
+      correlationId: logicalCorrelationId,
       method,
       signal: fetchInit.signal,
       timeoutMs,
       maxAttempts,
-      shouldRetry: error => safeRead && retryableReadFailure(error),
+      // Reads are safe to replay as well; this keeps a transient fetch timeout
+      // from surfacing immediately while writes remain gated by idempotency.
+      retryOnDeadline: safeRead || replayableMutation,
+      shouldRetry: error => (safeRead || replayableMutation) && retryableReadFailure(error),
       retryDelayMs: (error, attempt) => error instanceof PlatformRequestError && error.retryAfterMs > 0
-        ? error.retryAfterMs : Math.min(250 * (2 ** (attempt - 1)), 2_000),
+        ? error.retryAfterMs : Math.min(retryBaseDelayMs * (2 ** (attempt - 1)), retryMaxDelayMs),
       run: async signal => {
         if (requestToken && (platformState.token !== requestToken || platformSessionVersion !== requestSessionVersion))
           throw new PlatformRequestError('账号已切换，已忽略旧请求', 0, 'stale_session', '')
         const headers = new Headers(fetchInit.headers)
         if (anonymousPublicRead) headers.delete('Authorization')
         if (!(fetchInit.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-        headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.()
-          ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
+        headers.set('X-Correlation-ID', logicalCorrelationId)
         if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
         const response = await fetch(`${requestBase}${path}`, { ...fetchInit, signal, headers,
           ...(sharedGalleryRead ? { redirect: 'error' as const } : {}),
@@ -1132,7 +1171,8 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
         if (requestToken && (platformState.token !== requestToken || platformSessionVersion !== requestSessionVersion))
           throw new PlatformRequestError('账号已切换，已忽略旧响应', 0, 'stale_session', '')
         if (!response.ok) {
-          const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID') || '')
+          const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID')
+            || logicalCorrelationId)
           const fallbackMessage = response.status === 413 && path === '/api/admin/site/media'
             ? '图片上传总量超过 32MB，请压缩原图后重试'
             : `请求失败（${response.status}）`
@@ -1160,10 +1200,24 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
       },
     })
   } catch (error) {
-    if (error instanceof RequestDeadlineError)
-      throw new PlatformRequestError('请求超时，请稍后重试', 0, 'request_timeout', '')
-    if (error instanceof TypeError)
-      throw new PlatformRequestError('网络连接不稳定，请检查网络后重试', 0, 'network_error', '')
+    if (error instanceof RequestDeadlineError) {
+      const correlation = error.correlationId ? `（关联 ID：${error.correlationId}）` : ''
+      const message = replayableMutation
+        ? `写入执行超时，已保留幂等标识，请稍后查询结果${correlation}`
+        : safeRead
+          ? `读取执行超时，系统已自动重试；稍后可再次查看${correlation}`
+          : `写入执行超时，请先核对操作状态后再提交${correlation}`
+      throw new PlatformRequestError(message,
+        0, 'request_timeout', error.correlationId)
+    }
+    if (error instanceof TypeError) {
+      const message = replayableMutation
+        ? '写入连接暂时不稳定，已保留幂等标识并自动重试'
+        : safeRead
+          ? '读取连接暂时不稳定，系统已自动重试'
+          : '写入连接暂时不稳定，结果状态待核对；请勿重复提交'
+      throw new PlatformRequestError(message, 0, 'network_error', logicalCorrelationId)
+    }
     throw error
   }
 }
@@ -1388,6 +1442,52 @@ function commandKey(prefix: string) {
 
 function commandBody<T extends Record<string, unknown>>(prefix: string, body: T) {
   return { ...body, idempotencyKey: body.idempotencyKey || commandKey(prefix) }
+}
+
+function isContentVersionConflict(error: unknown) {
+  return error instanceof PlatformRequestError && error.status === 409
+    && (error.code === 'version_conflict' || error.code === 'content_version_conflict')
+}
+
+async function saveContentDraftWithRecovery(key: string, value: string, expectedVersion?: number) {
+  const path = `/api/admin/v1/content/${encodeURIComponent(key)}/draft`
+  let idempotencyKey = commandKey('draft')
+  try {
+    return await platformRequest<ContentEntry>(path, {
+      method: 'PUT', body: JSON.stringify(commandBody('draft', { value, expectedVersion, idempotencyKey })),
+    })
+  } catch (error) {
+    if (!isContentVersionConflict(error)) throw error
+    // Draft editing is a last-writer-wins working copy by design. Re-read only
+    // the current draft revision, keep the user's complete local value, and
+    // replay once with a fresh command key; a transient revision change must not
+    // force a full-page refresh after the user has finished typing.
+    const current = await platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`)
+    idempotencyKey = commandKey('draft-rebase')
+    return await platformRequest<ContentEntry>(path, {
+      method: 'PUT', body: JSON.stringify(commandBody('draft-rebase', {
+        value, expectedVersion: current.version, idempotencyKey,
+      })),
+    })
+  }
+}
+
+async function saveContentDraftBatchWithRecovery(items: { key: string; value: string; expectedVersion?: number }[]) {
+  const path = '/api/admin/v1/content/draft-batch'
+  let idempotencyKey = commandKey('draft-batch')
+  const send = (nextItems: typeof items, prefix: string) => platformRequest<ContentEntry[]>(path, {
+    method: 'POST', body: JSON.stringify(commandBody(prefix, { items: nextItems, idempotencyKey })),
+  })
+  try {
+    return await send(items, 'draft-batch')
+  } catch (error) {
+    if (!isContentVersionConflict(error)) throw error
+    const current = await Promise.all(items.map(item =>
+      platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(item.key)}`)))
+    idempotencyKey = commandKey('draft-batch-rebase')
+    return await send(items.map((item, index) => ({ ...item, expectedVersion: current[index].version })),
+      'draft-batch-rebase')
+  }
 }
 
 function analyticsUtcDate(value: string | undefined) {
@@ -1620,10 +1720,8 @@ export const adminApi = {
   },
   reorderSiteCategories: (kind: SiteContentKind, ids: string[]) => platformRequest<SiteCategory[]>(`/api/admin/site/categories/order/${kind}`, { method: 'PUT', body: JSON.stringify({ ids }) }),
   deleteSiteCategory: (id: string, migrateTo?: string) => platformRequest<void>(`/api/admin/site/categories/${encodeURIComponent(id)}${migrateTo ? `?migrateTo=${encodeURIComponent(migrateTo)}` : ''}`, { method: 'DELETE' }),
-  saveContentDraft: (key: string, value: string, expectedVersion?: number) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value, expectedVersion })) }),
-  saveContentDraftBatch: (items: { key: string; value: string; expectedVersion?: number }[]) => platformRequest<ContentEntry[]>('/api/admin/v1/content/draft-batch', {
-    method: 'POST', body: JSON.stringify(commandBody('draft-batch', { items })),
-  }),
+  saveContentDraft: saveContentDraftWithRecovery,
+  saveContentDraftBatch: saveContentDraftBatchWithRecovery,
   previewContent: (keys: string[]) => platformRequest<ContentBatchPreview>('/api/admin/v1/content/preview', { method: 'POST', body: JSON.stringify({ keys }) }),
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
   publishRuleItem: (key: 'rules.rulings' | 'rules.center', collection: string, itemId: string, expectedVersion?: number) => platformRequest<ContentEntry>('/api/admin/rule-items/publish', {

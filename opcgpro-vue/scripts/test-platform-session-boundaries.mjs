@@ -23,21 +23,21 @@ assert.equal(tree.parseDiagnostics.length, 0, 'platform.ts must parse before the
 const declarationNames = new Set([
   'PlatformRequestError',
   'PLATFORM_MAX_CONCURRENT_REQUESTS', 'PLATFORM_READ_TIMEOUT_MS', 'PLATFORM_MUTATION_TIMEOUT_MS',
-  'PLATFORM_UPLOAD_TIMEOUT_MS', 'PLATFORM_READ_MAX_ATTEMPTS', 'platformRequestCoordinator',
+  'PLATFORM_UPLOAD_TIMEOUT_MS', 'PLATFORM_READ_MAX_ATTEMPTS', 'PLATFORM_REPLAYABLE_MUTATION_MAX_ATTEMPTS', 'platformRequestCoordinator',
   'platformSessionVersion', 'platformState', 'authState', 'authRefreshPromise', 'authRefreshSessionVersion',
   'AUTH_REFRESH_RETRY_BASE_MS', 'AUTH_REFRESH_REQUEST_TIMEOUT_MS', 'AUTH_REFRESH_RETRY_MAX_MS',
   'authRefreshRetryTimer', 'authRefreshRetryAttempts', 'clearAuthRefreshRetry', 'isTemporaryAuthFailure',
   'platformSessionIsCurrent', 'scheduleAuthRefreshRetry', 'retryAfterMilliseconds', 'retryableReadFailure',
-  'requestFingerprint', 'privateDeckConflictRevision', 'platformRequest', 'remember', 'refreshCurrentAccount',
+  'requestFingerprint', 'hasIdempotencyKey', 'newLogicalCorrelationId', 'privateDeckConflictRevision', 'platformRequest', 'remember', 'refreshCurrentAccount',
   'forgetAccount', 'logout', 'changeUsername',
 ])
 const requiredNames = new Set([
   'PlatformRequestError', 'PLATFORM_MAX_CONCURRENT_REQUESTS', 'PLATFORM_READ_TIMEOUT_MS',
-  'PLATFORM_MUTATION_TIMEOUT_MS', 'PLATFORM_UPLOAD_TIMEOUT_MS', 'PLATFORM_READ_MAX_ATTEMPTS',
+  'PLATFORM_MUTATION_TIMEOUT_MS', 'PLATFORM_UPLOAD_TIMEOUT_MS', 'PLATFORM_READ_MAX_ATTEMPTS', 'PLATFORM_REPLAYABLE_MUTATION_MAX_ATTEMPTS',
   'platformRequestCoordinator', 'platformSessionVersion', 'platformState', 'authState', 'authRefreshPromise',
   'AUTH_REFRESH_RETRY_BASE_MS', 'AUTH_REFRESH_REQUEST_TIMEOUT_MS', 'AUTH_REFRESH_RETRY_MAX_MS',
   'authRefreshRetryTimer', 'authRefreshRetryAttempts', 'clearAuthRefreshRetry', 'isTemporaryAuthFailure',
-  'scheduleAuthRefreshRetry', 'retryAfterMilliseconds', 'retryableReadFailure', 'requestFingerprint',
+  'scheduleAuthRefreshRetry', 'retryAfterMilliseconds', 'retryableReadFailure', 'requestFingerprint', 'hasIdempotencyKey', 'newLogicalCorrelationId',
   'platformRequest', 'remember', 'refreshCurrentAccount', 'forgetAccount', 'logout', 'changeUsername',
 ])
 function declaredNames(node) {
@@ -213,6 +213,8 @@ await check('same-session GET keeps the bounded retry behavior', async () => {
   const result = await runtime.platformRequest('/api/private/retry-ok', { reliability: { maxAttempts: 2 } })
   assert.deepEqual(result, { value: 'fresh' })
   assert.equal(runtime.fetchCalls.length, 2)
+  const correlationIds = runtime.fetchCalls.map(call => call.init.headers.get('X-Correlation-ID'))
+  assert.ok(correlationIds[0]); assert.equal(correlationIds[0], correlationIds[1])
 })
 
 await check('coordinator still limits distinct in-flight requests to four', async () => {
@@ -245,6 +247,21 @@ await check('mutations never retry even when a caller asks for two attempts', as
   assert.equal(result.reason?.status, 503)
   assert.equal(runtime.fetchCalls.length, 1)
   assert.equal(runtime.platformState.account?.id, 'A')
+})
+
+await check('idempotent mutations replay transient failures with one logical correlation ID', async () => {
+  const runtime = actualRuntime(() => runtime.fetchCalls.length === 1
+    ? json(503, { code: 'temporary' }, { 'Retry-After': '0.001' })
+    : json(200, { applied: true }))
+  runtime.remember(account('A'), 'token-A')
+  const result = await runtime.platformRequest('/api/private/replayable', {
+    method: 'POST', body: JSON.stringify({ idempotencyKey: 'synthetic-replay-key' }),
+    reliability: { maxAttempts: 2 },
+  })
+  assert.deepEqual(result, { applied: true })
+  assert.equal(runtime.fetchCalls.length, 2)
+  const correlationIds = runtime.fetchCalls.map(call => call.init.headers.get('X-Correlation-ID'))
+  assert.ok(correlationIds[0]); assert.equal(correlationIds[0], correlationIds[1])
 })
 
 await check('a current authenticated 401 logs out exactly once without retry', async () => {

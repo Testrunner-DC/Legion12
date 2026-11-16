@@ -511,7 +511,7 @@ async function readMineDeck(entry: MineDeckEntry, current: () => boolean) {
   const deck = entry.guestDeck ?? Object.values(saved.value).find(candidate => candidate.id
     ? candidate.id === entry.id : candidate.name === entry.name)
   if (!deck || deck.id && (deck.id !== entry.id || deck.revision !== entry.revision))
-    throw new Error('牌库已变化，请刷新后重试')
+    throw new Error('牌库已变化，未覆盖当前内容；本地编辑已保留，可继续编辑后提交')
   return deck
 }
 async function copyToMine(entry: PublishedDeck) {

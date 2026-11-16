@@ -25,7 +25,7 @@ async function refresh() {
     failed.value = false
   } catch (error) {
     failed.value = true
-    notice.value = error instanceof Error ? error.message : '维护状态读取失败，请刷新后重试'
+    notice.value = error instanceof Error ? error.message : '维护状态读取失败，系统将自动重试'
   } finally { busy.value = false }
 }
 async function performMaintenanceChange(begin: boolean) {

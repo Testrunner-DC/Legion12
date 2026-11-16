@@ -571,7 +571,7 @@ public sealed partial class L12PlatformStore
             var currentRevision = SectionRevision(current, normalizedSection);
             if (expectedRevision != currentRevision)
                 throw new L12OperationsConfigException("operations_section_conflict",
-                    "该运营分区已变化，请刷新后重试");
+                    "该运营分区已变化，未覆盖最新数据；当前编辑已保留，可继续编辑后提交");
             var target = _data.OperationsConfigHistory.FirstOrDefault(row => row.Id == normalizedVersionId)
                 ?? throw new L12OperationsConfigException("operations_section_version_not_found",
                     "运营分区历史版本不存在");
@@ -1136,7 +1136,7 @@ public sealed partial class L12PlatformStore
         var currentRevision = SectionRevision(current, section);
         if (expectedRevision is null || expectedRevision < 1 || expectedRevision > currentRevision)
             throw new L12OperationsConfigException("operations_section_conflict",
-                "该运营分区版本无效，请刷新后重试");
+                "该运营分区版本已变化，未覆盖最新数据；当前编辑已保留，可继续编辑后提交");
         var suppliedFields = expectedFieldRevisions is null
             ? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, long>(expectedFieldRevisions, StringComparer.OrdinalIgnoreCase);
@@ -1145,11 +1145,11 @@ public sealed partial class L12PlatformStore
             EnsureOperationsSectionField(section, field);
             if (expectedFieldRevision < 0 || expectedFieldRevision != FieldRevision(current, field))
                 throw new L12OperationsConfigException("operations_field_conflict",
-                    $"运营字段 {field} 已变化，请刷新后重试");
+                    $"运营字段 {field} 已变化，未覆盖最新数据；当前编辑已保留，可继续编辑后提交");
         }
         if (expectedRevision != currentRevision && suppliedFields.Count == 0)
             throw new L12OperationsConfigException("operations_section_conflict",
-                "该运营分区已变化，请刷新后重试");
+                "该运营分区已变化，未覆盖最新数据；当前编辑已保留，可继续编辑后提交");
 
         var patched = ApplyOperationsSectionFields(ToPayload(current), section, payload, suppliedFields.Keys);
         var normalized = NormalizeOperationsPayload(patched);
@@ -1742,7 +1742,7 @@ public sealed partial class L12PlatformStore
     private static void EnsureOperationsVersion(OperationsConfigRow current, long? expectedVersion)
     {
         if (expectedVersion is { } expected && expected != current.Version)
-            throw new L12OperationsConfigException("operations_version_conflict", "运营配置版本已变化，请刷新后重试");
+            throw new L12OperationsConfigException("operations_version_conflict", "运营配置已在后台更新，未覆盖最新数据；当前编辑已保留，可继续编辑后提交");
     }
 
     private static void EnsureOperationsPermission(L12AccountView actor, L12Permission permission)

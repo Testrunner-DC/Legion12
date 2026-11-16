@@ -420,7 +420,7 @@ internal static class L12HttpExceptionBoundary
             LogStorageFailure(context, error, "storage_conflict");
             context.Items[L12HttpPerformanceMonitor.OutcomeStatusItemName] = StatusCodes.Status409Conflict;
             if (context.Response.HasStarted) throw;
-            await WriteErrorAsync(context, "storage_conflict", "数据已更新，请刷新后重试", StatusCodes.Status409Conflict);
+            await WriteErrorAsync(context, "storage_conflict", "数据已由其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交", StatusCodes.Status409Conflict);
         }
         catch (L12AuthenticationBusyException)
         {

@@ -349,7 +349,7 @@ public sealed partial class L12PlatformStore
                 return new L12TournamentReputationOperation(false, true, prior.Exemption, projection);
             }
             if ((before?.Revision ?? 0) != expectedReputationRevision)
-                throw new L12TournamentVersionConflictException("赛事信誉已更新，请刷新后重试");
+                throw new L12TournamentVersionConflictException("赛事信誉已更新，未覆盖最新状态；当前编辑已保留，可继续核对后提交");
             if (before is not null && now < before.ProjectedAt)
                 throw new ArgumentException("信誉记录时间不能倒退");
             var participant = tournament.Participants.FirstOrDefault(item => item.AccountId == fact.AccountId)

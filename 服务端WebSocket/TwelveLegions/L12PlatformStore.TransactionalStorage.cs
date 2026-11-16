@@ -55,10 +55,10 @@ public sealed class L12PlatformStorageConflictException : L12PlatformStorageUnav
     public long? ExpectedStorageRevision { get; }
     public long? CurrentStorageRevision { get; }
     public L12PlatformStorageConflictException(long expectedRevision, long currentRevision)
-        : base("数据已被其他操作更新，请刷新后重试")
+        : base("数据已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交")
         => (ExpectedStorageRevision, CurrentStorageRevision) = (expectedRevision, currentRevision);
     internal L12PlatformStorageConflictException(Exception inner)
-        : base("数据已被其他操作更新，请刷新后重试", inner) { }
+        : base("数据已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交", inner) { }
 }
 
 internal sealed class L12PlatformStorageRefreshException(string message, Exception inner)

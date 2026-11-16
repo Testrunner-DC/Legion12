@@ -329,7 +329,7 @@ function lifecycleIntentKey(fingerprint: string) {
 }
 function seasonError(error: unknown, fallback: string) {
   return error instanceof PlatformRequestError && error.status === 409
-    ? `${error.message}。本地编辑已保留（含未保存内容与理由），请刷新查看冲突版本，或明确丢弃本地编辑。`
+    ? `${error.message}。本地编辑已保留（含未保存内容与理由），系统正在读取冲突版本；继续编辑后可重新提交。`
     : error instanceof Error ? error.message : fallback
 }
 async function captureSeasonConflict(state: SeasonSlotState, error: unknown) {

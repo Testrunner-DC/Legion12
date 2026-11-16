@@ -531,7 +531,7 @@ public sealed partial class L12PlatformStore
             var revision = 1L + appeal.Events.Count;
             if (input.ExpectedRevision != revision)
                 throw new L12RankedIntegrityActionException("ranked_integrity_appeal_revision_conflict",
-                    "申诉已更新，请刷新后重试");
+                    "申诉已更新，未覆盖最新状态；当前编辑已保留，可继续核对后提交");
 
             var now = DateTimeOffset.UtcNow;
             appeal.Events.Add(new RankedIntegrityAppealEventRow

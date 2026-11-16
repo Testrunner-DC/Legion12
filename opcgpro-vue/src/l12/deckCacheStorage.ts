@@ -114,7 +114,7 @@ export function commitDeckCache(storage: Pick<Storage, 'getItem' | 'setItem'>, k
   aliases: DeckSelectionAliases = previous.aliases, guard: () => void = () => {}) : ReadableDeckCache {
   guard()
   const current = requireDeckCache(readDeckCache(storage, key, previous.owner))
-  if (current.raw !== previous.raw) fail('牌库缓存已由其他操作更新，请刷新后重试', 'conflict')
+  if (current.raw !== previous.raw) fail('牌库缓存已由其他操作更新，未覆盖当前内容；本地编辑已保留，可继续编辑后提交', 'conflict')
   const restored = checkedDecks(decks)
   const plan = checkedAliases(aliases)
   const body: CacheBody = { format: 'l12-deck-cache', schema: 1, owner: previous.owner, generation,
@@ -126,7 +126,7 @@ export function commitDeckCache(storage: Pick<Storage, 'getItem' | 'setItem'>, k
   guard()
   // Production callers provide the current IDB transaction's private record.
   // This pure codec/CAS helper never makes Web Storage a write authority.
-  if (storage.getItem(key) !== previous.raw) fail('牌库缓存已由其他操作更新，请刷新后重试', 'conflict')
+  if (storage.getItem(key) !== previous.raw) fail('牌库缓存已由其他操作更新，未覆盖当前内容；本地编辑已保留，可继续编辑后提交', 'conflict')
   try { storage.setItem(key, raw) }
   catch (error) { fail(`本机牌库缓存写入失败：${error instanceof Error ? error.message : '存储不可用'}；原数据已保留`, 'persistence') }
   return result

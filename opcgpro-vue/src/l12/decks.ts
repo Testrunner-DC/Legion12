@@ -414,7 +414,7 @@ export async function saveSelectedDeckName(scope: L12DeckSelectionScope, name: s
   await withGuestDeckMutation(context, () => {
     const decks = currentDeckSnapshot(context).decks
     const deck = Object.hasOwn(decks, name) ? decks[name] : undefined
-    if (!deck) throw new Error('当前模式没有可选择的牌库，请刷新后重试')
+    if (!deck) throw new Error('当前模式牌库尚未同步，系统会自动重试加载')
     stateForContext(context).selections[scopedSelectedDeckStorageKey(scope, context.accountId)] = deck.id || name
   })
 }
@@ -722,7 +722,7 @@ async function readPrivateDeckCollision(collision: SavedL12Deck, name: string, c
     if (attempt === 0) throw new Error('同名牌库改名未能证明新修订，未覆盖任何缓存')
     return confirmed
   }
-  throw new Error('同名牌库已再次变化，请刷新后重试；未覆盖任何缓存')
+  throw new Error('同名牌库已再次变化，未覆盖任何缓存；本地编辑已保留，可继续编辑后提交')
 }
 
 export async function loadPrivateDeckBody(target: Pick<PrivateDeckSummary, 'id' | 'revision'>,
@@ -751,7 +751,7 @@ export async function loadPrivateDeckBody(target: Pick<PrivateDeckSummary, 'id' 
     return await withGuestDeckMutation(context, () => {
       if (!isCurrentDeckStorageContext(context) || !current()) throw new Error('账号或页面已切换，已忽略旧牌库正文')
       const previous = currentDeckSnapshot(context)
-      if (collision && previous.raw !== initial.raw) throw new Error('核对期间牌库缓存已更新，请刷新后重试；未覆盖任何缓存')
+      if (collision && previous.raw !== initial.raw) throw new Error('核对期间牌库缓存已更新，未覆盖任何缓存；本地编辑已保留，可继续编辑后提交')
       if (Object.values(previous.decks).some(deck => deck.id === saved.id && deck.revision && deck.revision > saved.revision!))
         throw new Error('本机已有更新修订，请刷新目录后重试')
       const decks = { ...previous.decks }
@@ -818,7 +818,7 @@ export async function loadPrivatePublicationSource(publicationId: string,
     if (result.total > 1) throw new Error('多副牌库关联此公开版本，请从我的牌库选择要编辑的牌库')
     if (result.total === 0) return null
     const target = result.items[0]
-    if (!target) throw new Error('牌库来源暂不可读取，请刷新后重试')
+    if (!target) throw new Error('牌库来源暂不可读取，系统会自动重试加载')
     return await loadPrivateDeckBody(target, valid)
   } catch (error) { throw operationError(error, context) }
 }
@@ -1087,17 +1087,17 @@ export async function deleteDeck(target: string | SavedL12Deck): Promise<void> {
       const previous = currentDeckSnapshot(context)
       const name = typeof target === 'string' ? target : target.name
       const id = typeof target === 'string' ? undefined : target.id
-      if (context.accountId && typeof target !== 'string' && !id) throw new Error('牌库身份尚未同步，请刷新后重试')
+      if (context.accountId && typeof target !== 'string' && !id) throw new Error('牌库身份尚未同步，系统会自动重试加载')
       const current = id ? Object.values(previous.decks).find(deck => deck.id === id) : (Object.hasOwn(previous.decks, name) ? previous.decks[name] : undefined)
-      if (!current) throw new Error('牌库已变化，请刷新后重试')
-      if (typeof target !== 'string' && target.revision !== current.revision) throw new Error('牌库已被其他操作更新，请刷新后重试')
+      if (!current) throw new Error('牌库已变化，未覆盖当前内容；本地编辑已保留，可继续编辑后提交')
+      if (typeof target !== 'string' && target.revision !== current.revision) throw new Error('牌库已被其他操作更新，未覆盖当前内容；本地编辑已保留，可继续编辑后提交')
       return { previous, current }
     }
     const selected = identify()
     const activity = context.accountId ? await beginDeckActivity(context) : ''
     if (context.accountId) {
         const current = selected.current
-        if (!current.id || !current.revision) throw new Error('牌库身份尚未同步，请刷新后重试')
+        if (!current.id || !current.revision) throw new Error('牌库身份尚未同步，系统会自动重试加载')
         try { await platformRequest(`/api/decks/by-id/${encodeURIComponent(current.id)}?expectedRevision=${current.revision}`, { method: 'DELETE' }) }
         catch (error) {
           if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 404) throw error

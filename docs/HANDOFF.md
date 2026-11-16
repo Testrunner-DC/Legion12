@@ -1,5 +1,15 @@
 # 十二军团简短交接
 
+## 2026-11-16 请求超时专项优化（本地已验，未部署）
+
+- 三路专项排查确认：前端全局并发协调器原先把排队时间计入 10 秒读请求预算，超过 4 个并发 GET 时请求可能尚未发出就被统一显示为“请求超时”；正式服后端同时存在 420–480MB 全量快照写入持有全局平台锁约 9–12 秒、历史排队峰值约 770 秒。SQLite `quick_check`/`integrity_check` 正常，服务端已有 `platform.lock-wait`、`platform.lock-hold`、`storage_unavailable`、499 与 correlationId 观测，本批不改事务语义或盲目抬高锁/数据库超时。
+- 前端共享请求层已改为：排队不消耗网络执行预算；GET/HEAD 与带幂等键的写请求按固定 logical correlationId 进行有界指数退避自动重试；超时每次执行独立计时，FormData/流式上传和无幂等写入不自动重放，409/401/403/429 不放大；HTTP/网络失败保留关联 ID，提示按读取、幂等写入、非幂等写入分流，不再统一显示“请求超时，请稍后重试”。
+- 后台内容草稿保存增加一次自动版本回基：遇到 409 时只读拉取当前草稿版本，保留用户已填写的完整本地内容并以新幂等键重放；批量草稿同样按键拉取后重放，避免用户完成填写后被迫刷新。发布、删除及其它高风险命令仍不做通用静默覆盖，避免把他人修改吞掉。
+- 后台冲突文案已统一移除“请刷新后重试”：服务端冲突返回改为“未覆盖最新数据；当前编辑已保留，可继续编辑后提交”，赛季／运营／牌库／内容／发布／赛事／存储等高风险版本保护仍 fail-closed；运营编辑器已自动读取冲突版本，继续保留本地编辑，不静默覆盖他人字段。
+- 修改文件：`opcgpro-vue/src/l12/platformRequestReliability.ts`、`opcgpro-vue/src/l12/platform.ts`、`opcgpro-vue/src/l12/site/AdminOperationsPanel.vue`、相关 `服务端WebSocket/TwelveLegions/L12*` 冲突文案、`opcgpro-vue/scripts/check-platform-request-reliability.mjs`、`opcgpro-vue/scripts/test-platform-session-boundaries.mjs`。
+- 验证：请求可靠性门禁 54/54、平台会话边界 35/35、连接恢复 50/50、`vue-tsc --noEmit --pretty false -p tsconfig.json` 通过，`git diff --check` 通过。后端 .NET 专项测试仍受既有 `obj` ACL（MSB3491 Access denied）阻断；未写入 C 盘产物，未部署、未重启正式服。
+- 后续边界：运营配置、赛季、发布、牌库等带领域版本的操作不能由通用层盲重放；需要按字段/稳定 ID做三方合并或专用轻量接口。本批已先收住内容草稿与请求层的高频体验问题，未把静默覆盖风险伪装成“已全部解决”。
+
 ## 2026-11-15 发布流程改进已完成（未重新部署）
 
 - Windows 正式入口默认服务器制品根改为 `/opt`；`/www/legion12` 仍可显式传入，并继续经过挂载、权限、容量和持久化门禁。

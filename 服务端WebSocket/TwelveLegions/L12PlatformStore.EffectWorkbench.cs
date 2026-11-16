@@ -160,7 +160,7 @@ public sealed partial class L12PlatformStore
             var row = _data.EffectWorkbenchDrafts.FirstOrDefault(item =>
                 item.CardId.Equals(effect.CardId, StringComparison.OrdinalIgnoreCase));
             if (request.ExpectedVersion is long expected && expected != (row?.Version ?? 0))
-                throw new InvalidOperationException("卡效草稿已被其他操作更新，请刷新后重试");
+                throw new InvalidOperationException("卡效草稿已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
             var normalized = NormalizeDraft(request.Draft);
             var validation = ValidateEffectWorkbench(effect, normalized);
             row ??= new EffectWorkbenchRow { CardId = effect.CardId };
@@ -470,7 +470,7 @@ public sealed partial class L12PlatformStore
             item.CardId.Equals(cardId, StringComparison.OrdinalIgnoreCase))
             ?? throw new KeyNotFoundException("请先保存卡效草稿");
         if (expectedVersion is long expected && expected != row.Version)
-            throw new InvalidOperationException("卡效草稿已被其他操作更新，请刷新后重试");
+            throw new InvalidOperationException("卡效草稿已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
         return row;
     }
 

@@ -652,7 +652,7 @@ public sealed partial class L12PlatformStore
                 var key = keys[index];
                 var existing = FindContentEntry(key);
                 if (item.ExpectedVersion.HasValue && item.ExpectedVersion.Value != (existing?.Version ?? 0))
-                    throw new L12ContentStateConflictException("内容草稿已被其他管理员修改，请刷新后重试");
+                    throw new L12ContentStateConflictException("内容草稿已被其他管理员修改，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
                 var normalized = NormalizeRuleRulingProducts(key, item.Value ?? string.Empty);
                 ValidateSiteContentValue(key, normalized, false);
                 var current = existing is null

@@ -299,7 +299,7 @@ export async function settlePublicDeckRead<T>(request: Promise<unknown>, validat
       return { status: 'unavailable', message: '公开牌库当前未开放，请稍后再试。' }
     if (status >= 500 || ['storage_unavailable', 'network_error', 'request_timeout'].includes(code))
       return { status: 'unavailable', message: '公开牌库暂时无法读取，请稍后重试。' }
-    return { status: 'unavailable', message: '公开牌库返回内容无法确认，请刷新后重试。' }
+    return { status: 'unavailable', message: '公开牌库返回内容暂时无法确认，系统将自动重试。' }
   }
 }
 

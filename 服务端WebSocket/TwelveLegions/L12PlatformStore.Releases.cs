@@ -422,7 +422,7 @@ public sealed partial class L12PlatformStore
         if (payload.Action is not ("deploy" or "rollback")) throw new L12ReleaseScopeException("发布动作不受支持");
         var environment = RequireReleaseEnvironment(payload.Environment);
         var version = _data.ReleaseEnvironments.FirstOrDefault(item => item.Environment == environment)?.Version ?? 0;
-        if (version != expectedVersion) throw new L12ReleaseVersionConflictException("发布环境版本已变化，请刷新后重试");
+        if (version != expectedVersion) throw new L12ReleaseVersionConflictException("发布环境版本已变化，未覆盖最新状态；当前发布操作已保留，可继续核对后提交");
         var current = RequireVerifiedArtifact(adapter, payload.Artifact.Id, environment);
         if (!ArtifactEquals(current, payload.Artifact))
             throw new L12ReleaseArtifactException("artifact-snapshot-mismatch", "已验证工件快照已变化");

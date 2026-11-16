@@ -771,7 +771,7 @@ public sealed partial class L12PlatformStore
                     throw new L12OperationsConfigException("season_activation_time_invalid", "自动切季时间必须晚于当前权威时间");
                 if (!SeasonIdsEqual(draft.PreviousSeasonId, current.SeasonId)
                     || !SeasonIdsEqual(current.NextSeasonId, draft.SeasonId))
-                    throw new L12OperationsConfigException("season_link_conflict", "赛季衔接关系已变化，请刷新后重试");
+                    throw new L12OperationsConfigException("season_link_conflict", "赛季衔接关系已变化，未覆盖最新状态；当前编辑已保留，可继续核对后提交");
 
                 var generation = (draft.ActivationPlan?.Generation ?? 0) + 1;
                 var previousRevision = draft.Revision;
@@ -1174,7 +1174,7 @@ public sealed partial class L12PlatformStore
             }
             if (!SeasonIdsEqual(draft.PreviousSeasonId, current.SeasonId)
                 || !SeasonIdsEqual(current.NextSeasonId, draft.SeasonId))
-                throw new L12OperationsConfigException("season_link_conflict", "赛季衔接关系已变化，请刷新后重试");
+                    throw new L12OperationsConfigException("season_link_conflict", "赛季衔接关系已变化，未覆盖最新状态；当前编辑已保留，可继续核对后提交");
             if (string.IsNullOrWhiteSpace(draft.SeasonId) || string.IsNullOrWhiteSpace(draft.Name))
                 throw new L12OperationsConfigException("season_draft_incomplete", "下一赛季草稿尚未填写完整");
             if (!SeasonIdsEqual(readiness.SeasonId, current.SeasonId)
@@ -1524,7 +1524,7 @@ public sealed partial class L12PlatformStore
     {
         if (row.Revision != expectedRevision)
             throw new L12OperationsConfigException("season_definition_revision_conflict",
-                "赛季草稿版本已变化，请刷新后重试");
+                "赛季草稿版本已变化，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
     }
 
     private static void EnsureSeasonActivationPlanAllowsMutation(SeasonDefinitionRow row)

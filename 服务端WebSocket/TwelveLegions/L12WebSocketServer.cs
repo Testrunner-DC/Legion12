@@ -963,7 +963,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     StatusCodes.Status428PreconditionRequired);
             if (expectedVersion.Value != _platform.OperationsConfigVersion())
                 return ApiError(request, "operations_version_conflict",
-                    "运营配置已变化，请刷新后重试", StatusCodes.Status409Conflict);
+                    "运营配置已变化，未覆盖最新数据；当前编辑已保留，可继续编辑后提交", StatusCodes.Status409Conflict);
             try
             {
                 return Results.Ok(await _rooms.PreviewSeasonIdentityNormalizationAsync(
@@ -991,7 +991,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     StatusCodes.Status428PreconditionRequired);
             if (expectedVersion.Value != _platform.OperationsConfigVersion())
                 return ApiError(request, "operations_version_conflict",
-                    "运营配置已变化，请刷新后重试", StatusCodes.Status409Conflict);
+                    "运营配置已变化，未覆盖最新数据；当前编辑已保留，可继续编辑后提交", StatusCodes.Status409Conflict);
             var idempotencyKey = body.IdempotencyKey?.Trim() ?? string.Empty;
             if (idempotencyKey.Length is < 8 or > 80)
                 return ApiError(request, "idempotency_key_required",
@@ -1479,7 +1479,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 "revision_conflict" => Results.Conflict(new
                 {
                     code = "deck_revision_conflict",
-                    message = "牌库已被其他操作更新，请刷新后重试",
+                    message = "牌库已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交",
                     currentRevision = result.CurrentRevision,
                 }),
                 _ => Results.NotFound(),
@@ -1521,7 +1521,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 "revision_conflict" => Results.Conflict(new
                 {
                     code = "deck_revision_conflict",
-                    message = "牌库已被其他操作更新，请刷新后重试",
+                    message = "牌库已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交",
                     currentRevision = result.CurrentRevision,
                 }),
                 "name_conflict" => Results.Conflict(new
@@ -1547,7 +1547,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 "revision_conflict" => Results.Conflict(new
                 {
                     code = "deck_revision_conflict",
-                    message = "牌库已被其他操作更新，请刷新后重试",
+                    message = "牌库已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交",
                     currentRevision = result.CurrentRevision,
                 }),
                 "storage_conflict" => StorageConflictResponse(request),
@@ -5380,7 +5380,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private static IResult StorageConflictResponse(HttpRequest request)
     {
         request.HttpContext.Response.Headers.CacheControl = "no-store";
-        return ApiError(request, "storage_conflict", "数据已更新，请刷新后重试", StatusCodes.Status409Conflict);
+        return ApiError(request, "storage_conflict", "数据已由其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交", StatusCodes.Status409Conflict);
     }
 
     private static IResult ApiError(HttpRequest request, string code, string message, int statusCode)
@@ -6231,7 +6231,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 StringComparison.Ordinal));
         if (scene is null)
             return L12AdminCommandResult<L12EffectPresentationScene>.Fail("stale_presentation_scene",
-                "动效场景标识已过期，请刷新后重试", StatusCodes.Status409Conflict);
+                "动效场景标识已过期，未覆盖最新内容；当前编辑已保留，可继续编辑后提交", StatusCodes.Status409Conflict);
         try
         {
             if (command.Payload.Restore)

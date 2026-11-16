@@ -321,7 +321,7 @@ public sealed partial class L12AdminCommandBus
             {
                 var failed = _platform.PersistAdminCommand(normalized, L12Authorization.Key(permission), risk,
                     signature, payloadJson, "failed");
-                var result = L12AdminCommandResult<T>.Fail("version_conflict", "资源版本已变化，请刷新后重试",
+                var result = L12AdminCommandResult<T>.Fail("version_conflict", "检测到并发更新，未覆盖最新数据；请继续编辑并重新提交当前变更",
                     StatusCodes.Status409Conflict, failed.View);
                 failed = _platform.PersistAdminCommandResult(failed.Id, result, "failed", "expected-version-mismatch");
                 _platform.RecordCommandOutcome(normalized.Actor,

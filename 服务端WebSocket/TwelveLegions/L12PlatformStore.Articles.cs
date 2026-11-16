@@ -328,7 +328,7 @@ public sealed partial class L12PlatformStore
                 _data.Articles.Add(row);
             }
             else if (draft.ExpectedRevision is not null && row.Revision != draft.ExpectedRevision)
-                throw new InvalidOperationException("稿件已被其他操作更新，请刷新后重试");
+                throw new InvalidOperationException("稿件已被其他操作更新，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
             else if (row.Kind != kind)
                 throw new ArgumentException("稿件建立后不能改变内容类型");
 

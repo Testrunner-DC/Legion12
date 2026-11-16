@@ -2299,7 +2299,7 @@ public sealed partial class L12PlatformStore
         var row = _data.Tournaments.FirstOrDefault(item => item.Id == id)
             ?? throw new KeyNotFoundException("赛事不存在");
         if (row.Version != expectedVersion)
-            throw new L12TournamentVersionConflictException("赛事版本已变化，请刷新后重试");
+            throw new L12TournamentVersionConflictException("赛事版本已变化，未覆盖最新状态；当前编辑已保留，可继续核对后提交");
         return row;
     }
 

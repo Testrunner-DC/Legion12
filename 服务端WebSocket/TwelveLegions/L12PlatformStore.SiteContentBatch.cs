@@ -46,10 +46,10 @@ public sealed partial class L12PlatformStore
                 .ToDictionary(group => group.Key, group => group.First().row, StringComparer.Ordinal);
             if (rows.TryGetValue("rules.rulings", out var rulingsRow)
                 && request.RulingsVersion is { } rulingsVersion && rulingsRow.Version != rulingsVersion)
-                throw new L12ContentStateConflictException("规则裁定草稿版本已变化，请刷新后重试");
+                throw new L12ContentStateConflictException("规则裁定草稿版本已变化，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
             if (rows.TryGetValue("rules.center", out var centerRow)
                 && request.CenterVersion is { } centerVersion && centerRow.Version != centerVersion)
-                throw new L12ContentStateConflictException("规则中心草稿版本已变化，请刷新后重试");
+                throw new L12ContentStateConflictException("规则中心草稿版本已变化，未覆盖最新内容；当前编辑已保留，可继续编辑后提交");
 
             // Validate every selected target before mutating either document. This keeps a
             // mixed rules-center/FAQ batch all-or-nothing even when one item was removed.
