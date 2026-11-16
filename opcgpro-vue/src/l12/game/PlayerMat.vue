@@ -453,8 +453,8 @@ function beginCardAbility(card: Card) {
                   :title="cavalryMoveAction(player.field[row][slot]!)?.disabledReason || cavalryMoveAction(player.field[row][slot]!)?.text || '我方回合1次，可进行1次骑兵位移'"
                   @click.stop="emit('cardAction', 'cavalryMove', player.field[row][slot]!)">{{ cavalryMoveMode ? '选择任意位置' : cavalryMoveActionLabel(player.field[row][slot]!) }}</button>
                 <button v-if="canUseAbilities(player.field[row][slot]!) && modalAbilities(player.field[row][slot]!).length"
-                  @click.stop="beginCardAbility(player.field[row][slot]!)">发动</button>
-                <button v-if="canTrial(player.field[row][slot]!)" type="button" data-ui-contract="independent-trial-action"
+                  class="card-ability-action" @click.stop="beginCardAbility(player.field[row][slot]!)">发动</button>
+                <button v-if="canTrial(player.field[row][slot]!)" class="card-trial-action" type="button" data-ui-contract="independent-trial-action"
                   @click.stop="emit('ability', player.field[row][slot]!, 'trialAdvance')">试炼</button>
               </div>
               </BattleDockPortal>

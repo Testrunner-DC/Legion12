@@ -243,6 +243,17 @@ try {
     await selectedFixture()
     assert.ok(await page.locator('.card-context-actions button').count() >= 5, 'missing maximum real actions')
     await reachable(page.locator('.card-context-actions button'))
+    const abilityLayout = await page.evaluate(() => {
+      const ability = document.querySelector('.mobile-battle-dock__context .card-ability-action, .mobile-battle-dock__context .card-trial-action')?.getBoundingClientRect()
+      const action = document.querySelector('.mobile-battle-dock__context .field-actions')?.getBoundingClientRect()
+      const primary = document.querySelector('.mobile-battle-dock__primary')?.getBoundingClientRect()
+      return ability && action && primary
+        ? { height: ability.height, actionTop: action.top, abilityTop: ability.top, abilityBottom: ability.bottom, primaryTop: primary.top }
+        : null
+    })
+    assert.ok(abilityLayout && abilityLayout.height >= 44 && abilityLayout.abilityTop >= abilityLayout.actionTop - 1
+      && abilityLayout.abilityBottom <= abilityLayout.primaryTop + 1,
+      `${label}: active card effect must keep a dedicated 44px hit box directly above end turn ${JSON.stringify(abilityLayout)}`)
     await geometry('maximum-real-actions')
     await shot('maximum-actions')
     await page.locator('.card-context-actions').getByRole('button', { name: '发动', exact:true }).click()

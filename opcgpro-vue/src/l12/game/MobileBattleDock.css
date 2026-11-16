@@ -114,6 +114,18 @@ html[data-l12-mobile=true] {
   min-height:40px !important; height:auto !important; padding:5px 4px !important;
   font-size:11px !important; line-height:1.25 !important; white-space:normal !important;
 }
+#l12-landscape-teleports .mobile-battle-dock .card-context-actions.field-actions {
+  display:flex !important; flex-direction:column !important; gap:6px !important;
+  padding:3px !important; margin-bottom:2px !important;
+}
+#l12-landscape-teleports .mobile-battle-dock .card-context-actions.field-actions > button {
+  width:100% !important; min-width:0 !important; min-height:44px !important; height:44px !important;
+  flex:0 0 44px !important; touch-action:manipulation;
+}
+#l12-landscape-teleports .mobile-battle-dock .card-context-actions.field-actions > .card-ability-action,
+#l12-landscape-teleports .mobile-battle-dock .card-context-actions.field-actions > .card-trial-action {
+  order:90; border-color:#d7ad62; background:#403714; color:#fff2bf;
+}
 #l12-landscape-teleports .mobile-battle-dock .board-target-controls strong { max-width:none !important; font-size:11px; overflow-wrap:anywhere; }
 #l12-landscape-teleports .mobile-battle-dock .board-target-controls :is(span,small) { font-size:10px; }
 #l12-landscape-teleports .mobile-battle-dock .player-panel { display:flex; flex-direction:column; gap:4px; border:0; background:none; }

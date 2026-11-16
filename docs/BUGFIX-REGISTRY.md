@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261116-MOBILE-FIELD-ACTION-HITBOX｜移动端场上主动效果按钮与结束回合分离
+
+- 反馈：`BUG-20261112-1749ac85` 指出手机版使用须佐之男将草薙剑置入场上后，发动草薙剑效果的按钮夹在移动与结束回合附近，点击区域过小，容易误触结束回合。
+- 根因：所有场上卡牌动作共用 `.card-context-actions` 的通用网格规则；主动效果与试炼没有单独的动作身份和优先级，依赖最后子项补位，多个动作时无法稳定保证主动效果位于动作组底部、与结束回合保持清晰边界。
+- 修改：在 `PlayerMat` 为所有场上卡牌的“发动”和“试炼”按钮增加统一动作标记；移动端动作停靠区对 `field-actions` 改为单列流布局，主动效果／试炼统一排到动作组底部，所有按钮固定为至少44px、宽度铺满动作栏并保留触控间隔。移动、进攻、骑兵位移等其他卡牌动作沿同一容器继续复用，不新增卡牌分支或独立组件。
+- 同类扫描：检索 `BattleDockPortal lane="context"`、`card-context-actions`、`field-actions`、`modalAbilities`、`canTrial`、移动／进攻／骑兵位移动作及 `MobileBattleDock.css` 的所有移动端按钮规则；覆盖手牌打出、场上进攻、移动、免费位移、骑兵位移、主动效果、试炼、提示选择与结束回合，未发现其他绕过统一动作停靠区的同类场上操作入口。
+- 回归：`check-mobile-action-dock.mjs`、`check-mobile-responsive-layouts.mjs` 通过；真实浏览器 `verify-mobile-action-dock.mjs` 在 844×390、780×360、740×360、667×375、915×412、932×430、1024×600、1024×768、800×600、667×320 及安全区／缩放场景通过，最多动作场景确认主动效果按钮实际高度不低于44px、位于结束回合上方且全点位可命中；隔离到受管 D 盘临时配置的 `vue-tsc` 前端类型检查通过。截图：`D:/GPT/Legion12/artifacts/bug-20261116-mobile-action-dock/browser/844x390-maximum-actions.png`；完整回执：`D:/GPT/Legion12/artifacts/bug-20261116-mobile-action-dock/browser/manifest.json`。
+- 状态：当前源已修复并通过本地移动端回归；尚未部署测试服，线上 Bug 保持未关闭。
+
 ## FIX-20261114-ANDERSTORP-RELIC-ZONE-LIFECYCLE｜安德华拉诺特按当前圣物区持续生效
 
 - 反馈：〈安德华拉诺特〉即使不是开局从牌库置入，只要后来进入圣物区，也应持续生效：我方回合结束时将手牌弃置至不高于6张，且我方不能从手牌打出圣物。
