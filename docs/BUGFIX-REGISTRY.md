@@ -5,8 +5,8 @@
 - 核对问题：效果弃置〈信仰狂热者〉后，若我方主宰〈雷神索尔〉血量高于3，能否用信仰狂热者无视2士气消耗发动“血量不高于3”这条主宰效果。
 - 规则结论：不能。〈我方主宰血量不高于3时〉是发动条件，不是可被信仰狂热者免除的消耗；信仰狂热者只能免除需要消耗士气的支付，不能改变血量门槛。
 - 实现核对：雷神索尔的普通按钮可用性、普通发动提交以及信仰狂热者免费发动声明均检查 `player.Hp <= 3`；免费路径即使收到 `thorCharge` 选择，也会在入栈前拒绝，不扣士气、不写入本回合阿斯加德冲锋或“主宰不可回血”状态。
-- 同类扫描：已检索 `L12ActiveAbilities`、`L12S2RemainingEffects`、`L12PostResolutionGeneratedEffects` 及信仰狂热者统一弃置触发入口；未发现把主宰条件误当作费用而放行的旁路。公共信仰选择仍保留固定卡面能力集合，但对公开可判定的索尔血量条件直接置灰并显示原因，提交时继续由后端条件守卫复验。
-- 回归：新增 `S2FactionRegressionTests.FaithZealotDiscardedByEffectCannotBypassThorChargeHealthCondition`，真实走赫拉克勒斯效果弃置手牌信仰狂热者→信仰狂热者声明→选择雷神索尔；索尔血量4时只生成条件失败，不建立雷神效果。相关信仰狂热者、S2与索尔专项共 95/95 通过。证据：`D:/GPT/Legion12/artifacts/bug-20261117-thor-faith-condition/test-7f5a9133e85746a19e0841226d251870/pass-proof.trx`。
+- 同类扫描：已检索 `L12ActiveAbilities`、`L12S2RemainingEffects`、`L12PostResolutionGeneratedEffects` 及信仰狂热者统一弃置触发入口；未发现把主宰条件误当作费用而放行的旁路。公共信仰选择仍保留固定卡面能力集合，但对公开可判定的索尔血量、目标、墓地对象和登场位置条件统一置灰并显示原因，提交时继续由后端条件守卫复验。
+- 回归：新增 `S2FactionRegressionTests.FaithZealotDiscardedByEffectCannotBypassThorChargeHealthCondition` 与 `FaithZealotMasterAuditRegressionTests.PublicFaithChoiceDisablesKnownUnavailableOptionsWithoutFilteringTheFixedRoster`，覆盖效果弃置信仰狂热者后的索尔血量、梅杰德目标、瓦尔基里/洛基墓地对象、天照/须佐/众神之乡公开目标和荷鲁斯登场条件。相关专项共 108/108 通过；证据：`D:/GPT/Legion12/artifacts/bug-20261117-faith-public-gates/test-09902a788f8241ed918c6edefc2b813c/pass-proof.trx`。
 - 状态：`rule_correct_checked`，无产品逻辑修复、未部署。
 
 ## CHECK-20261117-HORUS-FAITH-ZEALOT-FIELD-DISCARD｜荷鲁斯弃置战场信仰狂热者不触发其弃置效果

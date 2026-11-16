@@ -118,12 +118,45 @@ public sealed partial class L12GameEngine
         foreach (var ability in abilities)
         {
             data[ability.Id] = ability.Label;
-            if (ability.Id == "thorCharge" && player.Hp > 3)
-                data[$"disabledChoice:{ability.Id}"] = "我方主宰血量需要不高于3";
+            if (FaithZealotUnavailableReason(player, ability.Id) is { } reason)
+                data[$"disabledChoice:{ability.Id}"] = reason;
         }
         CreatePrompt(completed.Controller, "option",
             "信仰狂热者已结算：选择1个需要消耗士气的主宰效果，无视全部消耗发动且不计入使用次数",
             choices, 1, 1, "faith-zealot-post-resolution", isPrivate: false, data: data);
+    }
+
+    private string? FaithZealotUnavailableReason(L12PlayerState player, string ability)
+    {
+        var source = CreateCard(player.MasterId, $"master-{player.PlayerIndex}");
+        if (EvaluateSingleActiveSelection(player, source, ability) is { } selection
+            && selection.UnavailableReason is { } selectionReason)
+            return selectionReason;
+
+        var enemy = State.Players[1 - player.PlayerIndex];
+        return (player.MasterId, ability) switch
+        {
+            ("S01-02M3", "medjedDebuff") when !PublicLegions(enemy).Any()
+                => "对方战场没有可选择的军团",
+            ("S01-03M1", "valkyrieRecover")
+                when player.Graveyard.Where(CanEnterHandOrLibrary).Count() < 2
+                => "墓地需要至少2张可处理的卡牌",
+            ("S01-03M2", "lokiHeal")
+                when player.Graveyard.Where(CanEnterHandOrLibrary)
+                    .Sum(L12StructuredCardRules.StarterGraveCardCopies) < 2
+                => "墓地需要合计可视为2张的卡牌",
+            ("S01-04M1", "amaterasuKill") when !PublicLegions(enemy).Any()
+                => "对方战场没有可选择的军团",
+            ("S02-03M1", "thorCharge") when player.Hp > 3
+                => "我方主宰血量需要不高于3",
+            ("ST02-M1", "horusRevive")
+                when !player.Graveyard.Any(card => card.CardType == "legion"
+                    && card.CurrentTroops <= 2000
+                    && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
+                    || !EmptySlots(player).Any()
+                => "墓地没有合法的【太阳城】军团或战场没有空位",
+            _ => null,
+        };
     }
 
     private void ResolveFaithZealotPostResolutionChoice(L12Prompt prompt, string ability)

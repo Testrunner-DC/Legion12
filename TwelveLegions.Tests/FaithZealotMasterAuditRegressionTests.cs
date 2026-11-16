@@ -98,6 +98,30 @@ public sealed class FaithZealotMasterAuditRegressionTests
             Assert.DoesNotContain(publicProjection, value => value.Contains(privateId, StringComparison.Ordinal)));
     }
 
+    [Theory]
+    [InlineData("S01-02M3", "medjedDebuff", "对方战场没有可选择的军团")]
+    [InlineData("S01-03M1", "valkyrieRecover", "墓地需要至少2张可处理的卡牌")]
+    [InlineData("S01-03M2", "lokiHeal", "墓地需要合计可视为2张的卡牌")]
+    [InlineData("S01-04M1", "amaterasuKill", "对方战场没有可选择的军团")]
+    [InlineData("S01-04M2", "frontBuff", "当前没有合法的选择对象")]
+    [InlineData("S01-04M2", "kusanagi", "圣物区没有〈草薙剑〉")]
+    [InlineData("S02-03M1", "thorCharge", "我方主宰血量需要不高于3")]
+    [InlineData("ST02-M1", "horusRevive", "墓地没有合法的【太阳城】军团或战场没有空位")]
+    [InlineData("S01-02D1", "sunBottomEnemy", "当前没有合法的选择对象")]
+    public void PublicFaithChoiceDisablesKnownUnavailableOptionsWithoutFilteringTheFixedRoster(
+        string masterId, string ability, string reason)
+    {
+        var game = Create(25340);
+        SetMaster(game.State.Players[0], masterId);
+        game.State.Players[0].Hp = 10;
+        game.State.IsResolvingStack = false;
+        Invoke(game, "BeginFaithZealotMasterChoice", CompletedFaithItem());
+
+        var prompt = Prompt(game);
+        Assert.Contains(ability, prompt.ValidChoices);
+        Assert.Equal(reason, prompt.Data[$"disabledChoice:{ability}"]);
+    }
+
     [Fact]
     public void FreeMedjedStrongModeNeedsNoMoraleOrTombGuardButKeepsEnemyTargetLegality()
     {
