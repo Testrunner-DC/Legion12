@@ -201,7 +201,8 @@ function requestRuntime() {
   const counter = api?.properties.find(node => ts.isPropertyAssignment(node) && node.name.getText(file) === 'counter')?.initializer
   assert.ok(counter, 'Use the actual new API function')
   const requests = [], configs = []
-  const code = [error.getText(file), declarations.get('retryAfterMilliseconds'), declarations.get('platformRequest'),
+  const code = [error.getText(file), declarations.get('retryAfterMilliseconds'), declarations.get('hasIdempotencyKey'),
+    declarations.get('newLogicalCorrelationId'), declarations.get('platformRequest'),
     `const counter = ${counter.getText(file)};`].join('\n')
   const apiMethods = evaluated(code, {
     platformState: { token: 'A' }, platformSessionVersion: 1, apiBase: () => 'http://counter.invalid', usesSharedGallery: false,
