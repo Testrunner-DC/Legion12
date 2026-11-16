@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "20261117-admin-write-reliability-internal",
+  "date": "2026-11-17",
+  "audience": "internal",
+  "reason": "后台管理员写入、密码控制、运营动作、审计与事务存储统一使用动作闸门、自动重试和冲突保护；这些实现只影响内部工作区，不向普通玩家展示。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminOperationsPanel.vue",
+    "opcgpro-vue/src/l12/site/ImmediateMaintenancePanel.vue",
+    "服务端WebSocket/TwelveLegions/L12AdminCommandBus.AccountPasswords.cs",
+    "服务端WebSocket/TwelveLegions/L12AdminControlPlane.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminPasswordWork.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.EffectWorkbench.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedIntegrityActions.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContentBatch.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentReputation.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs"
+  ]
+}
