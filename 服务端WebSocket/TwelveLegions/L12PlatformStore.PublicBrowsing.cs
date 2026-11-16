@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace TwelveLegions.Server;
 
 public sealed record L12PublicTournamentCountsView(
@@ -101,6 +103,18 @@ public sealed record L12PublicTournamentDetailView(
 public sealed partial class L12PlatformStore
 {
     public L12PublicTournamentSummaryPage PublicTournamentSummaries(string? section, string? format,
+        string? search, int page = 1, int pageSize = 24, DateTimeOffset? startFrom = null,
+        DateTimeOffset? startTo = null)
+    {
+        var cacheKey = string.Join('\u001f', "tournaments", section ?? string.Empty, format ?? string.Empty,
+            search ?? string.Empty, page.ToString(CultureInfo.InvariantCulture),
+            pageSize.ToString(CultureInfo.InvariantCulture), startFrom?.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            startTo?.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+        return GetOrCreatePublicReadCache(cacheKey, () => PublicTournamentSummariesCore(section, format, search,
+            page, pageSize, startFrom, startTo));
+    }
+
+    private L12PublicTournamentSummaryPage PublicTournamentSummariesCore(string? section, string? format,
         string? search, int page = 1, int pageSize = 24, DateTimeOffset? startFrom = null,
         DateTimeOffset? startTo = null)
     {

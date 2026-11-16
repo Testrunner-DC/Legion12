@@ -906,6 +906,11 @@ public sealed partial class L12PlatformStore
 
     public L12SiteHomeSummaryView PublicSiteHomeSummary()
     {
+        return GetOrCreatePublicReadCache("site-home-summary", BuildPublicSiteHomeSummary);
+    }
+
+    private L12SiteHomeSummaryView BuildPublicSiteHomeSummary()
+    {
         lock (_gate)
         {
             var news = PublicArticleSummaries(null, null, 7, "news");

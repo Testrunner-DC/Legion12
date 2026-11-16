@@ -178,6 +178,35 @@ public sealed partial class PlatformStoreTests
     }
 
     [Fact]
+    public void PublicReadSnapshotsAreReusedAndInvalidateAfterBusinessMutation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.Same(store.PublicSiteHomeSummary(), store.PublicSiteHomeSummary());
+            Assert.Same(store.PublicTournamentSummaries(null, null, null),
+                store.PublicTournamentSummaries(null, null, null));
+
+            var before = store.PublishedDecks(null);
+            Assert.Same(before, store.PublishedDecks(null));
+            var owner = store.Register("缓存牌库作者", "password-123").Account!;
+            Assert.NotNull(store.PublishDeck(owner.Id, new L12PresetDeckDefinition
+            {
+                Name = "缓存失效牌库", MasterId = "M1", CardIds = ["C1"], MoraleIds = ["R1"], SpecialIds = [],
+            }, null));
+
+            var after = store.PublishedDecks(null);
+            Assert.NotSame(before, after);
+            Assert.Contains(after, item => item.Deck.Name == "缓存失效牌库");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void AdminWorkflowPersistsDraftPublishRoleAndEffectReviewAudit()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-platform-{Guid.NewGuid():N}");

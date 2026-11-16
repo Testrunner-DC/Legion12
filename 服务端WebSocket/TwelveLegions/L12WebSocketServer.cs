@@ -1727,6 +1727,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/public-decks", (HttpRequest request, string? sort, bool? seasonCompliant) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null)
+                request.HttpContext.Response.Headers.CacheControl = "public,max-age=15,stale-while-revalidate=60";
             var policy = _platform.EffectiveOperationsPolicy();
             var decks = _platform.PublishedDecks(account?.Id).Select(item =>
             {
@@ -1885,6 +1887,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/public/tournaments/summaries", (HttpRequest request, string? section, string? format,
             string? search, int? page, int? pageSize, DateTimeOffset? startFrom, DateTimeOffset? startTo) =>
         {
+            // Keep the transport response non-cacheable: tournament visibility can change
+            // independently of the short-lived in-process read snapshot.
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
             try
             {
                 return Results.Ok(_platform.PublicTournamentSummaries(section, format, search,
@@ -3278,7 +3283,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             });
         });
         _app.MapGet("/api/site/home", () => Results.Ok(_platform.PublicSiteHome()));
-        _app.MapGet("/api/site/home-summary", () => Results.Ok(_platform.PublicSiteHomeSummary()));
+        _app.MapGet("/api/site/home-summary", (HttpRequest request) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "public,max-age=15,stale-while-revalidate=60";
+            return Results.Ok(_platform.PublicSiteHomeSummary());
+        });
         _app.MapGet("/api/site/categories", (string? kind) => Results.Ok(_platform.PublicSiteCategories(kind)));
         _app.MapGet(L12SharePage.Endpoint, (HttpRequest request) =>
         {

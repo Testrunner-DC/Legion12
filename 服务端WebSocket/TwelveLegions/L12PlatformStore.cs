@@ -1267,6 +1267,13 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12PublishedDeckView> PublishedDecks(string? viewerAccountId)
     {
+        if (viewerAccountId is null)
+            return GetOrCreatePublicReadCache("published-decks:anonymous", () => PublishedDecksCore(null));
+        return PublishedDecksCore(viewerAccountId);
+    }
+
+    private IReadOnlyList<L12PublishedDeckView> PublishedDecksCore(string? viewerAccountId)
+    {
         lock (_gate)
         {
             var data = _data;
