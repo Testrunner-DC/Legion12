@@ -973,9 +973,10 @@ export async function syncSavedDecksFromAccount(): Promise<Record<string, SavedL
 
 export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]> {
   if (officialPresetDecksPromise) return officialPresetDecksPromise
-  // Preset decks are deploy-owned public data. Share one in-flight/fulfilled
-  // promise across lobby, archive and editor routes; the browser HTTP cache
-  // still handles revalidation after a full reload or a new deployment.
+  // Preset decks are deploy-owned public data. Share concurrent requests
+  // across lobby, archive and editor routes; once the request settles, let the
+  // browser HTTP cache own reuse/revalidation so a new deployment is visible
+  // without pinning an old fulfilled payload in the module forever.
   const request = Promise.all([
     fetch(deploymentPath('/data/l12/preset-decks.s1.json'), { cache: 'default' }),
     fetch(deploymentPath('/data/l12/preset-decks.s2.json'), { cache: 'default' }),
@@ -989,9 +990,10 @@ export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]
     }))
   })
   officialPresetDecksPromise = request
-  void request.catch(() => {
-    if (officialPresetDecksPromise === request) officialPresetDecksPromise = null
-  })
+  void request.then(
+    () => { if (officialPresetDecksPromise === request) officialPresetDecksPromise = null },
+    () => { if (officialPresetDecksPromise === request) officialPresetDecksPromise = null },
+  )
   return request
 }
 
