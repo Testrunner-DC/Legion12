@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## CHECK-20261117-HORUS-FAITH-ZEALOT-FIELD-DISCARD｜荷鲁斯弃置战场信仰狂热者不触发其弃置效果
+
+- 核对问题：荷鲁斯发动效果时将战场上的〈信仰狂热者〉作为费用弃置，是否会让信仰狂热者再发动荷鲁斯效果。
+- 规则结论：不会触发。〈信仰狂热者〉卡面只覆盖“从牌库弃置”或“因效果从手牌弃置”；荷鲁斯弃置战场军团属于战场费用弃置，不满足触发区域，不能再发动信仰狂热者效果。荷鲁斯本次复苏效果仍正常结算。
+- 实现核对：`NotifyCardsDiscarded` 只接受 `originZone == "library"`，或 `originZone == "hand" && causedByEffect`；荷鲁斯通过 `RemoveFromField(..., leaveKind: Discard)` 处理战场费用，没有调用信仰狂热者弃置触发入口。全量检索信仰狂热者弃置入口、荷鲁斯费用支付及同类手牌／牌库／战场弃置路径，未发现绕过来源区判定的分支。
+- 回归：新增 `HorusActiveLifecycleTests.HorusDiscardingFaithZealotFromTheFieldDoesNotTriggerItsHandOrLibraryDiscardAbility`，并联跑荷鲁斯生命周期、效果弃置触发、冒号费用弃置三组场景，共 10/10 通过。证据：`D:/GPT/Legion12/artifacts/bug-20261117-horus-faith-check/focused/test-9d64972a353842bc8f3c1c4cbca8b879/pass-proof.trx`。
+- 状态：当前行为规则正确，无需产品修复；线上反馈不作 Bug 关闭写入，仅保留本地核对证据。
+
 ## FIX-20261116-MOBILE-FIELD-ACTION-HITBOX｜移动端场上主动效果按钮与结束回合分离
 
 - 反馈：`BUG-20261112-1749ac85` 指出手机版使用须佐之男将草薙剑置入场上后，发动草薙剑效果的按钮夹在移动与结束回合附近，点击区域过小，容易误触结束回合。

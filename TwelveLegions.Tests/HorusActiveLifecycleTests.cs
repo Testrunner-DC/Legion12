@@ -200,6 +200,39 @@ public sealed class HorusActiveLifecycleTests
 
     [Fact]
     [Trait("L12Evidence", "ability:horusRevive")]
+    [Trait("L12Evidence", "faith-zealot:field-discard-does-not-trigger")]
+    public void HorusDiscardingFaithZealotFromTheFieldDoesNotTriggerItsHandOrLibraryDiscardAbility()
+    {
+        var game = Create(91906);
+        var player = game.State.Players[0];
+        var zealot = Card("S02-0006", "horus-field-faith-zealot");
+        var otherCost = Card("ST01-01", "horus-field-other-cost");
+        var target = Card("ST02-07", "horus-field-revive-target");
+        player.Field[0][0] = zealot;
+        player.Field[0][1] = otherCost;
+        player.Graveyard.Add(target);
+        player.Morale.Add(new L12MoraleCard { CardId = "ST02-C1", InstanceId = "horus-field-morale" });
+
+        var start = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "horusRevive"));
+        Assert.True(start.Accepted, start.Error);
+        Choose(game, "mode:morale-legions");
+        ChooseMany(game, zealot.InstanceId, otherCost.InstanceId);
+        Choose(game, target.InstanceId);
+        Choose(game, "0:2");
+        PassResponses(game);
+
+        Assert.Contains(zealot, player.Graveyard);
+        Assert.Contains(otherCost, player.Graveyard);
+        Assert.Same(target, player.Field[0][2]);
+        Assert.DoesNotContain(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "s2-faith-zealot");
+        Assert.DoesNotContain(player.UsedAbilities,
+            key => key.Contains("faith-zealot", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:horusRevive")]
     public void OccupiedDeclaredSlotDuringResponsesFailsWithoutChangingTargetOrBlocker()
     {
         var game = Create(91903);
