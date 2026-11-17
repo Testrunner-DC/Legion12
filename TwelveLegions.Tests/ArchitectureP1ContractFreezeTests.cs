@@ -30,7 +30,7 @@ public sealed class ArchitectureP1ContractFreezeTests
         var expected = JsonSerializer.Deserialize<ContractManifest>(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "architecture-p1-contracts.json")),
             FixtureJson);
-        expected = WithReviewedSusanooDepartureRoute(expected!);
+        expected = WithReviewedAbilityCatalogRoutes(expected!);
         Assert.True(expected == actual,
             $"P1 内核契约发生变化；必须先审查等价性并显式更新黄金夹具。当前值：{Environment.NewLine}{JsonSerializer.Serialize(actual, FixtureJson)}");
     }
@@ -68,7 +68,7 @@ public sealed class ArchitectureP1ContractFreezeTests
         var expectedPrior = JsonSerializer.Deserialize<ContractManifest>(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures",
                 "architecture-p1-contracts-prior-owner-protocols.json")), FixtureJson);
-        Assert.Equal(WithReviewedSusanooDepartureRoute(expectedPrior!), Capture(CreatePriorProtocolEngine()));
+        Assert.Equal(WithReviewedAbilityCatalogRoutes(expectedPrior!), Capture(CreatePriorProtocolEngine()));
 
         var current = CreateEngine();
         var prior = CreatePriorProtocolEngine();
@@ -350,13 +350,26 @@ public sealed class ArchitectureP1ContractFreezeTests
             current with { Atoms = current.Atoms.Where(atom => atom.Kind != L12AtomKinds.CompositeFlow).ToArray() },
             current.Sequence);
         Assert.Equal("S01-04M2:ability:leave:4e83a7191108369b", previous.AbilityId);
+        var pingyang = Assert.Single(abilities, ability => ability.CardId == "S02-0103" && ability.Trigger == "enter");
+        var pingyangPrevious = L12AtomicAbilityIdentity.Assign(
+            pingyang.CardId,
+            pingyang with
+            {
+                Text = pingyang.Text.Replace(
+                    "主宰或由我方主宰变成的军团",
+                    "主宰",
+                    StringComparison.Ordinal),
+            },
+            pingyang.Sequence);
+        var previousReviewedAbilities = abilities.Select(ability =>
+            ability == current ? previous : ability == pingyang ? pingyangPrevious : ability);
         Assert.Equal("68028c235540647c58ca4a24ef762ed8fbbdbc8dfaa6b94a2e27058d443e997d",
-            AbilityCatalogHash(abilities.Select(ability => ability == current ? previous : ability)));
-        Assert.Equal("7d06f1c171c337209c84dc9569ce43e437573b022516f7b2d8f69f4293ec758f",
+            AbilityCatalogHash(previousReviewedAbilities));
+        Assert.Equal("53551651f55f287ae0158beaa9eb9dabb9a7afa41368ba718512a751d1e72568",
             AbilityCatalogHash(abilities));
     }
 
-    private static ContractManifest WithReviewedSusanooDepartureRoute(ContractManifest previous)
+    private static ContractManifest WithReviewedAbilityCatalogRoutes(ContractManifest previous)
     {
         Assert.Equal("68028c235540647c58ca4a24ef762ed8fbbdbc8dfaa6b94a2e27058d443e997d",
             previous.AbilityCatalogSha256);
@@ -364,7 +377,7 @@ public sealed class ArchitectureP1ContractFreezeTests
         // The dedicated test above proves the exact one-entry catalog delta.
         return previous with
         {
-            AbilityCatalogSha256 = "7d06f1c171c337209c84dc9569ce43e437573b022516f7b2d8f69f4293ec758f",
+            AbilityCatalogSha256 = "53551651f55f287ae0158beaa9eb9dabb9a7afa41368ba718512a751d1e72568",
         };
     }
 
