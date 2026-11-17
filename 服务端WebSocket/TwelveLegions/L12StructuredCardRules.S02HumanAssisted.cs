@@ -75,7 +75,7 @@ public static partial class L12StructuredCardRules
                 H("master-morale-return", "triggered", "我方 回合1次 我方士气因主宰返还4张及以上时，可从士气牌库追加1张休整的士气。"),
                 H("enter", "triggered", "登场时 可展示牌库顶部1张牌。若其为费用不高于4的<主动战术>，可无需消耗费用将其打出；否则将其返回牌库底部。随后可抽取1张牌。")),
             "S02-0103" => HumanCard(
-                H("enter", "triggered", "登场时 本回合我方主宰对对方主宰造成的下一次伤害变为2。"),
+                H("enter", "triggered", "登场时 本回合我方主宰或由我方主宰变成的军团对对方主宰造成的下一次伤害变为2。"),
                 H("attack", "triggered", "进攻时 可展示牌库顶部1张牌。若其为费用不高于5的【天廷】卡牌，此军团本回合兵力+2000；否则将其返回牌库底部。")),
             "S02-0104" => HumanCard(
                 H("enter", "triggered", "登场时 可抽取1张牌。"),

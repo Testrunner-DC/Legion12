@@ -2537,19 +2537,28 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private int ApplyOutgoingMasterDamageOverride(int targetPlayerIndex, int amount, int? sourcePlayer,
         bool neutralSource, L12StackItem? declaredSourceItem = null)
+        => ApplyOutgoingMasterDamageOverrideCore(targetPlayerIndex, amount, sourcePlayer, neutralSource,
+            declaredSourceItem, declaredSourceCard: null);
+
+    private int ApplyOutgoingMasterDamageOverrideCore(int targetPlayerIndex, int amount, int? sourcePlayer,
+        bool neutralSource, L12StackItem? declaredSourceItem, L12CardInstance? declaredSourceCard)
     {
         var resolvedSourcePlayer = ResolveDamageSourcePlayer(sourcePlayer, neutralSource);
         if (resolvedSourcePlayer is not (0 or 1) || resolvedSourcePlayer == targetPlayerIndex) return amount;
         var sourceItem = declaredSourceItem ?? State.EffectStack.LastOrDefault();
         var source = State.Players[resolvedSourcePlayer.Value];
-        if (sourceItem?.Controller != resolvedSourcePlayer || sourceItem.SourceCardId != source.MasterId
+        var isMasterLegionSource = declaredSourceCard is { IsMasterLegion: true }
+            && declaredSourceCard.CardId == source.MasterId
+            && declaredSourceCard.OwnerIndex == resolvedSourcePlayer;
+        var isMasterSource = sourceItem?.Controller == resolvedSourcePlayer && sourceItem.SourceCardId == source.MasterId;
+        if (!isMasterSource && !isMasterLegionSource
             || source.NextMasterDamageToOpponentBecomesTwoUntilTurn != State.TurnSerial)
             return amount;
 
         source.NextMasterDamageToOpponentBecomesTwoUntilTurn = -1;
         var target = State.Players[targetPlayerIndex];
         AddSemanticPlayerLogEvent("effect", resolvedSourcePlayer,
-            "平阳昭公主使主宰对对方主宰造成的这次伤害变为2",
+            "平阳昭公主使主宰或其转化的军团对对方主宰造成的这次伤害变为2",
             new("触发 主宰效果", $"〈{target.MasterName}〉受到的本次伤害变为2",
                 SourceName: "平阳昭公主", TargetName: target.MasterName));
         return 2;
@@ -2558,9 +2567,16 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private int ResolveMasterDamageAmount(int playerIndex, int amount, int? sourcePlayer,
         bool neutralSource, L12StackItem? declaredSourceItem = null,
         int declaredDisasterMasterDamageBonus = 0)
+        => ResolveMasterDamageAmountCore(playerIndex, amount, sourcePlayer, neutralSource,
+            declaredSourceItem, declaredSourceCard: null,
+            declaredDisasterMasterDamageBonus: declaredDisasterMasterDamageBonus);
+
+    private int ResolveMasterDamageAmountCore(int playerIndex, int amount, int? sourcePlayer,
+        bool neutralSource, L12StackItem? declaredSourceItem, L12CardInstance? declaredSourceCard,
+        int declaredDisasterMasterDamageBonus)
     {
-        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource,
-            declaredSourceItem);
+        amount = ApplyOutgoingMasterDamageOverrideCore(playerIndex, amount, sourcePlayer, neutralSource,
+            declaredSourceItem, declaredSourceCard);
         // 中立天灾伤害不受玩家卡牌的伤害替换影响。
         if (!neutralSource)
             amount = AdjustAnderstorpRingDamage(State.Players[playerIndex], amount,
@@ -2575,6 +2591,18 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private void DamageMasterWithDeclaredDisasterBonus(int playerIndex, int amount, string source,
         int? sourcePlayer, bool neutralSource, bool combatDamage, int declaredDisasterMasterDamageBonus)
+        => DamageMasterWithDeclaredDisasterBonusCore(playerIndex, amount, source, sourcePlayer, neutralSource,
+            combatDamage, declaredDisasterMasterDamageBonus, declaredSourceCard: null);
+
+    private void DamageMasterWithDeclaredDisasterBonusFromCard(int playerIndex, int amount, string source,
+        int? sourcePlayer, bool neutralSource, bool combatDamage, int declaredDisasterMasterDamageBonus,
+        L12CardInstance? declaredSourceCard)
+        => DamageMasterWithDeclaredDisasterBonusCore(playerIndex, amount, source, sourcePlayer, neutralSource,
+            combatDamage, declaredDisasterMasterDamageBonus, declaredSourceCard);
+
+    private void DamageMasterWithDeclaredDisasterBonusCore(int playerIndex, int amount, string source,
+        int? sourcePlayer, bool neutralSource, bool combatDamage, int declaredDisasterMasterDamageBonus,
+        L12CardInstance? declaredSourceCard)
     {
         var player = State.Players[playerIndex];
         var declaredDisasterBonus = Math.Clamp(declaredDisasterMasterDamageBonus, 0, 1);
@@ -2583,7 +2611,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var declaredNonDisasterDamage = neutralSource
             ? 0
             : Math.Max(0, amount - declaredDisasterBonus);
-        amount = ResolveMasterDamageAmount(playerIndex, amount, sourcePlayer, neutralSource,
+        amount = ResolveMasterDamageAmountCore(playerIndex, amount, sourcePlayer, neutralSource,
+            declaredSourceItem: null, declaredSourceCard: declaredSourceCard,
             declaredDisasterMasterDamageBonus: declaredDisasterBonus);
         var actual = Math.Min(Math.Max(0, amount), Math.Max(0, player.Hp));
         player.Hp = Math.Max(0, player.Hp - amount);

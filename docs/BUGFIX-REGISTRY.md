@@ -9570,3 +9570,11 @@
 
 - `BUG-20261109-81cd4dec` 已按用户确认的统一规则核对：李牧只响应主宰效果返还 4 张及以上；孙悟空变身返还属于主宰效果并可触发；嬴政 `S02-0101` 是军团，不属于主宰来源，不触发该入口。
 - 受管 Release 具名回归 4/4 通过，证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261112-limu-source-r8/test-481b50d0be5f4d05a83c1ad4dd268878/receipt.json`。当前分类为 `rule_correct_checked_unreproduced`；原局正文／回放仍未读，但按现行流程不再以历史回放作为关闭前置。线上 CAS 终态尚未写入，不能冒充正式服关闭。
+
+## BUG-20261117-PINGYANG-MASTER-LEGION-DAMAGE｜平阳昭公主对主宰转化军团的进攻伤害修正（本地修复，未部署）
+
+- 现象与裁定：平阳昭公主生效后，主宰变成军团再进攻对方主宰时，该次进攻伤害仍应继承“下一次伤害变为2”的修正；普通军团进攻不受影响，天灾来源也不应消耗或触发该修正。
+- 根因：伤害出口只检查伤害栈来源 `SourceCardId == 主宰编号`。主宰转化后的悟空实例虽保留 `IsMasterLegion`，但战斗伤害路径未把实际攻击卡实例传入替换判定，因而被漏判为普通军团。
+- 共享修复：新增带实际来源卡实例的主宰伤害解析路径；当来源实例属于当前玩家、`IsMasterLegion=true` 且 `CardId` 等于该玩家主宰编号时，与原主宰来源共享平阳修正规则。普通军团、对手来源、天灾／中立来源仍排除；公开卡文同步明确“主宰或由我方主宰变成的军团”。
+- 防回归：新增 `S2FactionRegressionTests.PingyangAlsoModifiesMasterDamageAfterWukongBecomesAMasterLegion`，并保留原主宰正向、普通军团负向与同回合一次性消费回归；受管 Release 定向回归 2/2 通过，证据 `D:/GPT/Legion12/artifacts/pingyang-master-legion-20261117/test-6bfd663ffa254c77a1c8c172dd9635e7/pass-proof.trx`。同类 `S2FactionRegressionTests` 全量 253/253 通过，证据 `D:/GPT/Legion12/artifacts/pingyang-master-legion-20261117/test-b1ae538e22824c4d8b1f16be3cacba4c/pass-proof.trx`；卡文／原子规则 93/93 通过，证据 `D:/GPT/Legion12/artifacts/pingyang-master-legion-20261117/test-325c7172650e43a18bf8d890a2e9eaf3/pass-proof.trx`。服务端卡表生成已完成；前端 `vue-tsc` 与 production／testrun Vite 构建尚未取得可审计输出（本机 Node 子进程受资源压力未能稳定启动），不得把这一步记为通过。
+- 状态：`local_fixed_not_deployed`。未执行线上 CAS 写入、未部署正式服；正式服前置门禁仍需完整 Release 验证、测试服具名读回及发布包审计。

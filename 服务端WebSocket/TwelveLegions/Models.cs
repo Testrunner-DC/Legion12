@@ -423,7 +423,7 @@ public sealed class L12PlayerState
     public int PendingStarterMoraleReturnEvents { get; set; }
     public int PendingStarterRuneSpendEvents { get; set; }
     internal int MasterMoraleWaiverCredit;
-    /// <summary>平阳昭公主：本回合主宰对对方主宰造成的下一次伤害变为2。</summary>
+    /// <summary>平阳昭公主：本回合主宰或其转化的军团对对方主宰造成的下一次伤害变为2。</summary>
     public int NextMasterDamageToOpponentBecomesTwoUntilTurn { get; set; } = -1;
     public int S2ArthurDiscountUntilTurn { get; set; } = -1;
     public int FactionMoraleAdditionForbiddenUntilTurn { get; set; } = -1;

@@ -1351,9 +1351,9 @@ public sealed partial class L12GameEngine
             if (cards.Count == 0)
             {
                 var disasterBonus = ResolveDeclaredMasterAttackDisasterBonus(pending);
-                DamageMasterWithDeclaredDisasterBonus(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻",
+                DamageMasterWithDeclaredDisasterBonusFromCard(playerIndex, pending.MasterDamage, $"{attacker.Name}的进攻",
                     pending.AttackerPlayer, neutralSource: false, combatDamage: true,
-                    declaredDisasterMasterDamageBonus: disasterBonus);
+                    declaredDisasterMasterDamageBonus: disasterBonus, declaredSourceCard: attacker);
                 if (L12VerifiedAtomicPrograms.Find(attacker.CardId, "after-damage") is not null
                     && State.Phase != L12Phase.GameOver)
                     QueueTriggerCandidates([

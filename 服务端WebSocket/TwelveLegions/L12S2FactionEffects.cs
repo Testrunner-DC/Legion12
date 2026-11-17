@@ -300,7 +300,7 @@ public sealed partial class L12GameEngine
             case "平阳昭公主":
                 player.NextMasterDamageToOpponentBecomesTwoUntilTurn = State.TurnSerial;
                 AddEvent("effect", item.Controller,
-                    "平阳昭公主使本回合我方主宰对对方主宰造成的下一次伤害变为2", card);
+                    "平阳昭公主使本回合我方主宰或其转化的军团对对方主宰造成的下一次伤害变为2", card);
                 FinishStackItem(item);
                 return true;
             case "赫拉克勒斯·晋升":

@@ -6229,6 +6229,46 @@ public sealed class S2FactionRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-0103,S02-01M1")]
+    public void PingyangAlsoModifiesMasterDamageAfterWukongBecomesAMasterLegion()
+    {
+        var game = CreateWithFirstMaster("S02-01M1", 63520);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var pingyang = Card("S02-0103", "pingyang-master-legion-entry");
+        player.Hand.Clear();
+        player.Hand.Add(pingyang);
+        AddMorale(player, 8);
+        game.State.Phase = L12Phase.Main;
+
+        Assert.True(game.Handle(0,
+            new L12Command("playCard", pingyang.InstanceId, Row: 0, Slot: 0)).Accepted);
+        PassResponses(game);
+
+        var returned = player.Morale.Take(4).Select(card => card.InstanceId).ToArray();
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "wukongTransform")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: returned.ToList())).Accepted);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: slot.PromptId,
+            Choice: slot.ValidChoices[0])).Accepted);
+        PassResponses(game);
+
+        var wukong = Assert.Single(player.Field[0], card => card?.IsMasterLegion == true)!;
+        var before = opponent.Hp;
+        Assert.True(game.Handle(0,
+            new L12Command("attack", wukong.InstanceId, Target: new L12AttackTarget("master"))).Accepted);
+        PassResponses(game);
+        Assert.NotNull(game.State.PendingDefense);
+        Assert.True(game.Handle(1, new L12Command("resolveDefense")).Accepted);
+
+        Assert.Equal(before - 2, opponent.Hp);
+        Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
+    }
+
+    [Fact]
     public void PromotedAtalantaUsesThreeThousandTroopsAndRangeOnlyInTheBackRow()
     {
         var game = Create(6353);
