@@ -93,6 +93,59 @@ $env:NUGET_XMLDOC_MODE = "skip"
 $env:npm_config_update_notifier = "false"
 $env:npm_config_fund = "false"
 
+# Windows CreateProcess carries the complete environment block into every
+# child.  This workstation's inherited PATH can accumulate hundreds of old
+# .dotnet/tools entries and exceed the practical environment-block limit,
+# which surfaces as Win32 error 8 (misleadingly reported as "insufficient
+# system resources") when starting git/node/dotnet.  Build/test/deploy
+# children only need a small, explicit toolchain path.  Keep optional
+# L12_TOOL_PATH entries, but never inherit the unbounded process PATH.
+$boundedToolPath = [Collections.Generic.List[string]]::new()
+$pythonExecutable = Get-Command python.exe -CommandType Application -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path -LiteralPath $_.Source -PathType Leaf } | Select-Object -First 1
+if (-not $pythonExecutable) {
+    $pythonExecutable = Get-Command python3.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path -LiteralPath $_.Source -PathType Leaf } | Select-Object -First 1
+}
+function Add-L12ToolPath {
+    param([AllowNull()][string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    $resolved = try { [IO.Path]::GetFullPath($Path) } catch { return }
+    if (-not (Test-Path -LiteralPath $resolved -PathType Container)) { return }
+    if (-not ($boundedToolPath | Where-Object { $_ -ieq $resolved })) {
+        [void]$boundedToolPath.Add($resolved)
+    }
+}
+foreach ($path in @(
+        (Join-Path $env:SystemRoot 'System32'),
+        $env:SystemRoot,
+        (Join-Path $env:SystemRoot 'System32\Wbem'),
+        (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0'),
+        (Join-Path $env:SystemRoot 'System32\OpenSSH'),
+        $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'dotnet' } else { $null }),
+        $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} 'dotnet' } else { $null }),
+        $(if ($env:L12_NODE_ROOT) { $env:L12_NODE_ROOT } else { $null }),
+        $(if ($pythonExecutable) { Split-Path -Parent $pythonExecutable.Source } else { $null }),
+        $(if ($pythonExecutable) { Join-Path (Split-Path -Parent $pythonExecutable.Source) 'Scripts' } else { $null }),
+        $(if ($pythonExecutable) { Join-Path (Split-Path -Parent $pythonExecutable.Source) 'Library\bin' } else { $null }),
+        $(if ($env:CONDA_PREFIX) { $env:CONDA_PREFIX } else { $null }),
+        $(if ($env:CONDA_PREFIX) { Join-Path $env:CONDA_PREFIX 'Scripts' } else { $null }),
+        $(if ($env:CONDA_PREFIX) { Join-Path $env:CONDA_PREFIX 'Library\bin' } else { $null }),
+        (Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin'),
+        (Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd'),
+        (Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell'),
+        (Join-Path ${env:ProgramFiles} 'Git\cmd'),
+        (Join-Path ${env:ProgramFiles} 'Git\bin'),
+        'C:\nodejs'
+    )) { Add-L12ToolPath $path }
+if ($env:L12_TOOL_PATH) {
+    foreach ($path in $env:L12_TOOL_PATH -split [IO.Path]::PathSeparator) { Add-L12ToolPath $path }
+}
+if ($boundedToolPath.Count -eq 0) { throw 'L12_BOUNDED_TOOL_PATH_EMPTY' }
+$env:Path = $boundedToolPath -join [IO.Path]::PathSeparator
+if ($env:Path.Length -gt 4096) { throw "L12_BOUNDED_TOOL_PATH_TOO_LONG: $($env:Path.Length)" }
+Write-Host "[L12 构建] 受限工具 PATH 长度：$($env:Path.Length)"
+
 foreach ($name in @("TEMP", "TMP", "DOTNET_CLI_HOME", "NUGET_PACKAGES", "NUGET_HTTP_CACHE_PATH", "npm_config_cache", "COREPACK_HOME")) {
     $resolvedPath = [IO.Path]::GetFullPath([Environment]::GetEnvironmentVariable($name, "Process"))
     $expectedRoot = if ($name -in @('TEMP','TMP','DOTNET_CLI_HOME')) { $resolvedCacheRoot } else { $resolvedDependencyRoot }

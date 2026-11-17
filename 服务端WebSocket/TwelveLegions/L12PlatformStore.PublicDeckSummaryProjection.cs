@@ -61,6 +61,19 @@ public sealed partial class L12PlatformStore
             viewerId is not null && row.LikedByAccountIds.Contains(viewerId), isOwner, row.RepresentativeCardIds);
     }
 
+    private static DeckLibraryEntry PublishedLibraryEntry(PublishedDeckSummaryInput input, L12Catalog catalog,
+        L12OperationsPolicySnapshot policy, string? viewerId)
+    {
+        var decoded = L12DeckPayloadCodec.Decode(input.PayloadFormat, input.PayloadJson);
+        L12DeckPayloadCodec.ValidateHash(input.PayloadHash, input.MasterId, decoded);
+        return LibraryEntry(catalog, policy.CardRestrictions, input.Id, "public", input.Name, input.MasterId,
+            input.Author, input.PublicCode, viewerId is not null && input.OwnerId == viewerId ? input.Version : null,
+            input.CreatedAt, input.UpdatedAt, SummaryCardCounts(decoded.MainJson),
+            SummaryCardCounts(decoded.MoraleJson), SummaryCardCounts(decoded.SpecialJson), [], null,
+            input.Views, input.Likes, input.Copies, input.ViewerLiked, viewerId is not null && input.OwnerId == viewerId,
+            input.RepresentativeCardIds);
+    }
+
     private static DeckLibraryEntry OfficialLibraryEntry(L12PresetDeckDefinition deck, L12Catalog catalog, L12OperationsPolicySnapshot policy)
         => LibraryEntry(catalog, policy.CardRestrictions, OfficialLibraryId(deck), "official", deck.Name, deck.MasterId,
             "十二军团官方预组", null, null, null, null, L12DeckValidator.CountCards(deck.CardIds),

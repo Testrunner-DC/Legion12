@@ -28,7 +28,7 @@ public sealed partial class L12PlatformStore
     // WAL snapshot for the head, content and selected immutable version facts.
     private PublicDeckReadHead CapturePublicDeckReadHead(SqliteConnection connection, SqliteTransaction transaction,
         PublishedDeckRow row, L12Catalog catalog, L12OperationsPolicySnapshot policy, L12AuthenticatedSession? viewer,
-        string? frozenCatalogVersion = null)
+        string? frozenCatalogVersion = null, string? frozenAuthor = null, long? expectedDataVersion = null)
     {
         using (var state = connection.CreateCommand())
         {
@@ -38,7 +38,8 @@ public sealed partial class L12PlatformStore
                 FROM platform_state WHERE singleton_id=1;
                 """;
             using var stored = state.ExecuteReader();
-            if (!stored.Read() || stored.GetInt32(0) != PlatformStorageSchemaVersion || stored.GetInt64(1) != _data.Version
+            if (!stored.Read() || stored.GetInt32(0) != PlatformStorageSchemaVersion
+                || stored.GetInt64(1) != (expectedDataVersion ?? _data.Version)
                 || stored.IsDBNull(2) || stored.GetString(2) != PlatformStorageSchemaVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 throw new InvalidDataException("公开牌库读取存储格式或已提交代际不一致");
         }
@@ -66,13 +67,14 @@ public sealed partial class L12PlatformStore
             || revision > 0 && (hash is null || updated is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit)))
             throw new InvalidDataException("公开牌库指南头无效");
         var catalogVersion = frozenCatalogVersion ?? LibraryCatalogVersion(catalog);
-        var account = _data.Accounts.FirstOrDefault(item => item.Id == row.OwnerId);
+        var author = frozenAuthor ?? (_data.Accounts.FirstOrDefault(item => item.Id == row.OwnerId) is { } account
+            ? PublicUsername(account) : "已注销玩家");
         // Counters are intentionally excluded: opening a deck must not invalidate
         // its own pin. Viewer identity is consistency context, never authorization.
         var token = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
             row.Id, row.PublicCode, row.Name, HeadVersion = row.Version, row.PayloadHash, row.OwnerId, row.UpdatedAt,
-            Author = account is null ? "已注销玩家" : PublicUsername(account),
+            Author = author,
             ContentRevision = revision, ContentHash = hash, ContentUpdatedAt = updated,
             catalogVersion, PolicyVersion = policy.Version, policy.VersionId,
             Viewer = viewer?.Account.Id, Permission = viewer?.Account.PermissionVersion, Session = viewer?.SessionId,

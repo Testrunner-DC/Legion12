@@ -42,4 +42,31 @@ public sealed partial class L12PlatformStore
                     : L12DeckCoverSelection.SelectCardIds(catalog, main)
                 : null, legal, legal ? null : reason);
     }
+
+    private static L12PrivateDeckSummaryView PrivateDeckSummary(PrivateDeckSummaryInput input,
+        L12Catalog catalog, IReadOnlyList<L12CardRestrictionConfig> restrictions, bool includeCover)
+    {
+        var decoded = L12DeckPayloadCodec.Decode(input.PayloadFormat, input.PayloadJson);
+        L12DeckPayloadCodec.ValidateHash(input.PayloadHash, input.MasterId, decoded);
+        var main = SummaryCardCounts(decoded.MainJson);
+        var morale = SummaryCardCounts(decoded.MoraleJson);
+        var special = SummaryCardCounts(decoded.SpecialJson);
+        var bench = SummaryCardCounts(input.BenchJson);
+        var alternateArtCopies = input.AlternateArtCopies;
+        var legal = L12DeckValidator.TryValidateCounts(catalog,
+            new(input.Name, input.MasterId, main, morale, special, bench,
+                alternateArtCopies), out var reason, restrictions);
+        var uncounted = L12DeckValidator.CountCards(main.Where(item => catalog.Cards.TryGetValue(item.CardId,
+            out var card) && L12SpecialDeckRules.DoesNotCountTowardMainDeck(card)));
+        return new(input.Id, input.Revision, input.Name, input.MasterId, input.UpdatedAt,
+            input.PublicationId, input.PublicationVersion,
+            new(L12DeckValidator.CountCards(main) - uncounted, uncounted,
+                L12DeckValidator.CountCards(morale), L12DeckValidator.CountCards(special),
+                L12DeckValidator.CountCards(bench)),
+            includeCover
+                ? input.RepresentativeCardIds is { Count: > 0 } representatives
+                    ? representatives.ToArray()
+                    : L12DeckCoverSelection.SelectCardIds(catalog, main)
+                : null, legal, legal ? null : reason);
+    }
 }

@@ -21,6 +21,8 @@ public sealed class DeckSummaryProjectionTests
         foreach (var name in new[] { "ALPHA", "alpha 二", "甲", "乙", "丙", "最后" }) fixture.Create(name, source);
         fixture.Store.CreateDeck(fixture.Other.Id, Named(source, "ALPHA other"));
         fixture.Observe();
+        var projectionBuilds = 0;
+        fixture.Store.PrivateDeckSummaryProjectionObserver = () => projectionBuilds++;
         var all = fixture.Store.PrivateDeckSummaries(fixture.Owner, fixture.Catalog, new(Sort: "name"))!;
         var first = fixture.Store.PrivateDeckSummaries(fixture.Owner, fixture.Catalog, new(PageSize: 2, Sort: "name"))!;
         var second = fixture.Store.PrivateDeckSummaries(fixture.Owner, fixture.Catalog, new(Page: 2, PageSize: 2, Sort: "name"))!;
@@ -38,6 +40,7 @@ public sealed class DeckSummaryProjectionTests
         Assert.Equal(2, filtered.Facets.Legal);
         Assert.Equal(2, Assert.Single(filtered.Facets.Masters).Count);
         Assert.Empty(fixture.Store.PrivateDeckSummaries(fixture.Owner, fixture.Catalog, new(Page: int.MaxValue, PageSize: 100))!.Items);
+        Assert.Equal(1, projectionBuilds);
         Assert.Empty(fixture.Expansions);
         fixture.Complete();
     }

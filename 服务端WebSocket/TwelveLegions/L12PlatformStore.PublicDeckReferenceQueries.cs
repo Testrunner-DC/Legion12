@@ -40,7 +40,8 @@ public sealed partial class L12PlatformStore
     // This guard is deliberately independent of result cardinality. Missing,
     // foreign and off-page references must not turn a drifted store into an
     // authoritative empty result.
-    private void ValidatePublicDeckReadGeneration(SqliteConnection connection, SqliteTransaction transaction)
+    private void ValidatePublicDeckReadGeneration(SqliteConnection connection, SqliteTransaction transaction,
+        long? expectedDataVersion = null)
     {
         if (!_storageWritable)
             throw new L12PlatformStorageUnavailableException(_storageIssue ?? "公开牌库事务存储当前不可用");
@@ -54,7 +55,7 @@ public sealed partial class L12PlatformStore
             """;
         using var reader = command.ExecuteReader();
         if (!reader.Read() || reader.GetInt32(0) != PlatformStorageSchemaVersion
-            || reader.GetInt64(1) != _data.Version || reader.IsDBNull(2)
+            || reader.GetInt64(1) != (expectedDataVersion ?? _data.Version) || reader.IsDBNull(2)
             || reader.GetString(2) != PlatformStorageSchemaVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)
             || reader.IsDBNull(3) || reader.GetString(3) != DeckPayloadFormatActiveState || reader.Read())
             throw new InvalidDataException("公开牌库读取存储格式或已提交代际不一致");

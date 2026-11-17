@@ -366,6 +366,36 @@ let catalogPromise: Promise<DeckCard[]> | null = null
 let lookupCatalogRequest: Promise<LookupCard[]> | null = null
 let officialPresetDecksPromise: Promise<OfficialL12PresetDeck[]> | null = null
 
+type PrivateDeckSummaryCacheEntry = {
+  value?: PrivateDeckSummaryPage
+  expiresAt: number
+  staleUntil: number
+  request?: Promise<PrivateDeckSummaryPage>
+}
+
+// The directory is an authenticated read, so it cannot use the shared public
+// cache. Keep a short account-scoped memory cache instead: navigation and
+// component remounts can render the last known directory immediately while a
+// single background request refreshes it. This prevents a slow backend read
+// from turning into a user-driven refresh/request storm.
+const privateDeckSummaryCache = new Map<string, PrivateDeckSummaryCacheEntry>()
+const PRIVATE_DECK_SUMMARY_TTL_MS = 15_000
+const PRIVATE_DECK_SUMMARY_STALE_MS = 5 * 60_000
+
+function privateDeckSummaryCacheKey(accountId: string, query: PrivateDeckSummaryQuery, epoch = 0) {
+  // A session/account transition must not reuse a page captured by the
+  // previous identity generation. The account id alone is insufficient for
+  // A-B-A transitions with a refreshed token, so keep the monotonic epoch in
+  // the in-memory key while retaining the account-scoped invalidation prefix.
+  return `${accountId}:${epoch}:${privateDeckSummaryRequestPath(query)}`
+}
+
+export function invalidatePrivateDeckSummaryCache(accountId = platformState.account?.id) {
+  if (!accountId) return
+  const prefix = `${accountId}:`
+  for (const key of privateDeckSummaryCache.keys()) if (key.startsWith(prefix)) privateDeckSummaryCache.delete(key)
+}
+
 function legacyStorageKey(accountId = platformState.account?.id) {
   return accountId ? `${STORAGE_KEY}:${accountId}` : STORAGE_KEY
 }
@@ -678,12 +708,57 @@ export async function loadPrivateDeckSummaryPage(query: PrivateDeckSummaryQuery 
   try {
     assertCompleteDeckAccount(context)
     if (!context.accountId || !context.token) throw new Error('请先登录账号再读取牌库目录')
-    const response = await platformRequest<unknown>(privateDeckSummaryRequestPath(query), {
-      cache: 'no-store', headers: getRepresentativeDeckRequestHeaders(),
-    })
-    if (!isCurrentDeckStorageContext(context)) throw new Error('账号已切换，已忽略旧牌库目录')
-    return validatePrivateDeckSummaryPage(response, query)
+    // Exact-name/publication lookups are read-after-write probes and must stay
+    // fresh. Only the normal directory pages use the short-lived cache.
+    const cacheable = !query.exactName && !query.publicationId
+    if (!cacheable) {
+      const response = await platformRequest<unknown>(privateDeckSummaryRequestPath(query), {
+        cache: 'no-store', headers: getRepresentativeDeckRequestHeaders(),
+      })
+      if (!isCurrentDeckStorageContext(context)) throw new Error('账号已切换，已忽略旧牌库目录')
+      return validatePrivateDeckSummaryPage(response, query)
+    }
+
+    const key = privateDeckSummaryCacheKey(context.accountId, query, context.epoch)
+    const now = Date.now()
+    const entry = privateDeckSummaryCache.get(key) ?? { expiresAt: 0, staleUntil: 0 }
+    if (entry.value && entry.expiresAt > now) {
+      // Fresh data is authoritative for the short TTL. Do not refresh on
+      // every remount during that window; the stale branch below performs
+      // one background revalidation after the TTL expires.
+      return entry.value
+    }
+    if (entry.request) return await entry.request
+    if (entry.value && entry.staleUntil > now) {
+      void refreshPrivateDeckSummary(entry, key, context, query).catch(() => undefined)
+      privateDeckSummaryCache.set(key, entry)
+      return entry.value
+    }
+    return await refreshPrivateDeckSummary(entry, key, context, query)
   } catch (error) { throw operationError(error, context) }
+}
+
+async function refreshPrivateDeckSummary(
+  entry: PrivateDeckSummaryCacheEntry,
+  key: string,
+  context: ReturnType<typeof captureDeckStorageContext>,
+  query: PrivateDeckSummaryQuery,
+) {
+  const request = platformRequest<unknown>(privateDeckSummaryRequestPath(query), {
+    cache: 'no-store', headers: getRepresentativeDeckRequestHeaders(),
+  }).then(response => {
+    if (!isCurrentDeckStorageContext(context)) throw new Error('账号已切换，已忽略旧牌库目录')
+    const value = validatePrivateDeckSummaryPage(response, query)
+    entry.value = value
+    entry.expiresAt = Date.now() + PRIVATE_DECK_SUMMARY_TTL_MS
+    entry.staleUntil = Date.now() + PRIVATE_DECK_SUMMARY_STALE_MS
+    return value
+  }).finally(() => {
+    if (entry.request === request) entry.request = undefined
+  })
+  entry.request = request
+  privateDeckSummaryCache.set(key, entry)
+  return request
 }
 
 async function readPrivateDeckCollision(collision: SavedL12Deck, name: string, current: () => boolean) {
@@ -1079,6 +1154,7 @@ export async function saveDeck(deck: SavedL12Deck): Promise<SavedL12Deck> {
       throw new Error('服务器未确认代表卡；当前选择仍保留在编辑器中，请稍后重试')
     if (!saved.id || !saved.revision || normalized.id && saved.id !== normalized.id)
       throw new Error('服务器牌库身份或修订结果不一致')
+    invalidatePrivateDeckSummaryCache(context.accountId)
     return await withGuestDeckMutation(context, () => {
       requireCurrentOperation(context, activity)
       const latest = currentDeckSnapshot(context)
@@ -1118,6 +1194,7 @@ export async function deleteDeck(target: string | SavedL12Deck): Promise<void> {
           if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 404) throw error
         }
         confirmed = true
+        invalidatePrivateDeckSummaryCache(context.accountId)
     }
     await withGuestDeckMutation(context, () => {
         const { previous, current } = context.accountId ? selected : identify()

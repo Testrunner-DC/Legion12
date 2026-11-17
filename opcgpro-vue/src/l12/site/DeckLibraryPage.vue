@@ -41,6 +41,12 @@ const privateLoadState = ref<'loading' | 'available' | 'unavailable'>('loading')
 const privateLoadError = ref('')
 let privateDirectorySequence = 0
 let mineBodyReadSequence = 0
+// The page can be mounted twice during identity/route synchronisation and
+// several filter watchers may fire in the same tick. Keep one component-level
+// promise per account/query so those callers share the same read and, more
+// importantly, do not toggle a still-usable page into an error state while a
+// refresh is in flight.
+const privateDirectoryRequests = new Map<string, Promise<PrivateDeckSummaryPage>>()
 const published = ref<Array<PublicDeckSummary | PublishedDeck>>([])
 const summaryPage = ref<PublicDeckSummaryPage | null>(null)
 const facetPage = ref<PublicDeckSummaryPage | null>(null)
@@ -139,24 +145,48 @@ async function loadMineDirectory() {
     privateSummaryPage.value = null; privateLoadState.value = 'available'; privateLoadError.value = ''
     return
   }
-  privateLoadState.value = 'loading'; privateLoadError.value = ''
+  // Preserve the last successful page while revalidating. Showing an empty
+  // error state here makes users refresh repeatedly and amplifies the backend
+  // load exactly when it is already slow.
+  if (!privateSummaryPage.value) privateLoadState.value = 'loading'
+  privateLoadError.value = ''
   const current = () => !libraryDisposed && request === privateDirectorySequence
     && documentEpoch === libraryCounterDocumentEpoch && libraryContextCurrent(context)
     && JSON.stringify(mineDirectoryQuery()) === queryKey
   try {
-    const page = await loadPrivateDeckSummaryPage(query)
+    const requestKey = `${context.account ?? 'anonymous'}:${context.epoch}:${queryKey}`
+    let shared = privateDirectoryRequests.get(requestKey)
+    if (!shared) {
+      shared = loadPrivateDeckSummaryPage(query)
+      privateDirectoryRequests.set(requestKey, shared)
+      void shared.then(() => {
+        if (privateDirectoryRequests.get(requestKey) === shared) privateDirectoryRequests.delete(requestKey)
+      }, () => {
+        if (privateDirectoryRequests.get(requestKey) === shared) privateDirectoryRequests.delete(requestKey)
+      })
+    }
+    const page = await shared
     if (!current()) return
     privateSummaryPage.value = page; privateLoadState.value = 'available'
     if (libraryMounted) void loadOwnReferences()
   } catch (error) {
     if (!current() || !deckErrorBelongsToCurrentAccount(error)) return
-    privateSummaryPage.value = null; privateLoadState.value = 'unavailable'
+    if (privateSummaryPage.value) {
+      // Stale-while-revalidate: retain the last known directory and let a
+      // later scheduled read recover. Do not turn a transient timeout into a
+      // blocking "牌库目录暂不可读取" screen.
+      privateLoadState.value = 'available'
+      privateLoadError.value = ''
+      return
+    }
+    privateLoadState.value = 'unavailable'
     privateLoadError.value = error instanceof Error ? error.message : '牌库目录暂不可读取'
   }
 }
 watch(() => [platformState.account?.id, platformState.token], async () => {
   libraryAccountEpoch++
   privateDirectorySequence++
+  privateDirectoryRequests.clear()
   mineBodyReadSequence++
   publishRequestSequence++
   pendingPublicDeckPublish = null
@@ -383,8 +413,11 @@ async function loadSummarySources() {
   if (!libraryMounted || libraryDisposed) return
   const request = summaryQuery(), current = summaryGate.begin()
   const baseline: PublicDeckSummaryQuery = { source: 'all', page: 1, pageSize: 16, sort: 'trend' }
-  publicLoadState.value = 'loading'; publicLoadError.value = ''
-  published.value = []; summaryPage.value = null; facetPage.value = null; hotSummaries.value = []
+  // Keep the last successful page visible during revalidation. Clearing the
+  // entire grid for every filter/navigation read makes a transient timeout
+  // look like data loss and encourages manual refresh storms.
+  if (!summaryPage.value) publicLoadState.value = 'loading'
+  publicLoadError.value = ''
   try {
     const [response, baselineResponse] = await Promise.all([deckLibraryApi.summaries(request), deckLibraryApi.summaries(baseline)])
     const page = validateSummaryPage(response, request), global = validateSummaryPage(baselineResponse, baseline)
@@ -395,7 +428,15 @@ async function loadSummarySources() {
     facetPage.value = global; hotSummaries.value = global.items
     if (plazaPage.value > Math.max(1, Math.ceil(page.total / PAGE_SIZE))) plazaPage.value = Math.max(1, Math.ceil(page.total / PAGE_SIZE))
   } catch (error) {
-    if (current()) { publicLoadState.value = 'unavailable'; publicLoadError.value = error instanceof Error ? error.message : '公开牌库当前无法读取' }
+    if (current()) {
+      if (summaryPage.value) {
+        publicLoadState.value = 'available'
+        publicLoadError.value = ''
+      } else {
+        publicLoadState.value = 'unavailable'
+        publicLoadError.value = error instanceof Error ? error.message : '公开牌库当前无法读取'
+      }
+    }
   }
 }
 function visiblePublicationIds() {

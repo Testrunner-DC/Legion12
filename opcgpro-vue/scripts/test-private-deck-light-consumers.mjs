@@ -375,6 +375,7 @@ const deckModule = {
   loadSavedDecksState: decks.loadSavedDecksState,
   deckErrorBelongsToCurrentAccount: decks.deckErrorBelongsToCurrentAccount,
   loadPrivateDeckSummaryPage: decks.loadPrivateDeckSummaryPage,
+  invalidatePrivateDeckSummaryCache: decks.invalidatePrivateDeckSummaryCache,
   loadDeckCatalog: async () => { deckCatalogReads += 1; return [] },
 }
 
@@ -463,6 +464,8 @@ function homeComponent() {
 }
 
 function resetIdentity(account = { id: 'account-A', username: 'Account A', permissions: [] }, token = 'token-A', verified = true) {
+  for (const accountId of ['account-A', 'account-B', account?.id])
+    if (accountId) deckModule.invalidatePrivateDeckSummaryCache(accountId)
   platformState.account = account
   platformState.token = token
   authState.verified = verified
@@ -683,7 +686,7 @@ await check('TournamentAccountDetail reaches later summary pages, searches serve
   assert.equal(mounted.state.deckId, 'deck-illegal'); assert.equal(mounted.state.selectedDeck.id, 'deck-illegal')
   assert.equal(selectorInstance(mounted).setupState.selectedOutsidePage, true)
   assert.equal(selectorInstance(mounted).setupState.rows[0].deck.id, 'search-result')
-  assert.equal(requests.length, 7, 'each explicit open/page/search action gets exactly one bounded summary request')
+  assert.equal(requests.length, 3, 'cacheable open/page/search queries should issue one request per distinct query')
   assert.equal(fullDeckRequests(requests).length, 0)
   mounted.unmount()
 })
@@ -732,7 +735,7 @@ await check('TournamentAccountDetail ignores a late changed-selection response a
     assert.match(mounted.state.notice, new RegExp(String(status)))
   }
   assert.equal(preCheckIns.length - beforeErrors, 3, 'failed writes must not retry silently')
-  assert.equal(requests.length, 2, 'writes and failures must not refresh full bodies or summaries')
+  assert.equal(requests.length, 1, 'writes and failures must not refresh full bodies or summaries')
   assert.equal(fullDeckRequests(requests).length, 0)
   mounted.unmount()
 })
@@ -977,7 +980,7 @@ await check('withdrawal while the shared selector is open closes drafts but reta
   assert.equal(mounted.state.deckId, ''); assert.equal(mounted.state.me.dropped, true)
   selectorInstance(mounted).emit('confirm', summary()); await flush()
   assert.equal(mounted.state.selectedDeck, null); assert.equal(mounted.state.canOrganize, true)
-  assert.equal(requests.length, 2); assert.deepEqual(preCheckIns, [])
+  assert.equal(requests.length, 1, 'withdrawal must not trigger a second summary read'); assert.deepEqual(preCheckIns, [])
   mounted.unmount()
 })
 

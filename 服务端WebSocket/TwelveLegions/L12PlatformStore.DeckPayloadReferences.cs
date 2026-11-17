@@ -15,6 +15,10 @@ public sealed partial class L12PlatformStore
         int Format, string PayloadJson);
     internal Action<string>? DeckPayloadExpansionObserver { get; set; }
 
+    // Test-only hook used to prove that same-generation summary projections are
+    // single-flight cached. It is never set by the production host.
+    internal Action? PrivateDeckSummaryProjectionObserver { get; set; }
+
     private static CompactDeckPayloadFact RequireDeckPayload(DataFile data, string hash, string master)
     {
         if (string.IsNullOrWhiteSpace(hash) || !data.DeckPayloads.TryGetValue(hash, out var fact)

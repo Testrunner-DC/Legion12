@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+# CHECK-20261117-ALTERNATE-ART-WEBP-MIME｜异画 WebP 上传的浏览器 MIME 兼容
+
+- 现象：异画上传选择 `.webp` 后，在部分 Windows/浏览器组合中仍被前端拒绝，无法进入上传流程。
+- 根因：`MediaUploadField.vue` 只按 `File.type === image/webp` 判定格式；文件选择器返回空 MIME 或 `application/octet-stream` 时，合法 WebP 被误判为不支持，动态图 WebP 检测也不会运行。
+- 修复：图片类型校验同时读取规范 MIME 与 `.jpg/.jpeg/.png/.webp/.avif` 扩展名；WebP 动画识别同样按 MIME 或扩展名进入。服务端仍按真实文件字节识别 WebP，未放宽安全边界。
+- 回归：`check-ui-contracts.mjs` 增加 MIME/扩展名双重识别契约，`test-site-media-pagination.mjs` 通过；未能启动 `vue-tsc -b`，原因是当前 Windows 进程内存不足，未产生 TypeScript 错误证据。
+- 状态：`local_fixed_not_deployed`。
+
 # CHECK-20261117-THOR-FAITH-ZEALOT-HEALTH-GATE｜雷神索尔血量条件不能被信仰狂热者无视
 
 - 核对问题：效果弃置〈信仰狂热者〉后，若我方主宰〈雷神索尔〉血量高于3，能否用信仰狂热者无视2士气消耗发动“血量不高于3”这条主宰效果。

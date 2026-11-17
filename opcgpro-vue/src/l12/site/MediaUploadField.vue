@@ -41,6 +41,10 @@ const MOBILE_MAX_BYTES = 5 * 1024 * 1024
 const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
 const REQUEST_MAX_BYTES = 32 * 1024 * 1024
 const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/avif']
+const acceptedExtensions: Record<string, string> = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.webp': 'image/webp', '.avif': 'image/avif',
+}
 const heroKeys: HeroVariantKey[] = ['desktop', 'mobile', 'thumbnail']
 
 const heroSpecs = computed<HeroVariantSpec[]>(() => policy.value ? [
@@ -74,7 +78,7 @@ async function detectAnimatedWebp(file: Blob) {
 
 async function inspectSelectedFile(selected: File | null) {
   selectedIsAnimated.value = false
-  if (!selected || props.kind !== 'card-art' || selected.type !== 'image/webp') return
+  if (!selected || props.kind !== 'card-art' || !isWebpFile(selected)) return
   animationCheckPending.value = true
   try { selectedIsAnimated.value = await detectAnimatedWebp(selected) }
   catch { selectedIsAnimated.value = false }
@@ -103,8 +107,18 @@ watch(() => props.initialAlt, value => {
 })
 
 function assertAcceptedSource(selected: File) {
-  if (!acceptedTypes.includes(selected.type)) throw new Error('只允许 JPEG、PNG、WebP 或 AVIF；SVG 不会被接受')
+  const reportedType = selected.type.toLowerCase()
+  const extensionType = acceptedExtensions[extensionOf(selected.name)]
+  if (!acceptedTypes.includes(reportedType) && (!extensionType || !acceptedTypes.includes(extensionType)))
+    throw new Error('只允许 JPEG、PNG、WebP 或 AVIF；SVG 不会被接受')
   if (selected.size > ORIGINAL_MAX_BYTES) throw new Error('单份原图不能超过 16MB')
+}
+function extensionOf(name: string) {
+  const dot = name.lastIndexOf('.')
+  return dot >= 0 ? name.slice(dot).toLowerCase() : ''
+}
+function isWebpFile(selected: File) {
+  return selected.type.toLowerCase() === 'image/webp' || extensionOf(selected.name) === '.webp'
 }
 function choose(event: Event) {
   const selected = (event.target as HTMLInputElement).files?.[0] || null

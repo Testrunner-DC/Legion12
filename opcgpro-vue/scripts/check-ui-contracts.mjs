@@ -1399,6 +1399,9 @@ const contracts = [
     && serverDeploy.includes("grep -Fq 'location = /api/admin/site/media'")
     && serverDeploy.includes("grep -Fq 'client_max_body_size 32m'"), '站点图片上传必须只在浏览器、TLS Nginx 精确路由和 ASP.NET 端保留格式与体积安全边界；界面只显示一行建议比例'],
   [mediaUploadField.includes("createImageBitmap(source, { imageOrientation: 'from-image' })")
+    && mediaUploadField.includes('acceptedExtensions')
+    && mediaUploadField.includes('function isWebpFile(selected: File)')
+    && mediaUploadField.includes('extensionOf(selected.name)')
     && mediaUploadField.includes('v-if="isHero" class="hero-upload-field"')
     && mediaUploadField.includes("type HeroVariantKey = 'desktop' | 'mobile' | 'thumbnail'")
     && mediaUploadField.includes('heroStatuses[spec.key].startsWith(\'已选择\')')

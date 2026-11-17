@@ -130,7 +130,8 @@ function summaryLoaderRuntime(headers = DECK_COVER_REQUEST_HEADERS) {
   const calls = [], context = { accountId: 'owner', token: 'token', epoch: 1 }, state = { current: true }
   const functions = compileBlock('src/l12/decks.ts', [
     'privateDeckObject', 'privateDeckExactFields', 'privateDeckInteger', 'privateDeckText', 'privateDeckContractError',
-    'normalizePrivateDeckSummaryQuery', 'privateDeckSummaryRequestPath', 'validatePrivateDeckSummaryPage', 'loadPrivateDeckSummaryPage',
+    'normalizePrivateDeckSummaryQuery', 'privateDeckSummaryRequestPath', 'validatePrivateDeckSummaryPage',
+    'privateDeckSummaryCacheKey', 'refreshPrivateDeckSummary', 'loadPrivateDeckSummaryPage',
   ], {
     getDeckCoverRequestHeaders: () => headers,
     getRepresentativeDeckRequestHeaders: () => headers['X-L12-Deck-Cover'] ? { 'X-L12-Deck-Cover': '2' } : {},
@@ -140,10 +141,10 @@ function summaryLoaderRuntime(headers = DECK_COVER_REQUEST_HEADERS) {
     platformRequest: (url, init) => { const row = { url, init, ...deferred() }; calls.push(row); return row.promise },
     isCurrentDeckStorageContext: () => state.current,
     operationError: error => error,
-  })
+  }, 'const privateDeckSummaryCache = new Map(); const PRIVATE_DECK_SUMMARY_TTL_MS = 15_000; const PRIVATE_DECK_SUMMARY_STALE_MS = 300_000')
   return { ...functions, calls, state }
 }
-await check('actual summary loader requests only metadata and performs no cache operation', async () => {
+await check('actual summary loader requests metadata with bounded cache headers', async () => {
   const runtime = summaryLoaderRuntime(), query = { page: 2, pageSize: 30, keyword: '目标', legal: true, sort: 'name' }
   const loading = runtime.loadPrivateDeckSummaryPage(query)
   assert.equal(runtime.calls.length, 1); assert.match(runtime.calls[0].url, /^\/api\/decks\/summaries\?/)
@@ -183,7 +184,7 @@ function directoryRuntime() {
     libraryContext, platformState, privateSummaryPage, privateLoadState, privateLoadError,
     libraryContextCurrent, loadPrivateDeckSummaryPage: query => { const row = { query: clone(query), ...deferred() }; requests.push(row); return row.promise },
     deckErrorBelongsToCurrentAccount: () => true, loadOwnReferences: () => { references++ },
-  }, 'let privateDirectorySequence=0,libraryCounterDocumentEpoch=0,libraryDisposed=false,libraryMounted=true;',
+  }, 'let privateDirectorySequence=0,libraryCounterDocumentEpoch=0,libraryDisposed=false,libraryMounted=true; const privateDirectoryRequests = new Map();',
   `({mineDirectoryQuery,loadMineDirectory,document:()=>libraryCounterDocumentEpoch++,dispose:()=>{libraryDisposed=true;privateDirectorySequence++}})`)
   return { ...compiled, mineQuery, mineHomeCityFilter, mineLegalFilter, mineSort, minePage,
     privateSummaryPage, privateLoadState, privateLoadError, requests, references: () => references,
@@ -207,7 +208,11 @@ await check('empty server page changes directory state without synthesizing bodi
 })
 for (const transition of ['reorder', 'filter', 'account ABA', 'token ABA', 'route ABA', 'tab ABA', 'unmount']) await check(`actual directory drops ${transition} reply`, async () => {
   const runtime = directoryRuntime(), first = runtime.loadMineDirectory()
-  if (transition === 'reorder') { const second = runtime.loadMineDirectory(); runtime.requests[1].resolve(page([summary('new')], 1, runtime.requests[1].query)); await second }
+  if (transition === 'reorder') {
+    const second = runtime.loadMineDirectory()
+    assert.equal(runtime.requests.length, 1, 'same-tick directory refreshes must share one request')
+    runtime.requests[0].resolve(page([summary('new')], 1, runtime.requests[0].query)); await second
+  }
   if (transition === 'filter') runtime.mineQuery.value = 'changed'
   if (transition === 'account ABA') { runtime.setAccount('other'); runtime.setAccount('owner') }
   if (transition === 'token ABA') { runtime.setAccount('owner', 'token-B'); runtime.setAccount('owner', 'token-A') }
