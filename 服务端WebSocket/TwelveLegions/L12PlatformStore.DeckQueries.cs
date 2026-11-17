@@ -55,7 +55,7 @@ public sealed partial class L12PlatformStore
             {
                 if (!IsCurrentDeckReader(actor)) return null;
                 var data = _data;
-                policy = EffectiveOperationsPolicy();
+                policy = CaptureOperationsPolicy();
                 var fingerprint = new System.Text.StringBuilder();
                 // Copy only the fields needed by the projection while the state is
                 // protected.  Payload decoding/validation is deliberately deferred

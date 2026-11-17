@@ -45,7 +45,8 @@ public sealed partial class L12PlatformStore
                 // Official-only reads must not decode or hash every published deck. Besides
                 // avoiding needless work, this preserves the feature-disabled semantics when
                 // the public directory is switched off by policy.
-                publishedInputs = !publicEnabled ? [] : data.PublishedDecks.Select(row =>
+                publishedInputs = !publicEnabled || string.Equals(query.Source, "official", StringComparison.Ordinal)
+                    ? [] : data.PublishedDecks.Select(row =>
                 {
                     var payload = RequireDeckPayload(data, row.PayloadHash, row.MasterId);
                     fingerprint.Append(row.Id).Append('\u001f').Append(row.OwnerId).Append('\u001f')
