@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`d1d842691e45219e9434176837d3137743f3b4a5c2f205f14aead8fa74235eb2`。
+内容指纹：`2d1364e4ff76045bdf37bd33579babfe0a74603a8316611eb1c91a362504023e`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -2007,7 +2007,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0101 始皇帝 嬴政 #2 | S02-0101:ability:enter:eb0b26d094e02210 | enter/triggered | composite-definition | 登场时 弃置手牌中1张费用为8的军团 | trigger:trigger.observe → cost:cost.discard → resolution:visibility.policy → duration:duration.apply → resolution:operation.composite-flow | 4 | 登场时 弃置手牌中1张费用为8的军团：击杀除此军团以外的所有军团。随后返还所有士气，且本回合我方无法因阵营效果以外的方式追加士气。若未能满足登场时效果的发动条件，则展示我方所有手牌。 |
 | S02-0102 李牧 #1 | S02-0102:ability:master-morale-return:fccd59b2f9ca1fa3 | master-morale-return/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.add-morale | 1 | 我方 回合1次 我方士气因主宰返还4张及以上时，可从士气牌库追加1张休整的士气。 |
 | S02-0102 李牧 #2 | S02-0102:ability:enter:2dc458f3fe3f8259 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 4 | 登场时 可展示牌库顶部1张牌。若其为费用不高于4的&lt;主动战术&gt;，可无需消耗费用将其打出；否则将其返回牌库底部。随后可抽取1张牌。 |
-| S02-0103 平阳昭公主 #1 | S02-0103:ability:enter:91a88c9cc3074ca1 | enter/triggered | composite-definition | — | trigger:trigger.observe → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 本回合我方主宰对对方主宰造成的下一次伤害变为2。 |
+| S02-0103 平阳昭公主 #1 | S02-0103:ability:enter:13dd63357466dad9 | enter/triggered | composite-definition | — | trigger:trigger.observe → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 本回合我方主宰或由我方主宰变成的军团对对方主宰造成的下一次伤害变为2。 |
 | S02-0103 平阳昭公主 #2 | S02-0103:ability:attack:607e6460eed6637b | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 2 | 进攻时 可展示牌库顶部1张牌。若其为费用不高于5的【天廷】卡牌，此军团本回合兵力+2000；否则将其返回牌库底部。 |
 | S02-0104 神农鼎 #1 | S02-0104:ability:enter:8fa3e27817003123 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 登场时 可抽取1张牌。 |
 | S02-0104 神农鼎 #2 | S02-0104:ability:active:1687d445c6acc308 | active/activated | shared-rule-owner | 主动休整 返还1士气 | trigger:trigger.observe → cost:cost.rest-source → cost:cost.return-morale → resolution:legacy.resolve | 1 | 主动休整 返还1士气：重置我方主宰其中1个效果的使用次数。 |
