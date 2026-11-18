@@ -35,7 +35,7 @@ $keepLatest = if($PSBoundParameters.ContainsKey('KeepLatestGroups')) { $KeepLate
 $maxAge = if($PSBoundParameters.ContainsKey('UnpinnedMaxAgeDays')) { $UnpinnedMaxAgeDays } elseif($policy.unpinnedMaxAgeDays) { [int]$policy.unpinnedMaxAgeDays } else { 90 }
 if($keepLatest -lt 2 -or $keepLatest -gt 20 -or $maxAge -lt 7 -or $maxAge -gt 3650){throw 'L12_NAS_RETENTION_LIMITS'}
 $protectedPrefixes=@($policy.protectedPrefixes)
-if($protectedPrefixes.Count -lt 1){$protectedPrefixes=@('current','latest','proof','failure','failed','pinned','private','unresolved')}
+if(@($protectedPrefixes).Length -lt 1){$protectedPrefixes=@('current','latest','proof','failure','failed','pinned','private','unresolved')}
 $runId=[Guid]::NewGuid().ToString('N')
 $lockPath=Join-Path $script:ReceiptRoot 'nas-retention.lock';$lock=$null
 try{
@@ -49,14 +49,14 @@ try{
     $meta=Join-Path $_.FullName 'nas-group.json'
     if(-not(Test-Path -LiteralPath $meta -PathType Leaf)){return}
     try{$m=Get-Content -LiteralPath $meta -Raw|ConvertFrom-Json}catch{return}
-    if($m.status -cne 'verified' -or $m.cleanupEligible -eq $false -or $m.completedUtc -isnot [string] -or @($m.files).Count -lt 1){return}
+    if($m.status -cne 'verified' -or $m.cleanupEligible -eq $false -or $m.completedUtc -isnot [string] -or @($m.files).Length -lt 1){return}
     [pscustomobject]@{name=$_.Name;path=$_.FullName;completedUtc=[DateTimeOffset]::Parse($m.completedUtc);pinned=([bool]$m.pinned);manifest=$m}
   })|Sort-Object completedUtc -Descending
   $keep=@($groups|Select-Object -First $keepLatest)
   $cutoff=[DateTimeOffset]::UtcNow.AddDays(-$maxAge)
   $candidates=@($groups|Where-Object{$keep -notcontains $_ -and -not $_.pinned -and $_.completedUtc -lt $cutoff -and ($protectedPrefixes -notcontains $_.name.ToLowerInvariant())})
-  $candidate=if($candidates.Count -gt 0){$candidates|Select-Object -First 1}else{$null}
-  $result=[ordered]@{schema=1;runId=$runId;status=if($candidate){'candidate-found'}else{'nothing-eligible'};mode=$Mode;destination=$root;keepLatestGroups=$keepLatest;unpinnedMaxAgeDays=$maxAge;groupCount=$groups.Count;kept=@($keep|ForEach-Object Name);candidate=if($candidate){$candidate.name}else{$null};deleted=$false;createdUtc=[DateTimeOffset]::UtcNow.ToString('o')}
+  $candidate=if(@($candidates).Length -gt 0){$candidates|Select-Object -First 1}else{$null}
+  $result=[ordered]@{schema=1;runId=$runId;status=if($candidate){'candidate-found'}else{'nothing-eligible'};mode=$Mode;destination=$root;keepLatestGroups=$keepLatest;unpinnedMaxAgeDays=$maxAge;groupCount=@($groups).Length;kept=@($keep|ForEach-Object Name);candidate=if($candidate){$candidate.name}else{$null};deleted=$false;createdUtc=[DateTimeOffset]::UtcNow.ToString('o')}
   if($Mode -eq 'Apply' -and $candidate){
     # The immutable group manifest must be the deletion proof; no age-only deletion is allowed.
     foreach($file in @($candidate.manifest.files)){
