@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-18-deck-catalog-and-card-rules",
+  "date": "2026-11-18",
+  "audience": "players",
+  "title": "牌库目录与卡牌规则稳定性修复",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "牌库目录、私有牌库读取与公开牌库摘要统一了数据结构和容错处理，连续查看、搜索和分页时不再因单次响应异常而丢失目录内容。",
+      "paths": [
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckPayloadReferences.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckQueries.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckSummaries.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetailQueries.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckReferenceQueries.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryProjection.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryQueries.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "S2 卡牌效果文本与结算规则同步修正，主宰伤害、士气返还和相关军团效果按统一规则结算，卡牌说明与实际行为保持一致。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/Data/cards.s2.json",
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StructuredCardRules.S02HumanAssisted.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "牌库媒体上传与目录展示的异常恢复路径得到统一，连续编辑和查看时会保留已填写内容并提供可恢复的加载状态。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/MediaUploadField.vue"
+      ]
+    }
+  ]
+}
