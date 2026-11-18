@@ -7,6 +7,7 @@ namespace TwelveLegions.Server;
 public sealed partial class L12PlatformStore
 {
     private const int PublicDeckSummaryCacheLimit = 32;
+    private const int PublicDeckSummaryReadRetryLimit = 2;
     private sealed record PublicDeckSummaryCacheKey(long DataVersion, string CatalogVersion,
         long PolicyVersion, string? ViewerId, int ViewerPermissionVersion, string InputFingerprint);
     private sealed record PublishedDeckSummaryInput(string Id, string OwnerId, string Author, string Name,
@@ -23,7 +24,7 @@ public sealed partial class L12PlatformStore
     {
         query ??= new();
         if (!query.IsValid) throw new ArgumentOutOfRangeException(nameof(query));
-        while (true)
+        for (var attempt = 0; attempt < PublicDeckSummaryReadRetryLimit; attempt++)
         {
             PublicDeckSummaryCacheKey cacheKey;
             L12OperationsPolicySnapshot policy;
@@ -174,8 +175,8 @@ public sealed partial class L12PlatformStore
                     if (!publishedById.TryGetValue(item.Id, out var input))
                         throw new InvalidDataException("公开牌库摘要页引用了不存在的已提交目录项");
                     var row = PublishedDeckRowFromSummaryInput(input);
-                    var head = CapturePublicDeckReadHead(connection, transaction, row, catalog, policy, viewer,
-                        catalogVersion, input.Author, cacheKey.DataVersion);
+                    var head = CapturePublicDeckReadHead(connection, transaction, row, catalog, policy, viewer, catalogVersion,
+                        input.Author, cacheKey.DataVersion);
                     pinned[index] = item with { ReadToken = head.Token };
                 }
                 transaction.Commit();
@@ -193,6 +194,13 @@ public sealed partial class L12PlatformStore
             return new("ok", new(pinned, filtered.Length, query.Page, query.PageSize, generation, catalogVersion,
                 policy.Version, availability, facets));
         }
+
+        // A drifted/read-only database can remain externally inconsistent until
+        // the writer repairs it.  Retrying forever here pins an HTTP request and
+        // the test host indefinitely, so expose the existing 503 failure contract
+        // after one bounded re-read instead of turning a bad snapshot into a
+        // permanent request hang.
+        throw new L12PlatformStorageUnavailableException("公开牌库摘要读取在有限重试后仍处于代际不一致状态");
     }
 
     private static PublishedDeckRow PublishedDeckRowFromSummaryInput(PublishedDeckSummaryInput input)
