@@ -178,7 +178,11 @@ function pageRuntime(kind, helper, baseline = false) {
   }
   const names = ['publicDeckReference', 'captureCounterContext', 'recordInitialView', 'toggleLike', 'copyToMine',
     ...(kind === 'library' ? ['mineDirectoryQuery', 'loadMineDirectory'] : [])].filter(name => declarations.has(name))
-  const code = 'let counterDocumentEpoch = 0, libraryCounterDocumentEpoch = 0, privateDirectorySequence = 0, libraryMounted = true, libraryDisposed = false;\n' + names.map(name => declarations.get(name)).join('\n')
+  // Mirror the component's request-sharing scope.  Without this Map the
+  // extracted loadMineDirectory() sees an undefined identifier, catches its
+  // own ReferenceError as an unavailable read, and the contract test falsely
+  // reports zero directory requests instead of exercising the real loader.
+  const code = 'let counterDocumentEpoch = 0, libraryCounterDocumentEpoch = 0, privateDirectorySequence = 0, libraryMounted = true, libraryDisposed = false;\nconst privateDirectoryRequests = new Map();\n' + names.map(name => declarations.get(name)).join('\n')
   const methods = evaluated(code, dependencies, `{ ${names.join(',')}, advanceDocument: () => { counterDocumentEpoch++; libraryCounterDocumentEpoch++ } }`)
   const current = () => kind === 'detail' ? entry.value : published.value[0]
   return { initial, body, details, notice, saved, counters, saves, marker, route, platformState, current,
