@@ -32,6 +32,10 @@ if (-not (Test-L12PowerShellHostPath $resolvedPowerShellExecutable $windowsHost)
     throw 'L12_POWERSHELL_EXECUTABLE_INVALID: require an existing absolute local executable.'
 }
 $env:L12_PWSH = [IO.Path]::GetFullPath($resolvedPowerShellExecutable)
+# Platform tests create Windows junction fixtures from child processes.  Bind
+# that executable by absolute path so a bounded child PATH cannot make those
+# fixtures fail with a misleading "pwsh.exe not found" error.
+$env:L12_TEST_FIXTURE_PWSH = $env:L12_PWSH
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
