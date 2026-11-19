@@ -381,7 +381,8 @@ public sealed partial class L12PlatformStore
     public const int SiteMediaDesktopMaxBytes = 5 * 1024 * 1024;
     public const int SiteMediaMobileMaxBytes = 5 * 1024 * 1024;
     public const int SiteMediaThumbnailMaxBytes = 2 * 1024 * 1024;
-    public const long SiteMediaRequestMaxBytes = 32L * 1024 * 1024;
+    public const int SiteMediaAnimatedCardArtMaxBytes = 16 * 1024 * 1024;
+    public const long SiteMediaRequestMaxBytes = 64L * 1024 * 1024;
     private const int SiteMediaMaxAnimatedFrames = 120;
     private const int SiteMediaMaxAnimatedDurationMs = 15_000;
 
@@ -683,11 +684,13 @@ public sealed partial class L12PlatformStore
         var kind = NormalizeMediaKind(upload.Kind);
         var policy = MediaPolicies[kind];
         ValidateUploadBytes(upload.Original, "原图", SiteMediaOriginalMaxBytes);
-        ValidateUploadBytes(upload.DesktopWebp, "桌面 WebP", SiteMediaDesktopMaxBytes);
-        ValidateUploadBytes(upload.MobileWebp, "移动 WebP", SiteMediaMobileMaxBytes);
         var animatedCardArt = kind == "card-art" && IsAnimatedWebp(upload.DesktopWebp);
+        var deliveryDesktopMaxBytes = animatedCardArt ? SiteMediaAnimatedCardArtMaxBytes : SiteMediaDesktopMaxBytes;
+        var deliveryMobileMaxBytes = animatedCardArt ? SiteMediaAnimatedCardArtMaxBytes : SiteMediaMobileMaxBytes;
+        ValidateUploadBytes(upload.DesktopWebp, "桌面 WebP", deliveryDesktopMaxBytes);
+        ValidateUploadBytes(upload.MobileWebp, "移动 WebP", deliveryMobileMaxBytes);
         ValidateUploadBytes(upload.ThumbnailWebp, "缩略图 WebP",
-            animatedCardArt ? SiteMediaDesktopMaxBytes : SiteMediaThumbnailMaxBytes);
+            animatedCardArt ? SiteMediaAnimatedCardArtMaxBytes : SiteMediaThumbnailMaxBytes);
         var originalFormat = DetectImageFormat(upload.Original);
         if (!policy.AcceptedOriginalFormats.Contains(originalFormat, StringComparer.OrdinalIgnoreCase))
             throw new ArgumentException("原图只允许 JPEG、PNG、WebP 或 AVIF，禁止 SVG 与其他主动内容格式");

@@ -597,7 +597,7 @@ self_test() {
   local nginx_dump
   nginx_dump="$(nginx -T 2>&1)"
   grep -Fq 'location = /api/admin/site/media' <<<"$nginx_dump" || fail "Nginx 未为站点素材上传配置精确路由"
-  grep -Fq 'client_max_body_size 32m' <<<"$nginx_dump" || fail "Nginx 站点素材上传上限不是 32m"
+  grep -Fq 'client_max_body_size 64m' <<<"$nginx_dump" || fail "Nginx 站点素材上传上限不是 64m"
   grep -Fq 'media_upload_too_large' <<<"$nginx_dump" || fail "Nginx 站点素材 413 未返回可识别 JSON"
   grep -Fq 'location ^~ /assets/' <<<"$nginx_dump" || fail "Nginx 未为前端哈希资源配置严格静态路由"
   grep -Fq 'root /opt/legion12-web-assets;' <<<"$nginx_dump" || fail "Nginx 前端哈希资源未使用兼容资源入口"

@@ -14,6 +14,23 @@ namespace GrandUMIServer.Tests;
 public sealed class SiteContentPlatformStoreTests
 {
     [Fact]
+    public void AnimatedCardArtAcceptsSixMiBVariantsWithinExpandedHotfixLimit()
+    {
+        WithUploadStore((store, admin, _) =>
+        {
+            var animated = AnimatedWebp(997, 331, 6 * 1024 * 1024);
+            var saved = store.UploadSiteMedia(admin, new L12SiteMediaUpload(
+                "card-art", "animated-card-art.webp", "image/webp",
+                animated, animated, animated, animated, "动态图异画", .5, .5));
+
+            Assert.True(saved.IsAnimated);
+            Assert.InRange(saved.DeliveryBytes, 6 * 1024 * 1024L * 3, 16 * 1024 * 1024L * 3);
+            Assert.Equal(L12PlatformStore.SiteMediaAnimatedCardArtMaxBytes, 16 * 1024 * 1024);
+            Assert.Equal(L12PlatformStore.SiteMediaRequestMaxBytes, 64L * 1024 * 1024);
+        });
+    }
+
+    [Fact]
     public void FailureBeforeMediaSaveRestoresTheWholeAuditWindowAfterTrimming()
     {
         WithUploadStore((store, admin, root) =>
@@ -2551,7 +2568,7 @@ public sealed class SiteContentPlatformStoreTests
                 Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
                 var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
                 Assert.Equal("media_upload_too_large", payload.GetProperty("code").GetString());
-                Assert.Contains("32MB", payload.GetProperty("message").GetString());
+                Assert.Contains("64MB", payload.GetProperty("message").GetString());
             }
         }
         finally
@@ -2593,6 +2610,17 @@ public sealed class SiteContentPlatformStoreTests
         bytes[24] = (byte)encodedWidth; bytes[25] = (byte)(encodedWidth >> 8); bytes[26] = (byte)(encodedWidth >> 16);
         bytes[27] = (byte)encodedHeight; bytes[28] = (byte)(encodedHeight >> 8); bytes[29] = (byte)(encodedHeight >> 16);
         return bytes;
+    }
+
+    private static byte[] AnimatedWebp(int width, int height, int payloadBytes)
+    {
+        var bytes = Webp(width, height);
+        bytes[20] |= 0x02;
+        bytes = AppendWebpChunk(bytes, "ANIM", new byte[6]);
+        var frame = new byte[16];
+        frame[12] = 1;
+        bytes = AppendWebpChunk(bytes, "ANMF", frame);
+        return AppendWebpChunk(bytes, "VP8 ", new byte[payloadBytes]);
     }
 
     private static byte[] WebpWithMetadata(int width, int height)

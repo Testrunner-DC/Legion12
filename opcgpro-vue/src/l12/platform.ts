@@ -957,7 +957,10 @@ export class PlatformRequestError extends Error {
 export const PLATFORM_MAX_CONCURRENT_REQUESTS = 4
 export const PLATFORM_READ_TIMEOUT_MS = 10_000
 export const PLATFORM_MUTATION_TIMEOUT_MS = 20_000
-export const PLATFORM_UPLOAD_TIMEOUT_MS = 60_000
+// Site-media uploads may contain four copies of an animated WebP. Give the
+// authenticated upload route enough time for a 64 MiB multipart body without
+// changing ordinary mutation/read deadlines.
+export const PLATFORM_UPLOAD_TIMEOUT_MS = 120_000
 export const PLATFORM_READ_MAX_ATTEMPTS = 2
 export const PLATFORM_REPLAYABLE_MUTATION_MAX_ATTEMPTS = 3
 
@@ -1213,7 +1216,7 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
           const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID')
             || logicalCorrelationId)
           const fallbackMessage = response.status === 413 && path === '/api/admin/site/media'
-            ? '图片上传总量超过 32MB，请压缩原图后重试'
+            ? '图片上传总量超过 64MB，请压缩原图后重试'
             : `请求失败（${response.status}）`
           const message = `${payload.message || fallbackMessage}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
           const code = typeof payload.code === 'string' ? payload.code : 'request_failed'

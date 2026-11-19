@@ -39,7 +39,11 @@ const ORIGINAL_MAX_BYTES = 16 * 1024 * 1024
 const DESKTOP_MAX_BYTES = 5 * 1024 * 1024
 const MOBILE_MAX_BYTES = 5 * 1024 * 1024
 const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
-const REQUEST_MAX_BYTES = 32 * 1024 * 1024
+// Animated card art is submitted four times (original + three delivery
+// variants). Keep ordinary delivery limits unchanged, but allow a source
+// animation up to the same 16 MiB ceiling as the original upload.
+const ANIMATED_CARD_ART_MAX_BYTES = 16 * 1024 * 1024
+const REQUEST_MAX_BYTES = 64 * 1024 * 1024
 const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/avif']
 const acceptedExtensions: Record<string, string> = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
@@ -202,9 +206,9 @@ async function upload() {
     assertAcceptedSource(file.value)
     const animated = props.kind === 'card-art' && await detectAnimatedWebp(file.value)
     if (animated) {
-      if (file.value.size > DESKTOP_MAX_BYTES) throw new Error('动态图异画不能超过 5MB')
+      if (file.value.size > ANIMATED_CARD_ART_MAX_BYTES) throw new Error('动态图异画不能超过 16MB')
       const estimatedRequestBytes = file.value.size * 4 + 64 * 1024
-      if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('动态图异画上传总量超过 32MB')
+      if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('动态图异画上传总量超过 64MB')
       const normalizedAlt = altText.value.trim()
       const form = new FormData()
       form.append('kind', props.kind)
@@ -232,7 +236,7 @@ async function upload() {
     const thumbnail = await renderFlexibleVariant(bitmap, 600, .8)
     validateOutputSizes(desktop, mobile, thumbnail)
     const estimatedRequestBytes = file.value.size + desktop.size + mobile.size + thumbnail.size + 64 * 1024
-    if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('图片上传总量超过 32MB，请压缩原图后重试')
+    if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('图片上传总量超过 64MB，请压缩原图后重试')
     const normalizedAlt = altText.value.trim()
     const form = new FormData()
     form.append('kind', props.kind)
@@ -275,7 +279,7 @@ async function uploadHeroGroup() {
     validateOutputSizes(desktop, mobile, thumbnail)
     const desktopSource = heroFiles.desktop!
     const estimatedRequestBytes = desktopSource.size + desktop.size + mobile.size + thumbnail.size + 96 * 1024
-    if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('轮播素材组上传总量超过 32MB，请压缩桌面原图后重试')
+    if (estimatedRequestBytes > REQUEST_MAX_BYTES) throw new Error('轮播素材组上传总量超过 64MB，请压缩桌面原图后重试')
     const form = new FormData()
     form.append('kind', 'hero')
     form.append('altText', heroAltTexts.desktop.trim())

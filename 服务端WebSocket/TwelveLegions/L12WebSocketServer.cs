@@ -3438,7 +3438,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return ApiError(request, "media_form_required", "素材上传必须使用 multipart/form-data",
                     StatusCodes.Status415UnsupportedMediaType);
             if (request.ContentLength is > L12PlatformStore.SiteMediaRequestMaxBytes)
-                return ApiError(request, "media_upload_too_large", "图片上传总量不能超过 32MB，请压缩原图后重试",
+                return ApiError(request, "media_upload_too_large", "图片上传总量不能超过 64MB，请压缩原图后重试",
                     StatusCodes.Status413PayloadTooLarge);
             try
             {
@@ -3485,7 +3485,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
             catch (BadHttpRequestException error) when (error.StatusCode == StatusCodes.Status413PayloadTooLarge)
             {
-                return ApiError(request, "media_upload_too_large", "图片上传总量不能超过 32MB，请压缩原图后重试",
+                return ApiError(request, "media_upload_too_large", "图片上传总量不能超过 64MB，请压缩原图后重试",
                     StatusCodes.Status413PayloadTooLarge);
             }
         });

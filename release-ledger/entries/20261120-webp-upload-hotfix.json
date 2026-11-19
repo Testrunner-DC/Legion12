@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "20261120-webp-upload-hotfix",
+  "date": "2026-11-20",
+  "audience": "players",
+  "title": "异画 WebP 上传上限修复",
+  "changes": [
+    {
+      "category": "content",
+      "text": "异画上传现在支持不超过16 MiB的动画 WebP，并在网络抖动时延长上传等待时间；超过上限时会明确提示，不再无提示地回弹到上传入口。",
+      "paths": [
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/MediaUploadField.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "ops/server/legion12-testrun.nginx",
+        "ops/server/legion12-testrun-path.nginx"
+      ]
+    }
+  ]
+}

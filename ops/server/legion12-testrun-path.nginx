@@ -18,7 +18,7 @@ location = /testrun/ws {
 }
 
 location = /testrun/api/admin/site/media {
-    client_max_body_size 32m;
+    client_max_body_size 64m;
     error_page 413 = @testrun_site_media_too_large;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -29,7 +29,7 @@ location = /testrun/api/admin/site/media {
 
 location @testrun_site_media_too_large {
     default_type application/json;
-    return 413 '{"code":"media_upload_too_large","message":"图片上传总量不能超过 32MB，请压缩原图后重试"}';
+    return 413 '{"code":"media_upload_too_large","message":"图片上传总量不能超过 64MB，请压缩原图后重试"}';
 }
 
 location ^~ /testrun/api/ {

@@ -1016,7 +1016,7 @@ exit 0
 '@ | Out-Null
         New-FakeCommand $fakeBin "nginx" @'
 if [ "${1:-}" = "-T" ]; then
-  printf '%s\n' 'location = /api/admin/site/media' 'client_max_body_size 32m' 'media_upload_too_large' 'location = /card-assets/card-assets.manifest.json' 'location ^~ /assets/' 'root /opt/legion12-web-assets;' 'try_files $uri =404;' 'max-age=31536000, immutable'
+  printf '%s\n' 'location = /api/admin/site/media' 'client_max_body_size 64m' 'media_upload_too_large' 'location = /card-assets/card-assets.manifest.json' 'location ^~ /assets/' 'root /opt/legion12-web-assets;' 'try_files $uri =404;' 'max-age=31536000, immutable'
 fi
 exit 0
 '@ | Out-Null

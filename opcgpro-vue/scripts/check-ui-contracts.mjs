@@ -1386,18 +1386,19 @@ const contracts = [
   [platform.includes('siteContentApi') && officialHome.includes('v-if="ready"') && officialHome.includes('siteContentApi.homeSummary()') && !officialHome.includes('siteContentApi.home()') && platform.includes("platformRequest<SiteHomeSummaryPayload>('/api/site/home-summary')") && platform.includes('platformRequest<ArticleSummary[]>(`/api/articles/summaries') && router.includes("import('@/l12/site/AdminSiteContentPanel.vue')") && newsPage.includes('articleApi.summaries') && newsPage.includes('articleApi.get(id)') && !newsPage.includes('articleApi.list(') && !adminSiteContent.includes('<section class="news-editor"'), '官网固定内容必须批量读取轻量摘要避免默认文案闪烁和完整正文重发；资讯列表读取摘要且单篇独立取正文，保留后台工作台，不得继续嵌在官网内容表单中'],
   [adminSections.includes("label: '站点内容'") && adminSiteContent.includes('<AdminArticlesPanel') && adminSiteContent.includes('kind="news"') && adminArticles.includes('class="article-editor') && adminArticles.includes('保存草稿') && adminArticles.includes('发布 / 安排发布') && adminArticles.includes('历史版本') && adminArticles.includes('MediaUploadField') && adminArticles.includes('v-model="selected.link"'), '后台资讯发布必须提供独立列表、完整稿件编辑、封面与链接、发布状态和历史版本恢复'],
   [mediaUploadField.includes('ORIGINAL_MAX_BYTES = 16 * 1024 * 1024')
-    && mediaUploadField.includes('REQUEST_MAX_BYTES = 32 * 1024 * 1024')
+    && mediaUploadField.includes('ANIMATED_CARD_ART_MAX_BYTES = 16 * 1024 * 1024')
+    && mediaUploadField.includes('REQUEST_MAX_BYTES = 64 * 1024 * 1024')
     && mediaUploadField.includes('class="media-ratio-hint"')
     && !mediaUploadField.includes('上传尺寸参考') && !mediaUploadField.includes('安全区与裁切：')
     && platform.includes("response.status === 413 && path === '/api/admin/site/media'")
     && wsServer.includes('IHttpMaxRequestBodySizeFeature') && wsServer.includes('SiteMediaRequestMaxBytes')
     && nginxSite.includes('client_max_body_size 1m;')
     && nginxSite.includes('location = /api/admin/site/media')
-    && nginxSite.includes('client_max_body_size 32m;') && nginxSite.includes('media_upload_too_large')
+    && nginxSite.includes('client_max_body_size 64m;') && nginxSite.includes('media_upload_too_large')
     && !nginxHttpSite.includes('location = /api/admin/site/media') && !nginxHttpSite.includes('proxy_pass')
     && nginxHttpSite.includes("return 503 'testrun TLS bootstrap in progress")
     && serverDeploy.includes("grep -Fq 'location = /api/admin/site/media'")
-    && serverDeploy.includes("grep -Fq 'client_max_body_size 32m'"), '站点图片上传必须只在浏览器、TLS Nginx 精确路由和 ASP.NET 端保留格式与体积安全边界；界面只显示一行建议比例'],
+    && serverDeploy.includes("grep -Fq 'client_max_body_size 64m'"), '站点图片上传必须只在浏览器、TLS Nginx 精确路由和 ASP.NET 端保留格式与体积安全边界；界面只显示一行建议比例'],
   [mediaUploadField.includes("createImageBitmap(source, { imageOrientation: 'from-image' })")
     && mediaUploadField.includes('acceptedExtensions')
     && mediaUploadField.includes('function isWebpFile(selected: File)')

@@ -334,7 +334,28 @@ public sealed class TournamentRefereeControlTests
             Recorder.StorageFailureInjector = null;
             await Recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            Directory.Delete(_root, true);
+            // SQLite may release a pooled handle just after ClearAllPools when
+            // another platform fixture is finishing on the same test host.
+            // Retry the owned temporary tree briefly instead of turning that
+            // harmless close race into a false release-gate failure.
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    Directory.Delete(_root, true);
+                    break;
+                }
+                catch (IOException) when (attempt < 20)
+                {
+                    SqliteConnection.ClearAllPools();
+                    await Task.Delay(50);
+                }
+                catch (UnauthorizedAccessException) when (attempt < 20)
+                {
+                    SqliteConnection.ClearAllPools();
+                    await Task.Delay(50);
+                }
+            }
         }
     }
 }
