@@ -656,7 +656,7 @@ public sealed class SeasonAutomaticActivationTests
             Assert.Equal("armed", migrated.Status);
             Assert.NotNull(reopened.TryClaimDueSeasonActivation("legacy-worker", due,
                 TimeSpan.FromMinutes(1)));
-            var persistedPlan = ActivationPlan(JsonNode.Parse(File.ReadAllText(path))!.AsObject());
+            var persistedPlan = ActivationPlan(CommittedSnapshot(path));
             Assert.Equal(1, persistedPlan["AuthorityVersion"]!.GetValue<int>());
             Assert.False(string.IsNullOrWhiteSpace(persistedPlan["AuthorityToken"]!.GetValue<string>()));
         }
@@ -1110,11 +1110,21 @@ public sealed class SeasonAutomaticActivationTests
 
     private static void RewriteSnapshot(string path, Action<JsonObject> mutate)
     {
-        var data = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        var data = CommittedSnapshot(path);
         mutate(data);
         SqliteConnection.ClearAllPools();
-        File.Delete(Path.Combine(Path.GetDirectoryName(path)!, "platform.db"));
+        File.Delete(Path.ChangeExtension(path, ".db"));
         File.WriteAllText(path, data.ToJsonString());
+    }
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse(Convert.ToString(command.ExecuteScalar())!)!.AsObject();
     }
 
     private static (L12PlatformStore Store, L12AccountView Admin, L12Catalog Catalog) PrepareEndingStore(

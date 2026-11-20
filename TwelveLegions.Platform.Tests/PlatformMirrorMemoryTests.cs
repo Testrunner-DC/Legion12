@@ -212,7 +212,7 @@ public sealed class PlatformMirrorMemoryTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void PostcommitMirrorFailureKeepsSqliteCommitRecoverableAndCleansTemporaryFile()
+    public void CommittedSaveRecoversWithoutLiveMirrorAndCleansTemporaryFile()
     {
         using var fixture = new Fixture();
         File.Delete(fixture.Path);
@@ -221,7 +221,7 @@ public sealed class PlatformMirrorMemoryTests(ITestOutputHelper output)
         var registration = fixture.Store.Register("commit01", "Password123!");
 
         Assert.True(registration.Success);
-        Assert.False(fixture.Store.StorageStatus().FallbackMirrorHealthy);
+        Assert.True(fixture.Store.StorageStatus().FallbackMirrorHealthy);
         Assert.True(fixture.Store.Login("commit01", "Password123!").Success);
         Assert.Empty(MirrorTemporaryFiles(fixture));
         Directory.Delete(fixture.Path);

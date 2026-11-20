@@ -23,7 +23,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         {
             var original = new L12PlatformStore(path);
             var account = original.Register("tlegac900d1", "password-123").Account!;
-            var mirror = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var mirror = CommittedSnapshot(path);
             var row = mirror["Accounts"]!.AsArray().OfType<JsonObject>()
                 .Single(item => item["Id"]!.GetValue<string>() == account.Id);
             row["Role"] = "release-manager";
@@ -40,7 +40,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.False(L12Authorization.IsKnownRole("referee"));
             Assert.False(L12Authorization.IsKnownRole("organizer"));
             Assert.False(L12Authorization.IsKnownRole("release-manager"));
-            Assert.Equal("player", JsonNode.Parse(File.ReadAllText(path))!["Accounts"]!.AsArray()
+            Assert.Equal("player", CommittedSnapshot(path)["Accounts"]!.AsArray()
                 .OfType<JsonObject>().Single(item => item["Id"]!.GetValue<string>() == account.Id)["Role"]!
                 .GetValue<string>());
         }
@@ -659,7 +659,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.All(seeded, deck => Assert.Equal(selectedMaster, deck.MasterId));
             Assert.Equal("ranked", applied.Current.Config.DefaultRoomConfig.MatchModeId);
 
-            var mirror = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var mirror = CommittedSnapshot(path);
             mirror["OperationsConfig"]!.AsObject().Remove("DefaultRoomConfig");
             mirror["OperationsConfig"]!.AsObject().Remove("SectionRevisions");
             mirror["OperationsConfig"]!.AsObject().Remove("FieldRevisions");
@@ -682,7 +682,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             Assert.All(new[] { "room", "features", "announcements", "maintenance" }, section =>
                 Assert.Equal(1, migratedConfig.SectionRevisions![section]));
             Assert.True(migratedConfig.FieldRevisions!["room/defaultRoomConfig/spectating"] >= 1);
-            Assert.NotNull(JsonNode.Parse(File.ReadAllText(path))!["OperationsConfig"]!["DefaultRoomConfig"]);
+            Assert.NotNull(CommittedSnapshot(path)["OperationsConfig"]!["DefaultRoomConfig"]);
         }
         finally
         {
@@ -1384,6 +1384,16 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
 
     private static JsonObject Payload(object payload)
         => JsonSerializer.SerializeToNode(payload, JsonOptions)!.AsObject();
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse(Convert.ToString(command.ExecuteScalar())!)!.AsObject();
+    }
 
     private static string TempRoot()
     {

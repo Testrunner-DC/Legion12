@@ -473,7 +473,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
         {
             var store = new L12PlatformStore(path);
             var account = store.Register("tlegaca79d6", "password-123");
-            var document = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var document = CommittedSnapshot(path);
             document.Remove("LoginThrottles");
             document.Remove("Security");
             foreach (var item in document["Accounts"]!.AsArray().OfType<JsonObject>())
@@ -493,6 +493,8 @@ public sealed class ControlPlanePhaseSixSecurityTests
             var capability = reloaded.MfaCapability();
             Assert.False(capability.EnrollmentEnabled);
             Assert.False(capability.SecretsPersisted);
+            Assert.DoesNotContain("secret", CommittedSnapshot(path).ToJsonString(),
+                StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("secret", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
         }
         finally { Directory.Delete(root, true); }
@@ -615,6 +617,16 @@ public sealed class ControlPlanePhaseSixSecurityTests
                 StringComparison.OrdinalIgnoreCase), $"unexpected websocket response: {response}");
         }
         catch (WebSocketException) { }
+    }
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse(Convert.ToString(command.ExecuteScalar())!)!.AsObject();
     }
 
     private static string TempRoot()

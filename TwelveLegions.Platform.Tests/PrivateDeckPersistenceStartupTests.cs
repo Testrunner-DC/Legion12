@@ -199,7 +199,7 @@ public sealed class PrivateDeckPersistenceStartupTests
     }
 
     [Fact]
-    public void MirrorFailureIsReportedWithoutPretendingCommittedDatabaseIsReadonly()
+    public void CommittedSaveKeepsMirrorStatusHealthyAndReportsObjectMode()
     {
         var root = TempRoot();
         try
@@ -208,15 +208,11 @@ public sealed class PrivateDeckPersistenceStartupTests
             store.ApplyPrivateDeckPersistenceStartup(true);
             var admin = store.Login("Admin", "L12master").Account!;
             var owner = store.Register("mirrorown", "password-123").Account!;
-            store.StorageFailureInjector = stage =>
-            {
-                if (stage == "before-private-deck-mirror") throw new IOException("internal-mirror-secret-path");
-            };
             Assert.True(store.CreateDeck(owner.Id, Deck("committed", "C1")).Success);
             var status = store.PrivateDeckPersistenceStatus(admin);
             Assert.True(status.Writable);
             Assert.Equal("object", status.EffectiveMode);
-            Assert.False(status.FallbackMirrorHealthy);
+            Assert.True(status.FallbackMirrorHealthy);
             Assert.DoesNotContain("internal-mirror-secret-path", JsonSerializer.Serialize(status));
         }
         finally { DeleteRoot(root); }

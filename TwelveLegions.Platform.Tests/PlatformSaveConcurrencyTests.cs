@@ -121,7 +121,7 @@ public sealed class PlatformSaveConcurrencyTests
     }
 
     [Theory]
-    [InlineData("before-mirror-serialize")]
+    [InlineData("before-snapshot-write")]
     [InlineData("before-audit-append")]
     [InlineData("after-audit-append")]
     [InlineData("before-commit")]

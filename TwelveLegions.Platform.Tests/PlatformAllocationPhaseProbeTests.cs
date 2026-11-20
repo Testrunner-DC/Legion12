@@ -54,8 +54,8 @@ public sealed class PlatformAllocationPhaseProbeTests(ITestOutputHelper output)
             var storage = scope.Complete();
             Assert.Equal(0, storage.InstrumentationErrors);
             Assert.True(storage.SqlitePageWrites > 0);
-            Assert.True(storage.MirrorBytes > 0);
-            foreach (var required in new[] { "before-mirror-serialize", "before-audit-append",
+            Assert.True(storage.MirrorBytes == 0);
+            foreach (var required in new[] { "before-snapshot-write", "before-audit-append",
                          "after-audit-append", "before-commit", "after-rollback-serialize" })
                 Assert.Single(points.Take(count).Where(point => point.Stage == required));
             long attributed = 0;

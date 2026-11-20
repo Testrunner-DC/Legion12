@@ -42,7 +42,7 @@ public sealed class SeasonLifecycleManagementTests
                 seasons.Next.Configuration.Ranked.Factions[0].Tiers.Select(TierValues));
             Assert.Empty(seasons.Archives);
 
-            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var persisted = CommittedSnapshot(path);
             Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
             Assert.Equal(2, persisted["SeasonDefinitions"]!.AsArray().Count);
             Assert.Empty(persisted["SeasonArchives"]!.AsArray());
@@ -56,8 +56,7 @@ public sealed class SeasonLifecycleManagementTests
             Assert.Equal(draftDefinitionId, reopenedSeasons.Next!.DefinitionId);
             Assert.Empty(reopenedSeasons.Archives);
 
-            SqliteConnection.ClearAllPools();
-            File.Delete(Path.Combine(root, "platform.db"));
+            LegacyRestart(path);
             var jsonReopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             var jsonAdmin = jsonReopened.Login("Admin", "L12master").Account!;
             var jsonSeasons = jsonReopened.SeasonCatalog(jsonAdmin);
@@ -93,13 +92,12 @@ public sealed class SeasonLifecycleManagementTests
             Assert.Null(sqliteReopened.SeasonCatalog(sqliteAdmin).Next);
             Assert.Null(sqliteReopened.RankedConfig(sqliteAdmin).PendingGradient);
 
-            SqliteConnection.ClearAllPools();
-            File.Delete(Path.Combine(root, "platform.db"));
+            LegacyRestart(path);
             var jsonReopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             var jsonAdmin = jsonReopened.Login("Admin", "L12master").Account!;
             Assert.Null(jsonReopened.SeasonCatalog(jsonAdmin).Next);
             Assert.Null(jsonReopened.RankedConfig(jsonAdmin).PendingGradient);
-            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var persisted = CommittedSnapshot(path);
             Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
         }
         finally
@@ -129,7 +127,7 @@ public sealed class SeasonLifecycleManagementTests
 
             Assert.Null(reopened.SeasonCatalog(reopenedAdmin).Next);
             Assert.Null(reopened.RankedConfig(reopenedAdmin).PendingGradient);
-            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var persisted = CommittedSnapshot(path);
             Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
         }
         finally
@@ -163,7 +161,7 @@ public sealed class SeasonLifecycleManagementTests
 
             Assert.Equal(expectsDraft, seasons.Next is not null);
             Assert.Equal(expectsDraft, store.RankedConfig(admin).PendingGradient is not null);
-            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var persisted = CommittedSnapshot(path);
             Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
 
             var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
@@ -195,7 +193,7 @@ public sealed class SeasonLifecycleManagementTests
             var actual = store.SeasonCatalog(admin);
             Assert.Equal(expected.Current.DefinitionId, actual.Current.DefinitionId);
             Assert.Equal(expected.Next!.DefinitionId, actual.Next!.DefinitionId);
-            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var persisted = CommittedSnapshot(path);
             Assert.Equal(1, persisted["SeasonLifecycleMigrationVersion"]!.GetValue<int>());
             Assert.Equal(2, persisted["SeasonDefinitions"]!.AsArray().Count);
         }
@@ -250,8 +248,7 @@ public sealed class SeasonLifecycleManagementTests
             Assert.Equal(draft.Revision, audit.ExpectedVersion);
             Assert.Equal("prepare season two", audit.Reason);
 
-            SqliteConnection.ClearAllPools();
-            File.Delete(Path.Combine(root, "platform.db"));
+            LegacyRestart(path);
             var reopened = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             var reopenedAdmin = reopened.Login("Admin", "L12master").Account!;
             Assert.Equal(3811, reopened.SeasonCatalog(reopenedAdmin).Next!
@@ -1000,11 +997,23 @@ public sealed class SeasonLifecycleManagementTests
 
     private static void RewriteSnapshot(string path, Action<JsonObject> mutate)
     {
-        var data = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        var data = CommittedSnapshot(path);
         mutate(data);
         SqliteConnection.ClearAllPools();
-        File.Delete(Path.Combine(Path.GetDirectoryName(path)!, "platform.db"));
+        File.Delete(Path.ChangeExtension(path, ".db"));
         File.WriteAllText(path, data.ToJsonString());
+    }
+
+    private static void LegacyRestart(string path) => RewriteSnapshot(path, _ => { });
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse(Convert.ToString(command.ExecuteScalar())!)!.AsObject();
     }
 
     private static L12AdminAuditContext Context(string correlationId, long? expectedVersion = null)

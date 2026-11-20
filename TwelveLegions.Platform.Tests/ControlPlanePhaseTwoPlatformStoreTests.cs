@@ -220,7 +220,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             var editorRegistration = store.Register("tlegac470cc", "password-123");
             var admin = store.Login("Admin", "L12master").Account!;
             Assert.True(store.SetRole(admin, editorRegistration.Account!.Id, "admin"));
-            var legacy = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var legacy = CommittedSnapshot(path);
             foreach (var name in new[] { "BusinessVersion", "AdminCommands", "AdminApprovals", "ContentVersions", "ContentBatches" })
                 legacy.Remove(name);
             foreach (var entry in legacy["ContentEntries"]?.AsArray().OfType<JsonObject>() ?? [])
@@ -229,6 +229,8 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
                 entry.Remove("PublishedVersionId");
                 entry.Remove("RollbackVersionId");
             }
+            SqliteConnection.ClearAllPools();
+            File.Delete(Path.ChangeExtension(path, ".db"));
             File.WriteAllText(path, legacy.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
             var reloaded = new L12PlatformStore(path);
@@ -245,7 +247,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
                     current.Payload.Key, current.Payload.Value, current.AuditContext)));
             Assert.True(result.Success);
 
-            var upgraded = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var upgraded = CommittedSnapshot(path);
             Assert.NotNull(upgraded["BusinessVersion"]);
             Assert.Single(upgraded["AdminCommands"]!.AsArray());
             Assert.NotNull(upgraded["AdminApprovals"]);
@@ -426,6 +428,16 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
         if (expectedVersion is not null) request.Headers.TryAddWithoutValidation("If-Match", $"\"{expectedVersion}\"");
         if (body is not null) request.Content = JsonContent.Create(body);
         return request;
+    }
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse(Convert.ToString(command.ExecuteScalar())!)!.AsObject();
     }
 
     private static string TempRoot()

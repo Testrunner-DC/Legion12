@@ -132,7 +132,7 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
         try
         {
             _ = new L12PlatformStore(path);
-            var mirror = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var mirror = CommittedSnapshot(path);
             mirror["OperationsConfig"]!.AsObject().Remove("ImmediateMaintenance");
             foreach (var history in mirror["OperationsConfigHistory"]!.AsArray().OfType<JsonObject>())
                 history["Config"]!.AsObject().Remove("ImmediateMaintenance");
@@ -458,6 +458,16 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
 
     private static string MessageType(OutgoingMessage message)
         => Payload(message)["type"]!.GetValue<string>();
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse(Convert.ToString(command.ExecuteScalar())!)!.AsObject();
+    }
 
     private static string TempRoot()
     {

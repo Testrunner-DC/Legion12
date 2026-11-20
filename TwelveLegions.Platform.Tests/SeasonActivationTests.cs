@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Reflection;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -122,7 +123,7 @@ public sealed class SeasonActivationTests
             var priorHistory = Assert.Single(initial.RankedOverview(first.Id).History);
             Assert.Equal(priorProfile.SevenValue, priorHistory.SevenValue);
 
-            RewriteSnapshot(path, data =>
+            RewriteSnapshot(initial, path, data =>
             {
                 foreach (var profile in data["RankedProfiles"]!.AsArray().Select(node => node!.AsObject())
                              .Where(profile => profile["SeasonId"]!.GetValue<string>() == "T01"))
@@ -187,7 +188,7 @@ public sealed class SeasonActivationTests
             Assert.Equal(0, reopened.RankedProfile(first.Id).SevenValue);
             Assert.Equal(priorHistory, Assert.Single(reopened.RankedOverview(first.Id).History));
 
-            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var persisted = CurrentFullSnapshot(reopened);
             var persistedProfile = persisted["RankedProfiles"]!.AsArray()
                 .Select(node => node!.AsObject()).Single(profile =>
                     profile["AccountId"]!.GetValue<string>() == first.Id);
@@ -290,7 +291,7 @@ public sealed class SeasonActivationTests
             initial.SelectRankedFaction(second.Id, "chaos");
             ActivateNextSeason(initial, initialAdmin, "T01", "T01 赛季");
             initial.SettleRankedMatch("t01-ledger-only", first.Id, second.Id, 0, seasonId: "T01");
-            RewriteSnapshot(path, data =>
+            RewriteSnapshot(initial, path, data =>
             {
                 data["RankedIntegrityAudits"] = new JsonArray();
                 data["RankedSettlementProfileFacts"] = new JsonArray();
@@ -380,7 +381,7 @@ public sealed class SeasonActivationTests
             var player = initial.Register("修复回滚玩家", "Password123!").Account!;
             initial.SelectRankedFaction(player.Id, "order");
             ActivateNextSeason(initial, initialAdmin, "T01", "T01 赛季");
-            RewriteSnapshot(path, data =>
+            RewriteSnapshot(initial, path, data =>
             {
                 var profile = data["RankedProfiles"]!.AsArray().Select(node => node!.AsObject())
                     .Single(row => row["AccountId"]!.GetValue<string>() == player.Id);
@@ -434,7 +435,7 @@ public sealed class SeasonActivationTests
             var player = initial.Register("修复接口玩家", "Password123!").Account!;
             initial.SelectRankedFaction(player.Id, "order");
             ActivateNextSeason(initial, initialAdmin, "T01", "T01 赛季");
-            RewriteSnapshot(path, data =>
+            RewriteSnapshot(initial, path, data =>
             {
                 var profile = data["RankedProfiles"]!.AsArray().Select(node => node!.AsObject())
                     .Single(row => row["AccountId"]!.GetValue<string>() == player.Id);
@@ -621,7 +622,7 @@ public sealed class SeasonActivationTests
             store.SettleRankedMatch("legacy-history-1", first.Id, second.Id, 0);
             ActivateNextSeason(store, admin, "S02-legacy", "旧历史迁移赛季");
 
-            var snapshot = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var snapshot = CurrentFullSnapshot(store);
             var history = snapshot["RankedProfileHistory"]!.AsArray();
             foreach (var node in history)
             {
@@ -965,7 +966,7 @@ public sealed class SeasonActivationTests
             Assert.Equal("unknown_restricted_card", outcome.Code);
             AssertSeasonBusinessState(before, store, admin, first.Id);
             Assert.Equal(operationsAuditBefore, store.AdminAudit("operations").Count);
-            AssertMirrorAndDatabaseState(before, path, catalog.PresetDecks, reducedCards, first.Id);
+            AssertDatabaseState(before, path, catalog.PresetDecks, reducedCards, first.Id);
         }
         finally
         {
@@ -998,7 +999,7 @@ public sealed class SeasonActivationTests
             Assert.Equal("command_failed", outcome.Code);
             AssertSeasonBusinessState(before, store, admin, playerId);
             Assert.Equal(operationsAuditBefore, store.AdminAudit("operations").Count);
-            AssertMirrorAndDatabaseState(before, path, catalog.PresetDecks, catalog.Cards, playerId);
+            AssertDatabaseState(before, path, catalog.PresetDecks, catalog.Cards, playerId);
         }
         finally
         {
@@ -1008,7 +1009,7 @@ public sealed class SeasonActivationTests
     }
 
     [Theory]
-    [InlineData("before-mirror-serialize")]
+    [InlineData("before-snapshot-write")]
     [InlineData("before-audit-append")]
     [InlineData("after-audit-append")]
     [InlineData("before-commit")]
@@ -1035,7 +1036,7 @@ public sealed class SeasonActivationTests
             AssertSeasonBusinessState(before, store, admin, playerId);
             Assert.Equal(auditBefore, store.AdminAudit().Count);
             Assert.Equal(mirrorBefore, File.ReadAllText(path));
-            AssertMirrorAndDatabaseState(before, path, catalog.PresetDecks, catalog.Cards, playerId);
+            AssertDatabaseState(before, path, catalog.PresetDecks, catalog.Cards, playerId);
         }
         finally
         {
@@ -1072,19 +1073,13 @@ public sealed class SeasonActivationTests
         L12AccountView admin, string playerId)
         => Assert.Equal(expected, CaptureSeasonBusinessState(store, admin, playerId));
 
-    private static void AssertMirrorAndDatabaseState(SeasonBusinessState expected, string path,
+    private static void AssertDatabaseState(SeasonBusinessState expected, string path,
         IReadOnlyList<L12PresetDeckDefinition> decks,
         IReadOnlyDictionary<string, L12CardDefinition> cards, string playerId)
     {
         var database = new L12PlatformStore(path, decks, officialCards: cards);
         var databaseAdmin = database.Login("Admin", "L12master").Account!;
         AssertSeasonBusinessState(expected, database, databaseAdmin, playerId);
-
-        var mirrorPath = Path.Combine(Path.GetDirectoryName(path)!, $"mirror-{Guid.NewGuid():N}.json");
-        File.Copy(path, mirrorPath);
-        var mirror = new L12PlatformStore(mirrorPath, decks, officialCards: cards);
-        var mirrorAdmin = mirror.Login("Admin", "L12master").Account!;
-        AssertSeasonBusinessState(expected, mirror, mirrorAdmin, playerId);
     }
 
     private static L12PlatformStore PrepareValidActivation(string path, L12Catalog catalog,
@@ -1145,7 +1140,7 @@ public sealed class SeasonActivationTests
             var originalActivatedAt = initial.SeasonCatalog(initialAdmin).Current.ActivatedAt;
             var priorHistory = initial.RankedOverview(first.Id).History.ToArray();
 
-            RewriteSnapshot(path, data =>
+            RewriteSnapshot(initial, path, data =>
             {
                 foreach (var profile in data["RankedProfiles"]!.AsArray().Select(node => node!.AsObject()))
                 {
@@ -1169,7 +1164,7 @@ public sealed class SeasonActivationTests
                 "S01-01M1", "S01-03M1", seasonId: "T01");
             Assert.NotEqual(firstHiddenBaseline, played.HiddenRating(first.Id));
 
-            RewriteSnapshot(path, data =>
+            RewriteSnapshot(played, path, data =>
             {
                 foreach (var settlement in data["RankedSettlements"]!.AsArray()
                              .Select(node => node!.AsObject())
@@ -1256,7 +1251,7 @@ public sealed class SeasonActivationTests
             Assert.Contains("transition-b", store.RankedIntegrityExcludedMatchIds());
             Assert.Equal(priorHistory, store.RankedOverview(first.Id).History);
 
-            var persisted = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var persisted = CurrentFullSnapshot(store);
             Assert.Equal(4, persisted["RankedSettlements"]!.AsArray().Count(node =>
                 node!["MatchId"]!.GetValue<string>().StartsWith("transition-")));
             Assert.Equal(2, persisted["RankedSettlementProfileFacts"]!.AsArray().Count(node =>
@@ -1335,7 +1330,7 @@ public sealed class SeasonActivationTests
             Assert.Equal("ranked_season_reset_repair_season_ended", ended.Code);
 
             initial.SettleRankedMatch("limit-source", first.Id, second.Id, 0, seasonId: "T01");
-            RewriteSnapshot(path, data =>
+            RewriteSnapshot(initial, path, data =>
             {
                 var source = data["RankedIntegrityAudits"]!.AsArray().Single()!.AsObject();
                 var audits = new JsonArray();
@@ -1465,9 +1460,19 @@ public sealed class SeasonActivationTests
         return request;
     }
 
-    private static void RewriteSnapshot(string path, Action<JsonObject> mutate)
+    private static JsonObject CurrentFullSnapshot(L12PlatformStore store)
     {
-        var data = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(store)!;
+        var json = (string)typeof(L12PlatformStore)
+            .GetMethod("SerializeFullDeckDomainBackup", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, new[] { data })!;
+        return JsonNode.Parse(json)!.AsObject();
+    }
+
+    private static void RewriteSnapshot(L12PlatformStore source, string path, Action<JsonObject> mutate)
+    {
+        var data = CurrentFullSnapshot(source);
         mutate(data);
         SqliteConnection.ClearAllPools();
         File.Delete(Path.Combine(Path.GetDirectoryName(path)!, "platform.db"));

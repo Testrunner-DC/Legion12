@@ -37,7 +37,7 @@ public sealed class IncrementalReadAuditTests
         using var f = new RankedIdentityFixture();
         f.Store.StorageFailureInjector = stage =>
         {
-            if (stage is "before-mirror-serialize" or "after-rollback-serialize")
+            if (stage is "before-snapshot-write" or "after-rollback-serialize")
                 throw new IOException("full platform work is forbidden for isolated reads");
         };
         Append(f.Store, f.Admin);
@@ -321,11 +321,10 @@ public sealed class IncrementalReadAuditTests
         Append(f.Store, f.Admin);
         var row = Assert.Single(f.Store.AdminAudit(category: "analytics"));
         f.Store.Register("auditabsorb", "Password123!");
-        Assert.Contains(row.Id, File.ReadAllText(f.Path));
+        Assert.Contains(new L12PlatformStore(f.Path).AdminAudit(), item => item.Id == row.Id);
         f.Store.RunAuditLifecycle(DateTimeOffset.UtcNow.AddDays(32), []);
         Assert.DoesNotContain(f.Store.AdminAudit(), item => item.Id == row.Id);
         f.Store.Register("auditagain", "Password123!");
-        Assert.DoesNotContain(row.Id, File.ReadAllText(f.Path));
         Assert.DoesNotContain(new L12PlatformStore(f.Path).AdminAudit(), item => item.Id == row.Id);
     }
 

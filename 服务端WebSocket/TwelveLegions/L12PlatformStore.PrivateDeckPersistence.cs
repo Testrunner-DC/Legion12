@@ -341,7 +341,7 @@ public sealed partial class L12PlatformStore
     }
 
     private static void UpsertSnapshotCas(SqliteConnection connection, SqliteTransaction transaction,
-        CoreSnapshot snapshot, string snapshotChecksum, string mirrorChecksum, DataFile data,
+        CoreSnapshot snapshot, string snapshotChecksum, DataFile data,
         long expectedStorageRevision, bool privateDeckObjectWrite)
     {
         using (var command = connection.CreateCommand())
@@ -374,14 +374,6 @@ public sealed partial class L12PlatformStore
         }
 
         WriteCoreSnapshotPayload(connection, snapshot);
-        using var meta = connection.CreateCommand();
-        meta.Transaction = transaction;
-        meta.CommandText = """
-            INSERT INTO storage_meta(key,value) VALUES('fallback_json_sha256',$mirror)
-            ON CONFLICT(key) DO UPDATE SET value=excluded.value;
-            """;
-        meta.Parameters.AddWithValue("$mirror", mirrorChecksum);
-        meta.ExecuteNonQuery();
     }
 
 }

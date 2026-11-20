@@ -76,26 +76,18 @@ public sealed class RankedBroadcastObjectStorageTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void GenericSavePostCommitMirrorFailureKeepsLatestAnchorAndSqlAuthority()
+    public void GenericSaveKeepsLatestCommittedAnchorAndSqlAuthority()
     {
         InLiveBroadcast((path, store, viewerId, subscribedAt) =>
         {
             var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
             Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
             store.PrivateDeckObjectPersistenceEnabled = true;
-            store.StorageFailureInjector = stage =>
+            store.UpsertDeck(viewerId, new L12PresetDeckDefinition
             {
-                if (stage == "before-private-deck-mirror") throw new IOException("generic-mirror-fail");
-            };
-            try
-            {
-                store.UpsertDeck(viewerId, new L12PresetDeckDefinition
-                {
-                    Name = "broadcast-object-deck", MasterId = "M1", CardIds = ["LATEST"], MoraleIds = [], SpecialIds = [],
-                });
-            }
-            finally { store.StorageFailureInjector = null; }
-            Assert.False(store.StorageStatus().FallbackMirrorHealthy);
+                Name = "broadcast-object-deck", MasterId = "M1", CardIds = ["LATEST"], MoraleIds = [], SpecialIds = [],
+            });
+            Assert.True(store.StorageStatus().FallbackMirrorHealthy);
             var field = typeof(L12PlatformStore).GetField("_lastCommittedSnapshot", PrivateInstance)!;
             var buffer = field.GetValue(store);
             store.StorageFailureInjector = stage =>

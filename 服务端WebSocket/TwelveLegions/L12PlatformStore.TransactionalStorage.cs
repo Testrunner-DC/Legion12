@@ -300,7 +300,6 @@ public sealed partial class L12PlatformStore
             throw new L12PlatformStorageUnavailableException(_storageIssue ?? "事务存储处于只读回退模式");
         }
 
-        L12PreparedPlatformMirror preparedMirror;
         try
         {
             using var connection = OpenDatabase(_databasePath, readOnly: false);
@@ -333,14 +332,12 @@ public sealed partial class L12PlatformStore
             SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, _data);
             if (objectWrite is null && chatAccountDeletions.Length != 0)
                 SynchronizeChatAccountDeletions(connection, transaction, _data, chatAccountDeletions);
+            StorageFailureInjector?.Invoke("before-snapshot-write");
             var snapshot = PrepareCoreSnapshot(_data, connection, transaction);
             if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
-            StorageFailureInjector?.Invoke("before-mirror-serialize");
-            preparedMirror = PrepareFallbackMirror(_data);
             var snapshotChecksum = snapshot.Checksum;
-            var mirrorChecksum = preparedMirror.Checksum;
             UpsertSnapshotCas(connection, transaction, snapshot, snapshotChecksum,
-                mirrorChecksum, _data, expectedRevision, privateDeckObjectWrite);
+                _data, expectedRevision, privateDeckObjectWrite);
             StorageFailureInjector?.Invoke("before-audit-append");
             AppendIndependentAudit(connection, transaction, _data.AdminAudit, validatedAudit);
             StorageFailureInjector?.Invoke("after-audit-append");
@@ -382,17 +379,6 @@ public sealed partial class L12PlatformStore
             throw new L12PlatformStorageUnavailableException(_storageIssue, error);
         }
 
-        try
-        {
-            if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-mirror");
-            WriteFallbackMirror(preparedMirror);
-            _fallbackMirrorHealthy = true;
-        }
-        catch (Exception error)
-        {
-            _fallbackMirrorHealthy = false;
-            _storageIssue = $"SQLite 已提交，但 JSON 兼容镜像更新失败：{error.Message}";
-        }
         operationSucceeded = true;
         }
         finally

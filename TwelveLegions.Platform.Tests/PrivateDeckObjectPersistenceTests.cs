@@ -46,7 +46,7 @@ public sealed class PrivateDeckObjectPersistenceTests
             Assert.InRange(point.DeckDomainStatements, 1, 12);
             Assert.True(point.DeckDomainStatements * 3 < full.DeckDomainStatements);
             Assert.InRange(point.InclusiveAffectedRows, 1, 8);
-            Assert.True(point.MirrorBytes > 0);
+            Assert.True(point.MirrorBytes == 0);
             Assert.Equal(0, point.InstrumentationErrors);
             Assert.Equal("POINT", new L12PlatformStore(path).Decks(owner.Id).Single(deck => deck.Name == "牌库-0").CardIds[0]);
         }
@@ -149,7 +149,7 @@ public sealed class PrivateDeckObjectPersistenceTests
     }
 
     [Fact]
-    public void MirrorFaultKeepsCommittedSqliteAndReportsUnhealthyMirror()
+    public void CommittedSaveLeavesFrozenMirrorUntouchedAndKeepsMirrorStatusHealthy()
     {
         var root = TempRoot();
         var path = Path.Combine(root, "platform.json");
@@ -160,16 +160,11 @@ public sealed class PrivateDeckObjectPersistenceTests
             var original = store.CreateDeck(owner.Id, Deck("镜像前", "C1")).Deck!;
             var mirrorBefore = SHA256.HashData(File.ReadAllBytes(path));
             store.PrivateDeckObjectPersistenceEnabled = true;
-            store.StorageFailureInjector = stage =>
-            {
-                if (stage == "before-private-deck-mirror") throw new InvalidOperationException(stage);
-            };
 
             var result = store.UpdateDeck(owner.Id, original.Id, original.Revision, Deck("镜像后", "C2"));
-            store.StorageFailureInjector = null;
 
             Assert.True(result.Success);
-            Assert.False(store.StorageStatus().FallbackMirrorHealthy);
+            Assert.True(store.StorageStatus().FallbackMirrorHealthy);
             Assert.Equal(mirrorBefore, SHA256.HashData(File.ReadAllBytes(path)));
             Assert.Equal("镜像后", Assert.Single(new L12PlatformStore(path).Decks(owner.Id)).Name);
         }
