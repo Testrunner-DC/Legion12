@@ -11,7 +11,7 @@ const cache = process.env.L12_ARTICLE_EMBEDS_CACHE
 assert.ok(output && cache && process.env.L12_ARTICLE_EMBEDS_GUARDED === '1', 'Guard explicit D/E output and cache first')
 fs.mkdirSync(output, { recursive: true })
 const { chromium } = createRequire(import.meta.url)('C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
-const watched = ['src/l12/site/articleBlocks.ts', 'src/l12/site/ArticleDocumentEditor.vue', 'src/l12/site/PublicDeckPicker.vue', 'src/l12/site/ArticleContentRenderer.vue', 'src/l12/site/ArticleBlockEditor.vue', 'scripts/verify-article-content-embeds.mjs']
+const watched = ['src/l12/site/articleBlocks.ts', 'src/l12/site/ArticleDocumentEditor.vue', 'src/l12/site/PublicDeckPicker.vue', 'src/l12/site/ArticleContentRenderer.vue', 'scripts/verify-article-content-embeds.mjs']
 const hashes = () => Object.fromEntries(watched.map(p => [p, crypto.createHash('sha256').update(fs.readFileSync(path.join(front, p))).digest('hex')]))
 const catalog = JSON.parse(fs.readFileSync(path.join(front, 'public/data/l12/cards.s1.json'), 'utf8').replace(/^\uFEFF/, ''))
 const card = catalog.find(c => c.id === 'S01-0001')
@@ -53,11 +53,11 @@ const summaryPage = (url) => {
 }
 const entry = `
 import {createApp,h,ref} from 'vue';import {createRouter,createMemoryHistory} from 'vue-router'
-import Editor from '/src/l12/site/ArticleDocumentEditor.vue';import Renderer from '/src/l12/site/ArticleContentRenderer.vue';import Legacy from '/src/l12/site/ArticleBlockEditor.vue';import '/src/style.css'
-const body=ref(${JSON.stringify(body([{ id: 'text', type: 'paragraph', text: '资讯合成验收', align: 'left', marks: [] }]))}), readOnly=ref(false),legacy=ref(false)
+import Editor from '/src/l12/site/ArticleDocumentEditor.vue';import Renderer from '/src/l12/site/ArticleContentRenderer.vue';import '/src/style.css'
+const body=ref(${JSON.stringify(body([{ id: 'text', type: 'paragraph', text: '资讯合成验收', align: 'left', marks: [] }]))}), readOnly=ref(false)
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{render:()=>null}},{path:'/decks/:deckId',name:'public-deck-detail',component:{render:()=>null}}]});await router.push('/')
-window.__articleQA={body,readOnly,legacy,router}
-createApp({render:()=>h('main',{style:{maxWidth:'1000px',margin:'auto',padding:'10px'}},readOnly.value?h(Renderer,{body:body.value}):h(legacy.value?Legacy:Editor,{modelValue:body.value,'onUpdate:modelValue':v=>body.value=v}))}).use(router).mount('#app')
+window.__articleQA={body,readOnly,router}
+createApp({render:()=>h('main',{style:{maxWidth:'1000px',margin:'auto',padding:'10px'}},readOnly.value?h(Renderer,{body:body.value}):h(Editor,{modelValue:body.value,'onUpdate:modelValue':v=>body.value=v}))}).use(router).mount('#app')
 `
 const server = await createServer({ root: front, configLoader: 'runner', cacheDir: cache, server: { host: '127.0.0.1', port: 0 },
   plugins: [{ name: 'article-embed-acceptance', resolveId(id) { if (id === '/__article__.js') return id },
@@ -207,13 +207,8 @@ try {
     assert.equal(await page.locator('[data-article-embed="card"]').count(),0)
     await page.getByRole('button',{name:'↶ 撤销',exact:true}).click()
     await page.locator('[data-article-embed="card"]').waitFor()
-    await page.evaluate(()=>window.__articleQA.legacy.value=true)
-    await page.locator('.block-editor textarea').first().fill('资讯合成验收：旧编辑器往返')
-    const legacyBody=await page.evaluate(()=>JSON.parse(window.__articleQA.body.value))
-    assert.equal(legacyBody.blocks.filter(b=>b.type==='card')[0].cardId,card.id)
-    assert.equal(legacyBody.blocks.filter(b=>b.type==='card')[0].caption,'更新后的备注')
-    assert.equal(legacyBody.blocks.filter(b=>b.type==='publicDeck')[0].reference,nextCode)
-    assert.ok(legacyBody.blocks.some(b=>b.text==='资讯合成验收：旧编辑器往返'))
+    // 旧编辑器对照用例已下架：其唯一被测组件 ArticleBlockEditor.vue 随批次 4 删除（零消费者、门禁未引用），
+    // 上面的插入/换库/删除撤销断言仍在活容器 ArticleDocumentEditor + ArticleContentRenderer 上执行。
     const countBefore = reads.length
     const references = Array.from({length:13},(_,i)=>'23456789ABC'+'23456789ABCDE'[i])
     await page.evaluate(value=>{window.__articleQA.body.value=value;window.__articleQA.readOnly.value=true},body([...references, references[0]].map((reference,i)=>({id:'public-'+i,type:'publicDeck',reference}))))
@@ -260,7 +255,7 @@ try {
       insert:true,staleCardSelectionFenced:true,cardCaptionInsertEditClearCancelUndoRedo:true,cardImageOnly:true,cardGalleryCounts:galleryCounts,
         cardGalleryColumns:expectedColumns,cardRowsCentered:true,hoverLift:width===1440,reducedMotion:width!==1440,
       serializedReferenceOnly:true,preview:true,cardDetails:true,coverRatio:cover.width/cover.height,
-      existingRoute:true,replace:true,deleteAndUndo:true,legacyEditorRoundTrip:true,deduplicatedBoundedReads:12,unavailableVisible:true})
+      existingRoute:true,replace:true,deleteAndUndo:true,deduplicatedBoundedReads:12,unavailableVisible:true})
     await ctx.close()
   }
   assert.deepEqual(report.pageErrors,[]); assert.deepEqual(report.writes,[])
