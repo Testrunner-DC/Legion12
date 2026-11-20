@@ -9593,3 +9593,28 @@
 - 收口后独立读回：总量 981 不变，`platformVersion=70436`，`closed=544`、`resolved=428`、`new=9`（由 34 降至 9）。
 - 收据：`D:/GPT/Legion12/artifacts/bug-closeout-20261120/closeout-receipt-20261120.json`。未部署、未改维护、未改任何业务数据，仅写 Bug 终态。
 - 剩余 9 条保持非终态：`e1dc0f6b`、`76745b4c`（疑同一「效果击杀不触发阵亡」共享根因）、`b99c66cc`、`2e7ce237`（疑同一「异画在实例转换/投影丢失」共享根因）、`8fe7d553`（图坦卡蒙墓地木乃伊）、`20fd1129`（回合时长建议）、`0fa59e88`（澳门区登录注册）、`a0a70c1a`（公共牌库复制）、`1749ac85`（手机版须佐草薙剑按钮误触）。
+
+## BUG-20261120-B99C66CC｜孙悟空变身后丢失玩家异画（本地已修复并过 Release，未部署）
+
+- 反馈：`BUG-20261120-b99c66cc` 孙悟空作为主宰变身成【斗士】军团后卡面回落到目录原画。
+- 根因（**共享缺陷，非单卡**）：异画在实例创建时按 `CardId` 查表写入 `ImageUrl`（`ApplyAlternateArt` → `ResolveAlternateArtUrl`，`L12GameEngine.cs:1196-1202`），而唯一实例化工场 `CreateCard` 只取目录原画。全仓 `CreateCard` 调用点约 84 处，仅 4 处手动补 `ApplyAlternateArt`，能否保留异画取决于调用点是否记得补。变身走 `player.MasterLegionState ?? CreateCard(...)`，新建实例必然掉回原画。
+- 修复：新增 `CreatePlayerCard(cardId, instanceId, controller)`，在工厂出口按实例所属玩家解析异画；`L12S2RemainingEffects.cs:368` 变身路径改用该入口。
+- **关键约束**：保留双参数 `CreateCard(string,string)` 签名不变。`HiddenTriggerDeclarationPrivacyTests`、`SingleActiveSelectionTests`、`Batch299EffectRegressionTests` 等夹具通过反射按两个参数调用它，增加可选参数会让 `MethodInfo.Invoke` 抛 `Parameter count mismatch`——实测会使 125 项无关测试失败。故以新增方法而非扩参数的方式实现。
+- 防回归：`WukongTransformLifecycleTests.TransformedMasterLegionKeepsTheOwnersAlternateArt`，断言变身前后卡面为玩家异画而非目录原画；已实测移除修复后该用例变红、恢复后变绿。
+- 证据（本次完整 Release，`2026-11-20`）：提交 `49a9757631dd3a45593098e33877f0cd4e5f6835`；规则 `8806/8806`、平台 `3153/3153`、deployment-drain-consumer 通过、前端 production/testrun 双构建、服务端发布与卡图归档通过；manifest `D:/GPT/Legion12/artifacts/c2a-release-20261120-r2/49a97576…/l12-release-49a97576….json`（SHA256 `CEAB87EF…`，`releaseSha256=ec513633…`，基线 `af17b7e9`）。
+- 玩家更新日志：`release-ledger/entries/20261120-wukong-transform-alt-art.json`（`audience=players`、`category=battle`）。
+- 状态：`local_fixed_not_deployed`。**未部署、未改维护**；`fixed_verified` 需要已核验的 `deployedVersion`，因此线上条目保持 `new`，待下次部署后收口。
+- 同型未迁移：其余约 80 个 `CreateCard` 调用点仍按原方式建立实例。凡是为玩家建立**印刷卡**实例的调用点，后续应按「是否属于玩家已拥有卡」逐个迁到 `CreatePlayerCard`，本次未做全量迁移。
+
+## BUG-20261120-GWEN-TACHIBANA｜格温莉安与立花誾千代阵亡触发（本次未定位，保持非终态）
+
+- `BUG-20261120-76745b4c`（格温莉安被神妙行军第二段效果击杀后不触发阵亡回血/抽牌）：**用户裁定为阵亡时才选择**，但核对实现后发现「阵亡时选择」**已是现状**——`gwen-choice` 公开触发计划是在触发候选被排队时构建的，而候选正是在 `RemoveFromFieldWithCause` 阵亡路径产生；`DefeatTriggerCause(CardEffect)` 映射为 `"effect"`，与 `S02-0615` 处理器的 `cause != "effect"` 守卫一致；`神妙行军 S01-0118` 也确实经 `KillTarget` 走 `RemoveFromFieldWithCause(defeatCause: CardEffect)`。现有 `EffectDefeatCauseRegressionTests.JingKeEffectKillInAnUnfinishedCombatOffersGwenChoiceExactlyOnce` 亦覆盖该链路。因此该反馈的失败点不能由静态核对定位，**需要真实对局复现**。
+- `BUG-20261119-e1dc0f6b`（立花誾千代支援死亡后未触发亡语）：卡文为「阵亡时 直到下个我方回合结束前，对方所有军团费用-1」，**未限定阵亡原因**，故支援位阵亡理应触发。支援位离场路径（`L12Actions.cs:1392-1407`）已传 `leaveKind: Defeat`、`defeatCause: Combat`，注释亦明写会建立其【阵亡时】。当前仅余「阶段顺序 / 触发是否真正结算」假设，**未写复现测试前不改代码**。
+- 两条均保留 `new`，不改线上状态。
+
+## BUG-20261120-2E7CE237｜异画傀儡进对战后仍显示原卡面（本次未定位）
+
+- 已排除实例化路径：`戏法师的傀儡` = `S02-0005`，是普通军团卡，经牌库进入对局，走 `BuildPlayer` 的 `deck.CardIds` 分支，该分支**已应用异画**（含 `cardId#份序` 变体查找）。
+- 可能落在更前方的传递链路：`L12RoomManager.ResolveAlternateArtUrls` → `L12PlatformStore.ResolveOwnedAlternateArtUrls(accountId, AlternateArtSelections, AlternateArtCopies)`。该函数对每个异画要求 `IsGrantableAlternateArtDefinition` 且 `owned.Contains(art.Id)`，并校验 `art.BaseCardId == selection.Key`；任一不满足即**静默丢弃**，卡面回落原画。
+- 定位需要该玩家账号的实际异画授权数据（`OwnedAlternateArtIdsLocked`）与该牌库提交的 `AlternateArtSelections/Copies`，属需运行时数据的排查，本次未取得。
+- 状态：保留 `new`，不改线上状态。

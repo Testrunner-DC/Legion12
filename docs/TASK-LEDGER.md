@@ -6293,3 +6293,13 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
 - 失败保留：首次执行误用 `GET /api/admin/bugs`（裸数组无 `items`）导致读取阶段全错，`productionWrites=0` 零写入；原回执另存，改 `/api/admin/bugs/query` 后重跑，未重交已成功项。
 - 证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261120/`（提案 SHA256 `C3027F19…`、执行器、回执）。
 - 剩余 9 条：两条疑「效果击杀不触发阵亡」共享根因、两条疑「异画转换丢失」共享根因、图坦卡蒙墓地木乃伊、回合时长建议、澳门区登录注册、公共牌库复制、手机版须佐草薙剑按钮误触。
+
+# 2026-11-20 孙悟空异画修复｜本地已过 Release，未部署
+
+- 授权范围：用户授权「改代码 + 跑 Release」，**不含部署**。故本批完成后线上这 4 条仍为非终态。
+- 已修复 1 条：`BUG-20261120-b99c66cc` 孙悟空变身后丢失玩家异画。根因是共享缺陷——唯一实例化工场 `CreateCard` 只取目录原画，全仓约 84 个调用点仅 4 处手动补 `ApplyAlternateArt`；变身路径新建实例必然掉回原画。新增 `CreatePlayerCard(cardId, instanceId, controller)` 在工厂出口解析异画，变身路径改用它。
+- 关键教训：**不得给 `CreateCard` 增加可选参数**。多个测试夹具用反射按两个参数调用它，加参数会让 `MethodInfo.Invoke` 抛 `Parameter count mismatch`，实测使 125 项无关测试失败；改用新增方法后恢复。
+- 未定位 3 条，均保留 `new`：`76745b4c`（核实现状已满足用户裁定的「阵亡时选择」，需真实对局复现）、`e1dc0f6b`（卡文未限定阵亡原因，支援位离境已传 Defeat，需复现测试）、`2e7ce237`（已排除实例化路径，疑在 `ResolveOwnedAlternateArtUrls` 的 owned/grantable 过滤，需账号授权数据）。
+- 验证：完整 Release 通过——规则 `8806/8806`、平台 `3153/3153`、排空消费者、前端 production/testrun 双构建（136 秒）、服务端发布、卡图内容寻址归档；manifest `D:/GPT/Legion12/artifacts/c2a-release-20261120-r2/49a97576…/l12-release-49a97576….json`（SHA256 `CEAB87EF…`）。
+- 玩家更新日志：`release-ledger/entries/20261120-wukong-transform-alt-art.json`。首次 Release 因缺该条目被门禁拦下，补登记后区间检查通过（`af17b7e9 → 49a97576`，2 条玩家条目覆盖 6 个源码文件）。
+- 未做全量迁移：其余约 80 个 `CreateCard` 调用点仍按原方式建立实例，后续应按「是否为玩家印刷卡」逐个迁到 `CreatePlayerCard`。
