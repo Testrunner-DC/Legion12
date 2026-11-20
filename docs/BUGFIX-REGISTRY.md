@@ -1,5 +1,15 @@
 # Legion12 Bug 修复记录
 
+## PLATFORM-20261121-ALTART-ANIMATED-UPLOAD｜动态异画上传 413（已修复，待部署）
+
+- 现象：后台上传 9.4 MiB 动画 WebP 作为异画素材，点击上传后按钮回弹且没有任何提示。线上 nginx 访问日志 `20/Nov/2026:22:16:28`、`22:17:33`、`22:20:28` 三次 `POST /api/admin/site/media` 全部 413（139 字节响应），同路径 `11:19:03` 的静态上传为 200。
+- 根因：`20261120-webp-upload-hotfix` 只在存储层放开动态异画 16 MiB（`SiteMediaAnimatedCardArtMaxBytes`）并让前端把同一份动画文件原样提交为 desktop/mobile/thumbnail，但 HTTP 端点 `ReadRequiredFormFile` 仍按静态 5MB/5MB/(card-art?5MB:2MB) 读文件，desktop（9.4 MiB）在读取阶段即抛 `SiteMediaUploadTooLargeException` → 413，存储层从未被执行。前端把提示写在 `AdminPage` 底部 `notice`，长面板下不可见，因此表现为"无提示回弹"。
+- 同型扫描：`ReadRequiredFormFile(form` 全仓仅此一处上传入口；`SiteMediaMaxAnimatedFrames` 仅存储层动画校验一处；`SiteMediaAnimatedCardArtMaxBytes` 原先只在存储层使用。
+- 改动：端点按 `kind == "card-art"` 用 `SiteMediaAnimatedCardArtMaxBytes`（16 MiB）读取三个交付版本，静态异画仍由存储层按 5MB/5MB/2MB 复核；`SiteMediaMaxAnimatedFrames` 120 → 400（用户批准，16 MiB 与 15 秒上限不变）。
+- 回归：`SiteContentHttpMutationsRejectPlayerTokensAndAcceptAdminPermission` 新增三段——238 帧 6 MiB 动画异画 HTTP 上传 200 且 `IsAnimated`、401 帧 400（提示含"400 帧"）、静态异画 6 MiB 交付版本仍 400（提示含"5MB"）。红基线：撤回端点改动后同一用例失败（200 vs 413）。
+- 验证：红基线平台用例 1/57 失败；修复后该类 57/57 通过；平台项目全量结果见交接记录。
+- 回滚：端点三处限额改回静态常量、帧数上限改回 120；不涉及协议、存储格式或既有素材。
+
 ## CLIENT-20261120-HEARTBEAT-PENDING-HINT｜心跳收紧与未确认操作提示（本地已验，未部署）
 
 - 来源：《存储与卡顿最终优化方案》§4.3"静默掉线 + 输入锁"。在权威树复核时**推翻了其中一条前提**，见下。

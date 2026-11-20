@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261121-altart-animated-upload-limits",
+  "date": "2026-11-21",
+  "audience": "players",
+  "title": "异画动态图上传修复",
+  "changes": [
+    {
+      "category": "content",
+      "text": "异画素材支持动态图：单张 16 MiB、400 帧以内的动画 WebP 现在可以正常保存并出现在画廊；超过上限时会直接说明具体原因，不再出现提交后没有任何提示的情况。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs"
+      ]
+    }
+  ]
+}

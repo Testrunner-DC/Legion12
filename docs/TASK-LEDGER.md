@@ -1,5 +1,12 @@
 # 十二军团任务台账
 
+## 2026-11-21 异画动态图上传 413 修复（已验，待部署）
+
+- 承接线上反馈：后台上传 9.4 MiB 动画 WebP 作为异画素材时无提示回弹。服务端 nginx 访问日志三次 413（22:16:28 / 22:17:33 / 22:20:28 UTC，139 字节响应），确认是 HTTP 端点的静态读取上限与存储层动态限额不一致，不是浏览器解码失败，也不是 nginx 体积限制（该路由为 64m）。
+- 改动：`L12WebSocketServer.cs` 对 `card-art` 用 `SiteMediaAnimatedCardArtMaxBytes`（16 MiB）读取 desktop/mobile/thumbnail；`L12PlatformStore.SiteContent.cs` 的 `SiteMediaMaxAnimatedFrames` 120 → 400（用户批准，16 MiB 与 15 秒不变）。
+- 回归：`SiteContentHttpMutationsRejectPlayerTokensAndAcceptAdminPermission` 增三段（238 帧 6 MiB 成功且 IsAnimated、401 帧拒绝、静态异画 6 MiB 仍拒绝）；撤回端点改动后用例即失败（200 vs 413）。
+- 验证：该类 57/57 通过；平台项目全量与发布验证见交接记录。
+
 ## 2026-11-20 存储阶段埋点与进程指标归档 v3（本地已验，未部署）
 
 - 承接《存储与卡顿-归因重测-20261120》P1：保存路径补四段计时（`deck-domain`、`ranked-broadcast-sync`、`snapshot-write`、`sqlite-commit`），把 5079 ms 未归属时段变成可测阶段。只加计时，不改保存、提交、回滚或镜像语义。

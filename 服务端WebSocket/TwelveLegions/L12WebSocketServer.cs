@@ -3479,12 +3479,17 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 var mediaKind = form["kind"].ToString();
                 var original = await ReadRequiredFormFile(form, "original", L12PlatformStore.SiteMediaOriginalMaxBytes,
                     request.HttpContext.RequestAborted);
-                var desktop = await ReadRequiredFormFile(form, "desktop", L12PlatformStore.SiteMediaDesktopMaxBytes,
+                // 动态异画把同一份动画 WebP 原样提交为桌面、移动和缩略三个版本，读取上限必须与存储层的
+                // SiteMediaAnimatedCardArtMaxBytes 对齐；静态异画仍由存储层按 5MB/5MB/2MB 复核。
+                var cardArt = mediaKind == "card-art";
+                var desktop = await ReadRequiredFormFile(form, "desktop",
+                    cardArt ? L12PlatformStore.SiteMediaAnimatedCardArtMaxBytes : L12PlatformStore.SiteMediaDesktopMaxBytes,
                     request.HttpContext.RequestAborted);
-                var mobile = await ReadRequiredFormFile(form, "mobile", L12PlatformStore.SiteMediaMobileMaxBytes,
+                var mobile = await ReadRequiredFormFile(form, "mobile",
+                    cardArt ? L12PlatformStore.SiteMediaAnimatedCardArtMaxBytes : L12PlatformStore.SiteMediaMobileMaxBytes,
                     request.HttpContext.RequestAborted);
                 var thumbnail = await ReadRequiredFormFile(form, "thumbnail",
-                    mediaKind == "card-art" ? L12PlatformStore.SiteMediaDesktopMaxBytes : L12PlatformStore.SiteMediaThumbnailMaxBytes,
+                    cardArt ? L12PlatformStore.SiteMediaAnimatedCardArtMaxBytes : L12PlatformStore.SiteMediaThumbnailMaxBytes,
                     request.HttpContext.RequestAborted);
                 var focalX = ParseFiniteDouble(form["focalX"], .5);
                 var focalY = ParseFiniteDouble(form["focalY"], .5);
