@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "20261120-zone-movement-batch-geometry",
+  "date": "2026-11-20",
+  "audience": "internal",
+  "reason": "对局位移动画层由逐事件读取几何改为读阶段一次取全批几何、写阶段落 DOM，属渲染实现调整：holder 仍挂到 fixed 定位的 teleport 宿主，不影响已读布局盒，画面与手感不变，因此不面向玩家发布。",
+  "paths": [
+    "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue"
+  ]
+}

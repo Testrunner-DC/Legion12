@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261120-disconnect-board-greying",
+  "date": "2026-11-20",
+  "audience": "players",
+  "title": "掉线时对局棋盘置灰提示",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "网络断开或正在恢复连接时，对局棋盘整体置灰并提示当前不可操作；连接恢复后自动解除。期间不会替你重发或取消已经发出、尚未确认的操作，也不会让同一个操作重复生效。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    }
+  ]
+}
