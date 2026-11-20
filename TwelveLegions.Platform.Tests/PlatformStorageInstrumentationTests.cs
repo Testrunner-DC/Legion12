@@ -34,7 +34,7 @@ public sealed class PlatformStorageInstrumentationTests
             Assert.True(measurement.ProfiledSqlNanoseconds >= 0);
             Assert.True(measurement.SqlitePageWrites > 0);
             Assert.True(measurement.SqlitePagePayloadBytes >= measurement.SqlitePageWrites * 512);
-            Assert.True(measurement.MirrorBytes > 0);
+            Assert.True(measurement.MirrorBytes == 0);
             Assert.Equal(0, measurement.InstrumentationErrors);
 
             var reloaded = new L12PlatformStore(path);

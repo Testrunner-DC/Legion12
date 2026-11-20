@@ -124,13 +124,23 @@ public sealed class TournamentReputationProductionStartTests
         Assert.True(t.Participants.Single(item => item.AccountId == f.Players[2].Id).Waitlisted);
         Assert.False(t.Participants.Single(item => item.AccountId == f.Players[3].Id).Waitlisted);
         Assert.Equal(100, f.Score(f.Players[2])); Assert.Equal(100, f.Score(f.Players[3]));
-        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(f.MirrorPath))!;
+        var json = CommittedSnapshot(f.Store.TransactionalStoragePath);
         var account = json["Accounts"]!.AsArray().Single(item => item!["Id"]!.GetValue<string>() == f.Players[1].Id)!;
         var entry = Assert.Single(account["TournamentReputation"]!["Events"]!.AsArray())!;
         Assert.True(entry["FormalSeat"]!.GetValue<bool>());
         Assert.Equal("registration-no-show", entry["Source"]!["Kind"]!.GetValue<string>());
         Assert.Contains(t.Id, entry["Source"]!["RootId"]!.GetValue<string>());
         Assert.Equal(80, f.Restart().TournamentReputationProjection(f.Players[1], f.Players[1].Id, DateTimeOffset.UtcNow).Score);
+    }
+
+    private static System.Text.Json.Nodes.JsonObject CommittedSnapshot(string databasePath)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={databasePath};Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return System.Text.Json.Nodes.JsonNode.Parse((string)command.ExecuteScalar()!)!.AsObject();
     }
 
     private static L12TournamentView Roster(ReputationProductionFixture f)

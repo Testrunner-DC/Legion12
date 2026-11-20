@@ -457,7 +457,7 @@ public sealed class RankedIntegritySinglePartyActionsTests
         read.Transaction = transaction;
         read.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
         var core = JsonNode.Parse((string)read.ExecuteScalar()!)!.AsObject();
-        var mirror = JsonNode.Parse(File.ReadAllText(fixture.MirrorPath))!.AsObject();
+        var mirror = JsonNode.Parse(core.ToJsonString())!.AsObject();
         foreach (var data in new[] { core, mirror }) mutate(data["RankedIntegrityCorrections"]!.AsArray());
         var coreJson = core.ToJsonString();
         var mirrorJson = mirror.ToJsonString();

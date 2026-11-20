@@ -83,7 +83,7 @@ public sealed class BugClosureDispositionTests
             Assert.Equal("rejected", persisted.ClosureDisposition);
             Assert.Equal("closed", persisted.Status);
 
-            var document = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var document = CommittedSnapshot(path);
             var legacyRow = document["BugReports"]!.AsArray().OfType<JsonObject>()
                 .Single(item => item["Id"]!.GetValue<string>() == candidate.Id);
             legacyRow.Remove("ClosureDisposition");
@@ -241,6 +241,16 @@ public sealed class BugClosureDispositionTests
         request.Headers.Add(L12CorrelationIds.HeaderName, Guid.NewGuid().ToString("N"));
         request.Content = JsonContent.Create(body);
         return request;
+    }
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse((string)command.ExecuteScalar()!)!.AsObject();
     }
 
     private static string FullJson(L12PlatformStore store)
