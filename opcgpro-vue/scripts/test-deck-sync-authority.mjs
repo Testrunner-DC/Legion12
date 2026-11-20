@@ -633,7 +633,7 @@ async function specialDictionaryNamesStayData() {
   assert.equal(decksModule.loadSavedDecks()['__proto__'].id, saved.id)
 }
 async function unavailableReadConsumersRemainVisible() {
-  for (const relative of ['../src/l12/LobbyPage.vue', '../src/l12/site/BattleHubPage.vue']) {
+  for (const relative of ['../src/l12/site/BattleHubPage.vue']) {
     const notice = { notice: '' }
     const run = actualHandler(relative, 'visibleDecks', {
       loadSavedDecksState: () => ({ status: 'unavailable', decks: null, error: Error('本机牌库不可用') }), l12State: notice,

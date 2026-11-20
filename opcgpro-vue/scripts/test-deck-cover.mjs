@@ -170,7 +170,6 @@ assert.doesNotMatch(coverComponent, /\.deck-cover__cards\{width:65%\}/,
 const consumers = [
   '../src/l12/site/DeckLibraryPage.vue',
   '../src/l12/SavedDeckSelector.vue',
-  '../src/l12/LobbyPage.vue',
   '../src/l12/site/BattleHubPage.vue',
   '../src/l12/site/SandboxPage.vue',
   '../src/l12/L12DeckEditor.vue',
@@ -180,7 +179,7 @@ for (const path of consumers) {
   assert.match(contents, /import DeckCover from/)
   assert.match(contents, /<DeckCover\b/)
 }
-for (const path of ['../src/l12/SavedDeckSelector.vue', '../src/l12/LobbyPage.vue', '../src/l12/L12DeckEditor.vue']) {
+for (const path of ['../src/l12/SavedDeckSelector.vue', '../src/l12/L12DeckEditor.vue']) {
   const contents = source(path)
   assert.match(contents, /@media\(hover:hover\) and \(pointer:fine\)/)
   assert.match(contents, /transform:translateY\(-4px\)/)
@@ -285,8 +284,6 @@ assert.match(library, /\.mine-grid>article,\.plaza-grid>article,\.hot-deck-loop>
 assert.doesNotMatch(library, /rgba\(215,184,91,\.5\)/,
   'deck hover glow must come from the faction-aware shared cover')
 assert.match(library, /class="plaza-summary"[\s\S]{0,700}<DeckCover/)
-assert.match(source('../src/l12/LobbyPage.vue'), /repeat\(auto-fit,minmax\(min\(180px,100%\),1fr\)\)/,
-  'legacy room cover grid must collapse responsively instead of squeezing four covers')
 assert.doesNotMatch(source('../src/l12/site/PublicDeckDetailPage.vue'), /DeckCover/,
   'public detail and matchup layouts remain unchanged')
 assert.match(source('../src/l12/decks.ts'), /platformRequest<unknown>\(privateDeckSummaryRequestPath\(query\),\s*\{\s*cache: 'no-store', headers: getRepresentativeDeckRequestHeaders\(\)/)

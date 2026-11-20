@@ -275,7 +275,7 @@ importRefs.activeDeckName.value='未知旧草稿';importRefs.activeDeckId.value=
 await importUI.onSave()
 assert.equal(importRequests.length, 2, 'Ordinary unproven old drafts must still be rejected before a request')
 assert.match(importRefs.notice.value,/无法确认.*原牌库版本/)
-for (const name of ['L12DeckEditor.vue', 'LobbyPage.vue', 'site/DeckLibraryPage.vue', 'site/BattleHubPage.vue', 'site/SandboxPage.vue']) {
+for (const name of ['L12DeckEditor.vue', 'site/DeckLibraryPage.vue', 'site/BattleHubPage.vue', 'site/SandboxPage.vue']) {
   const file = resolve(front, 'src/l12', name), raw = text(file), parsed = parse(raw, { filename: file })
   assert.equal(parsed.errors.length, 0)
   const script = compileScript(parsed.descriptor, { id: name, inlineTemplate: false })
@@ -297,7 +297,7 @@ const report = { passed: true, sourcePins: pins, boundary: 'Production functions
 if (process.env.L12_DECK_DELIVERY_ROOT) {
   const deliveryRoot = resolve(process.env.L12_DECK_DELIVERY_ROOT)
   const leaseFiles = [
-    'src/l12/L12DeckEditor.vue', 'src/l12/LobbyPage.vue', 'src/l12/deckCacheCodec.ts', 'src/l12/deckCacheStorage.ts',
+    'src/l12/L12DeckEditor.vue', 'src/l12/deckCacheCodec.ts', 'src/l12/deckCacheStorage.ts',
     'src/l12/deckCacheDatabase.ts', 'src/l12/decks.ts', 'src/l12/platform.ts', 'src/l12/site/deckEditorDraft.ts',
     'src/l12/site/publicDeckRead.ts', 'src/l12/site/DeckLibraryPage.vue', 'src/l12/site/BattleHubPage.vue', 'src/l12/site/SandboxPage.vue',
     'scripts/deck-transaction-test-fixture.mjs', 'scripts/test-deck-cache-database.mjs', 'scripts/test-deck-transactional-consumers.mjs',

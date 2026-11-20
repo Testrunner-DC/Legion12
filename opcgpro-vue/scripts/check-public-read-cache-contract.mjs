@@ -6,7 +6,6 @@ const root = path.resolve(import.meta.dirname, '..', '..')
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8')
 const decks = read('opcgpro-vue/src/l12/decks.ts')
 const assets = read('opcgpro-vue/src/l12/cardAssets.ts')
-const cardLoader = read('opcgpro-vue/src/data/CardLoader.ts')
 const platform = read('opcgpro-vue/src/l12/platform.ts')
 const gallery = read('服务端WebSocket/TwelveLegions/L12WebSocketServer.Gallery.cs')
 const server = read('服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
@@ -26,12 +25,6 @@ assert.match(decks, /fetch\(deploymentPath\('\/data\/l12\/preset-decks\.s2\.json
   'season two preset decks must use the browser cache')
 assert.match(assets, /cache: force \? 'reload' : 'default'/,
   'card asset manifest must use local cache normally and force reload only for a missing entry')
-assert.match(cardLoader, /const cardSetPromises = new Map<string, Promise<CardData\[\]>>\(\)/,
-  'battle card sets must share in-flight requests across components')
-assert.match(cardLoader, /fetch\(deploymentPath\(path\), \{ cache: "default" \}\)/,
-  'battle card sets must allow the browser cache')
-assert.match(cardLoader, /MANIFEST_RETRY_DELAY_MS = 30_000/,
-  'card image manifest failures must retry with a bounded backoff')
 assert.match(platform, /const publicReadCache = new Map/, 'public read cache must be bounded in memory')
 assert.match(platform, /const PUBLIC_READ_CACHE_TTL_MS = 60_000/, 'public read cache TTL must remain bounded')
 assert.match(platform, /browserCacheablePublicRead = path === '\/api\/alternate-arts' \\|\\| path === '\/api\/gallery\/presentation'/,

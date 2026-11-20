@@ -12,7 +12,6 @@ assert.match(platform, /deckLibraryApi[\s\S]{0,500}getRepresentativeDeckRequestH
 for (const file of [
   'src/l12/SavedDeckSelector.vue',
   'src/l12/site/BattleHubPage.vue',
-  'src/l12/LobbyPage.vue',
   'src/l12/site/SandboxPage.vue',
 ]) {
   const source = read(file)

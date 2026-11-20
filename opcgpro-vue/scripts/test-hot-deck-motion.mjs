@@ -77,7 +77,7 @@ assert.match(source, /::-webkit-scrollbar\{display:none\}/)
 assert.doesNotMatch(source, /scrollbar-width:thin/)
 assert.doesNotMatch(source, /prefers-reduced-motion/,
   'human ruling: deck scrolling and hover remain enabled independently of the system motion preference')
-for (const name of ['DeckCover.vue', 'SavedDeckSelector.vue', 'LobbyPage.vue', 'L12DeckEditor.vue']) {
+for (const name of ['DeckCover.vue', 'SavedDeckSelector.vue', 'L12DeckEditor.vue']) {
   const component = parse(fs.readFileSync(path.join(front, 'src/l12', name), 'utf8')).descriptor
   assert(component.styles.every(style => !style.content.includes('prefers-reduced-motion')),
     `shared deck-cover hover must not be suppressed in ${name}`)
