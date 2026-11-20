@@ -83,6 +83,10 @@ $drainConsumer = Join-Path $repoRoot "ops\server\l12-deployment-drain-consumer.p
 $webAssetsNginx = Join-Path $repoRoot "ops\server\nginx-l12-web-assets.conf"
 $webAssetsActivator = Join-Path $repoRoot "ops\server\activate-l12-web-assets.sh"
 $sharePagesNginx = Join-Path $repoRoot "ops\server\nginx-l12-share-pages.conf"
+$gzipNginx = Join-Path $repoRoot "ops\server\nginx-l12-gzip.conf"
+$gzipActivator = Join-Path $repoRoot "ops\server\activate-l12-gzip.sh"
+$upstreamKeepaliveNginx = Join-Path $repoRoot "ops\server\nginx-l12-upstream-keepalive.conf"
+$upstreamKeepaliveActivator = Join-Path $repoRoot "ops\server\activate-l12-upstream-keepalive.sh"
 $healthVerifier = Join-Path $repoRoot "ops\server\verify-l12-health.mjs"
 $bashPath = Get-BashPath
 $nodePath = (Get-Command node -ErrorAction Stop).Source
@@ -490,6 +494,23 @@ stop_service_and_confirm
         "正式前端哈希资源路由激活器缺少唯一站点定位或失败回滚。"
     Assert-True (([regex]::Matches($sharePagesNginxSource, 'proxy_hide_header Cache-Control;')).Count -eq 4 -and ([regex]::Matches($sharePagesNginxSource, 'add_header Cache-Control "no-cache" always;')).Count -eq 4) `
         "正式分享页 HTML 没有统一覆盖为 no-cache。"
+    $gzipNginxSource = Get-Content -LiteralPath $gzipNginx -Raw
+    $gzipActivatorSource = Get-Content -LiteralPath $gzipActivator -Raw
+    $upstreamKeepaliveNginxSource = Get-Content -LiteralPath $upstreamKeepaliveNginx -Raw
+    $upstreamKeepaliveActivatorSource = Get-Content -LiteralPath $upstreamKeepaliveActivator -Raw
+    Assert-True ($gzipNginxSource.Contains('gzip on;') -and $gzipNginxSource.Contains('gzip_proxied any;') -and $gzipNginxSource.Contains('gzip_vary on;') -and $gzipNginxSource.Contains('gzip_comp_level 5;') -and $gzipNginxSource.Contains('gzip_min_length 1024;') -and $gzipNginxSource.Contains('image/svg+xml;')) `
+        "正式主站文本资产 gzip 允许清单或阈值缺失。"
+    $gzipTypeList = [regex]::Match($gzipNginxSource, 'gzip_types(?<list>.*?);', [Text.RegularExpressions.RegexOptions]::Singleline).Groups['list'].Value
+    Assert-True ($gzipTypeList.Contains('application/javascript') -and $gzipTypeList.Contains('application/json') -and -not ($gzipTypeList -match 'image/(jpeg|png|webp|avif|gif)|video/|audio/|font/')) `
+        "正式 gzip 允许清单包含已压缩格式或缺少文本类型。"
+    Assert-True (-not ($gzipNginxSource -match '(?m)^\s*add_header\b') -and -not ($gzipNginxSource -match '(?m)^\s*location\b')) `
+        "正式 gzip 片段混入 add_header 或 location 会改变既有头继承与路由。"
+    Assert-True ($upstreamKeepaliveNginxSource.Contains('upstream l12_app_main {') -and $upstreamKeepaliveNginxSource.Contains('server 127.0.0.1:8083;') -and $upstreamKeepaliveNginxSource.Contains('keepalive 32;') -and -not $upstreamKeepaliveNginxSource.Contains('server {')) `
+        "正式 upstream keepalive 池缺失或混入 server 块。"
+    Assert-True ($gzipActivatorSource.Contains('include /etc/nginx/snippets/legion12-gzip.conf;') -and $gzipActivatorSource.Contains('production HTTPS host marker is not unique') -and $gzipActivatorSource.Contains('trap rollback EXIT ERR INT TERM') -and $gzipActivatorSource.Contains('add_header: it would shadow inherited header sets')) `
+        "正式 gzip 激活器缺少唯一站点定位、add_header 拒绝或失败回滚。"
+    Assert-True ($upstreamKeepaliveActivatorSource.Contains('include /etc/nginx/snippets/legion12-upstream-keepalive.conf;') -and $upstreamKeepaliveActivatorSource.Contains('http block marker is missing or ambiguous') -and $upstreamKeepaliveActivatorSource.Contains('proxy_set_header Connection "";') -and $upstreamKeepaliveActivatorSource.Contains('trap rollback EXIT ERR INT TERM')) `
+        "正式 upstream keepalive 激活器缺少 http 上下文定位、keepalive 三件套或失败回滚。"
     Assert-True ($serverDeploySource.Contains('runtime_proof_timeout_seconds="${L12_RUNTIME_PROOF_TIMEOUT_SECONDS:-900}"') -and
         $serverDeploySource.Contains('timeout "$runtime_proof_timeout_seconds" python3 -B "$runtime_verifier"')) `
         "停服数据库证明没有使用受界 900 秒可配置外层超时。"

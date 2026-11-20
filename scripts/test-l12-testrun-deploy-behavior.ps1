@@ -555,6 +555,13 @@ runtime_dir=synthetic-runtime; backup_dir=synthetic-backups; failure_dir=synthet
     Assert-True (-not $pathSource.Contains('auth_basic') -and $pathSource.Contains('proxy_pass http://127.0.0.1:8084/ws;') -and $pathSource.Contains('dist-testrun')) "Mounted test path is not isolated or public."
     Assert-True ($pathSource.Contains('location ^~ /testrun/assets/') -and $pathSource.Contains('root /opt/legion12-testrun-web-assets;') -and $pathSource.Contains('try_files $uri =404;')) "Mounted testrun assets can still fall back to HTML."
     Assert-True ($pathSource.Contains('location = /testrun/index.html') -and $pathSource.Contains('Cache-Control "no-cache"')) "Mounted testrun HTML is not revalidated."
+    Assert-True ($tlsSource.Contains('upstream l12_testrun_app {') -and $tlsSource.Contains('server 127.0.0.1:8084;') -and $tlsSource.Contains('keepalive 32;')) "Standalone testrun site lacks the upstream keepalive pool."
+    Assert-True ($tlsSource.IndexOf('upstream l12_testrun_app {') -lt $tlsSource.IndexOf('server {')) "Testrun upstream block left the http context."
+    Assert-True ($tlsSource.Contains('proxy_http_version 1.1;') -and $tlsSource.Contains('proxy_set_header Connection "";') -and $tlsSource.Contains('proxy_pass http://l12_testrun_app;')) "Testrun /api reverse proxy does not reuse upstream connections."
+    Assert-True ($tlsSource.IndexOf('gzip on;') -gt $tlsSource.IndexOf('listen 443 ssl http2;')) "Testrun text-asset compression is outside the TLS server block."
+    foreach ($gzipDirective in @('gzip on;', 'gzip_proxied any;', 'gzip_vary on;', 'gzip_comp_level 5;', 'gzip_min_length 1024;', 'application/javascript', 'application/json', 'image/svg+xml;')) {
+        Assert-True ($tlsSource.Contains($gzipDirective)) "Testrun site lacks text-asset compression directive $gzipDirective."
+    }
     $pathNewsRegex = [regex]::Match($pathSource, 'location\s+~\s+\^/testrun/news/\[\^/\]\+/\?\$\s*\{(?<body>.*?)\}', [Text.RegularExpressions.RegexOptions]::Singleline)
     Assert-True ($pathNewsRegex.Success) "Mounted test path lacks the article share route."
     Assert-True ($pathNewsRegex.Groups['body'].Value.Contains('rewrite ^ /_l12/share-page break;') -and $pathNewsRegex.Groups['body'].Value.Contains('proxy_pass http://127.0.0.1:8084;') -and -not $pathNewsRegex.Groups['body'].Value.Contains('proxy_pass http://127.0.0.1:8084/_l12/share-page;')) "Regex article route uses an invalid proxy_pass URI."

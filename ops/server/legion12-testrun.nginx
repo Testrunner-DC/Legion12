@@ -1,3 +1,14 @@
+# 本文件由 nginx.conf 的 http 块 include，因此 upstream 块写在这里（http 上下文）；
+# 写进 server/location 块会让 nginx -t 直接失败。
+# 与主站的 ops/server/nginx-l12-upstream-keepalive.conf 同构：同一 upstream 写法、同一 keepalive 32。
+upstream l12_testrun_app {
+    # 测试服仍是单机同源后端 127.0.0.1:8084，不引入负载均衡或超时变更。
+    server 127.0.0.1:8084;
+    # 每 worker 缓存 32 条空闲长连接；Kestrel 空闲超时默认 130s 大于 nginx
+    # keepalive_timeout 默认 60s，因此总是 nginx 先关空闲连接。
+    keepalive 32;
+}
+
 server {
     listen 80;
     listen [::]:80;
@@ -25,6 +36,28 @@ server {
     ssl_session_timeout 1d;
     ssl_session_tickets off;
 
+    # 文本资产压缩。与主站 ops/server/nginx-l12-gzip.conf 逐行同构：同一批 gzip_* 指令、
+    # 同一 gzip_min_length 1024 阈值；两侧调整必须同步。这里放在 server 上下文，
+    # 不含 add_header，因此不会覆盖任何 location 的 Cache-Control 或安全头集合。
+    # 已压缩格式（jpeg/png/webp/avif/gif、video/*、audio/*、字体、zip/pdf）不列入
+    # gzip_types，即不压缩；text/html 在 gzip on 时由 nginx 无条件压缩。
+    gzip on;
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/javascript
+        application/json
+        application/manifest+json
+        application/xml
+        application/xhtml+xml
+        image/svg+xml;
+
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options DENY always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
@@ -45,6 +78,8 @@ server {
 
     # Only the authenticated site-media endpoint accepts the original plus
     # three generated variants. Keep the server-wide 1m guard for every other API.
+    # 该路由此处保持直连 127.0.0.1:8084：64m 大文件上传不进入 /api 的 keepalive 池，
+    # 避免长连接被单次上传长期占用；与主站同名精确路由的直连写法一致。
     location = /api/admin/site/media {
         client_max_body_size 64m;
         error_page 413 = @site_media_too_large;
@@ -60,12 +95,18 @@ server {
         return 413 '{"code":"media_upload_too_large","message":"图片上传总量不能超过 64MB，请压缩原图后重试"}';
     }
 
+    # /api 反代复用后端长连接。keepalive 三件套必须齐全：proxy_http_version 1.1、
+    # 把 Connection 置空（不发送 close）、upstream 内的 keepalive。缺任何一件时 nginx
+    # 仍按 HTTP/1.0 逐请求重建 TCP，弱网下每个接口都要多付一次握手。
+    # 既有 proxy_set_header 与缓存语义全部保持原样。
     location ^~ /api/ {
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://127.0.0.1:8084;
+        proxy_pass http://l12_testrun_app;
     }
 
     location = /health {
