@@ -6282,3 +6282,14 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
 - 基线不变：HEAD=`37d0be72` 干净、`origin/main`=`af17b7e9`、两包 SHA 逐字节一致、正式服 `af17b7e9` / `ok` / `maintenance=false` / `NRestarts=0`；`local_release_passed_remote_deploy_pending` 仍成立。
 - 边界：`AGENTS.md` 过期路径与 HANDOFF 历史归档拆分不在本批，原因是 `deploy-l12.ps1` 的已验收绑定只容忍相对 `37d0be72` 的具名 `M` 文档修改，新增文件或改 `AGENTS.md` 会使已验收 manifest 失去可部署性。这两项排到本批部署完成之后独立处理。
 - 验证：本批为文档改动，按 `AGENTS.md` 文档类映射校验执行，不触发应用 Release、不重建包、不部署、不改维护。
+
+# 2026-11-20 Bug 队列批量收口｜34 条非终态写入 25 条终态
+
+- 状态：已完成线上写入并通过独立读回；未部署、未改维护、未改业务数据。详见 `docs/BUGFIX-REGISTRY.md` 的 `BUG-CLOSEOUT-20261120-QUEUE`。
+- 快照：`intake-20261120T060637Z-6daa59072988`／`platformVersion=70374`／981 条，收口前 `new=34`。
+- 更正过期结论：前批分诊把多项记为 `local_fixed_not_deployed`，实测这些具名回归均已存在于生产 `af17b7e9`，修复早已上线；旧记录不得再用于推迟关单。
+- 结果：12 条 `fixed_verified`、2 条 `duplicate`、11 条 `rejected`，全部逐条 preview→一次 CAS→独立读回通过；会话已撤销并复核 401。
+- 收口后独立读回：981 条不变，`platformVersion=70436`，`closed=544`／`resolved=428`／`new=9`。
+- 失败保留：首次执行误用 `GET /api/admin/bugs`（裸数组无 `items`）导致读取阶段全错，`productionWrites=0` 零写入；原回执另存，改 `/api/admin/bugs/query` 后重跑，未重交已成功项。
+- 证据：`D:/GPT/Legion12/artifacts/bug-closeout-20261120/`（提案 SHA256 `C3027F19…`、执行器、回执）。
+- 剩余 9 条：两条疑「效果击杀不触发阵亡」共享根因、两条疑「异画转换丢失」共享根因、图坦卡蒙墓地木乃伊、回合时长建议、澳门区登录注册、公共牌库复制、手机版须佐草薙剑按钮误触。
