@@ -2570,6 +2570,38 @@ public sealed class SiteContentPlatformStoreTests
                 Assert.Equal("media_upload_too_large", payload.GetProperty("code").GetString());
                 Assert.Contains("64MB", payload.GetProperty("message").GetString());
             }
+
+            // 动态异画把同一份动画 WebP 提交给三个交付版本，单份可超过静态 5MB 限额。
+            var animatedCardArt = AnimatedWebpFrames(800, 1117, 238, 33, 6 * 1024 * 1024);
+            using (var request = AuthorizedMedia(admin.Token!, MediaForm("card-art", animatedCardArt,
+                       animatedCardArt, animatedCardArt, animatedCardArt, originalName: "S01-01M1OLA.webp")))
+            using (var response = await client.SendAsync(request))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var payload = await response.Content.ReadFromJsonAsync<L12SiteMediaView>();
+                Assert.True(payload!.IsAnimated);
+                Assert.Equal("card-art", payload.Kind);
+            }
+
+            var tooManyFrames = AnimatedWebpFrames(800, 1117, 401, 20, 1024);
+            using (var request = AuthorizedMedia(admin.Token!, MediaForm("card-art", tooManyFrames,
+                       tooManyFrames, tooManyFrames, tooManyFrames)))
+            using (var response = await client.SendAsync(request))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Contains("400 帧", payload.GetProperty("message").GetString());
+            }
+
+            var staticCardArtAboveStaticLimit = Pad(Webp(800, 1117), 6 * 1024 * 1024);
+            using (var request = AuthorizedMedia(admin.Token!, MediaForm("card-art", Webp(800, 1117),
+                       staticCardArtAboveStaticLimit, Webp(800, 1117), Webp(800, 1117))))
+            using (var response = await client.SendAsync(request))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Contains("5MB", payload.GetProperty("message").GetString());
+            }
         }
         finally
         {
@@ -2620,6 +2652,20 @@ public sealed class SiteContentPlatformStoreTests
         var frame = new byte[16];
         frame[12] = 1;
         bytes = AppendWebpChunk(bytes, "ANMF", frame);
+        return AppendWebpChunk(bytes, "VP8 ", new byte[payloadBytes]);
+    }
+
+    private static byte[] AnimatedWebpFrames(int width, int height, int frames, int frameDurationMs,
+        int payloadBytes)
+    {
+        var bytes = Webp(width, height);
+        bytes[20] |= 0x02;
+        bytes = AppendWebpChunk(bytes, "ANIM", new byte[6]);
+        var frame = new byte[16];
+        frame[12] = (byte)frameDurationMs;
+        frame[13] = (byte)(frameDurationMs >> 8);
+        frame[14] = (byte)(frameDurationMs >> 16);
+        for (var index = 0; index < frames; index++) bytes = AppendWebpChunk(bytes, "ANMF", frame);
         return AppendWebpChunk(bytes, "VP8 ", new byte[payloadBytes]);
     }
 

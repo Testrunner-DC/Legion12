@@ -383,7 +383,7 @@ public sealed partial class L12PlatformStore
     public const int SiteMediaThumbnailMaxBytes = 2 * 1024 * 1024;
     public const int SiteMediaAnimatedCardArtMaxBytes = 16 * 1024 * 1024;
     public const long SiteMediaRequestMaxBytes = 64L * 1024 * 1024;
-    private const int SiteMediaMaxAnimatedFrames = 120;
+    private const int SiteMediaMaxAnimatedFrames = 400;
     private const int SiteMediaMaxAnimatedDurationMs = 15_000;
 
     private sealed class SiteMediaRow
