@@ -240,6 +240,14 @@ async function loadNetModule(base = '/') {
       })
     `)
     .replace("from './deploymentBase'", `from '${deploymentSourceModuleUrl(base)}'`)
+    // 方案 §7 的客户端采样只在真实浏览器里生效；连接恢复契约把它替换成空实现，
+    // 保证 net.ts 仍可被内联进 data: 模块，且不改变任何连接/恢复断言。
+    .replace("import { noteClientMessageHandled, noteClientMessageParsed, notePendingLockEnd, notePendingLockStart } from './perf/clientPerf'", `
+      const noteClientMessageHandled = () => {}
+      const noteClientMessageParsed = () => {}
+      const notePendingLockEnd = () => {}
+      const notePendingLockStart = () => {}
+    `)
     .replaceAll('import.meta.env.VITE_WS_URL', 'globalThis.__viteEnv.VITE_WS_URL')
   return importJavaScript(compile(source, filename), 'l12-net-recovery-test')
 }

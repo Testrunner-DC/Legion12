@@ -7,9 +7,12 @@ import { router } from './router'
 import { primeCardAssetManifest } from './l12/cardAssets'
 import { initializeAuth } from './l12/platform'
 import { installChunkRecovery } from './chunkRecovery'
+import { initClientPerf, markClientReady } from './l12/perf/clientPerf'
 
 installChunkRecovery()
 primeCardAssetManifest()
+// 方案 §7：只有被抽中的会话才采样，聚合后 30 秒一次上报；默认关闭开关见 clientPerf 模块。
+initClientPerf()
 
 // 优先刷新服务端权威身份，同时给公共站点设置上限：认证服务不可达时也必须按时挂载。
 const authBootstrap = initializeAuth().catch(() => null)
@@ -18,6 +21,7 @@ await Promise.race([
   new Promise<void>(resolve => window.setTimeout(resolve, 3_000)),
 ])
 createApp(App).use(router).mount('#app')
+markClientReady()
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', async () => {

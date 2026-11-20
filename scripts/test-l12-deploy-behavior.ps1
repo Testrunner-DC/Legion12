@@ -1502,6 +1502,9 @@ exec "$L12_TEST_REAL_TAR" "${translated[@]}"
     $gzipActivationIndex = $windowsDeployText.IndexOf('''$remoteGzipActivator'' ''$remoteGzipSnippet''', [StringComparison]::Ordinal)
     Assert-True ($keepaliveActivationIndex -ge 0 -and $keepaliveActivationIndex -lt $gzipActivationIndex -and $gzipActivationIndex -lt $prepareStorageIndex) `
         "Windows 发布入口未按先 keepalive、后 gzip 的顺序激活：keepalive 会把站点裸 proxy_pass 换成 upstream，顺序颠倒时 nginx -t 会失败。"
+    Assert-True ($windowsDeployText.Contains('[switch]$PruneRuntimeBackups') -and
+        $windowsDeployText.Contains('if ($PruneRuntimeBackups -and -not $Rollback) { $forcePrefix = ''L12_PRUNE_RUNTIME_BACKUPS=1 '' + $forcePrefix }')) `
+        "Windows 发布入口缺少显式的 runtime 快照轮转开关，或该开关会在 rollback 时启用。"
     Assert-True ($windowsDeployText.Contains('''$remoteSharePageActivator'' ''$remoteSharePageSnippet''') -and
         $windowsDeployText.Contains('rmdir ''$remoteToolDir/ops/server'' ''$remoteToolDir/ops'' ''$remoteToolDir''') -and
         $windowsDeployText.Contains("grep -Fq 'og:title'")) `

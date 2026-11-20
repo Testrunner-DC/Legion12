@@ -10,6 +10,7 @@ import { GameStateCardFrameRecovery, restoreGameStateCardFrame } from './gameSta
 import { HAND_ARRAY_DELTA_CAPABILITY, restoreHandSplices, validHandDeltaChangePath } from './handArrayDelta'
 import { GAME_STATE_PROPERTY_FRAME_CAPABILITY, restoreGameStatePropertyFrame } from './gameStatePropertyFrame'
 import { optionalLocalStorage as localStorage } from './browserStorage'
+import { noteClientMessageHandled, noteClientMessageParsed, notePendingLockEnd, notePendingLockStart } from './perf/clientPerf'
 
 export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' | 'session-claimed'
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'
@@ -287,6 +288,7 @@ function clearPendingActionNotice() {
 }
 
 function armPendingActionNotice() {
+  notePendingLockStart()
   clearPendingActionNotice()
   pendingActionNoticeTimer = window.setTimeout(() => {
     pendingActionNoticeTimer = null
@@ -303,6 +305,7 @@ function completePendingAction(responseRequestId?: unknown) {
   pendingActionResentAttempt = -1
   l12State.pendingAction = false
   clearPendingActionNotice()
+  notePendingLockEnd()
 }
 
 function cancelPendingAction() {
@@ -310,6 +313,7 @@ function cancelPendingAction() {
   pendingActionResentAttempt = -1
   l12State.pendingAction = false
   clearPendingActionNotice()
+  notePendingLockEnd()
 }
 
 function cloneDeltaContainer(value: any) {
@@ -831,10 +835,15 @@ export function connect(): Promise<void> {
       }))
     }
     socket.onmessage = (event) => {
+      const perfStartedAt = performance.now()
       // 新连接已经接管后，丢弃旧 WebSocket 迟到的消息，避免恢复快照被旧状态回滚。
       if (!isCurrentAttempt() || failed) return
       const encodedMessage = String(event.data)
+      // handler 全程同步，微任务在本次任务收尾时执行，因此这里量到的就是消息处理总耗时。
+      queueMicrotask(() => noteClientMessageHandled(perfStartedAt, encodedMessage.length))
+      const parseStartedAt = performance.now()
       let message = JSON.parse(encodedMessage)
+      noteClientMessageParsed(performance.now() - parseStartedAt)
       // A successful pair owns the next snapshot. Old observation packets must
       // not replace its room, poison its delta baseline, or trigger recovery.
       if (isRetiredObservationMessage(message)) return

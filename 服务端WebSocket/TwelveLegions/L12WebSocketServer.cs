@@ -258,6 +258,39 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             request.HttpContext.Response.Headers.CacheControl = "no-store";
             return Results.Ok(policy);
         });
+        // 方案 §7：客户端聚合样本的唯一入口。只校验形状并打印一条 [L12性能] 日志，
+        // 不读平台存储、不写审计、不改快照，因此不会把主因（平台保存）喂得更大。
+        _app.MapPost("/api/perf/client", async (HttpRequest request) =>
+        {
+            if (Environment.GetEnvironmentVariable("L12_CLIENT_PERF_LOG") == "0") return Results.NoContent();
+            if (request.ContentLength is > L12PerformanceMetrics.ClientSampleMaxBytes) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+            var buffer = new byte[L12PerformanceMetrics.ClientSampleMaxBytes + 1];
+            var read = 0;
+            while (read < buffer.Length)
+            {
+                var chunk = await request.Body.ReadAsync(buffer.AsMemory(read), request.HttpContext.RequestAborted);
+                if (chunk == 0) break;
+                read += chunk;
+            }
+            if (read == 0 || read > L12PerformanceMetrics.ClientSampleMaxBytes) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+            string body;
+            try { body = Encoding.UTF8.GetString(buffer, 0, read); }
+            catch { return Results.BadRequest(); }
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.ValueKind != JsonValueKind.Object) return Results.BadRequest();
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    if (property.Name is not ("v" or "msg" or "parse" or "handler" or "bytes" or "long" or "frameMax" or "pending" or "ready" or "elapsed"))
+                        return Results.BadRequest();
+                }
+            }
+            catch { return Results.BadRequest(); }
+            var source = L12TrustedClientAddress.Resolve(request.HttpContext)?.ToString() ?? "unknown";
+            L12PerformanceMetrics.ClientSample("<client>", body, read);
+            return Results.NoContent();
+        });
         _app.MapGet("/api/matches", async (HttpRequest request, int? limit) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);

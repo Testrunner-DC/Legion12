@@ -10,6 +10,9 @@ param(
     [Nullable[DateTimeOffset]]$DeploymentDeadline = $null,
     [Security.SecureString]$DeploymentControlSessionToken = $null,
     [switch]$AllowActivityDuringDrain,
+    # 部署后按「保留最新两组」轮转 runtime 快照（会删除更旧的完整组）。
+    # 明确授权后才可启用；默认只统计不删除。
+    [switch]$PruneRuntimeBackups,
     [ValidateSet("/opt", "/www/legion12")]
     [string]$ServerArtifactRoot = "/opt",
     [switch]$DryRun,
@@ -610,6 +613,7 @@ try {
     else {
         Write-Host "[L12 部署] 启用主页与资讯分享信息路由..."
         $forcePrefix = if (-not $Rollback -or $AllowActivityDuringDrain) { 'L12_DEPLOY_ALLOW_ACTIVITY=1 ' } else { '' }
+        if ($PruneRuntimeBackups -and -not $Rollback) { $forcePrefix = 'L12_PRUNE_RUNTIME_BACKUPS=1 ' + $forcePrefix }
         if (-not $Rollback -and -not $AllowActivityDuringDrain) {
             Write-Host "[L12 部署] 使用长期授权：WebSocket 活动连接不阻塞；真实对局、准入、持久化和未知围栏仍阻塞。"
         }

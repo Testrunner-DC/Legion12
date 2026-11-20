@@ -2034,6 +2034,40 @@ contracts.push(
     '牌库编辑器必须把已拥有异画与原画平行展示，以同一规则卡编号共享数量上限并保存逐副本卡图'],
 )
 
+// 方案 §7 客户端埋点：采样率、会话上限、单条体积、上报方式与服务端「只打日志不落库」必须可查。
+const clientPerfModule = read('../src/l12/perf/clientPerf.ts')
+const clientPerfNet = read('../src/l12/net.ts')
+const clientPerfMain = read('../src/main.ts')
+const clientPerfServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
+const clientPerfServerMetrics = read('../../服务端WebSocket/TwelveLegions/L12PerformanceMetrics.cs')
+contracts.push(
+  [clientPerfModule.includes('CLIENT_PERF_SAMPLE_DENOMINATOR = 10')
+    && clientPerfModule.includes('CLIENT_PERF_SESSION_CAP = 200')
+    && clientPerfModule.includes('CLIENT_PERF_MAX_BODY_BYTES = 512')
+    && clientPerfModule.includes("navigator.sendBeacon(CLIENT_PERF_ENDPOINT")
+    && clientPerfModule.includes("readFlag('localStorage', 'l12-perf-off')")
+    && clientPerfModule.includes('CLIENT_PERF_LONG_FRAME_MS = 50')
+    && !clientPerfModule.includes('localStorage.setItem(\'l12-perf-off\''),
+    '客户端性能采样必须保持 1/10 抽样、单会话 200 条上限、512 字节单条上限、sendBeacon 上报与一键关闭开关'],
+  [clientPerfNet.includes("from './perf/clientPerf'")
+    && clientPerfNet.includes('noteClientMessageParsed(performance.now() - parseStartedAt)')
+    && clientPerfNet.includes('queueMicrotask(() => noteClientMessageHandled(perfStartedAt, encodedMessage.length))')
+    && clientPerfNet.includes('function armPendingActionNotice() {\n  notePendingLockStart()')
+    && clientPerfNet.includes('clearPendingActionNotice()\n  notePendingLockEnd()')
+    && clientPerfMain.includes('initClientPerf()')
+    && clientPerfMain.includes('markClientReady()'),
+    '消息解析、处理总耗时与首屏里程碑必须挂到真实的 socket 消息与启动路径上，不能只存在于模块里'],
+  [clientPerfServer.includes('_app.MapPost("/api/perf/client"')
+    && clientPerfServer.includes('L12PerformanceMetrics.ClientSampleMaxBytes')
+    && clientPerfServer.includes('Environment.GetEnvironmentVariable("L12_CLIENT_PERF_LOG") == "0"')
+    && clientPerfServerMetrics.includes('internal const int ClientSampleMaxBytes = 512')
+    && clientPerfServerMetrics.includes('ClientSampleMinimumIntervalSeconds = 10')
+    && clientPerfServerMetrics.includes('[L12性能] 客户端样本=1')
+    && !clientPerfServer.slice(clientPerfServer.indexOf('_app.MapPost("/api/perf/client"'),
+      clientPerfServer.indexOf('_app.MapGet("/api/matches"')).includes('_platform'),
+    '客户端样本入口必须保留 512 字节上限、10 秒来源节流、可关开关，并且不得触碰平台存储（否则等于把主因喂得更大）'],
+)
+
 const failures = contracts.filter(([ok]) => !ok).map(([, message]) => message)
 if (failures.length) {
   console.error(`UI 契约检查失败：\n- ${failures.join('\n- ')}`)

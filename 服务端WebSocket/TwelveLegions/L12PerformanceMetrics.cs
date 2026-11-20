@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Globalization;
@@ -37,6 +38,29 @@ internal static class L12PerformanceMetrics
         try { Window.Value(stage, value); }
         catch { }
     }
+    /// <summary>客户端聚合样本的单条上限；与前端 CLIENT_PERF_MAX_BODY_BYTES 保持一致。</summary>
+    internal const int ClientSampleMaxBytes = 512;
+    /// <summary>每个来源的最小日志间隔；只限制日志量，不参与任何业务判断。</summary>
+    internal const int ClientSampleMinimumIntervalSeconds = 10;
+
+    private static readonly ConcurrentDictionary<string, long> ClientSampleLastTicks = new();
+
+    /// <summary>客户端聚合样本只打印一条日志：不写库、不进审计、不参与平台快照。</summary>
+    internal static void ClientSample(string source, string body, int bytes)
+    {
+        try
+        {
+            if (Environment.GetEnvironmentVariable("L12_CLIENT_PERF_LOG") == "0") return;
+            var now = Stopwatch.GetTimestamp();
+            var minimumTicks = (long)(ClientSampleMinimumIntervalSeconds * Stopwatch.Frequency);
+            if (ClientSampleLastTicks.TryGetValue(source, out var previous) && now - previous < minimumTicks) return;
+            ClientSampleLastTicks[source] = now;
+            if (ClientSampleLastTicks.Count > 4096) ClientSampleLastTicks.Clear();
+            Console.WriteLine("[L12性能] 客户端样本=1 来源=" + source + " 字节=" + bytes.ToString(CultureInfo.InvariantCulture) + " 样本=" + body);
+        }
+        catch { } // 采样日志永远不能影响业务结果。
+    }
+
     internal static bool TrySnapshot(out PerformanceMetricBatch? batch)
     {
         try { return Window.TrySnapshot(out batch); }

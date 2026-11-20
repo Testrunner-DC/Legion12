@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261120-client-perf-sampling-internal",
+  "date": "2026-11-20",
+  "audience": "internal",
+  "reason": "按《存储与卡顿最终优化方案》§7 增加客户端性能采样：1/10 会话抽样、单会话 200 条上限、单条 512 字节、sendBeacon 上报聚合值，服务端只打印一条 [L12性能] 日志且不落库（避免把平台保存主因喂得更大）。采样默认对玩家不可见，无界面、无业务语义变化。",
+  "paths": [
+    "opcgpro-vue/src/l12/perf/clientPerf.ts",
+    "opcgpro-vue/src/l12/net.ts",
+    "opcgpro-vue/src/main.ts",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12PerformanceMetrics.cs"
+  ]
+}
