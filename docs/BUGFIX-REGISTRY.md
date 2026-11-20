@@ -1,5 +1,19 @@
 # Legion12 Bug 修复记录
 
+## SNAPSHOT-WIRE-20261120-FRAME-PATH｜全量帧短路与锁内编码（本地已验，未部署）
+
+- 来源：《存储与卡顿最终优化方案》§4.4.1（三行纯浪费）与 §4.5（投影活引用撕裂），在权威树 `a7d94fdc` 复核仍成立；不是新的玩家反馈缺陷。
+- 根因一（纯浪费）：`L12SnapshotWireCodec.PrepareSnapshot` 先 `JsonDocument.Parse(queued.FullPayload)` 再判 `ForceFullGameState`。我方回合、恢复边界与终局帧 100% 走全量分支，等于每帧白解析一次几十 KB 的载荷。
+- 根因二（正确性）：`BroadcastGame` 产出的 gameState 载荷是对活权威对象的投影（`player.MoraleDeck`、`Library.FirstOrDefault()`、`Relic/ExtraRelics/Resolving`、`State.ActiveDisaster`、`PendingDefense`），而编码在出站循环 `SendManyAsync`（闸门已释放）才发生；客户端接受门槛是 `revision >=`，撕裂帧会覆盖一帧好帧，表现为单帧闪烁或卡牌回弹。
+- 改动：
+  - `L12SnapshotWireCodec.cs`：全量边界判定移到解析之前，全量帧不再读载荷；非法载荷仍在可增量路径上被 `InvalidDataException` 拒绝。
+  - `L12RoomManager.cs`：`OutgoingMessage` 新增 `PreparedWire`（已物化字节，null 表示待编码）；新增 `MaterializeWirePayloads`，在 `BroadcastGame` 调用方仍持房间闸门时就对每个 gameState 载荷编码并按引用去重；`duration.websocket.serialize` 与 `bytes.websocket.full-payload` 指标名不变。
+  - `L12WebSocketServer.cs`：新增 `SerializeForWire`，`SendManyAsync` 优先复用 `PreparedWire`，仅在无预备字节时才自行编码。
+- 已知代价（有证据、非缺陷）：对已断开成员的消息现在也会被编码一次——原先出站循环在无连接时跳过该接收者，故这是新增的少量 CPU；同一次广播内按载荷引用去重，不按接收者重复。
+- 回归：`ForcedFullFrameNeverParsesTheQueuedPayload`（强制全量送出非法 JSON 不抛、同一段载荷在可增量路径仍被拒）、`BroadcastMaterializesEveryGameStateFrameBeforeTheOutboundLoop`（真实房间广播后每个 gameState 消息都带字节且帧内容与投影一致）、`SenderUsesBytesAPreparedFrameAlreadyCarries`（载荷不可序列化时发送侧仍必须复用预备字节）。
+- 验证：Focused 全量——规则 `8809/8809`（含新增 3 条）、平台 `3155/3155`（重跑）。首次平台运行有 1 条 `CardAnalyticsCacheIdentityTests` 在夹具删除 `matches.db` 时抛 `IOException`（另一进程占用），同用例在整项目重跑中通过，判为临时目录清理抖动、与本批无关；未放宽任何断言。
+- 回滚：三处互相独立——恢复 `PrepareSnapshot` 的解析顺序、删除 `PreparedWire` 与 `MaterializeWirePayloads` 调用、`SendManyAsync` 回到统一编码即可；协议、字段与客户端均未改，无需数据迁移。
+
 ## PERF-20261120-STORAGE-PHASE-ATTRIBUTION｜保存路径四段埋点与进程指标归档 v3
 
 - 背景：镜像退出保存写路径后，生产 6 小时窗口 155 次 `platform.operation.transactional-save` 平均 9602 ms，已埋点阶段合计 4523 ms（47%）；剩余 5079 ms 落在 `UpsertSnapshotCas` 的 118.7 MB blob 写、牌库域快照、排位广播同步与 FULL 提交 fsync，没有任何 phase 覆盖。本批只补观测，不改保存、提交或回滚语义。

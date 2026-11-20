@@ -4918,6 +4918,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         }
     }
 
+    internal static byte[] SerializeForWire(OutgoingMessage message)
+        => message.PreparedWire ?? (message.IsGameState || message.IsPresenceSnapshot
+            ? L12SnapshotJson.SerializeToUtf8Bytes(message.Payload)
+            : JsonSerializer.SerializeToUtf8Bytes(message.Payload, OutgoingJsonOptions));
+
     private Task SendManyAsync(IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken,
         L12SyntheticTransportSample? transportDiagnostic = null, Guid diagnosticSessionId = default)
     {
@@ -4935,15 +4940,22 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (messageDiagnostic is not null) diagnosticAssigned = true;
             if (!serializedByPayload.TryGetValue(message.Payload, out var bytes))
             {
-                var serializationStartedAt = L12PerformanceMetrics.Start();
-                bytes = message.IsGameState || message.IsPresenceSnapshot
-                    ? L12SnapshotJson.SerializeToUtf8Bytes(message.Payload)
-                    : JsonSerializer.SerializeToUtf8Bytes(message.Payload, OutgoingJsonOptions);
-                var serializationCompletedAt = messageDiagnostic is null ? 0 : Stopwatch.GetTimestamp();
-                L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
-                messageDiagnostic?.Serialization(serializationStartedAt, serializationCompletedAt);
+                if (message.PreparedWire is not null)
+                {
+                    // Room-held broadcast already encoded this frame against fenced state; a second
+                    // encode here would read whatever the match has advanced to since.
+                    bytes = message.PreparedWire;
+                }
+                else
+                {
+                    var serializationStartedAt = L12PerformanceMetrics.Start();
+                    bytes = SerializeForWire(message);
+                    var serializationCompletedAt = messageDiagnostic is null ? 0 : Stopwatch.GetTimestamp();
+                    L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
+                    messageDiagnostic?.Serialization(serializationStartedAt, serializationCompletedAt);
+                    L12PerformanceMetrics.Bytes("websocket.full-payload", bytes.Length);
+                }
                 serializedByPayload[message.Payload] = bytes;
-                L12PerformanceMetrics.Bytes("websocket.full-payload", bytes.Length);
             }
             var queued = new L12QueuedPayload(bytes, message.IsGameState, message.ForceFullGameState,
                 message.IsPresenceSnapshot, message.ForceFullPresence);

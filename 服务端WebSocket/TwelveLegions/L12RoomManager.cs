@@ -6,7 +6,10 @@ namespace TwelveLegions.Server;
 
 public sealed record OutgoingMessage(Guid SessionId, object Payload, bool ReplaceableGameState = false,
     bool IsGameState = false, bool ForceFullGameState = false, bool IsPresenceSnapshot = false,
-    bool ForceFullPresence = false);
+    bool ForceFullPresence = false,
+    // Authoritative bytes materialized while the room gate still fences the state this payload
+    // projects. Null means the frame has not been encoded yet and the sender must encode it.
+    byte[]? PreparedWire = null);
 
 public sealed record L12OnlinePresence(
     string AccountId,
@@ -2487,7 +2490,7 @@ public sealed partial class L12RoomManager
         })
             .Concat(SpectatorMessages()).ToArray();
         L12PerformanceMetrics.Duration("snapshot.build", snapshotStartedAt);
-        return messages;
+        return MaterializeWirePayloads(messages);
 
         bool RequiresFull(Guid id) => state.Phase == L12Phase.GameOver
             // Accepted retries must still reliably acknowledge the request to its owner
@@ -2563,6 +2566,30 @@ public sealed partial class L12RoomManager
                         || room.TournamentId is not null && room.TournamentMatchId is not null);
             }
         }
+    }
+
+    // gameState 载荷是活权威对象的投影（士气牌库、牌库顶、圣物/解析中数组、待决防御与灾厄），
+    // 若留到出站循环再编码，读到的就是已经前进的状态——客户端 revision>= 门槛会把这种撕裂帧
+    // 当成新帧接受。因此在本房间闸门（调用方持有）内编码，并让发送侧直接复用字节。
+    private static OutgoingMessage[] MaterializeWirePayloads(OutgoingMessage[] messages)
+    {
+        Dictionary<object, byte[]>? encoded = null;
+        for (var index = 0; index < messages.Length; index++)
+        {
+            var message = messages[index];
+            if (!message.IsGameState || message.PreparedWire is not null) continue;
+            encoded ??= new Dictionary<object, byte[]>(ReferenceEqualityComparer.Instance);
+            if (!encoded.TryGetValue(message.Payload, out var wire))
+            {
+                var serializationStartedAt = L12PerformanceMetrics.Start();
+                wire = L12SnapshotJson.SerializeToUtf8Bytes(message.Payload);
+                L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
+                encoded[message.Payload] = wire;
+                L12PerformanceMetrics.Bytes("websocket.full-payload", wire.Length);
+            }
+            messages[index] = message with { PreparedWire = wire };
+        }
+        return messages;
     }
 
     internal static bool SnapshotRequiresCriticalDelivery(L12GameSnapshot snapshot)

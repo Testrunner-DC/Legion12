@@ -175,6 +175,63 @@ public sealed class CriticalSnapshotDeltaDeliveryTests
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse(next), rebuilt));
     }
 
+    [Fact]
+    public void ForcedFullFrameNeverParsesTheQueuedPayload()
+    {
+        var codec = new L12SnapshotWireCodec();
+        codec.SetDeltaEnabled(true);
+        var baseline = Encoding.UTF8.GetBytes("{\"type\":\"gameState\",\"state\":{\"matchId\":\"forced-full\",\"revision\":1}}");
+        codec.Prepare(new L12QueuedPayload(baseline, true, true)).Commit();
+        // 全量边界不读载荷：同一段非法 JSON 在强制全量下按原样送出，
+        // 在可增量路径下仍会被拒绝——证明解析确实被短路而不是被吞掉。
+        var forced = codec.Prepare(new L12QueuedPayload(Encoding.UTF8.GetBytes("not-json"), true, true));
+        Assert.False(forced.IsDelta);
+        Assert.Equal("not-json", Encoding.UTF8.GetString(forced.Payload));
+        Assert.ThrowsAny<JsonException>(() =>
+            codec.Prepare(new L12QueuedPayload(Encoding.UTF8.GetBytes("not-json"), true, false)));
+    }
+
+    [Fact]
+    public void SenderUsesBytesAPreparedFrameAlreadyCarries()
+    {
+        // 载荷本身不可序列化：发送侧若重新编码就会抛异常，故本用例只在复用预备字节时通过。
+        var message = new OutgoingMessage(Guid.NewGuid(), new Func<int>(() => 1),
+            IsGameState: true, PreparedWire: [7, 8, 9]);
+        Assert.Equal(new byte[] { 7, 8, 9 }, L12WebSocketServer.SerializeForWire(message));
+    }
+
+    [Fact]
+    public async Task BroadcastMaterializesEveryGameStateFrameBeforeTheOutboundLoop()
+    {
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+        var directory = Path.Combine(Path.GetTempPath(), "l12-wire-prefetch", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(catalog, recorder);
+        var sessions = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        manager.Connect(sessions[0], "prefetch-a", "甲");
+        manager.Connect(sessions[1], "prefetch-b", "乙");
+        var created = JsonSerializer.SerializeToElement(manager.CreateRoom(sessions[0])[0].Payload, WireJson);
+        var roomCode = created.GetProperty("roomCode").GetString()!;
+        manager.JoinRoom(sessions[1], roomCode);
+        var rooms = (IEnumerable)typeof(L12RoomManager).GetField("_rooms", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(manager)!;
+        var room = rooms.Cast<object>().Single().GetType().GetProperty("Value")!
+            .GetValue(rooms.Cast<object>().Single())!;
+        var engine = new L12GameEngine(catalog, "wire-prefetch-match", roomCode, 104729,
+            ["甲", "乙"], [0, 1], skipPreparation: true, stateFormatVersion: 2);
+        engine.State.Phase = L12Phase.Main;
+        room.GetType().GetProperty("Game")!.SetValue(room, engine);
+
+        var messages = Broadcast(manager, room, force: true);
+        var gameStates = messages.Where(message => message.IsGameState).ToArray();
+        Assert.NotEmpty(gameStates);
+        Assert.All(gameStates, message => Assert.NotNull(message.PreparedWire));
+        var frame = JsonNode.Parse(Encoding.UTF8.GetString(gameStates[0].PreparedWire!))!;
+        Assert.Equal("gameState", frame["type"]!.GetValue<string>());
+        Assert.Equal(engine.State.Revision, frame["state"]!["revision"]!.GetValue<long>());
+    }
+
     private static IReadOnlyList<OutgoingMessage> Broadcast(L12RoomManager manager, object room, bool force)
         => (IReadOnlyList<OutgoingMessage>)typeof(L12RoomManager)
             .GetMethod("BroadcastGame", BindingFlags.Instance | BindingFlags.NonPublic)!

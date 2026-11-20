@@ -1,5 +1,16 @@
 # 十二军团简短交接
 
+## 2026-11-20 帧路径正确性与浪费：全量帧短路 + 锁内编码（本地已验，未部署）
+
+- 承接《存储与卡顿最终优化方案》批次 2，并在权威树 `a7d94fdc` 复核两条结论仍成立（§4.4.1 全量分支先解析再返回；§4.5 投影持活引用而编码在锁外）。
+- 改动三处：`L12SnapshotWireCodec.PrepareSnapshot` 把全量边界判定移到 `JsonDocument.Parse` 之前；`OutgoingMessage` 新增 `PreparedWire`，`BroadcastGame` 在调用方仍持房间闸门时用 `MaterializeWirePayloads` 物化每个 gameState 载荷的字节（按载荷引用去重，指标名不变）；`L12WebSocketServer` 新增 `SerializeForWire`，`SendManyAsync` 优先复用预备字节。
+- 为什么不逐字段深拷贝：同一处改动同时消掉撕裂风险与重复解析，且不改变投影内容；逐字段克隆只能治标，字段增加还会再破一次。
+- 回归：`ForcedFullFrameNeverParsesTheQueuedPayload`、`BroadcastMaterializesEveryGameStateFrameBeforeTheOutboundLoop`、`SenderUsesBytesAPreparedFrameAlreadyCarries`。
+- 验证：Focused 全量——规则 `8809/8809`（+3）、平台 `3155/3155`（重跑；首轮 1 条临时目录清理 `IOException` 抖动已用整项目重跑排除，未放宽断言）。
+- 已知代价：已断开成员的帧现在也会编码一次（原先无连接就跳过）；这是让"编码发生在闸门内"这条不变量成立所付的少量 CPU。
+- 未部署。绑定影响：本批新增 `release-ledger/entries/20261120-snapshot-wire-ingate-encode-internal.json`（`A`），会打破既有 accepted-application 绑定；真要部署须以本批 Release 包为新 manifest。
+- 下阶段（按前置关系排序）：① 用上一批四段计时读一次生产窗口，定位保存路径剩余 5079 ms 的归属，再决定是否推进拆表；② 批次 3 客户端消息路径（ZoneMovement 批量化、`pendingAction` 看门狗、心跳 25 s 收紧）；③ 批次 5 只读项（`VACUUM platform.db` 回收约 119 MB、`L12_STORAGE_CLEANUP_BUDGET_SECONDS` 10→30、journald 封顶）需服务器操作授权；④ 批次 4 死代码切割需在权威树重测不可达文件清单。
+
 ## 2026-11-20 存储阶段埋点与进程指标归档 v3（本地 Release 已通过，未部署）
 
 - 承接《存储与卡顿-归因重测-20261120》P1：保存路径补四段 duration 计时 `platform.phase.deck-domain`、`ranked-broadcast-sync`、`snapshot-write`、`sqlite-commit`，只加观测，不改保存、提交、回滚或镜像语义。`rollback-gzip` 夹在 blob 写与提交之间，故拆两段而不是一段连续 span，读数可直接相加。

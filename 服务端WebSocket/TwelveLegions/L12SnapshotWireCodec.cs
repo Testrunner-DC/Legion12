@@ -105,12 +105,14 @@ internal sealed class L12SnapshotWireCodec
                 return _cardSnapshotFrameEnabled
                     ? Full(queued.FullPayload)
                     : new(queued.FullPayload, static () => { }, false);
+            // A full boundary is decided without reading the payload. Parsing first charged every
+            // forced full frame (own turn, recovery, terminal) a whole-tree JSON pass it never used.
+            if (queued.ForceFullGameState || _baseline is null || _sinceFull >= FullSnapshotInterval - 1)
+                return Full(queued.FullPayload);
             using var currentDocument = JsonDocument.Parse(queued.FullPayload);
             var current = currentDocument.RootElement;
             if (current.ValueKind != JsonValueKind.Object)
                 throw new InvalidDataException("gameState 载荷不是 JSON 对象");
-            if (queued.ForceFullGameState || _baseline is null || _sinceFull >= FullSnapshotInterval - 1)
-                return Full(queued.FullPayload);
             using var baselineDocument = JsonDocument.Parse(_baseline);
             var previous = baselineDocument.RootElement;
             var (matchId, revision) = Identity(current);

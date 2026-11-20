@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261120-snapshot-wire-ingate-encode-internal",
+  "date": "2026-11-20",
+  "audience": "internal",
+  "reason": "对局状态帧的编码时机与全量帧短路属服务端传输内部实现：玩家可见的画面内容、协议字段与接口均不变，故不进入玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12SnapshotWireCodec.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}
