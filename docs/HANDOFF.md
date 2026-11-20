@@ -7,6 +7,7 @@
 - 为什么不逐字段深拷贝：同一处改动同时消掉撕裂风险与重复解析，且不改变投影内容；逐字段克隆只能治标，字段增加还会再破一次。
 - 回归：`ForcedFullFrameNeverParsesTheQueuedPayload`、`BroadcastMaterializesEveryGameStateFrameBeforeTheOutboundLoop`、`SenderUsesBytesAPreparedFrameAlreadyCarries`。
 - 验证：Focused 全量——规则 `8809/8809`（+3）、平台 `3155/3155`（重跑；首轮 1 条临时目录清理 `IOException` 抖动已用整项目重跑排除，未放宽断言）。
+- 验证（完整 Release，无部署）：规则 `8809/8809`、平台 `3155/3155`、排空消费者、前端合同与 production/testrun 双构建、服务端发布与归档全部通过；发布包 `artifacts/deploy/d593cd703be67666df762b73ac25d1267aa26b44/l12-release-d593cd703be67666df762b73ac25d1267aa26b44.json`。提交 `d593cd70` 已非强制推送，远端 `ls-remote refs/heads/main` 读回同 SHA。
 - 已知代价：已断开成员的帧现在也会编码一次（原先无连接就跳过）；这是让"编码发生在闸门内"这条不变量成立所付的少量 CPU。
 - 未部署。绑定影响：本批新增 `release-ledger/entries/20261120-snapshot-wire-ingate-encode-internal.json`（`A`），会打破既有 accepted-application 绑定；真要部署须以本批 Release 包为新 manifest。
 - 下阶段（按前置关系排序）：① 用上一批四段计时读一次生产窗口，定位保存路径剩余 5079 ms 的归属，再决定是否推进拆表；② 批次 3 客户端消息路径（ZoneMovement 批量化、`pendingAction` 看门狗、心跳 25 s 收紧）；③ 批次 5 只读项（`VACUUM platform.db` 回收约 119 MB、`L12_STORAGE_CLEANUP_BUDGET_SECONDS` 10→30、journald 封顶）需服务器操作授权；④ 批次 4 死代码切割需在权威树重测不可达文件清单。

@@ -12,6 +12,7 @@
 - 已知代价（有证据、非缺陷）：对已断开成员的消息现在也会被编码一次——原先出站循环在无连接时跳过该接收者，故这是新增的少量 CPU；同一次广播内按载荷引用去重，不按接收者重复。
 - 回归：`ForcedFullFrameNeverParsesTheQueuedPayload`（强制全量送出非法 JSON 不抛、同一段载荷在可增量路径仍被拒）、`BroadcastMaterializesEveryGameStateFrameBeforeTheOutboundLoop`（真实房间广播后每个 gameState 消息都带字节且帧内容与投影一致）、`SenderUsesBytesAPreparedFrameAlreadyCarries`（载荷不可序列化时发送侧仍必须复用预备字节）。
 - 验证：Focused 全量——规则 `8809/8809`（含新增 3 条）、平台 `3155/3155`（重跑）。首次平台运行有 1 条 `CardAnalyticsCacheIdentityTests` 在夹具删除 `matches.db` 时抛 `IOException`（另一进程占用），同用例在整项目重跑中通过，判为临时目录清理抖动、与本批无关；未放宽任何断言。
+- 验证（完整 Release，无部署）：规则 `8809/8809`、平台 `3155/3155`、排空消费者、前端合同与 production/testrun 双构建、服务端发布与归档全部通过；发布包 `artifacts/deploy/d593cd703be67666df762b73ac25d1267aa26b44/l12-release-d593cd703be67666df762b73ac25d1267aa26b44.json`。提交 `d593cd70` 已非强制推送，远端 `ls-remote refs/heads/main` 读回同 SHA。
 - 回滚：三处互相独立——恢复 `PrepareSnapshot` 的解析顺序、删除 `PreparedWire` 与 `MaterializeWirePayloads` 调用、`SendManyAsync` 回到统一编码即可；协议、字段与客户端均未改，无需数据迁移。
 
 ## PERF-20261120-STORAGE-PHASE-ATTRIBUTION｜保存路径四段埋点与进程指标归档 v3
