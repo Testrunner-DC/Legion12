@@ -6384,6 +6384,7 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
 - 未做：未上传、未切换版本、未删任何正式服备份（轮转授权只覆盖测试服）、未解除维护、未跑 `VACUUM platform.db`（需停库窗口；当前 freelist 约 119 MB）。
 - 下阶段：① 解封 SSH 后重跑 `deploy-l12.ps1 -DryRun` 验证上传链路，再由人类决定维护窗口与切换；② 磁盘余量需要决策：切换会新建约 5 GB 快照，可选「部署时设 `L12_PRUNE_RUNTIME_BACKUPS=1`（保留最新 2 组，释放约 5.19 GB）」或「把旧备份转存后删除」，两者都需正式服备份授权；③ 部署后读四段计时决定批次 6。
 - **补充（同批续记）**：① 预检回执是「按候选包 SHA 绑定」的，同一回执不能跨候选复用——本批因此归档过两次（`recovery/preflight-receipt-before-9bc255df.txt` 与 `-before-4b27abff.txt`）；换候选就换回执，属设计行为，不属故障。② 部署入口要求「HEAD 的包」，docs 类提交也会让 `deploy-l12.ps1` 重新完整验证一次：本批为 `4b27abff` 生成了包 `artifacts/deploy/4b27abff…/l12-release-4b27abff….json`（manifest SHA256 `EE8A1997F4953C7E6A90879EE6CCDF565DA80DD97099C53B2A19CF438CE15B13`、archive SHA256 `ebbb05f26ac03af3dc24f7e93e2710ebb83b7cf02b12b6ff05feb80b99c712be`）。操作含义：**要部署就在部署 commit 上收尾，不要在其后再追加 docs 提交**，否则每次都要再跑一次完整验证。③ 上传阶段的失败可复现：两次 dry run 都在 `上传预构建运行包` 的首次 `scp` 上 `Connection timed out`；随后连普通 `ssh` 也超时约 20 s 后恢复，而同时段公网 HTTPS 200——判为本机出口对高频 SSH 连接的临时限流/封禁，**不是服务端故障**。当前服务器已留有绑定 `ebbb05f2…` 的回执（checks=1）与 `4b27abff` 的工具安装，下一次同候选 dry run 可从上传步骤续做；等待窗口内不要继续高频重试。
+- **续记（收尾）**：为最终 HEAD `bb665834` 触发的隔离验证在 `npm.cmd run build` 处退出码 13（前序契约脚本出现 `Detected unsettled top-level await`）——本地同树 `npm.cmd run build` 立即 exit 0，判定为隔离构建在资源压力下的偶发失败，不是代码问题，重跑即可。因此当前状态是：**代码可部署（9bc255df/4b27abff 两次完整 Release 均通过），但部署提交必须有自己的包**；服务器回执现绑定 `ebbb05f2…`（4b27abff 的包），若改投 `bb665834` 需先归档该回执再重建。两条硬前置仍未解决：① 本机到 22 端口的高频连接被临时限流（普通 ssh 也会 20 s 超时后恢复），批量上传需等安静窗口；② 切换时新建约 5 GB 快照，磁盘余量仅约 151 MB，正式服备份轮转或转存需明确授权。
 
 # 2026-11-20 存储与卡顿方案收口结果｜6 个提交、完整 Release 通过、已推送（未部署）
 
