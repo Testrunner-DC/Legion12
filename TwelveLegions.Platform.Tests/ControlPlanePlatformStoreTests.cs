@@ -161,8 +161,7 @@ public sealed class ControlPlanePlatformStoreTests
         {
             var store = new L12PlatformStore(path);
             var registered = store.Register("tlegacd8e56", "password-123");
-            var document = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
-            document.Remove("Version");
+            var document = CommittedSnapshot(path);
             foreach (var account in document["Accounts"]!.AsArray().OfType<JsonObject>())
                 account.Remove("PermissionVersion");
             foreach (var session in document["Sessions"]!.AsArray().OfType<JsonObject>())
@@ -173,6 +172,8 @@ public sealed class ControlPlanePlatformStoreTests
                 session.Remove("AuthStrength");
                 session.Remove("PermissionVersion");
             }
+            SqliteConnection.ClearAllPools();
+            File.Delete(Path.ChangeExtension(path, ".db"));
             File.WriteAllText(path, document.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
             var reloaded = new L12PlatformStore(path);
@@ -474,6 +475,16 @@ public sealed class ControlPlanePlatformStoreTests
 
     private static L12AccountView Account(string role)
         => new(Guid.NewGuid().ToString("N"), role, role, DateTimeOffset.UtcNow, true);
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse((string)command.ExecuteScalar()!)!.AsObject();
+    }
 
     private static string TempRoot()
     {
