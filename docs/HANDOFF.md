@@ -9,7 +9,8 @@
 - 勘误三（主机指纹用错文件）：`secrets/legion12_known_hosts` 内仍是重装前的旧主机项（`…IK7zDzJDfZJI…`），`DEPLOY-HK.md` 已注明仅存历史、不得用于当前连接。当前唯一可用绑定是 `artifacts/security-reinstall-prep-20261009/ssh-reinstall-pinned-20261011.known_hosts` 中 `154.201.80.91` 项，指纹 `SHA256:RUD26iAbAoApLNZw2Nl9b4hvx0yolbslbfZZOAGrj5o`。
 - 勘误四（`AGENTS.md` 过期路径）：`AGENTS.md` 第 74 行称 canonical checkout 为 `D:\GPT\Legion12\app`，实测该树落后 `origin/main` **1002 个提交**且自身为脏（`HANDOFF.md`、`TASK-LEDGER.md` 已改）。权威树仍为 `worktrees/lubu-pingyang-20261001`；在 `AGENTS.md` 修正落地前，以其本句为准者一律作废。
 - 部署可用性约束（勿破坏）：`ops/windows/deploy-l12.ps1` 的已验收绑定只容忍相对 `37d0be72` 的 `M` 修改，且路径限 `docs/HANDOFF.md`、`docs/TASK-LEDGER.md`、`docs/BUGFIX-REGISTRY.md`、`docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md`、`ops/windows/deploy-l12.ps1`、`ops/server/deploy-l12-release.sh`、`scripts/test-l12-deploy-behavior.ps1`。任何**新增文件（`A`）**或改动 `AGENTS.md` 等其他文档都会使 `Test-L12AcceptedApplicationBinding` 返回 `false` 并拒绝部署，只能重跑完整 Release 换取新 manifest。因此 `AGENTS.md` 修正与 HANDOFF 历史归档拆分必须等本批部署完成后再做。
-- 仍待办（未因勘误而消失）：`37d0be72` 尚未推送、尚未部署，正式服切换仍需本批明确授权；Bug 队列仍缺新鲜 CAS 快照；DPAPI 管理员凭据的归属限制未变。
+- 仍待办（未因勘误而消失）：`37d0be72` 尚未部署，正式服切换仍需本批明确授权；Bug 队列仍缺新鲜 CAS 快照；DPAPI 管理员凭据的归属限制未变。
+- 同步结果：本次勘误已提交 `abbb6f95`（父提交即候选 `37d0be72`）并以非强制方式推送 `origin/main`，远端 `ls-remote refs/heads/main` 读回同 SHA、工作树干净。推送后已按 `deploy-l12.ps1` L213-243 的判定逻辑镜像复核：`37d0be72` 的已验收 manifest 仍满足 accepted-ancestor 绑定（差异仅 `M docs/HANDOFF.md`、`M docs/TASK-LEDGER.md`），可继续部署，无需重跑 Release。
 
 ## 2026-11-16 请求超时专项优化（本地已验，未部署）
 
