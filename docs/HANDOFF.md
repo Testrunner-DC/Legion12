@@ -5044,3 +5044,10 @@
 - 服务器侧已执行并复核：journald 封顶 128M（1.4 GB→108 MB）、apt/轮转日志清理、删 VACUUM 草稿与两版前释放目录 → 可用 `11,284,783,104 B`；`prepare-storage` 容量预检通过；**站点媒体上传上限 `32m` 漂移按仓库契约改回 `64m`**（备份 `/etc/nginx/.legion12-before-media64-20261120T173141Z`）；预检回执换代归档后重建；gzip 与 upstream keepalive **已生效**（公网读回 `content-encoding: gzip`；3 个非 upgrade location 走 upstream，`/ws` 未被改）。
 - 阻塞：dry run 到上传阶段三次 SSH 22 超时后中止（未上传/未切换）；本机 TCP 22 持续不通而 HTTPS 200 正常，判为本机出口限流/封禁，需等待解封。`maintenance=true` 是管理员「笛喜_DC」在 16:38:40Z 的 `operations.config.section.apply` 所设，按 `DEPLOY-HK.md:266` 本批未解除。
 - 待决策：切换会新建约 5 GB 快照，当前余量仅约 160 MB —— 需授权正式服备份轮转（`L12_PRUNE_RUNTIME_BACKUPS=1` 保留最新 2 组释放约 5.19 GB）或转存后删除。
+## 2026-11-20 19:39 正式服部署完成（af17b7e9 → c9b91fde）
+
+- 部署成功：新 release `c9b91fdefc76…`，保留上一版 `af17b7e9`；本机与公网 HTTP／WS 身份均读回新提交；包 manifest `43449944…`；完整 Release 规则 8809/8809、平台 3155/3155。
+- 备份轮转（已授权）：按 sidecar `sha256sum -c` 保留最新 2 组，删除 `7d8aea86T214122Z`（5,186,565,042 B）；可用空间 10.95 GB。
+- platform.db VACUUM（同窗）：279,113,728 → 159,485,952 B，freelist 归零，`integrity_check=ok`；停服前留 `platform.before.db`。
+- **维护未接触**（`maintenance=true` 仍为管理员设置）。批次 6 的四段计时已上线，需正常营业后一次真实保存即可读四段、定位 5079 ms。
+- 门禁前置：改文档会触发 codex routing 校验，需 `CODEX_CLI_PATH=C:\Users\neptu\.codex\.sandbox-bin\codex.exe`。
