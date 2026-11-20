@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$CacheRoot = "",
     [string]$DependencyCacheRoot = ""
@@ -146,7 +146,19 @@ if ($env:L12_TOOL_PATH) {
     foreach ($path in $env:L12_TOOL_PATH -split [IO.Path]::PathSeparator) { Add-L12ToolPath $path }
 }
 if ($boundedToolPath.Count -eq 0) { throw 'L12_BOUNDED_TOOL_PATH_EMPTY' }
-$env:Path = $boundedToolPath -join [IO.Path]::PathSeparator
+# 合成夹具需要自己的 dotnet/npm/tar/node 垫片排在被测真实工具之前，否则垫片永远
+# 抢不到调用、夹具只能被动跑真工具。仅准备合成夹具的受控进程设置此变量；
+# 常规构建/发布不设置它，因此白名单顺序与既有行为完全一致。
+$prependedToolPath = [Collections.Generic.List[string]]::new()
+if ($env:L12_TOOL_PATH_FIRST) {
+    foreach ($path in $env:L12_TOOL_PATH_FIRST -split [IO.Path]::PathSeparator) {
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        $resolvedFirst = try { [IO.Path]::GetFullPath($path) } catch { $null }
+        if (-not $resolvedFirst -or -not (Test-Path -LiteralPath $resolvedFirst -PathType Container)) { continue }
+        if (-not ($prependedToolPath | Where-Object { $_ -ieq $resolvedFirst })) { [void]$prependedToolPath.Add($resolvedFirst) }
+    }
+}
+$env:Path = (@($prependedToolPath) + $boundedToolPath) -join [IO.Path]::PathSeparator
 if ($env:Path.Length -gt 4096) { throw "L12_BOUNDED_TOOL_PATH_TOO_LONG: $($env:Path.Length)" }
 Write-Host "[L12 构建] 受限工具 PATH 长度：$($env:Path.Length)"
 

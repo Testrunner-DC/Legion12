@@ -428,6 +428,7 @@ $fakeBin = Join-Path $fixtureRoot "fake-bin"
 $commandLog = Join-Path $fixtureRoot "commands.log"
 $originalPath = $env:PATH
 $originalCommandLog = $env:L12_TEST_COMMAND_LOG
+$originalToolPathFirst = $env:L12_TOOL_PATH_FIRST
 
 try {
     New-Item -ItemType Directory -Path (Join-Path $fixtureRepo "ops\windows"), (Join-Path $fixtureRepo "scripts"), (Join-Path $fixtureRepo "TwelveLegions.Tests"), (Join-Path $fixtureRepo "opcgpro-vue\src\l12\site"), (Join-Path $fixtureRepo "opcgpro-vue\scripts"), (Join-Path $fixtureRepo "服务端WebSocket\TwelveLegions\Data"), $fixtureOutput, $fixtureCardAssets, $fakeBin -Force | Out-Null
@@ -507,6 +508,9 @@ try {
         Write-FakeCommand -Directory $fakeBin -Name $fakeCommand.Name -ExitCode $fakeCommand.ExitCode
     }
     $env:PATH = "$fakeBin$([IO.Path]::PathSeparator)$originalPath"
+    # 构建初始化器会把 PATH 换成固定白名单（防 Win32 error 8），继承的 PATH 不再生效；
+    # 合成垫片必须显式排在白名单之前，否则这些场景会去跑真实 dotnet/npm/tar。
+    $env:L12_TOOL_PATH_FIRST = $fakeBin
     $env:L12_TEST_COMMAND_LOG = $commandLog
 
     $runtimeSourceCompatibility = "f" * 64
@@ -670,6 +674,7 @@ try {
 finally {
     $env:PATH = $originalPath
     $env:L12_TEST_COMMAND_LOG = $originalCommandLog
+    $env:L12_TOOL_PATH_FIRST = $originalToolPathFirst
     if (Test-Path -LiteralPath $fixtureRoot) {
         $resolvedFixtureRoot = (Resolve-Path -LiteralPath $fixtureRoot).Path
         $resolvedFixtureBase = [IO.Path]::GetFullPath($fixtureBase)
