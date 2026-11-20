@@ -822,7 +822,8 @@ const tests = [
     const socket = FakeWebSocket.instances[0]
     sendSuccessfulHandshake(socket, 51)
     await pending
-    await timers.advance(75_000)
+    // 心跳 10 s × 2 次容错：最后一条入站后约 30 s 判定半开连接，不再等 75 s。
+    await timers.advance(30_000)
     assert.equal(socket.closeCalls.at(-1)?.code, 4000)
     assert.equal(net.l12State.connectionIssue, 'websocket')
     await timers.advance(1000)
@@ -837,7 +838,8 @@ const tests = [
     sendSuccessfulHandshake(socket, 52)
     await pending
     for (let i = 0; i < 4; i++) {
-      await timers.advance(25_000)
+      // 每个心跳周期（10 s）内都回应，未答计数不会累到 2。
+      await timers.advance(15_000)
       socket.receive({ type: 'pong' })
     }
     assert.equal(socket.closeCalls.length, 0)
@@ -1691,7 +1693,11 @@ const tests = [
     const socket = FakeWebSocket.instances[0]
     sendSuccessfulHandshake(socket, 92)
     await connected
-    await timers.advance(50_000)
+    // 在线稳态必须靠回应心跳维持：静默 30 s 会被判定半开并转入离线重连。
+    for (let i = 0; i < 3; i++) {
+      await timers.advance(15_000)
+      socket.receive({ type: 'pong' })
+    }
     const fallbackEvents = () => events.filter(event => event.type === 'l12-resource-changed' && event.detail?.fallback).length
     assert.equal(fallbackEvents(), 0, 'online steady state must not poll HTTP resources')
     socket.emitClose(1006, 'network unavailable')
@@ -1700,6 +1706,27 @@ const tests = [
     await timers.advance(1)
     assert.equal(fallbackEvents(), 7,
       'offline fallback must coalesce to one signal per resource after 60 seconds')
+    net.disconnect()
+  }],
+
+  ['an unacknowledged action surfaces a wait hint instead of looking dead', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'pending-hint-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 96)
+    await connected
+    await timers.advance(4_000)
+    assert.doesNotMatch(net.l12State.notice || '', /等待确认/, 'an idle client must not show the wait hint')
+    net.l12State.tutorialAvailable = true
+    const requestId = net.createTutorial('deploy')
+    assert.ok(requestId)
+    assert.equal(net.l12State.pendingAction, true)
+    await timers.advance(3_999)
+    assert.doesNotMatch(net.l12State.notice || '', /等待确认/, 'the normal reply window must stay silent')
+    await timers.advance(1)
+    assert.match(net.l12State.notice || '', /等待确认/,
+      'an action the server never acknowledged must say it is still waiting, not lock silently')
     net.disconnect()
   }],
 ]

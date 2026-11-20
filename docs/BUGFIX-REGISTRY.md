@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## CLIENT-20261120-HEARTBEAT-PENDING-HINT｜心跳收紧与未确认操作提示（本地已验，未部署）
+
+- 来源：《存储与卡顿最终优化方案》§4.3"静默掉线 + 输入锁"。在权威树复核时**推翻了其中一条前提**，见下。
+- 已实现：
+  - 心跳间隔 `25_000` → `10_000`（`startHeartbeat`）。容错仍是 2 次，因此最后一条入站消息后的判死窗口由 **75 s 收到约 30 s**——半开连接不再有 75 s 的"显示在线但点了没反应"。
+  - 未确认操作提示：动作发出后 4 s 内没有对应响应，就在 `notice` 上给出"服务器响应较慢，上一步操作仍在等待确认…"；动作完成或被取消时自动撤掉（`armPendingActionNotice`／`clearPendingActionNotice`，5 个发送点全部接入）。
+- **被推翻的前提（有证据，不得再照旧文档执行）**：原方案要求"断线无条件解锁"。权威树 `net.ts` 的关闭分支对**未协商 requestId** 的连接本来就在任何关闭码下取消（`if (!negotiatedRequestIds || [4001,4002,1008].includes(code)) cancelPendingAction()`）；对**已协商**的连接，保持待重放是既有契约——用例 `a negotiated action remains retryable across disconnect` 明确要求断线后 `pendingAction` 仍为 true，因为服务端按 requestId 幂等重放。抢先解锁会让玩家发出**第二个真实动作**，所以本批只加可见提示、不解锁。
+- 回归：新增 `an unacknowledged action surfaces a wait hint instead of looking dead`（空闲不提示、4 s 内不提示、第 4 s 给出提示）。按新节拍更新 3 条固定时间的既有用例：半开连接判死由 `advance(75_000)` 改 `advance(30_000)`；"回应保持心跳"与"资源回退在线静默"两例改每 15 s 回应一次以维持在线稳态——三条均是节拍耦合，不是放宽断言。
+- 验证：连接恢复契约 `51/51`（含新增 1 条）、UI 契约 `362` 项、`vue-tsc --noEmit` 通过。
+- 未做：`ZoneMovementPresentationLayer` 的批量布局／锁内读 rect（方案 §4.2，属视觉风险项，需前后截图，另批处理）；界面置灰随该批一起做。
+- 回滚：心跳改回 `25_000`、删除提示定时器与两处调用即可；无协议、无存储影响。
+
 ## SNAPSHOT-WIRE-20261120-FRAME-PATH｜全量帧短路与锁内编码（本地已验，未部署）
 
 - 来源：《存储与卡顿最终优化方案》§4.4.1（三行纯浪费）与 §4.5（投影活引用撕裂），在权威树 `a7d94fdc` 复核仍成立；不是新的玩家反馈缺陷。

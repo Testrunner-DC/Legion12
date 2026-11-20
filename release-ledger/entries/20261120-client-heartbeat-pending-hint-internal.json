@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "20261120-client-heartbeat-pending-hint-internal",
+  "date": "2026-11-20",
+  "audience": "internal",
+  "reason": "客户端连接与输入等待的内部机制调整：心跳判死窗口由 75 s 收到 30 s，未确认操作增加等待提示。玩家可见的功能、协议与界面布局均未改变，故不进入玩家更新日志。",
+  "paths": [
+    "opcgpro-vue/src/l12/net.ts"
+  ]
+}

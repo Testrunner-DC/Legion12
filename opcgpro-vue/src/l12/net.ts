@@ -271,6 +271,30 @@ function tutorialProjection(value: unknown): TutorialProjection | null {
     stepId: candidate.stepId.trim(), status: candidate.status }
 }
 
+// 上一步操作等确认时界面不能看起来"点了没反应"：4 s 没有对应响应就给出可见提示。
+// 这里**不解锁**——协商过 requestId 的操作断线后仍按同号重放（服务端按 requestId 幂等），
+// 抢先解锁只会让玩家发出第二个真实动作。
+const PENDING_ACTION_NOTICE_DELAY_MS = 4_000
+const PENDING_ACTION_NOTICE = '服务器响应较慢，上一步操作仍在等待确认…'
+let pendingActionNoticeTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearPendingActionNotice() {
+  if (pendingActionNoticeTimer !== null) {
+    window.clearTimeout(pendingActionNoticeTimer)
+    pendingActionNoticeTimer = null
+  }
+  if (l12State.notice === PENDING_ACTION_NOTICE) l12State.notice = ''
+}
+
+function armPendingActionNotice() {
+  clearPendingActionNotice()
+  pendingActionNoticeTimer = window.setTimeout(() => {
+    pendingActionNoticeTimer = null
+    if (!pendingActionEnvelope) return
+    if (!l12State.notice) l12State.notice = PENDING_ACTION_NOTICE
+  }, PENDING_ACTION_NOTICE_DELAY_MS)
+}
+
 function completePendingAction(responseRequestId?: unknown) {
   if (!pendingActionEnvelope) return
   if (negotiatedRequestIds
@@ -278,12 +302,14 @@ function completePendingAction(responseRequestId?: unknown) {
   pendingActionEnvelope = null
   pendingActionResentAttempt = -1
   l12State.pendingAction = false
+  clearPendingActionNotice()
 }
 
 function cancelPendingAction() {
   pendingActionEnvelope = null
   pendingActionResentAttempt = -1
   l12State.pendingAction = false
+  clearPendingActionNotice()
 }
 
 function cloneDeltaContainer(value: any) {
@@ -540,7 +566,9 @@ function startHeartbeat(socket: WebSocket, onTimeout: () => void) {
       l12State.lastHeartbeatAt = new Date().toISOString()
       socket.send(JSON.stringify({ type: 'ping' }))
     }
-  }, 25_000)
+    // 25 s × 2 次容错 = 最后一条入站后 75 s 才判死，期间界面仍显示在线、点击仍会上锁。
+    // 10 s × 2 次把空白窗口压到约 30 s；服务端 ping 回应是空载，代价可忽略。
+  }, 10_000)
 }
 
 function scheduleReconnect(reason = '') {
@@ -1447,6 +1475,7 @@ export function createTutorial(lessonId: TutorialLessonId) {
   l12State.pendingAction = true
   pendingActionEnvelope = { type: 'createTutorial', lessonId, requestId }
   send(pendingActionEnvelope)
+  armPendingActionNotice()
   if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
   return requestId
 }
@@ -1491,6 +1520,7 @@ export function gameAction(command: Record<string, unknown>) {
   l12State.pendingAction = true
   pendingActionEnvelope = { type: 'gameAction', requestId: createActionRequestId(), command }
   send(pendingActionEnvelope)
+  armPendingActionNotice()
   if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
 }
 
@@ -1501,6 +1531,7 @@ export function sandboxAction(actingPlayerIndex: number, command: Record<string,
     type: 'sandboxAction', requestId: createActionRequestId(), actingPlayerIndex, command,
   }
   send(pendingActionEnvelope)
+  armPendingActionNotice()
   if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
 }
 
@@ -1509,6 +1540,7 @@ export function gmAction(command: Record<string, unknown>) {
   l12State.pendingAction = true
   pendingActionEnvelope = { type: 'gmAction', requestId: createActionRequestId(), command }
   send(pendingActionEnvelope)
+  armPendingActionNotice()
   if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
 }
 
@@ -1520,5 +1552,6 @@ export function refereeGmAction(command: Record<string, unknown>) {
   pendingActionEnvelope = { type: 'gmAction', requestId: createActionRequestId(),
     command: { ...command, refereeMatchId: l12State.game?.matchId } }
   send(pendingActionEnvelope)
+  armPendingActionNotice()
   if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
 }
