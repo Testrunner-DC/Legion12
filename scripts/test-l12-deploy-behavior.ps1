@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param([string]$FixtureBase = "")
 
 $ErrorActionPreference = "Stop"
@@ -1493,6 +1493,15 @@ exec "$L12_TEST_REAL_TAR" "${translated[@]}"
         "Windows 正式部署入口没有在存储预检前激活严格前端资源路由。"
     Assert-True ($prepareStorageIndex -ge 0 -and $prepareStorageIndex -lt $releaseUploadIndex) `
         "Windows 发布入口没有在大运行包上传前完成外置挂载/容量预检。"
+    Assert-True ($windowsDeployText.Contains('"ops/server/nginx-l12-upstream-keepalive.conf"') -and
+        $windowsDeployText.Contains('"ops/server/activate-l12-upstream-keepalive.sh"') -and
+        $windowsDeployText.Contains('"ops/server/nginx-l12-gzip.conf"') -and
+        $windowsDeployText.Contains('"ops/server/activate-l12-gzip.sh"')) `
+        "Windows 发布工具随包清单没有包含文本资产 gzip 与 upstream keepalive 片段及其激活器。"
+    $keepaliveActivationIndex = $windowsDeployText.IndexOf('''$remoteUpstreamKeepaliveActivator'' ''$remoteUpstreamKeepaliveSnippet''', [StringComparison]::Ordinal)
+    $gzipActivationIndex = $windowsDeployText.IndexOf('''$remoteGzipActivator'' ''$remoteGzipSnippet''', [StringComparison]::Ordinal)
+    Assert-True ($keepaliveActivationIndex -ge 0 -and $keepaliveActivationIndex -lt $gzipActivationIndex -and $gzipActivationIndex -lt $prepareStorageIndex) `
+        "Windows 发布入口未按先 keepalive、后 gzip 的顺序激活：keepalive 会把站点裸 proxy_pass 换成 upstream，顺序颠倒时 nginx -t 会失败。"
     Assert-True ($windowsDeployText.Contains('''$remoteSharePageActivator'' ''$remoteSharePageSnippet''') -and
         $windowsDeployText.Contains('rmdir ''$remoteToolDir/ops/server'' ''$remoteToolDir/ops'' ''$remoteToolDir''') -and
         $windowsDeployText.Contains("grep -Fq 'og:title'")) `

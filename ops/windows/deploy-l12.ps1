@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$Server = "root@legion-12.com",
     [string]$KnownHostsFile = "",
@@ -356,6 +356,12 @@ $sharePageActivator = Join-Path $repoRoot "ops\server\activate-l12-share-pages.s
 $sharePageSnippet = Join-Path $repoRoot "ops\server\nginx-l12-share-pages.conf"
 $webAssetsActivator = Join-Path $repoRoot "ops\server\activate-l12-web-assets.sh"
 $webAssetsSnippet = Join-Path $repoRoot "ops\server\nginx-l12-web-assets.conf"
+# 先 keepalive 再 gzip：keepalive 激活器会把站点里的裸 proxy_pass 换成 upstream l12_app_main，
+# 顺序颠倒时 gzip 激活器的 nginx -t 会因 upstream 不存在而失败。
+$upstreamKeepaliveActivator = Join-Path $repoRoot "ops\server\activate-l12-upstream-keepalive.sh"
+$upstreamKeepaliveSnippet = Join-Path $repoRoot "ops\server\nginx-l12-upstream-keepalive.conf"
+$gzipActivator = Join-Path $repoRoot "ops\server\activate-l12-gzip.sh"
+$gzipSnippet = Join-Path $repoRoot "ops\server\nginx-l12-gzip.conf"
 $verifyScript = Join-Path $repoRoot "ops\windows\verify-l12.ps1"
 $originalLocation = Get-Location
 $toolBundle = ""
@@ -520,6 +526,10 @@ try {
     $remoteSharePageSnippet = "$remoteToolDir/ops/server/nginx-l12-share-pages.conf"
     $remoteWebAssetsActivator = "$remoteToolDir/ops/server/activate-l12-web-assets.sh"
     $remoteWebAssetsSnippet = "$remoteToolDir/ops/server/nginx-l12-web-assets.conf"
+    $remoteUpstreamKeepaliveActivator = "$remoteToolDir/ops/server/activate-l12-upstream-keepalive.sh"
+    $remoteUpstreamKeepaliveSnippet = "$remoteToolDir/ops/server/nginx-l12-upstream-keepalive.conf"
+    $remoteGzipActivator = "$remoteToolDir/ops/server/activate-l12-gzip.sh"
+    $remoteGzipSnippet = "$remoteToolDir/ops/server/nginx-l12-gzip.conf"
     $remoteRelease = "$incoming/l12-release-$commit.tar.gz"
     $remoteCardAssets = if ($hasCardAssets) { "$incoming/l12-card-assets-$cardAssetsHashValue.tar.gz" } else { "-" }
     Write-Host "[L12 部署] 上传并安装经过本地验证的发布工具..."
@@ -532,9 +542,13 @@ try {
         "ops/server/activate-l12-share-pages.sh" `
         "ops/server/nginx-l12-share-pages.conf" `
         "ops/server/activate-l12-web-assets.sh" `
-        "ops/server/nginx-l12-web-assets.conf"
+        "ops/server/nginx-l12-web-assets.conf" `
+        "ops/server/activate-l12-upstream-keepalive.sh" `
+        "ops/server/nginx-l12-upstream-keepalive.conf" `
+        "ops/server/activate-l12-gzip.sh" `
+        "ops/server/nginx-l12-gzip.conf"
     Invoke-External scp @sshOptions $toolBundle "${Server}:$remoteToolBundle"
-    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && install -m 0644 '$remoteRuntimeVerifier' /usr/local/libexec/verify-legion12-runtime-backup.py && install -m 0755 '$remoteDrainConsumer' /usr/local/libexec/l12-deployment-drain-consumer.py && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteRuntimeVerifier' '$remoteDrainConsumer' '$remoteWebAssetsActivator' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot' '$releaseArchiveBytes' '$systemUploadReserveBytes' '$($manifest.releaseSha256)'"
+    Invoke-External ssh @sshOptions $Server "install -d -m 0700 '$remoteToolDir' && tar -xf '$remoteToolBundle' -C '$remoteToolDir' && rm -f '$remoteToolBundle' && sed -i 's/\r$//' '$remoteBootstrap' '$remoteDrainConsumer' '$remoteWebAssetsActivator' '$remoteUpstreamKeepaliveActivator' '$remoteGzipActivator' && install -m 0755 '$remoteBootstrap' /usr/local/sbin/deploy-legion12-release && install -d -m 0755 /usr/local/libexec && install -m 0755 '$remoteHealthVerifier' /usr/local/libexec/verify-legion12-health.mjs && install -m 0644 '$remoteRuntimeVerifier' /usr/local/libexec/verify-legion12-runtime-backup.py && install -m 0755 '$remoteDrainConsumer' /usr/local/libexec/l12-deployment-drain-consumer.py && chmod 0755 '$remoteWebAssetsActivator' && '$remoteWebAssetsActivator' '$remoteWebAssetsSnippet' && chmod 0755 '$remoteUpstreamKeepaliveActivator' && '$remoteUpstreamKeepaliveActivator' '$remoteUpstreamKeepaliveSnippet' && chmod 0755 '$remoteGzipActivator' && '$remoteGzipActivator' '$remoteGzipSnippet' && rm -f '$remoteBootstrap' '$remoteHealthVerifier' '$remoteRuntimeVerifier' '$remoteDrainConsumer' '$remoteWebAssetsActivator' '$remoteUpstreamKeepaliveActivator' '$remoteUpstreamKeepaliveSnippet' '$remoteGzipActivator' '$remoteGzipSnippet' && /usr/local/sbin/deploy-legion12-release prepare-storage '$ServerArtifactRoot' '$releaseArchiveBytes' '$systemUploadReserveBytes' '$($manifest.releaseSha256)'"
 
     Write-Host "[L12 部署] 上传预构建运行包..."
     Invoke-External scp @sshOptions $releaseArchive "${Server}:$remoteRelease"
