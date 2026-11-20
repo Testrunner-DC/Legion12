@@ -6272,3 +6272,13 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
 - 由主线执行并完成 B0–B6 本地收口；未部署、未写线上配置。B0–B5 既有预算、读模型、房间闸门、HTTP/平台观测、出站和聊天上限通过新增专项契约；B6 已将 `net.ts` 增量状态重建改为路径写时复制，并为手牌分支补隔离复制。
 - 专项契约 `19/19`、B6 `10/10`、事件窗口 `32/32`、手牌差量 `29` 案例通过；性能架构整组、前后端构建和双产物构建通过。详细证据见 `docs/PERFORMANCE-B0-B6-20261114.md`。
 - 线上容量、公网延迟、真实浏览器 FPS 和发布候选仍未在本批宣称；后续只有在明确部署授权后才做 Release／两服验证。
+
+# 2026-11-20 交接勘误｜三条"线上阻断"结论作废
+
+- 状态：仅文档记录勘误，不改产品代码、不改发布包、不改正式服、不改维护。证据为 2026-11-20 13:02 Asia/Shanghai 的实测复核。
+- 作废结论一：GitHub SSH 不可达。实测 `ssh -T git@github.com` 认证成功；先前失败源于 Codex 自带 `ssh.exe` 的 `Win32 error 5`，不是网络。改用系统 OpenSSH 即可，无需 force-push 或改 `origin/main`。
+- 作废结论二：部署公钥丢失需经服务商控制台恢复。实测已授权公钥 `SHA256:ZWYKCWbtujvI4yVUGl610IZOTcXKfo8D+aT2b4bO9v0`（`C:\Users\neptu\.ssh\id_ed25519`）配合固定 pinned known_hosts 可公钥登录 `root@154.201.80.91`；被拒的 `secrets/ssh-l12-codex/id_ed25519` 是另一把未授权密钥。
+- 作废结论三：`secrets/legion12_known_hosts` 可用于当前连接。该文件仍为重装前旧主机项，仅存历史；当前绑定为 pinned known_hosts 的 `SHA256:RUD26iAbAoApLNZw2Nl9b4hvx0yolbslbfZZOAGrj5o`。
+- 基线不变：HEAD=`37d0be72` 干净、`origin/main`=`af17b7e9`、两包 SHA 逐字节一致、正式服 `af17b7e9` / `ok` / `maintenance=false` / `NRestarts=0`；`local_release_passed_remote_deploy_pending` 仍成立。
+- 边界：`AGENTS.md` 过期路径与 HANDOFF 历史归档拆分不在本批，原因是 `deploy-l12.ps1` 的已验收绑定只容忍相对 `37d0be72` 的具名 `M` 文档修改，新增文件或改 `AGENTS.md` 会使已验收 manifest 失去可部署性。这两项排到本批部署完成之后独立处理。
+- 验证：本批为文档改动，按 `AGENTS.md` 文档类映射校验执行，不触发应用 Release、不重建包、不部署、不改维护。

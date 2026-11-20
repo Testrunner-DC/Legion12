@@ -1,5 +1,16 @@
 # 十二军团简短交接
 
+## 2026-11-20 交接勘误：三条"线上阻断"结论作废（实测复核）
+
+- 本节取代本文件后续所有"GitHub 不通""部署公钥被拒""只能走 noVNC"的同类结论，也取代 `artifacts/handoff-20261120/` 与 `DEPLOY-HK.md` 中同源描述。旧记录的失败是真实发生的，但**归因错误**，不得再据其安排动作或索要新授权。
+- 基线复核（2026-11-20 13:02 Asia/Shanghai 实测）：`codex/unified-release-20261106` 工作树干净、HEAD=`37d0be72`、`origin/main`=`af17b7e9`；Release 包 SHA256 `53c8beba71e6498ba351d6fb8f763d8b07ad92888813bfad4c83883dda586749` 与卡图包 `a66976e6879eca92fea031495b4e0d1654f606606c8d775ad5e35b2f268eec5b` 逐字节复核一致；正式服 `/health` 读回 `serverVersion=af17b7e9…`、`status=ok`、`maintenance=false`、`cards=324`，`legion12-test.service` active 且 `NRestarts=0`。`local_release_passed_remote_deploy_pending` 仍然成立。
+- 勘误一（GitHub 通路未断）：`ssh -T git@github.com` 实际返回 `Hi Testrunner-DC! You've successfully authenticated`，22 与 443 端口均可认证。先前失败是 Codex 自带 git 的 `ssh.exe` 报 `couldn't create signal pipe, Win32 error 5`，改用系统 `C:\WINDOWS\System32\OpenSSH\ssh.exe`（经 `GIT_SSH_COMMAND`）即恢复。不是 DNS、也不是网络不可达；因此不得手工改写 `origin/main`，也不需要 force-push。
+- 勘误二（部署公钥未丢失）：被正式服拒绝的是 `secrets/ssh-l12-codex/id_ed25519`，其公钥指纹为 `SHA256:1n/yYUq0mu+HcjBRKdT66kgiqzgc+gMNn7hKL826pYU`，本就不是已授权公钥。已授权公钥指纹 `SHA256:ZWYKCWbtujvI4yVUGl610IZOTcXKfo8D+aT2b4bO9v0` 对应 `C:\Users\neptu\.ssh\id_ed25519`；以该私钥配合固定 pinned known_hosts、`BatchMode=yes`、`PreferredAuthentications=publickey` 对 `root@154.201.80.91` 公钥登录一次成功，读回主机名 `ser550468033481`。故"公钥丢失、须经 Tisula 控制台恢复或重置密码"不成立，也不需要把 noVNC 当部署通路。
+- 勘误三（主机指纹用错文件）：`secrets/legion12_known_hosts` 内仍是重装前的旧主机项（`…IK7zDzJDfZJI…`），`DEPLOY-HK.md` 已注明仅存历史、不得用于当前连接。当前唯一可用绑定是 `artifacts/security-reinstall-prep-20261009/ssh-reinstall-pinned-20261011.known_hosts` 中 `154.201.80.91` 项，指纹 `SHA256:RUD26iAbAoApLNZw2Nl9b4hvx0yolbslbfZZOAGrj5o`。
+- 勘误四（`AGENTS.md` 过期路径）：`AGENTS.md` 第 74 行称 canonical checkout 为 `D:\GPT\Legion12\app`，实测该树落后 `origin/main` **1002 个提交**且自身为脏（`HANDOFF.md`、`TASK-LEDGER.md` 已改）。权威树仍为 `worktrees/lubu-pingyang-20261001`；在 `AGENTS.md` 修正落地前，以其本句为准者一律作废。
+- 部署可用性约束（勿破坏）：`ops/windows/deploy-l12.ps1` 的已验收绑定只容忍相对 `37d0be72` 的 `M` 修改，且路径限 `docs/HANDOFF.md`、`docs/TASK-LEDGER.md`、`docs/BUGFIX-REGISTRY.md`、`docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md`、`ops/windows/deploy-l12.ps1`、`ops/server/deploy-l12-release.sh`、`scripts/test-l12-deploy-behavior.ps1`。任何**新增文件（`A`）**或改动 `AGENTS.md` 等其他文档都会使 `Test-L12AcceptedApplicationBinding` 返回 `false` 并拒绝部署，只能重跑完整 Release 换取新 manifest。因此 `AGENTS.md` 修正与 HANDOFF 历史归档拆分必须等本批部署完成后再做。
+- 仍待办（未因勘误而消失）：`37d0be72` 尚未推送、尚未部署，正式服切换仍需本批明确授权；Bug 队列仍缺新鲜 CAS 快照；DPAPI 管理员凭据的归属限制未变。
+
 ## 2026-11-16 请求超时专项优化（本地已验，未部署）
 
 - 三路专项排查确认：前端全局并发协调器原先把排队时间计入 10 秒读请求预算，超过 4 个并发 GET 时请求可能尚未发出就被统一显示为“请求超时”；正式服后端同时存在 420–480MB 全量快照写入持有全局平台锁约 9–12 秒、历史排队峰值约 770 秒。SQLite `quick_check`/`integrity_check` 正常，服务端已有 `platform.lock-wait`、`platform.lock-hold`、`storage_unavailable`、499 与 correlationId 观测，本批不改事务语义或盲目抬高锁/数据库超时。
