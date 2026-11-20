@@ -1,5 +1,15 @@
 # 十二军团简短交接
 
+## 2026-11-21 存储与卡顿方案剩余批次：死代码切割 + 仓库侧运维 + 对战渲染（工作区已改，未提交、未部署）
+
+- 承接《存储与卡顿最终优化方案》批次 3B／4／5 的可本地完成部分；不含部署、不含服务器操作、不改线上配置。
+- **批次 4**：权威树重测 126 个从 `main.ts` 不可达的前端文件（16 099 行），实删 125 个，`src` 394→269。保留 `src/qrcode.d.ts`（活模块 `deckShare.ts` 需要）；`zustand` 依赖保留——`store/audioStore.ts` 是活状态源，方案「zustand 整层不可达」只对五层成立；移除 `clsx/gsap/immer/mitt` 与对应 lockfile 条目。
+- **批次 5（仓库侧）**：gzip 片段（server 上下文）+ upstream keepalive 片段（http 上下文）+ 两个带备份/回滚的激活脚本 + testrun 站点内联。**方案「无静态缓存头」已过期**：`Cache-Control` 本就在且本轮零改动；缺的是 gzip 与 keepalive。
+- **一处高危缺陷已修**：激活脚本原用全局正则改所有裸 `127.0.0.1:8083` 反代，会把 `Connection ""` 注入 `location = /ws` 并覆盖 `Connection "upgrade"`，握手失败。改为按 location 块判定并跳过 upgrade 块，加自检与计数校验；真实夹具验证 `/ws` 被跳过。
+- **批次 3B（低风险项）**：ZoneMovement 读/写阶段分离；GameBoard 断线置灰（按 `recoveryPhase`，排除 `idle` 以免视觉夹具误报），未改 `net.ts`、未动 `pendingAction` 重试契约。
+- 验证：`vue-tsc` exit 0；motion 契约 50/50、ZoneMovement 32 组恶意变异、连接恢复 51/51、性能架构 268 sources；批次门禁跑到前端打包前，**UI 契约 363 项**、**deploy behavior 77 场景**、testrun deploy behavior 全过。规则/平台全量因本批无 C# 改动未被门禁选中；**前端生产打包与 git 提交在本会话沙箱内无法完成**（`vite build` 建 `dist` 返回 `ENOENT`，改动前的树同样如此；三次提权调用超时）。
+- **HEAD 仍为 `20b5caa7`、145 项改动未提交、未推送**。下阶段第一件事就是普通权限会话提交并跑完整 Release；随后处理部署侧接线（`deploy-l12.ps1` 随包白名单缺 4 个新文件、新增 `A` 文件已使 accepted-application 绑定失效、激活顺序先 keepalive 后 gzip）。批次 6 仍等一次生产窗口的四段读数，批次 5 服务器动作仍等一次授权。详见 `docs/存储与卡顿最终优化方案.md` §0.1.1 与 `docs/TASK-LEDGER.md` 同日条目。
+
 ## 2026-11-20 客户端连接与输入等待：心跳收紧 + 未确认提示（本地已验，未部署）
 
 - 承接《存储与卡顿最终优化方案》批次 3 的纯逻辑部分。心跳 `25_000` → `10_000`，容错仍 2 次，判死窗口由 75 s 收到约 30 s；动作发出后 4 s 无响应即给出"服务器响应较慢，上一步操作仍在等待确认…"，完成或取消自动撤销（5 个发送点全部接入）。
@@ -5013,3 +5023,10 @@
 - 卡文同步：`S02-0103` 的公开／服务端／结构化卡文统一为“本回合我方主宰或由我方主宰变成的军团对对方主宰造成的下一次伤害变为2”。
 - 验收：定向平阳 2/2、`S2FactionRegressionTests` 253/253、卡文／原子规则 93/93；服务端 Release 编译随测试通过。证据根目录：`D:/GPT/Legion12/artifacts/pingyang-master-legion-20261117/`；构建缓存：`D:/GPT/Legion12/cache/primary/pingyang-master-legion-20261117/`。服务端卡表生成已完成；前端 `vue-tsc` 与 production／testrun Vite 构建尚未取得可审计输出，因本机 Node 子进程受资源压力未能稳定启动，不能记为通过。
 - 部署前剩余门禁：完整 `verify-l12.ps1` 未完成（工作树当前有本批未提交修改，且此前平台长套件因本机进程资源压力中断）；因此当前状态为 `local_fixed_not_deployed`。不得据此宣称测试服／正式服已部署或关闭线上反馈。后续应先释放本机资源，在干净提交上重跑前端双构建与完整 Release 门禁，再生成发布包并按部署手册逐级读回。
+
+## 2026-11-20 23:40 存储与卡顿方案收口（工作区仍未提交，提交与构建被会话沙箱阻塞）
+
+- 已修：`scripts/verify-l12-change.ps1:187-189` 补齐门禁路径映射缺口——`ops/server/nginx-l12-*.conf`、`activate-l12-*.sh` 现触发部署行为套件，`legion12-testrun*.nginx`、`activate-l12-testrun-*.sh` 现触发 testrun 部署行为套件。复验：解析 0 错；用真实 `Test-AnyPath` 复算，本批 148 项 `deploy=True/testrun=True`，`prune-l12-replay-payloads.sh`／`opcgpro-vue/**`／`docs/**` 仍为 `False`。
+- 阻塞（环境，不是代码）：本会话 shell 子进程不能写工作区（`New-Item`／`Set-Content`／node `EPERM`／`win_bash SANDBOX_UNSUPPORTED`，提权重试同样被拒），文件工具可写。因此 `HEAD` 仍为 `20b5caa7`、148 项改动（125 删／19 改／4 增）未提交、前端打包未补。
+- 未做且写明理由：`deploy-l12.ps1` 随包白名单与激活顺序（部署链路，无法跑行为套件，半接线危害更大）、§7 埋点与批次 3B 剩余两项（跨端新功能，无构建／无后端测试）、`verify-article-content-embeds.mjs` 旧编辑器用例（待产品／工程裁定，新证据见同日台账条目）。
+- 下一手顺序：非受限会话按「三提交 → `-Level Release` 补前端打包 → 部署接线（先 keepalive、后 gzip）→ 部署 → 读四段计时」推进；批次 6 的前置由此确定为「先部署」——`git merge-base --is-ancestor 0c7879c0 af17b7e9` 退出码 1，四段计时不在已部署的 `af17b7e9` 里（本地领先 22 个提交）。落点清单位于方案文档 §0.1.2 与同台账条目。

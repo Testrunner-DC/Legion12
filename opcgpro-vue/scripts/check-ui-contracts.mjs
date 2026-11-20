@@ -148,7 +148,6 @@ const constructionRuleEditor = read('../src/l12/site/ConstructionRuleEditor.vue'
 const adminArticles = read('../src/l12/site/AdminArticlesPanel.vue')
 const adminSiteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
 const mediaUploadField = read('../src/l12/site/MediaUploadField.vue')
-const articleBlockEditor = read('../src/l12/site/ArticleBlockEditor.vue')
 const articleDocumentEditor = read('../src/l12/site/ArticleDocumentEditor.vue')
 const articleCaptionTextareas = [...articleDocumentEditor.matchAll(/<textarea\b[^>]*>/g)].map(match => match[0])
 const articleHasOnlyCaptionTextarea = articleCaptionTextareas.length === 1 && articleCaptionTextareas.every(tag =>
@@ -182,7 +181,6 @@ const deckShare = read('../src/l12/site/deckShare.ts')
 const deckLibrary = read('../src/l12/site/DeckLibraryPage.vue')
 const publicDeckDetail = read('../src/l12/site/PublicDeckDetailPage.vue')
 const deckProfile = read('../src/l12/DeckProfile.vue')
-const legacyLobby = read('../src/l12/LobbyPage.vue')
 const tournamentCenter = read('../src/l12/site/AdminTournamentWorkbench.vue')
 const wsSmoke = read('../../scripts/ws-smoke.mjs')
 const wsServer = read('../../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
@@ -388,9 +386,9 @@ const contracts = [
     && cardArchive.includes('@click="cycleModalVersion(-1)"') && cardArchive.includes('@click="cycleModalVersion(1)"')
     && globalStyle.includes('.archive-modal{') && globalStyle.includes('.archive-modal-image.horizontal{')
     && globalStyle.includes('aspect-ratio:8/5'), '全卡池与画廊必须支持双击卡图或聚焦卡位按Enter打开同一L12详情模态框；全卡池多版本大图保留左右三角并同步全部详情，Space只选择且版本箭头不得冒泡误开；详情按卡类显示真实维度、保留效果换行和横版方向，并支持关闭、遮罩、Esc与焦点恢复'],
-  [cardArchive.includes('<h1>卡牌图鉴</h1>') && legacyLobby.includes('<h2>卡牌图鉴</h2>')
+  [cardArchive.includes('<h1>卡牌图鉴</h1>')
     && cardArchive.includes('aria-label="卡牌图鉴子页"') && cardArchive.includes('>全卡池</button>') && cardArchive.includes('>画廊</button>')
-    && ![cardArchive, legacyLobby, sandboxPicker, gmPanel, adminCardAnalytics, ruleCenter].some(source => source.includes('卡牌档案')), '全站用户可见名称必须统一为“卡牌图鉴”，主标题保持“卡牌图鉴”，子页签必须为“全卡池／画廊”，不得残留旧称“卡牌档案”'],
+    && ![cardArchive, sandboxPicker, gmPanel, adminCardAnalytics, ruleCenter].some(source => source.includes('卡牌档案')), '全站用户可见名称必须统一为“卡牌图鉴”，主标题保持“卡牌图鉴”，子页签必须为“全卡池／画廊”，不得残留旧称“卡牌档案”'],
   [decks.includes('function normalizeCardDimensions(card: DeckCard)')
     && decks.includes("card.cardType === 'master'") && decks.includes('cost: undefined, troops: undefined')
     && cardDetailContent.includes('hasCostDimension(card)'), '主宰只有血量维度；卡牌图鉴、筛选与详情不得把错误源数据中的数值展示为费用或兵力'],
@@ -452,6 +450,7 @@ const contracts = [
   [zoneMovementLayer.includes("event.type === 'play'") && zoneMovementLayer.includes("event.type === 'put' || event.type === 'enter'") && zoneMovementLayer.includes("event.type === 'move'") && zoneMovementLayer.includes("event.type === 'counter-set'") && zoneMovementLayer.includes(':src="CARD_IMAGE_PLACEHOLDER"') && zoneMovementLayer.includes('covered: card?.hidden === true') && !zoneMovementLayer.includes("event.type === 'counter-set' ||"), '跨区域动画必须覆盖打出、登场、位移和盖伏；未知身份使用全局统一主牌库卡背，拥有者已知盖伏卡仍显示灰置卡面'],
   [visualTransitionProjection.includes("if (isAuthoritativePublicFaceMovement(event, from, to) && card?.cardId && card.cardId !== 'hidden-card') return false") && visualTransitionProjection.includes("if (from === 'library') return true") && visualTransitionProjection.includes("if (!card || event.type === 'counter-set') return true") && visualTransitionProjection.includes("if (!card.cardId || card.cardId === 'hidden-card') return true") && visualTransitionProjection.includes('return card.hidden === true && card.identityKnown !== true') && zoneMovementLayer.includes('const concealed = isMovementCardConcealed(event, card, from, to)') && !zoneMovementLayer.includes('const concealed = !card || card.identityKnown === false'), '已公开且携带真实身份的牌库弃牌与墓地回库在飞行中必须使用权威正面；其他牌库起点、无卡身份、占位卡或真正未知盖伏卡仍保持正式卡背'],
   [actionLayer.includes('lastSequence = highest') && visualTransitionProjection.includes('state.lastSequence = Math.max(state.lastSequence, highest)') && zoneMovementLayer.indexOf('claimFreshMovementEvents(props.events, movementClaims)') < zoneMovementLayer.indexOf('await nextTick()') && board.includes(':paused="passivePresentationPaused"'), '阶段条与跨区域卡牌动画必须以首次事件序列建立基线；区域移动在首个 await 前原子认领事件，并在既有展示/掷骰动画播放时排队'],
+  [board.includes('data-l12-board-unavailable="true"') && board.includes("'board-unavailable': boardInteractionSuspended") && board.includes("const unavailableRecoveryPhases = ['disconnected', 'snapshot-mismatch', 'opening-websocket', 'authenticating']") && !board.includes("unavailableRecoveryPhases.includes('idle')") && board.includes('.board-unavailable .stage-layout{pointer-events:none}'), '连接断开时必须置灰并撤销棋盘交互；idle（无 socket 的视觉夹具）不得被当作断线，否则既有截图契约会把正常棋盘判成停用'],
   [zoneMovementLayer.includes("event.type === 'mill'") && visualTransitionProjection.includes("event.type === 'mill'") && zoneMovementLayer.includes("from = 'library'; to = 'graveyard'") && zoneMovementLayer.includes('draft.disasterReveal || draft.authoritativeFace ? null') && zoneMovementLayer.includes(':key="active.key"'), '牌库弃牌必须按事件 cards 顺序进入统一移动队列，从牌库锚点使用权威正面逐张播放且不得反向克隆最终 DOM 或复用同 sequence 的 DOM'],
   [actionAudio.includes('createOscillator()') && actionAudio.includes('useAudioStore.getState()') && !actionAudio.includes('playBgm') && !actionAudio.includes('new Audio('), '基础动作音效必须使用本地程序化短音效、遵循音效设置且不得增加 BGM 或远程音频依赖'],
   [actionLayer.includes('pointer-events:none') && actionLayer.includes('html[data-l12-animation="off"]') && !actionLayer.includes('prefers-reduced-motion') && !actionLayer.includes('action-mask'), '基础动作动画必须无蒙版、不可阻塞操作并遵循游戏内关闭动画设置'],
@@ -1049,8 +1048,8 @@ const contracts = [
     && sandbox.includes("selectorTarget = 'sandbox-player'") && sandbox.includes("selectorTarget = 'sandbox-opponent'")
     && !sandbox.includes('operationsPolicy') && !sandbox.includes('<select v-model="playerDeckName"')
     && !sandbox.includes('<select v-model="opponentDeckName"'), '沙盒双方必须复用同一保存牌库选择器，且不得套用赛季禁限卡或退回原生下拉'],
-  [[deckEditor, deckLibrary, lobby, sandbox, legacyLobby, savedDeckSelector].every(source => /import DeckCover from/.test(source) && /<DeckCover\b/.test(source)), '牌库编辑器、牌库页、对战房间、共享选择器和沙盒的封面必须统一接入 DeckCover'],
-  [!deckLibrary.includes('<div class="banner-strip">') && !lobby.includes('<div class="deck-thumb">库</div>') && !legacyLobby.includes('class="commander-glyph">{{ deck.'), '牌库封面不得恢复独立裁切条或“库”占位图替代共享封面'],
+  [[deckEditor, deckLibrary, lobby, sandbox, savedDeckSelector].every(source => /import DeckCover from/.test(source) && /<DeckCover\b/.test(source)), '牌库编辑器、牌库页、对战房间、共享选择器和沙盒的封面必须统一接入 DeckCover'],
+  [!deckLibrary.includes('<div class="banner-strip">') && !lobby.includes('<div class="deck-thumb">库</div>'), '牌库封面不得恢复独立裁切条或“库”占位图替代共享封面'],
   [playerMat.includes('const displayMoraleSlots = computed') && playerMat.includes('payable(right.resource) - payable(left.resource)') && playerMat.includes('rank(left.resource) - rank(right.resource)') && playerMat.includes("isGodPower ? (tapped ? 2 : 0) : (tapped ? 3 : 1)") && playerMat.includes(':key="morale.instanceId"') && playerMat.includes('inspectOrSelectMorale(morale.instanceId)') && board.includes(':key="choice.id"') && board.includes('togglePaymentResource(choice.id)'), '费用资源必须优先展示当前可支付实例，再按状态排序，桌面与大面板均必须保留真实士气实例 ID 作为支付与返还目标'],
   [playerMat.includes('class="god-power-logo"') && playerMat.includes('sepia(1) saturate(3.2)') && playerMat.includes('border-color:#f4dda1'), '神力必须使用淡黄色 Logo 与独立描边，不能继续与白色士气图标混淆'],
   [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)")

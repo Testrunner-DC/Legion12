@@ -372,6 +372,14 @@ const replayCardPresentationBusy = computed(() => Boolean(props.replayPlaybackSp
 )))
 const synchronizingAuthoritySnapshot = computed(() => !props.replayPlaybackSpeed
   && l12State.status === 'connecting' && l12State.recoveryPhase !== 'snapshot-acknowledged')
+// Recovery phases in which the socket is demonstrably not carrying our authority.
+// 'idle' is deliberately excluded: visual contract fixtures mount this board with
+// no socket at all, and a board that never connected is not "suspended". Once a
+// connection drops, net.ts sets status 'offline' and one of these phases, so the
+// board must stop pretending it can still accept actions.
+const unavailableRecoveryPhases = ['disconnected', 'snapshot-mismatch', 'opening-websocket', 'authenticating']
+const boardInteractionSuspended = computed(() => !props.replayPlaybackSpeed
+  && unavailableRecoveryPhases.includes(l12State.recoveryPhase))
 let presentationBoundaryMatchId = props.game.matchId
 let presentationBoundaryRevision = props.game.revision
 watch(() => [props.game.matchId, props.game.revision, synchronizingAuthoritySnapshot.value,
@@ -1642,8 +1650,12 @@ function statusTexts(card: Card) {
 </script>
 
 <template>
-  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'referee-both-hands': readOnly && refereeLiveView && showBothHands, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt), 'board-control-expanded': !boardControlMinimized && Boolean(gmPlacement || boardTargetPrompt || boardSlotPrompt) }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
+  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'referee-both-hands': readOnly && refereeLiveView && showBothHands, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt), 'board-control-expanded': !boardControlMinimized && Boolean(gmPlacement || boardTargetPrompt || boardSlotPrompt), 'board-unavailable': boardInteractionSuspended }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined" :data-l12-board-unavailable="boardInteractionSuspended ? 'true' : undefined">
     <MobileBattleDock v-if="mobileLandscapeViewport" />
+    <div v-if="boardInteractionSuspended" class="board-unavailable-veil" data-l12-board-unavailable="true" role="alert" aria-live="assertive">
+      <p>连接已断开，操作已暂停</p>
+      <small>{{ l12State.retryCount ? '第 ' + l12State.retryCount + ' 次重连尝试' : '正在等待连接恢复' }}</small>
+    </div>
     <Teleport :to="landscapeTeleportTarget()">
       <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
     </Teleport>
@@ -2173,6 +2185,15 @@ function statusTexts(card: Card) {
 @media (max-width:430px) and (min-height:700px) and (orientation:portrait){:global(html[data-l12-rotated=true] .public-reveal-animation){top:calc((100dvw - 64px)/2);width:min(560px,calc(100dvh - 180px));min-width:0;max-width:none;grid-template-columns:80px minmax(0,1fr);align-items:center;justify-items:stretch;gap:8px}:global(html[data-l12-rotated=true] .public-reveal-cards .l12-card-image){width:80px;height:112px}:global(html[data-l12-rotated=true] .public-reveal-cards .l12-card-image.horizontal){width:80px;height:auto}:global(html[data-l12-rotated=true] .public-reveal-animation strong){max-height:calc(100dvw - 88px);overflow-y:auto}}
 @media (max-width:430px) and (min-height:700px) and (orientation:portrait){:global(html[data-l12-rotated=true] .public-reveal-animation--entry-continuation){width:min(420px,calc(100dvh - 180px));grid-template-columns:minmax(0,1fr)}}
 .battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
+/* A dropped socket must read as "nothing will happen", not as a live board. The
+   veil is a sibling overlay on purpose: a filter or opacity on .stage-layout
+   would create a containing block for the fixed-position presentation ghosts and
+   move their pixels. Interaction is withdrawn from the layout only, so the
+   authority lease bookkeeping and the pending-action retry contract are untouched. */
+.board-unavailable .stage-layout{pointer-events:none}
+.board-unavailable-veil{position:absolute;inset:0;z-index:960;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:not-allowed;background:rgba(8,7,13,.58);backdrop-filter:grayscale(1) saturate(.35);-webkit-backdrop-filter:grayscale(1) saturate(.35)}
+.board-unavailable-veil p{margin:0;color:#f0e6d2;font-size:var(--l12-board-copy,15px);font-weight:900}
+.board-unavailable-veil small{color:rgba(240,230,210,.72);font-size:var(--l12-board-meta,12px)}
 
 </style>
 <style scoped src="./GameBoard.mobile.css"></style>

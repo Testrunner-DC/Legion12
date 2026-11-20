@@ -1,5 +1,19 @@
 # Legion12 服务器存储维护方案
 
+## 2026-11-20 弱网与首屏：gzip 与 /api upstream keepalive（仓库侧配置，需部署才生效）
+
+- 本批只补仓库侧配置与激活脚本：未部署、未登录服务器、未改线上。新片段必须在服务器上执行对应激活脚本并完成 `nginx -t` + `systemctl reload nginx` 后才生效；激活失败时脚本会按自身备份自动回滚。
+- 服务器侧操作不在本批范围：本批不做全库 `VACUUM`／重建数据库、不改 systemd journald 封顶，也不改 `L12_STORAGE_CLEANUP_BUDGET_SECONDS`（10→30）。这些属于另一条运维线，不能据本文档宣称已生效。
+- 文本资产压缩：主站用 `ops/server/nginx-l12-gzip.conf`（include 在 legion-12.com 的 HTTPS server 块内，由 `ops/server/activate-l12-gzip.sh` 安装片段并插入 include 行）；testrun 站点在 `ops/server/legion12-testrun.nginx` 的 443 server 块内用同一批指令内联。两侧同构：`gzip on` / `gzip_proxied any` / `gzip_vary on` / `gzip_comp_level 5` / `gzip_min_length 1024` 与同一份文本 `gzip_types` 允许清单，任何一侧调整都必须同步另一侧。
+- 阈值理由：压缩有约 18 字节固定头尾开销并要按请求调用压缩，小于 1 KiB 的错误 JSON、健康检查和短元数据压缩后常只省几十字节，收益低于成本；而真正要压的 `index.html`、`/assets/*.js|css`、`/data/*.json` 与 API JSON 都远超 1 KiB，因此 1024 不牺牲实际收益。已压缩格式（jpeg/png/webp/avif/gif、`video/*`、`audio/*`、字体、zip/pdf）刻意不列入允许清单，避免二次压缩白耗 CPU；`text/html` 由 nginx 在 `gzip on` 时无条件压缩。
+- `/api` keepalive：主站用 `ops/server/nginx-l12-upstream-keepalive.conf`（`upstream l12_app_main`，由 `ops/server/activate-l12-upstream-keepalive.sh` 安装并把 include 行插进 `/etc/nginx/nginx.conf` 的 `http` 块，同时把主站 `/api` 前缀反代的 `proxy_pass` 指向该 upstream）；testrun 用 `ops/server/legion12-testrun.nginx` 顶部的 `upstream l12_testrun_app` 与其 `/api/` 前缀 location。
+- 主站的 `/api` location 本身不在本仓库里（由服务器上的站点配置维护），因此激活脚本只在原 location 内部做三件事：把裸 `proxy_pass http://127.0.0.1:8083;` 换成 upstream，补 `proxy_http_version 1.1;` 与 `proxy_set_header Connection "";`；其余指令一律不动。站点里找不到该裸形式（例如已经写成带路径目标）时脚本直接失败回滚，不猜测改写。
+- keepalive 三件套两侧都齐全：`proxy_http_version 1.1;`、`proxy_set_header Connection "";`、upstream 块内 `keepalive 32;`；缺任何一件 nginx 仍按 HTTP/1.0 逐请求建连，弱网下每个接口多付一次握手。带路径的反代（`/ws`、`/_l12/share-page`、站点素材上传）保持直连：WebSocket 需要 `Upgrade`，64m 大文件上传不应长期占用 keepalive 池。
+- 指令上下文与继承：`upstream` 只能出现在 http 上下文（写进 server/location 会让 `nginx -t` 失败），`gzip_*` 放在 server 上下文。两处都不含 `add_header`，因此不会触发"子层出现 add_header 会覆盖父层同名集合"，既有安全头与 `Cache-Control` 全部保持继承关系。
+- 既有 `Cache-Control` 语义零改动：本批没有删除或改写任何 `add_header Cache-Control` 行，`public, max-age=31536000, immutable`／`public, max-age=300, must-revalidate`／`no-cache`／`no-store` 以及四个 `proxy_hide_header Cache-Control` 全部保留。
+- 部署前置与顺序：必须先安装 keepalive 片段（upstream 不存在时站点里的 `proxy_pass http://l12_app_main;` 会让 `nginx -t` 失败），再安装 gzip 片段；两步都先 `nginx -t` 再 reload。`ops/windows/deploy-l12.ps1` 的随包文件清单本批未改动（保持已验收绑定），新增的两个片段与两个激活脚本需按既有方式随发布工具上传后再执行。
+- 回滚与核对：`activate-l12-gzip.sh` 会移除 include 行并恢复旧片段，`activate-l12-upstream-keepalive.sh` 会恢复 `nginx.conf`、站点文件与旧片段，两者都自带 `nginx -t` + reload 回滚路径。核对命令：`nginx -T | grep -F 'gzip_min_length 1024;'`、`nginx -T | grep -F 'upstream l12_app_main {'`、`curl -sH 'Accept-Encoding: gzip' -D- -o /dev/null https://legion-12.com/assets/<hashed>.js | grep -i 'content-encoding: gzip'`。
+
 ## 2026-10-24 测试备份长期受控轮转规则
 
 - 人类明确批准call_1761ca532bb649bcabaf9cad6506bd40：“批准测试服这条长期轮转规则”。仅限正式节点上的`/opt/legion12-testrun-deployment/runtime-backups`及对应测试工具；同目标、同保留边界和同风险的后续执行不重复申请。正式服备份、定时任务和服务重启不在本授权内。

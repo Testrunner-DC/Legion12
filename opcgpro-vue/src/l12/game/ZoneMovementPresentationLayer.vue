@@ -1182,6 +1182,9 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
   const hasMovement = drafts.length > 0
   const generation = viewportGeneration
   const preparation = hasMovement ? beginPreparationBatch(generation) : null
+  // Read phase: resolve every event's source pixels and geometry before this
+  // batch writes any DOM node. Interleaving the two made the browser re-lay out
+  // the board once per event of the same snapshot.
   const starts = drafts.map(({ draft }) => {
     // A disaster is revealed from its dedicated deck/active-disaster anchor,
     // not cloned from the newly visible session thumbnail.  Using that
@@ -1230,8 +1233,14 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     draft.fromRotation = start.rotation
     draft.sourceGhost = start.ghost
     draft.sourceWasGenericBack = start.genericBack
-    if (start.ghost && !draft.disasterReveal) createMovementHolder(draft, start.ghost)
     return start
+  })
+  // Write phase. The holder is the only DOM mutation of this block, and it is a
+  // fixed-position overlay appended to the landscape teleport host, so appending
+  // it cannot move any element whose geometry the read phase above captured.
+  drafts.forEach(({ draft }, index) => {
+    const start = starts[index]!
+    if (start.ghost && !draft.disasterReveal) createMovementHolder(draft, start.ghost)
   })
   try {
     await nextTick()
@@ -1242,8 +1251,17 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
       }
       return
     }
+    // Read phase: capture every destination of this batch from the same
+    // post-render DOM state, before the loop below can take a visibility lease.
+    // That lease only sets visibility:hidden, which keeps the layout box, so no
+    // later read in this batch would have observed a different geometry.
+    const destinationReads = drafts.map(({ draft }) => {
+      const element = destinationElement(draft)
+      return { element, rect: elementRect(element), rotation: elementRotation(element) }
+    })
     for (const [index, { draft }] of drafts.entries()) {
-      const destination = destinationElement(draft)
+      const destinationRead = destinationReads[index]
+      const destination = destinationRead?.element ?? null
     // An attach event may contain host and source in either order. Only cards that
     // actually became attached receive a movement; the host keeps its stable DOM.
       if ((draft.attachment || draft.disasterReveal) && !destination) {
@@ -1257,12 +1275,12 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
       const movement = starts[index] ? draft : null
       if (movement) {
         movement.fromRect = starts[index]!.rect
-        movement.toRect = elementRect(destination)
+        movement.toRect = destinationRead?.rect
           ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId)
         movement.sourceGhost = starts[index]?.ghost
         movement.fromRotation = starts[index]?.rotation ?? 0
         movement.toRotation = movementTerminalTapped(movement.to, movement.card,
-          movement.publicPlacement, elementRotation(destination) === 90) ? 90 : 0
+          movement.publicPlacement, (destinationRead?.rotation ?? 0) === 90) ? 90 : 0
         stampMovementLandingGeometry(movement)
       }
       if (movement?.disasterReveal && movement.sourceGhost && !movement.holderWrapper) {
