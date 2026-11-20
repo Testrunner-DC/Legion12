@@ -499,6 +499,8 @@ public sealed partial class L12PlatformStore
     private static void PersistDeckDomainSnapshot(SqliteConnection connection, SqliteTransaction transaction,
         DataFile data)
     {
+        using var metric = L12PlatformOperationMetrics.Measure(
+            L12PlatformOperationPhase.DeckDomainSnapshot);
         AssignDeckIdentities(data);
         CompactRuntimeDeckDomain(data);
         DeleteStaleDeckDomainRows(connection, transaction, data);

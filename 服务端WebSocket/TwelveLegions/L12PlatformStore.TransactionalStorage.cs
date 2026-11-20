@@ -349,7 +349,8 @@ public sealed partial class L12PlatformStore
             // the same-generation anchor alongside the committed read indexes.
             var broadcastReadAnchor = PrepareRankedBroadcastReadAnchor(_data, rollbackSnapshot, snapshotChecksum);
             StorageFailureInjector?.Invoke("after-rollback-serialize");
-            transaction.Commit();
+            using (L12PlatformOperationMetrics.Measure(L12PlatformOperationPhase.SqliteCommit))
+                transaction.Commit();
             _lastCommittedSnapshot = rollbackSnapshot;
             PublishCommittedSessionActivity(sessionActivity);
             _rankedBroadcastReadAnchor = broadcastReadAnchor;

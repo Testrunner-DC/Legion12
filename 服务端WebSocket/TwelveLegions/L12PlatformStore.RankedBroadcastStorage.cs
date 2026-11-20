@@ -411,6 +411,8 @@ public sealed partial class L12PlatformStore
     private static void SynchronizeRankedBroadcastObjectsForFullSave(SqliteConnection connection,
         SqliteTransaction transaction, DataFile data, bool allowLegacyDeliveryImport = false)
     {
+        using var metric = L12PlatformOperationMetrics.Measure(
+            L12PlatformOperationPhase.RankedBroadcastSync);
         AssertRankedBroadcastObjectSchema(connection, transaction);
         ValidateLegacyRankedBroadcastProjection(data);
         var currentGeneration = ReadRankedBroadcastGeneration(connection, transaction);

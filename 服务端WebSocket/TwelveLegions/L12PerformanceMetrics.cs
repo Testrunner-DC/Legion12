@@ -109,6 +109,10 @@ internal sealed class PerformanceMetricWindow
         (Kind.Duration, L12PlatformOperationMetrics.RollbackGzipStage),
         (Kind.Duration, L12PlatformOperationMetrics.HydrationStage),
         (Kind.Duration, L12PlatformOperationMetrics.CommittedIndexPrepareStage),
+        (Kind.Duration, L12PlatformOperationMetrics.DeckDomainSnapshotStage),
+        (Kind.Duration, L12PlatformOperationMetrics.RankedBroadcastSyncStage),
+        (Kind.Duration, L12PlatformOperationMetrics.SnapshotWriteStage),
+        (Kind.Duration, L12PlatformOperationMetrics.SqliteCommitStage),
         (Kind.Bytes, L12PlatformOperationMetrics.AdminTransactionStage),
         (Kind.Bytes, L12PlatformOperationMetrics.TransactionalSaveStage),
         (Kind.Bytes, L12PlatformOperationMetrics.SeasonFinalizationStage),
@@ -128,9 +132,36 @@ internal sealed class PerformanceMetricWindow
     private static readonly IReadOnlyList<string> CurrentStageNames = Array.AsReadOnly(
         Definitions.Select(FullStageName).OrderBy(stage => stage, StringComparer.Ordinal).ToArray());
 
+    // V2 archive identity is a stage's ordinal in this frozen list. It must never
+    // follow the growing current set: appended stages would renumber every later row
+    // and make already-archived v2 files unreadable.
+    private static readonly IReadOnlyList<string> V2StageNames = Array.AsReadOnly(new[]
+    {
+        "bytes.persistence.checkpoint-json", "bytes.persistence.command-state-json",
+        "bytes.platform.operation.admin-transaction", "bytes.platform.operation.recovery",
+        "bytes.platform.operation.season-finalization", "bytes.platform.operation.transactional-save",
+        "bytes.platform.phase.hydration", "bytes.platform.phase.index-prepare",
+        "bytes.platform.phase.mirror-serialize", "bytes.platform.phase.rollback-gzip",
+        "bytes.platform.phase.snapshot-serialize", "bytes.websocket.delta-payload",
+        "bytes.websocket.full-payload", "bytes.websocket.sent-payload", "duration.action.engine",
+        "duration.persistence.checkpoint-serialize", "duration.persistence.serialize-and-hash",
+        "duration.persistence.total", "duration.persistence.transaction", "duration.platform.lock-hold",
+        "duration.platform.lock-wait", "duration.platform.operation.admin-transaction",
+        "duration.platform.operation.recovery", "duration.platform.operation.season-finalization",
+        "duration.platform.operation.transactional-save", "duration.platform.phase.hydration",
+        "duration.platform.phase.index-prepare", "duration.platform.phase.mirror-serialize",
+        "duration.platform.phase.rollback-gzip", "duration.platform.phase.snapshot-serialize",
+        "duration.snapshot.build", "duration.websocket.send", "duration.websocket.serialize",
+        "persistence.v2-state-json-anomaly", "platform.failure.admin-transaction",
+        "platform.failure.recovery", "platform.failure.season-finalization",
+        "platform.failure.transactional-save", "websocket.queue-depth",
+    });
+
     internal static IReadOnlyList<string> LegacyFixedStageNames => LegacyStageNames;
+    internal static IReadOnlyList<string> V2FixedStageNames => V2StageNames;
     internal static IReadOnlyList<string> FixedStageNames => CurrentStageNames;
     internal static int LegacyFixedStageCount => LegacyStageNames.Count;
+    internal static int V2FixedStageCount => V2StageNames.Count;
     internal static int FixedStageCount => CurrentStageNames.Count;
 
     private sealed class Series

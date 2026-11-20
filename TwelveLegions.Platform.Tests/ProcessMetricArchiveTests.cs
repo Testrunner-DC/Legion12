@@ -26,6 +26,8 @@ public sealed class ProcessMetricArchiveTests
     {
         // V2 omits names: adding even one alphabetically earlier stage changes
         // every following ordinal and makes owned historical archives unreadable.
+        // The current window grows with each new phase, so v2 decoding must keep
+        // validating against this frozen list instead of FixedStageNames.
         string[] persistedV2Names =
         [
             "bytes.persistence.checkpoint-json", "bytes.persistence.command-state-json",
@@ -47,7 +49,31 @@ public sealed class ProcessMetricArchiveTests
             "platform.failure.recovery", "platform.failure.season-finalization",
             "platform.failure.transactional-save", "websocket.queue-depth",
         ];
-        Assert.Equal(persistedV2Names, PerformanceMetricWindow.FixedStageNames);
+        Assert.Equal(persistedV2Names, PerformanceMetricWindow.V2FixedStageNames);
+    }
+
+    [Fact]
+    public void HistoricalV2LinesKeepTheirFrozenThirtyNineOrdinals()
+    {
+        var current = JsonNode.Parse(Entry(UtcDay(), 1, InstanceA).Json)!.AsObject();
+        var stages = current["stages"]!.AsArray();
+        Assert.Equal(PerformanceMetricWindow.FixedStageCount, stages.Count);
+        var appended = PerformanceMetricWindow.FixedStageNames
+            .Except(PerformanceMetricWindow.V2FixedStageNames, StringComparer.Ordinal).ToArray();
+        Assert.Equal(PerformanceMetricWindow.FixedStageCount - PerformanceMetricWindow.V2FixedStageCount,
+            appended.Length);
+        var names = PerformanceMetricWindow.FixedStageNames.ToList();
+        // A v2 file held only the frozen rows, in the same sorted order, so dropping
+        // the appended phases by their current ordinal rebuilds that exact body.
+        foreach (var ordinal in appended.Select(stage => names.IndexOf(stage)).OrderByDescending(index => index))
+            stages.RemoveAt(ordinal);
+        current["v"] = 2;
+        Assert.True(Validate(current));
+
+        // The same 43-row body must not pass as v2: the row count is the version contract.
+        var tooMany = JsonNode.Parse(Entry(UtcDay(), 1, InstanceA).Json)!.AsObject();
+        tooMany["v"] = 2;
+        Assert.False(Validate(tooMany));
     }
 
     [Fact]
@@ -65,7 +91,7 @@ public sealed class ProcessMetricArchiveTests
         Assert.DoesNotContain(sourceSentinel, text, StringComparison.Ordinal);
         Assert.DoesNotContain("account-room-token", text, StringComparison.Ordinal);
         using var json = JsonDocument.Parse(serialized.Json);
-        Assert.Equal(2, json.RootElement.GetProperty("v").GetInt32());
+        Assert.Equal(3, json.RootElement.GetProperty("v").GetInt32());
         var stages = json.RootElement.GetProperty("stages");
         Assert.Equal(PerformanceMetricWindow.FixedStageCount, stages.GetArrayLength());
         Assert.All(stages.EnumerateArray(), row =>
@@ -109,7 +135,7 @@ public sealed class ProcessMetricArchiveTests
         AssertRejected(root => root["stages"]!.AsArray().RemoveAt(0));
         AssertRejected(root => root["stages"]!.AsArray().Add(root["stages"]!.AsArray()[0]!.DeepClone()));
         AssertRejected(root => root["stages"]!.AsArray()[0]!.AsArray().RemoveAt(6));
-        AssertRejected(root => root["v"] = 3);
+        AssertRejected(root => root["v"] = 4);
         AssertRejected(root => root["stages"]!.AsArray()[0]!.AsArray()[1] = "not-a-number");
         AssertRejected(root => root["stages"]!.AsArray()[0]!.AsArray()[0] = -1);
     }

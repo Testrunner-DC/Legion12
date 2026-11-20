@@ -277,7 +277,7 @@ internal sealed class L12ProcessMetricCollector : IL12ProcessMetricCollectorLife
 
 internal static class L12CompactProcessMetricEncoder
 {
-    private const int CurrentVersion = 2;
+    private const int CurrentVersion = 3;
     private static readonly HashSet<string> LegacyFixedStages =
         new(PerformanceMetricWindow.LegacyFixedStageNames, StringComparer.Ordinal);
     private static readonly HashSet<string> FixedStages =
@@ -354,7 +354,9 @@ internal static class L12CompactProcessMetricEncoder
             {
                 1 => TryValidateV1(json, expectedCommit, expectedInstance,
                     out commit, out instance, out archiveUtcMilliseconds),
-                CurrentVersion => TryValidateV2(json, expectedCommit, expectedInstance,
+                2 => TryValidateV2(json, expectedCommit, expectedInstance,
+                    out commit, out instance, out archiveUtcMilliseconds),
+                CurrentVersion => TryValidateCurrent(json, expectedCommit, expectedInstance,
                     out commit, out instance, out archiveUtcMilliseconds),
                 _ => false,
             };
@@ -395,16 +397,27 @@ internal static class L12CompactProcessMetricEncoder
 
     private static bool TryValidateV2(ReadOnlySpan<byte> json, string? expectedCommit,
         string? expectedInstance, out string? commit, out string? instance, out long archiveUtcMilliseconds)
+        => TryValidateVersioned(json, expectedCommit, expectedInstance, 2,
+            PerformanceMetricWindow.V2FixedStageCount, out commit, out instance, out archiveUtcMilliseconds);
+
+    private static bool TryValidateCurrent(ReadOnlySpan<byte> json, string? expectedCommit,
+        string? expectedInstance, out string? commit, out string? instance, out long archiveUtcMilliseconds)
+        => TryValidateVersioned(json, expectedCommit, expectedInstance, CurrentVersion,
+            FixedStages.Count, out commit, out instance, out archiveUtcMilliseconds);
+
+    private static bool TryValidateVersioned(ReadOnlySpan<byte> json, string? expectedCommit,
+        string? expectedInstance, int version, int rowCount,
+        out string? commit, out string? instance, out long archiveUtcMilliseconds)
     {
         commit = instance = null;
         archiveUtcMilliseconds = 0;
         var dto = JsonSerializer.Deserialize<L12CompactProcessMetricV2>(json, JsonOptions);
-        if (dto is null || dto.Version != CurrentVersion || !ValidEnvelope(dto.Commit, dto.Instance, dto.Clock,
+        if (dto is null || dto.Version != version || !ValidEnvelope(dto.Commit, dto.Instance, dto.Clock,
                 dto.Process, dto.Linux, dto.PerformanceAvailability, dto.Diagnostics,
                 expectedCommit, expectedInstance)
             || (dto.PerformanceAvailability == L12MetricAvailabilityReason.Available)
                 != (dto.Diagnostics is not null && dto.Stages is not null)
-            || dto.Stages is not null && (dto.Stages.Count != FixedStages.Count
+            || dto.Stages is not null && (dto.Stages.Count != rowCount
                 || !dto.Stages.All(ValidStage))) return false;
         var canonical = JsonSerializer.SerializeToUtf8Bytes(dto, JsonOptions);
         if (!json.SequenceEqual(canonical)) return false;

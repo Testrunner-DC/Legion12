@@ -17,6 +17,10 @@ internal enum L12PlatformOperationPhase
     RollbackGzip,
     Hydration,
     CommittedIndexPrepare,
+    DeckDomainSnapshot,
+    RankedBroadcastSync,
+    SnapshotWrite,
+    SqliteCommit,
 }
 
 internal readonly record struct L12PlatformMetricSample(
@@ -45,6 +49,10 @@ internal static class L12PlatformOperationMetrics
     internal const string RollbackGzipStage = "platform.phase.rollback-gzip";
     internal const string HydrationStage = "platform.phase.hydration";
     internal const string CommittedIndexPrepareStage = "platform.phase.index-prepare";
+    internal const string DeckDomainSnapshotStage = "platform.phase.deck-domain";
+    internal const string RankedBroadcastSyncStage = "platform.phase.ranked-broadcast-sync";
+    internal const string SnapshotWriteStage = "platform.phase.snapshot-write";
+    internal const string SqliteCommitStage = "platform.phase.sqlite-commit";
 
     internal const string AdminTransactionFailureStage = "platform.failure.admin-transaction";
     internal const string TransactionalSaveFailureStage = "platform.failure.transactional-save";
@@ -122,6 +130,10 @@ internal static class L12PlatformOperationMetrics
         L12PlatformOperationPhase.RollbackGzip => RollbackGzipStage,
         L12PlatformOperationPhase.Hydration => HydrationStage,
         L12PlatformOperationPhase.CommittedIndexPrepare => CommittedIndexPrepareStage,
+        L12PlatformOperationPhase.DeckDomainSnapshot => DeckDomainSnapshotStage,
+        L12PlatformOperationPhase.RankedBroadcastSync => RankedBroadcastSyncStage,
+        L12PlatformOperationPhase.SnapshotWrite => SnapshotWriteStage,
+        L12PlatformOperationPhase.SqliteCommit => SqliteCommitStage,
         _ => throw new ArgumentOutOfRangeException(nameof(phase)),
     };
 }

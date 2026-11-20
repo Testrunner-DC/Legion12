@@ -344,6 +344,7 @@ public sealed partial class L12PlatformStore
         CoreSnapshot snapshot, string snapshotChecksum, DataFile data,
         long expectedStorageRevision, bool privateDeckObjectWrite)
     {
+        using var metric = L12PlatformOperationMetrics.Measure(L12PlatformOperationPhase.SnapshotWrite);
         using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;

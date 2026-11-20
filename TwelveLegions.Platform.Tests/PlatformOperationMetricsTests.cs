@@ -27,9 +27,18 @@ public sealed class PlatformOperationMetricsTests
             L12PlatformOperationMetrics.PhaseStage(L12PlatformOperationPhase.Hydration));
         Assert.Equal("platform.phase.index-prepare",
             L12PlatformOperationMetrics.PhaseStage(L12PlatformOperationPhase.CommittedIndexPrepare));
+        Assert.Equal("platform.phase.deck-domain",
+            L12PlatformOperationMetrics.PhaseStage(L12PlatformOperationPhase.DeckDomainSnapshot));
+        Assert.Equal("platform.phase.ranked-broadcast-sync",
+            L12PlatformOperationMetrics.PhaseStage(L12PlatformOperationPhase.RankedBroadcastSync));
+        Assert.Equal("platform.phase.snapshot-write",
+            L12PlatformOperationMetrics.PhaseStage(L12PlatformOperationPhase.SnapshotWrite));
+        Assert.Equal("platform.phase.sqlite-commit",
+            L12PlatformOperationMetrics.PhaseStage(L12PlatformOperationPhase.SqliteCommit));
 
-        Assert.Equal(39, PerformanceMetricWindow.FixedStageCount);
-        Assert.Equal(39, PerformanceMetricWindow.FixedStageNames.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(43, PerformanceMetricWindow.FixedStageCount);
+        Assert.Equal(43, PerformanceMetricWindow.FixedStageNames.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(39, PerformanceMetricWindow.V2FixedStageCount);
         Assert.DoesNotContain(PerformanceMetricWindow.FixedStageNames, stage =>
             stage.Contains('{') || stage.Contains('/') || stage.Contains('\\'));
     }

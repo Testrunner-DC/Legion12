@@ -19,7 +19,7 @@ public sealed class PerformanceMetricWindowTests
         for (var index = 0; index < 10000; index++) window.Value("synthetic-unknown-" + index, 1);
         var batch = Capture(window);
         Assert.Equal(15, PerformanceMetricWindow.LegacyFixedStageCount);
-        Assert.Equal(39, PerformanceMetricWindow.FixedStageCount);
+        Assert.Equal(43, PerformanceMetricWindow.FixedStageCount);
         Assert.Equal(PerformanceMetricWindow.FixedStageCount, batch.Series.Count);
         Assert.Equal(4, batch.Series.Sum(row => row.Count));
         Assert.Equal(10000, batch.Diagnostics.UnknownStages);
