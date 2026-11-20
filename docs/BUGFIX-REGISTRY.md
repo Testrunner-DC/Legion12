@@ -9618,3 +9618,17 @@
 - 可能落在更前方的传递链路：`L12RoomManager.ResolveAlternateArtUrls` → `L12PlatformStore.ResolveOwnedAlternateArtUrls(accountId, AlternateArtSelections, AlternateArtCopies)`。该函数对每个异画要求 `IsGrantableAlternateArtDefinition` 且 `owned.Contains(art.Id)`，并校验 `art.BaseCardId == selection.Key`；任一不满足即**静默丢弃**，卡面回落原画。
 - 定位需要该玩家账号的实际异画授权数据（`OwnedAlternateArtIdsLocked`）与该牌库提交的 `AlternateArtSelections/Copies`，属需运行时数据的排查，本次未取得。
 - 状态：保留 `new`，不改线上状态。
+## STORAGE-20261120-MIRROR-RETIREMENT｜退役保存路径的 JSON 镜像写入（本地已过 Release，未部署）
+
+- 根因（**每次保存的热路径**）：`PersistTransactionalData` 在每次保存里额外构造一份完整 JSON 兼容镜像并原子写盘，实测 `mirror-serialize` 1903 ms + 镜像写盘 644 ms = **2547 ms / 9602 ms（27%）**。单独实测写 128 MiB + fsync + rename 为 644 ms，序列化是纯 CPU；该镜像在 SQLite 权威之后只作兼容副本，保存却要为它付全价。
+- 改动（`L12PlatformStore.TransactionalStorage.cs`、`L12PlatformStore.PrivateDeckPersistence.cs`）：
+  - 删除保存路径的 `preparedMirror` 声明、镜像序列化调用与提交后整段镜像发布；注入点 `before-mirror-serialize` 由新增的 `before-snapshot-write`（快照写入之前）取代，保留同等粒度的晚失败回滚覆盖。
+  - `UpsertSnapshotCas` 去掉镜像摘要参数，保存**不再覆盖** `storage_meta['fallback_json_sha256']`。
+- **关键约束（与原始规格的偏离，有证据）**：该列必须继续指向磁盘镜像的真实字节，不能改写成 `snapshotChecksum`。依据：`ImportChangedLegacyMirrorIfNeeded`（:243-244）靠哈希命中提前返回，否则每次启动都要重新解析一份陈旧镜像；schema8 演练回滚（`RankedBroadcastStorage:930/1034/1070`）也用该列校验镜像文件。实测佐证：`ReverseExitRenameFailureLeavesVerifiedPendingMirrorThatSchemaEightRetryPublishes` 因此保持绿。
+- 保留不变：首次建立/迁移（`PersistInitialSnapshot`）、赛季结算、牌库迁移与维护路径仍写镜像；legacy 引导仍走 `LoadLegacyForMigration`，镜像版本高于库时仍由 `ImportChangedLegacyMirrorIfNeeded` 导入。**镜像不再是保存后的恢复源**（用户 2026-11-20 已批准）。
+- 测试改写（共 54 条受影响断言）：平台项目两轮 37 + 13 条、规则项目 3 条，读取来源统一从 `platform.json` 改为提交态快照（`SELECT snapshot_json FROM platform_state`）或公开视图；四条“提交后镜像失败”用例改为“提交是权威、镜像不动、健康状态不受影响”，并以 `MirrorBytes == 0` 作为新护栏。
+- 覆盖复原 1 条：`ControlPlanePlatformStoreTests.LegacyPlatformJsonSessionsGainStableMetadataWithoutInvalidatingTokens` 此前读冻结镜像且不删库，断言空过；改为从提交态构造后**删除 platform.db** 真正走 legacy 引导。该用例同时证明“删 Version 字段”在旧契约下无后果、在新契约下立即非法。
+- 验证（提交 `104b975a118c0d391b8ff7baaae375626b140114`，完整 Release，无部署）：规则 `8806/8806`、平台 `3153/3153`、deployment-drain-consumer、前端合同与 production/testrun 双构建（126.57 秒）、服务端 restore/publish、发布归档全部通过。
+- 玩家更新日志：不登记（内部存储与性能，`release-ledger/entries/20261120-platform-mirror-retirement-internal.json`，`audience=internal`）。
+- 回滚：恢复三处镜像调用与 `UpsertSnapshotCas` 的摘要写入即可；数据库格式、快照校验与 schema 版本均未变化，无需数据迁移。
+- 未做（独立批次）：`rollback-gzip` 懒化（1590 ms / 17%）——保存路径不再序列化回滚态、失败时从库读回最后已提交快照，需重跑 6 个注入点矩阵。

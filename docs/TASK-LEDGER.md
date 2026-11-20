@@ -6303,3 +6303,13 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
 - 验证：完整 Release 通过——规则 `8806/8806`、平台 `3153/3153`、排空消费者、前端 production/testrun 双构建（136 秒）、服务端发布、卡图内容寻址归档；manifest `D:/GPT/Legion12/artifacts/c2a-release-20261120-r2/49a97576…/l12-release-49a97576….json`（SHA256 `CEAB87EF…`）。
 - 玩家更新日志：`release-ledger/entries/20261120-wukong-transform-alt-art.json`。首次 Release 因缺该条目被门禁拦下，补登记后区间检查通过（`af17b7e9 → 49a97576`，2 条玩家条目覆盖 6 个源码文件）。
 - 未做全量迁移：其余约 80 个 `CreateCard` 调用点仍按原方式建立实例，后续应按「是否为玩家印刷卡」逐个迁到 `CreatePlayerCard`。
+# 2026-11-20 退役保存路径 JSON 镜像写入｜本地已过 Release，未部署
+
+- 授权范围：实施规格第 1 条；按规格“现有授权不含部署”，本批止于提交与非强制推送。
+- 性能：单次保存减少 mirror-serialize 1903 ms + 镜像写盘 644 ms = 2547 ms / 9602 ms（27%）。
+- 改动面：`PersistTransactionalData` 三处 + 新增 `before-snapshot-write` 注入点 + `UpsertSnapshotCas` 不再覆盖 `fallback_json_sha256`。
+- 规格偏离（有证据）：`fallback_json_sha256` 不写成 `snapshotChecksum`，否则破坏启动快速路径与 schema8 演练回滚；丁类用例实测因此保持绿。
+- 测试：54 条断言改读提交态快照；另复原 1 条此前空过的 legacy 会话迁移用例。
+- 验证：提交 `104b975a` 完整 Release 通过——规则 `8806/8806`、平台 `3153/3153`、排空消费者、前端双构建、服务端发布与归档。
+- 过程教训：门禁运行期间改源码会把被测树变成半新半旧，本轮因此白跑一轮约 24 分钟；后续门禁期间不动源码。
+- 未做（独立批次）：`rollback-gzip` 懒化（1590 ms / 17%），需重跑 6 个注入点矩阵。
