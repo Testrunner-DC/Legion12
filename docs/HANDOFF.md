@@ -4,6 +4,7 @@
 
 - 承接《存储与卡顿-归因重测-20261120》P1：保存路径补四段 duration 计时 `platform.phase.deck-domain`、`ranked-broadcast-sync`、`snapshot-write`、`sqlite-commit`，只加观测，不改保存、提交、回滚或镜像语义。`rollback-gzip` 夹在 blob 写与提交之间，故拆两段而不是一段连续 span，读数可直接相加。
 - 进程指标归档 v2 用序号标识阶段并冻结 39 名，新增阶段会平移序号、让历史文件不可读；按 v1→v2 先例升 v3（`PerformanceMetricWindow.V2FixedStageNames` 冻结原 39 名，v2 按 39 行、当前版本按 43 行校验）。新阶段只登记 duration，避免最坏构造窗口超出 8 KiB 单行预算。
+- 端到端守卫：`StoragePhaseAttributionTests.OrdinarySaveRecordsEveryStoragePhase` 证明一次普通保存后四个新阶段计数都增长（首建库走 `PersistInitialSnapshot` 不计入，用例先建库再量）——这正是"生产会不会真的产出这四个数"的证据，而不只是编译通过。
 - 验证：指标四类专项 74/74；完整 Release 规则 8806/8806、平台 3154/3154、0 失败 0 跳过，发布包 `artifacts/deploy/0c7879c0cf76950707d38b84e914d824e1e5aecd/l12-release-0c7879c0cf76950707d38b84e914d824e1e5aecd.json`。提交 `0c7879c0`。
 - 门禁口径（勿误记为代码失败）：Release 默认按 HEAD 变更路径分类，本批改了 `docs/TASK-LEDGER.md` 会触发 `verify-l12-codex-routing.ps1`，而该守卫要求本机存在 Codex CLI；本机既无 `codex.exe` 也未设 `CODEX_CLI_PATH`，与本次改动无关。故 Release 以 `-ChangedPaths` 显式列出本批 10 个代码/测试路径运行，其余门禁照跑。没有伪设 `CODEX_CLI_PATH` 绕过。
 - 未部署；5079 ms 到底落在哪一段，要等一次生产窗口读到新的 `platform.phase.*` 阶段再下结论，不预支节省比例。

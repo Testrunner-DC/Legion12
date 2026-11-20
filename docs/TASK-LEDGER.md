@@ -4,7 +4,7 @@
 
 - 承接《存储与卡顿-归因重测-20261120》P1：保存路径补四段计时（`deck-domain`、`ranked-broadcast-sync`、`snapshot-write`、`sqlite-commit`），把 5079 ms 未归属时段变成可测阶段。只加计时，不改保存、提交、回滚或镜像语义。
 - 进程指标归档按 v1→v2 先例升 v3：冻结 39 名 v2 行契约，历史 v2 文件继续可读；新增守卫覆盖「43 行冒充 v2 必须拒收」。新阶段只登记 duration，避免最坏窗口超出 8 KiB 单行预算。
-- 指标四类专项 74/74 通过；完整 Batch 门禁规则 8806/8806、平台 3154/3154、0 失败 0 跳过（回执 `cache/primary/test-evidence/test-247fc1e3808a4ef981a814e2ac9de6a5` 与 `test-ae2ee1bb84ea4e4f928bdffa62e61b10`）。未部署；线上归属结论待下一次生产窗口，不预支任何节省比例。
+- 端到端守卫：`StoragePhaseAttributionTests.OrdinarySaveRecordsEveryStoragePhase` 证明一次普通保存后四个新阶段计数均增长（首建库走 `PersistInitialSnapshot`，故先建库再量）。指标四类专项 74/74 通过；完整 Batch 门禁规则 8806/8806、平台 3154/3154、0 失败 0 跳过（回执 `cache/primary/test-evidence/test-247fc1e3808a4ef981a814e2ac9de6a5` 与 `test-ae2ee1bb84ea4e4f928bdffa62e61b10`）。未部署；线上归属结论待下一次生产窗口，不预支任何节省比例。
 
 ## 2026-11-14 观战摘要锚定卡牌详情下沿（本地已验，未部署）
 
