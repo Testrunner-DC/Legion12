@@ -9,6 +9,7 @@
 - **被推翻的前提（有证据，不得再照旧文档执行）**：原方案要求"断线无条件解锁"。权威树 `net.ts` 的关闭分支对**未协商 requestId** 的连接本来就在任何关闭码下取消（`if (!negotiatedRequestIds || [4001,4002,1008].includes(code)) cancelPendingAction()`）；对**已协商**的连接，保持待重放是既有契约——用例 `a negotiated action remains retryable across disconnect` 明确要求断线后 `pendingAction` 仍为 true，因为服务端按 requestId 幂等重放。抢先解锁会让玩家发出**第二个真实动作**，所以本批只加可见提示、不解锁。
 - 回归：新增 `an unacknowledged action surfaces a wait hint instead of looking dead`（空闲不提示、4 s 内不提示、第 4 s 给出提示）。按新节拍更新 3 条固定时间的既有用例：半开连接判死由 `advance(75_000)` 改 `advance(30_000)`；"回应保持心跳"与"资源回退在线静默"两例改每 15 s 回应一次以维持在线稳态——三条均是节拍耦合，不是放宽断言。
 - 验证：连接恢复契约 `51/51`（含新增 1 条）、UI 契约 `362` 项、`vue-tsc --noEmit` 通过。
+- 验证（完整 Release，无部署）：规则 `8809/8809`、平台 `3155/3155`、前端合同与 production/testrun 双构建、服务端发布与归档全部通过；发布包 `artifacts/deploy/c1472e0f9f013f6e1a04431fd27a735b3f53bd4c/l12-release-c1472e0f9f013f6e1a04431fd27a735b3f53bd4c.json`。提交 `c1472e0f` 已非强制推送，远端 `ls-remote` 读回同 SHA。
 - 未做：`ZoneMovementPresentationLayer` 的批量布局／锁内读 rect（方案 §4.2，属视觉风险项，需前后截图，另批处理）；界面置灰随该批一起做。
 - 回滚：心跳改回 `25_000`、删除提示定时器与两处调用即可；无协议、无存储影响。
 

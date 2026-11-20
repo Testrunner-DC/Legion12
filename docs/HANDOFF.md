@@ -6,6 +6,7 @@
 - **方案 §4.3 的一条前提作废**：原文要求"断线无条件解锁"。实测 `net.ts` 关闭分支对未协商 requestId 的连接本来就在任何关闭码下取消；已协商的连接刻意保持待重放（用例 `a negotiated action remains retryable across disconnect` 要求断线后 `pendingAction` 仍为 true，服务端按 requestId 幂等）。抢先解锁会让玩家发出第二个真实动作，故只加提示不解锁。
 - 回归：新增 `an unacknowledged action surfaces a wait hint instead of looking dead`；3 条固定时间的既有用例按新节拍改写（30 s 判死、每 15 s 回应维持在线），属节拍耦合而非放宽断言。
 - 验证：连接恢复契约 `51/51`、UI 契约 362 项、`vue-tsc --noEmit` 通过。
+- 验证（完整 Release，无部署）：规则 `8809/8809`、平台 `3155/3155`、前端合同与 production/testrun 双构建、服务端发布与归档全部通过；发布包 `artifacts/deploy/c1472e0f9f013f6e1a04431fd27a735b3f53bd4c/l12-release-c1472e0f9f013f6e1a04431fd27a735b3f53bd4c.json`。提交 `c1472e0f` 已非强制推送，远端 `ls-remote` 读回同 SHA。
 - 下阶段：§4.2 ZoneMovement 批量布局／`shallowRef + revision`（视觉风险，需前後截图与 `check-ui-contracts` 同步），界面置灰随该批一起做；服务端保存路径剩余 5079 ms 的归属仍待一次生产窗口。
 
 ## 2026-11-20 帧路径正确性与浪费：全量帧短路 + 锁内编码（本地已验，未部署）
