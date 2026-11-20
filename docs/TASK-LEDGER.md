@@ -6415,3 +6415,14 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
 - **裁定落地**：`verify-article-content-embeds.mjs` 的「旧编辑器对照」用例按人类点选下架——去掉已删组件 `ArticleBlockEditor.vue` 的 watched/import/legacy 分支与 4 条断言，保留活容器 `ArticleDocumentEditor`+`ArticleContentRenderer` 上的插入/换库/删除撤销、12 上限去重、缺失可见、图库分组断言；`node --check` 0 错，除说明注释外无 legacy 残留。
 - **需人工治理**：`D:/GPT/Legion12/artifacts/deploy/verification-evidence` 已达 `555,235,245 B`，超过 `503,316,480 B` 预算，本轮按规则继续完整门禁但不新增逐用例 TRX；失败与 PINNED 证据不自动删除。
 - **下阶段（按前置关系）**：① 部署侧接线（`deploy-l12.ps1:355-358/519-522/527-535/537`，先 keepalive 后 gzip）并跑部署行为套件，再以本批新 Release 包为新 manifest 部署 `af17b7e9 → d63edfda`；② 部署后读 `platform.phase.deck-domain/.ranked-broadcast-sync/.snapshot-write/.sqlite-commit` 四段，定位 5079 ms 归属，才决定批次 6；③ 批次 5 服务器侧（`wal_checkpoint(TRUNCATE)`+VACUUM、清理预算 10→30、journald 封顶）需一次授权，**不要**跑 `prune-l12-replay-payloads.sh`；④ 先治理超预算证据，再补 §7 客户端埋点，最后做 3B 剩余两项。
+# 2026-11-21 方案 §7 客户端埋点落地 + 生产四段计时首次读数 + 证据治理
+
+- 授权范围：用户「推进 ①②③」= ①门禁→提交→Release ②四段读数 ③证据治理与拆表讨论。本批不含部署（部署需另一批授权与维护窗口）。
+- **四段计时首次生产读数（关键结论：5079 ms 已归属）**：部署后 5 次真实保存，阶段耗时（每次保存，单位 ms）——snapshot-serialize `786–2189`、rollback-gzip `1462–1864`、snapshot-write `1372–2179`、sqlite-commit `601–999`、deck-domain `399–520`、index-prepare `65–191`、ranked-broadcast-sync `33–54`；`platform.operation.transactional-save` 单次 `4.53–7.25 s`，`lock-hold` 峰值 `9.49 s`，`lock-wait ≈ 0`。**即每次保存的绝大部分是「单行 118 MB 快照」的序列化 + 写盘 + rollback-gzip + 提交四件事**，领域阶段（deck-domain 0.4 s、broadcast 0.03 s）占比很小 —— 这正是批次 6 拆表要消除的成本，拆表不再是推测收益。
+- **②后续动作**：以上是维护期由后台写触发的 5 次保存；正常营业后应再取一个窗口确认分布，再据锁持有时间设计拆表的双写期。
+- **③证据治理（本地）**：`artifacts/deploy/verification-evidence` 由 `568,788,327 B` 清理到 `37,863,538 B`（删除 74 个 7 天以上的非失败、非 PINNED 目录，释放 506.3 MB），门禁不再因超预算跳过可选逐用例 TRX。
+- **§7 客户端埋点（已实现、Batch 全过、已提交）**：`af929a66` —— `src/l12/perf/clientPerf.ts`（1/10 抽样、单会话 200 条、单条 ≤512 B、sendBeacon、`l12-perf-off` 一键关，无自有定时器与 raw fetch）+ `net.ts` 的 `msg.parse`/handler 总耗时与 `pendingAction` 锁时长 + `main.ts` 首屏里程碑；服务端 `POST /api/perf/client`（512 B 上限、每来源 10 s 节流、`L12_CLIENT_PERF_LOG=0` 可关、只打一条日志、不碰存储）。验收：Batch 全过（规则全量、平台门禁、UI 契约 366 项、卡图 42 项、部署行为 77 场景、双构建）、vue-tsc 0、性能架构锁 269 sources、连接恢复 51/51。
+- **部署期轮转开关**：`deploy-l12.ps1 -PruneRuntimeBackups`（仅非 rollback 时前置 `L12_PRUNE_RUNTIME_BACKUPS=1`）+ 部署行为用例守卫，今后不必人工轮转。
+- **环境修复（本机，非产品代码）**：`opcgpro-vue/dist` 与 `dist-testrun` 是指向已消失的 `cache/primary/t/log30/ui/...` 的悬挂 junction，导致 `vite build` 报 `ENOENT: mkdir .../dist`；已用 `cmd /c rmdir` 删除链接（不动目标），构建恢复。同类问题排查建议：先看 `Get-Item dist -Force | Select LinkType,Target`。
+- **远端并发**：推送时 `origin/main` 已被 `65df3d54`（异画动态图上传限额）推进，按既有规则做非破坏合并（`4506a64f`），无冲突；合并后服务端 `dotnet build` 与 `vue-tsc` 均 0 错。
+- 下一步：以当前 HEAD 跑一次完整 Release 产出可部署包；部署与维护窗口、以及批次 6 是否开工，等人类在拿到「营业后窗口读数」后决定。
