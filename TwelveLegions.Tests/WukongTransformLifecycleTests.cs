@@ -8,7 +8,8 @@ public sealed class WukongTransformLifecycleTests
 {
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
-    private static L12GameEngine Create(int seed, int moraleCount = 3)
+    private static L12GameEngine Create(int seed, int moraleCount = 3,
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null)
     {
         var baseDeck = Catalog.DeckAt(0);
         var deck = new L12PresetDeckDefinition
@@ -21,7 +22,8 @@ public sealed class WukongTransformLifecycleTests
         };
         var game = new L12GameEngine(Catalog, "wukong-transform", "WUKONG-TRANSFORM", seed,
             ["甲", "乙"], [deck, baseDeck], skipPreparation: true,
-            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+            alternateArtUrls: alternateArtUrls);
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.TurnSerial = 4;
@@ -211,5 +213,39 @@ public sealed class WukongTransformLifecycleTests
         Assert.Equal("resolved", Result(game).EffectResultStatus);
         Assert.Single(game.State.Events, entry => entry.Type == "put"
             && entry.Cards.Any(card => card.InstanceId == wukong.InstanceId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "bug:BUG-20261120-b99c66cc")]
+    public void TransformedMasterLegionKeepsTheOwnersAlternateArt()
+    {
+        // 玩家报告：孙悟空变成军团之后会失去异画。变身走 CreateCard 新建实例，
+        // 而该工厂原先只取目录原画；异画必须按控制者解析后落到军团实例上。
+        const string alternateArtUrl = "/cards/alternate/wukong-transform.png";
+        var alternateArtUrls = new[]
+        {
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["S02-01M1"] = alternateArtUrl,
+            },
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+        };
+        var game = Create(91508, moraleCount: 3, alternateArtUrls: alternateArtUrls);
+        var originalUrl = Catalog.Cards["S02-01M1"].ImageUrl;
+        Assert.Equal(alternateArtUrl, game.State.Players[0].MasterImageUrl);
+
+        DeclareTransform(game, 3, "0:1");
+        var promptTrace = string.Join(" | ", game.State.PendingPrompts.Select(pending =>
+            pending.Kind + "/" + pending.Text + "/" + string.Join(",", pending.ValidChoices)));
+        PassResponses(game);
+
+        var placed = game.State.Players[0].Field[0].Where(card => card is not null).ToArray();
+        Assert.True(placed.Length == 1,
+            "prompts=[" + promptTrace + "] field=[" +
+            string.Join(",", placed.Select(card => $"{card!.CardId}/masterLegion={card.IsMasterLegion}")) +
+            "] events=[" + string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")) + "]");
+        var wukong = placed[0]!;
+        Assert.NotEqual(originalUrl, wukong.ImageUrl);
+        Assert.Equal(alternateArtUrl, wukong.ImageUrl);
     }
 }

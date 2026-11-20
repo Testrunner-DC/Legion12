@@ -365,7 +365,7 @@ public sealed partial class L12GameEngine
                     return true;
                 }
                 var masterLegion = player.MasterLegionState
-                    ?? CreateCard(source.CardId, $"master-legion-{item.Controller}-{State.TurnSerial}");
+                    ?? CreatePlayerCard(source.CardId, $"master-legion-{item.Controller}-{State.TurnSerial}", item.Controller);
                 player.MasterLegionState = null;
                 masterLegion.OwnerIndex = item.Controller;
                 masterLegion.IsMasterLegion = true;

@@ -1286,6 +1286,20 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         return instance;
     }
 
+    /// <summary>
+    /// 为指定玩家建立已解析异画的卡实例。异画按实例所属玩家解析；历史上只有少数
+    /// 调用点手动补 <see cref="ApplyAlternateArt"/>，导致经工厂重建的玩家卡
+    /// （变身、召唤、复活等）掉回原画。凡是为某位玩家建立**印刷卡**实例时应走本入口。
+    /// 保留双参数 <see cref="CreateCard"/> 不变：既有测试夹具通过反射按两个参数调用它，
+    /// 改变该签名会打断 <c>MethodInfo.Invoke</c> 的参数计数。
+    /// </summary>
+    private L12CardInstance CreatePlayerCard(string cardId, string instanceId, int controller)
+    {
+        var instance = CreateCard(cardId, instanceId);
+        ApplyAlternateArt(controller, instance);
+        return instance;
+    }
+
     private CommandResult Mulligan(int playerIndex, List<string> ids)
     {
         if (State.Phase != L12Phase.Mulligan) return CommandResult.Reject("当前不是调度阶段");
