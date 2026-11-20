@@ -6368,3 +6368,15 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
   4. **批次 5 服务器侧（需一次服务器操作授权）**：`PRAGMA wal_checkpoint(TRUNCATE)` 后 `VACUUM platform.db`（回收约 114 MB）；`L12_STORAGE_CLEANUP_BUDGET_SECONDS` 10→30；journald `SystemMaxUse=128M`。**不要**跑 `prune-l12-replay-payloads.sh`（缺 7 天／10 场窗口）。
   5. **3B 剩余两项（前置是 §7 埋点）**：先补客户端埋点（`msg.parse`／`msg.total`、消息→首帧、`pendingAction` 锁定时长、动画滞后、长帧计数、首屏里程碑），上报用 `navigator.sendBeacon` 传聚合值、服务端只打一条日志**不落库**、**不复用 `submitBug`**；有「Vue patch 占消息延迟比例」读数后再做固定定位层与 `shallowRef/revision` 收窄，否则是用未测收益换视觉回归风险。
   6. **第 7 项裁定**：见上，等一次人类点选。
+
+# 2026-11-20 存储与卡顿方案收口结果｜6 个提交、完整 Release 通过、已推送（未部署）
+
+- 授权范围：承接同日上一条（「推进至解决 + 交接写回」）；会话已切完全权限，据此完成提交、门禁与推送。不含部署、不含服务器操作、不含改线上配置。
+- **提交（6 个，全部非强制推送）**：`ea6e71cd` 批次 4 前端切割（125 删／依赖收窄）→ `bf834c77` 批次 5 ops 配置 + 门禁路径映射 → `1ae1c526` 批次 3B 渲染 + 文档 → `e0426efb` release-ledger 条目 → `7674c4a0` 门禁合成夹具垫片修复 → `d63edfda` 旧编辑器用例下架。工作区提交后干净。
+- **完整 Release 通过（`-Level Release -ProductionBaseCommit af17b7e9…`）**：规则 `8809/8809`（0 失败 0 跳过，9 m 50 s）、平台 `3155/3155`（0 失败 0 跳过，13 m 59 s）、排空消费者故障矩阵、前端 production + testrun 双构建（124 s）、服务端 restore/publish、release-archive；发布包 `D:/GPT/Legion12/artifacts/deploy/d63edfdaae1f4d5857b65035cad776f8d608b479/l12-release-d63edfdaae1f4d5857b65035cad776f8d608b479.json`（SHA256 `92210DE8F3658B3E1BF9FCCB6887FC00283B76F13E0C7A9DE7B3BD802E7559E2`，1107 B），归档 `118,482,437 B`。
+- **玩家更新日志区间检查通过**：`af17b7e → d63edfd`，玩家条目 3 项，源码覆盖 18 个（本批新增 1 条玩家、1 条内部条目）。
+- **远端读回**：`origin/main = d63edfdaae1f4d5857b65035cad776f8d608b479`（`20b5caa7..d63edfda  HEAD -> main`）。
+- **本批发现并修掉的潜伏缺陷（不是本批引入）**：`scripts/test-l12-release-gate.ps1` 的合成 `dotnet/npm/tar/node` 垫片依赖继承 PATH，而 `aa28efac`（2026-11-17）之后 `ops/windows/Initialize-L12BuildEnvironment.ps1` 用固定白名单重建 PATH，垫片被丢弃 → 真实 `dotnet` 打到故意没有 `.csproj` 的合成夹具（MSB1009），命令日志为空，第 563 行断言失败。该套件只在 `$releaseGateChanged` 命中时运行，本批改 `scripts/verify-l12-change.ps1` 才第一次把它拉起来（上两次完整 Release 分别改了 `net.ts`、C# 帧路径，均未命中）。修复：新增 opt-in `L12_TOOL_PATH_FIRST`（未设置时白名单顺序与既有实现完全一致），夹具显式设置并在 finally 恢复；修复前整套失败、修复后整套通过。
+- **裁定落地**：`verify-article-content-embeds.mjs` 的「旧编辑器对照」用例按人类点选下架——去掉已删组件 `ArticleBlockEditor.vue` 的 watched/import/legacy 分支与 4 条断言，保留活容器 `ArticleDocumentEditor`+`ArticleContentRenderer` 上的插入/换库/删除撤销、12 上限去重、缺失可见、图库分组断言；`node --check` 0 错，除说明注释外无 legacy 残留。
+- **需人工治理**：`D:/GPT/Legion12/artifacts/deploy/verification-evidence` 已达 `555,235,245 B`，超过 `503,316,480 B` 预算，本轮按规则继续完整门禁但不新增逐用例 TRX；失败与 PINNED 证据不自动删除。
+- **下阶段（按前置关系）**：① 部署侧接线（`deploy-l12.ps1:355-358/519-522/527-535/537`，先 keepalive 后 gzip）并跑部署行为套件，再以本批新 Release 包为新 manifest 部署 `af17b7e9 → d63edfda`；② 部署后读 `platform.phase.deck-domain/.ranked-broadcast-sync/.snapshot-write/.sqlite-commit` 四段，定位 5079 ms 归属，才决定批次 6；③ 批次 5 服务器侧（`wal_checkpoint(TRUNCATE)`+VACUUM、清理预算 10→30、journald 封顶）需一次授权，**不要**跑 `prune-l12-replay-payloads.sh`；④ 先治理超预算证据，再补 §7 客户端埋点，最后做 3B 剩余两项。

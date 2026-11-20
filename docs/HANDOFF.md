@@ -5030,3 +5030,11 @@
 - 阻塞（环境，不是代码）：本会话 shell 子进程不能写工作区（`New-Item`／`Set-Content`／node `EPERM`／`win_bash SANDBOX_UNSUPPORTED`，提权重试同样被拒），文件工具可写。因此 `HEAD` 仍为 `20b5caa7`、148 项改动（125 删／19 改／4 增）未提交、前端打包未补。
 - 未做且写明理由：`deploy-l12.ps1` 随包白名单与激活顺序（部署链路，无法跑行为套件，半接线危害更大）、§7 埋点与批次 3B 剩余两项（跨端新功能，无构建／无后端测试）、`verify-article-content-embeds.mjs` 旧编辑器用例（待产品／工程裁定，新证据见同日台账条目）。
 - 下一手顺序：非受限会话按「三提交 → `-Level Release` 补前端打包 → 部署接线（先 keepalive、后 gzip）→ 部署 → 读四段计时」推进；批次 6 的前置由此确定为「先部署」——`git merge-base --is-ancestor 0c7879c0 af17b7e9` 退出码 1，四段计时不在已部署的 `af17b7e9` 里（本地领先 22 个提交）。落点清单位于方案文档 §0.1.2 与同台账条目。
+
+## 2026-11-20 存储与卡顿方案收口结果（已提交、完整 Release 通过、已推送；未部署）
+
+- 6 个提交：`ea6e71cd`（批次 4 前端切割）／`bf834c77`（批次 5 ops + 门禁路径映射）／`1ae1c526`（批次 3B 渲染 + 文档）／`e0426efb`（release-ledger 条目）／`7674c4a0`（门禁合成夹具垫片修复）／`d63edfda`（旧编辑器用例下架）；`origin/main` 读回 `d63edfdaae1f4d5857b65035cad776f8d608b479`。
+- 完整 Release 通过：规则 `8809/8809`、平台 `3155/3155`、排空消费者、前端双构建、服务端发布、release-archive；发布包 `artifacts/deploy/d63edfda…/l12-release-d63edfda….json`（SHA256 `92210DE8…`）。玩家更新日志区间 `af17b7e → d63edfd` 通过。
+- 顺带修掉潜伏缺陷：合成门禁夹具的 `dotnet/npm/tar/node` 垫片被 `aa28efac` 引入的有界 PATH 丢弃，第 563 行断言自 2026-11-17 起潜伏；新增 opt-in `L12_TOOL_PATH_FIRST` 后整套通过。
+- 待人工治理：`artifacts/deploy/verification-evidence` 555,235,245 B 超 503,316,480 B 预算，本轮未新增逐用例 TRX。
+- 未部署、未改线上配置。下一手：部署侧接线（先 keepalive 后 gzip）→ 以新 manifest 部署 `af17b7e9 → d63edfda` → 读四段计时决定批次 6。
