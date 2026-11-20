@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261120-wukong-transform-alt-art",
+  "date": "2026-11-20",
+  "audience": "players",
+  "title": "孙悟空变身后保留异画",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "孙悟空作为主宰变身成【斗士】军团后，卡面继续使用你已选择的异画，不再回落为默认插画。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs"
+      ]
+    }
+  ]
+}
