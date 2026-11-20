@@ -6368,6 +6368,21 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
   4. **批次 5 服务器侧（需一次服务器操作授权）**：`PRAGMA wal_checkpoint(TRUNCATE)` 后 `VACUUM platform.db`（回收约 114 MB）；`L12_STORAGE_CLEANUP_BUDGET_SECONDS` 10→30；journald `SystemMaxUse=128M`。**不要**跑 `prune-l12-replay-payloads.sh`（缺 7 天／10 场窗口）。
   5. **3B 剩余两项（前置是 §7 埋点）**：先补客户端埋点（`msg.parse`／`msg.total`、消息→首帧、`pendingAction` 锁定时长、动画滞后、长帧计数、首屏里程碑），上报用 `navigator.sendBeacon` 传聚合值、服务端只打一条日志**不落库**、**不复用 `submitBug`**；有「Vue patch 占消息延迟比例」读数后再做固定定位层与 `shallowRef/revision` 收窄，否则是用未测收益换视觉回归风险。
   6. **第 7 项裁定**：见上，等一次人类点选。
+# 2026-11-20 部署前准备与服务器操作｜nginx gzip/keepalive 生效、容量预检通过、SSH 出口被封（未切换版本）
+
+- 授权范围：用户「授权操作服务器，且做好部署前准备」。本批**不含**版本切换与解除维护；按 `DEPLOY-HK.md:266`，解除维护需当批明确要求，故 `maintenance=true` 保持原状。
+- 仓库侧接线（已提交推送 `9bc255df`）：`deploy-l12.ps1` 随包上传 `nginx-l12-upstream-keepalive.conf`/`activate-l12-upstream-keepalive.sh`/`nginx-l12-gzip.conf`/`activate-l12-gzip.sh`，并按「先 keepalive、后 gzip」在 `prepare-storage` 之前激活；CRLF 清理与远端临时目录清理同步；`test-l12-deploy-behavior.ps1` 新增随包清单与顺序守卫（keepalive<gzip<prepare-storage）。完整 Release 通过：规则 `8809/8809`（10 m 12 s）、平台 `3155/3155`（14 m 17 s）、前端双构建、部署行为 77 场景；发布包 `D:/GPT/Legion12/artifacts/deploy/9bc255df9b781ba84e1bcd83fe3e708918aa8dd8/l12-release-9bc255df9b781ba84e1bcd83fe3e708918aa8dd8.json`（SHA256 `BE1B1837620A792DE69CB0104422E03007F53EE02EEB280514C1C32A97DAAC9E`，包 `118,482,875 B`）；玩家日志区间 `af17b7e → 9bc255d` 通过（3 项/覆盖 18 源），远端读回 `origin/main = 9bc255df`。
+- **服务器侧实际执行（均为受控、可回滚，逐条 `nginx -t` + reload + health 复核）**：
+  - 磁盘：journald 由 1.4 GB 压到 108 MB 并落盘 `/etc/systemd/journald.conf.d/50-l12-capped.conf`（`SystemMaxUse=128M`/`SystemKeepFree=1G`）；`apt clean`；删轮转日志 `auth.log.1`/`btmp.1`/`syslog.1`/`nginx/*.gz`；删已校验的 VACUUM 草稿 `/opt/l12-db-vacuum-20261120`（`sha256sum -c` OK）；删两版之前的释放目录 `/opt/legion12-releases/5471fa5c…`（活动与上一版保留）。可用空间 `8.55 GiB -> 11,284,783,104 B`。
+  - 容量预检：`prepare-storage` 通过，`systemAvailableBytes=11,284,783,104` ≥ 需求 `11,124,336,133`（余量 160 MB，偏薄）。
+  - nginx：gzip 片段与服务块 include 生效，公网读回 `content-encoding: gzip`/`vary: Accept-Encoding`；upstream keepalive 生效，3 个非 upgrade location 改走 `upstream l12_app_main`，`/ws` 正确跳过并保留 `Connection "upgrade"`。
+  - 清理预算：`/etc/legion12-test.env` 追加 `L12_STORAGE_CLEANUP_BUDGET_SECONDS=30`（600 root:root），下次重启生效。
+  - **修掉一处会直接卡死部署的漂移**：站点 `/api/admin/site/media` 的 `client_max_body_size` 实为 `32m`，而仓库三处契约要求 `64m`（`deploy-l12-release.sh:600`、`check-ui-contracts.mjs:1396`、`legion12-testrun.nginx:84`），`prepare-storage` 抛「Nginx 站点素材上传上限不是 64m」。按契约改回 `64m`（备份 `/etc/nginx/.legion12-before-media64-20261120T173141Z`），`nginx -T` 读回 1 处。
+  - **预检回执换代**：原 `preflight-receipt.txt` 绑定旧候选包 `2678e89c…`（checks=8）会拒绝新候选；归档到 `/opt/legion12-deployment/recovery/preflight-receipt-before-9bc255df.txt` 后重建，现绑定 `@bc` 新包 SHA（checks=1）。
+- 失败与现状（不美化）：dry run 到达「上传预构建运行包」后三次 `ssh: connect to host 154.201.80.91 port 22: Connection timed out` 而中止——**未上传、未切换、未改服务**。随后本机探测 TCP 22 持续不通而 HTTPS 200 正常（`maintenance=true`、版本仍 `af17b7e9`），判断为本机出口被限流/封禁，需等待解封；不得继续高频重试扩大封禁。
+- `maintenance=true` 的来源已查明：`admin_audit_events` 中 `2026-11-20T16:38:40Z` 管理员「笛喜_DC」执行 `operations.config.section.apply`（operations 配置段），非本批操作；本批未解除。
+- 未做：未上传、未切换版本、未删任何正式服备份（轮转授权只覆盖测试服）、未解除维护、未跑 `VACUUM platform.db`（需停库窗口；当前 freelist 约 119 MB）。
+- 下阶段：① 解封 SSH 后重跑 `deploy-l12.ps1 -DryRun` 验证上传链路，再由人类决定维护窗口与切换；② 磁盘余量需要决策：切换会新建约 5 GB 快照，可选「部署时设 `L12_PRUNE_RUNTIME_BACKUPS=1`（保留最新 2 组，释放约 5.19 GB）」或「把旧备份转存后删除」，两者都需正式服备份授权；③ 部署后读四段计时决定批次 6。
 
 # 2026-11-20 存储与卡顿方案收口结果｜6 个提交、完整 Release 通过、已推送（未部署）
 

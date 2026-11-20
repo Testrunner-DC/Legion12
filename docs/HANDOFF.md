@@ -5038,3 +5038,9 @@
 - 顺带修掉潜伏缺陷：合成门禁夹具的 `dotnet/npm/tar/node` 垫片被 `aa28efac` 引入的有界 PATH 丢弃，第 563 行断言自 2026-11-17 起潜伏；新增 opt-in `L12_TOOL_PATH_FIRST` 后整套通过。
 - 待人工治理：`artifacts/deploy/verification-evidence` 555,235,245 B 超 503,316,480 B 预算，本轮未新增逐用例 TRX。
 - 未部署、未改线上配置。下一手：部署侧接线（先 keepalive 后 gzip）→ 以新 manifest 部署 `af17b7e9 → d63edfda` → 读四段计时决定批次 6。
+## 2026-11-20 部署前准备（服务器已操作；未切换版本）
+
+- 仓库侧：`9bc255df` 让 `deploy-l12.ps1` 随包两个 nginx 片段与两个激活脚本，并按「先 keepalive、后 gzip」在 `prepare-storage` 前激活；部署行为 77 场景 + 完整 Release 通过（规则 8809/8809、平台 3155/3155），发布包 `artifacts/deploy/9bc255df…`（SHA256 `BE1B1837…`），已推送 `origin/main=9bc255df`。
+- 服务器侧已执行并复核：journald 封顶 128M（1.4 GB→108 MB）、apt/轮转日志清理、删 VACUUM 草稿与两版前释放目录 → 可用 `11,284,783,104 B`；`prepare-storage` 容量预检通过；**站点媒体上传上限 `32m` 漂移按仓库契约改回 `64m`**（备份 `/etc/nginx/.legion12-before-media64-20261120T173141Z`）；预检回执换代归档后重建；gzip 与 upstream keepalive **已生效**（公网读回 `content-encoding: gzip`；3 个非 upgrade location 走 upstream，`/ws` 未被改）。
+- 阻塞：dry run 到上传阶段三次 SSH 22 超时后中止（未上传/未切换）；本机 TCP 22 持续不通而 HTTPS 200 正常，判为本机出口限流/封禁，需等待解封。`maintenance=true` 是管理员「笛喜_DC」在 16:38:40Z 的 `operations.config.section.apply` 所设，按 `DEPLOY-HK.md:266` 本批未解除。
+- 待决策：切换会新建约 5 GB 快照，当前余量仅约 160 MB —— 需授权正式服备份轮转（`L12_PRUNE_RUNTIME_BACKUPS=1` 保留最新 2 组释放约 5.19 GB）或转存后删除。
