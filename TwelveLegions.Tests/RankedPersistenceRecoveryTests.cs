@@ -9,6 +9,16 @@ public sealed class RankedPersistenceRecoveryTests
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
+    private static string CommittedPlatformSnapshot(string databasePath)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={databasePath};Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return (string)command.ExecuteScalar()!;
+    }
+
     [Theory]
     [InlineData("missing-runtime")]
     [InlineData("null-season")]
@@ -648,7 +658,7 @@ public sealed class RankedPersistenceRecoveryTests
     public async Task AppliedOutboxRepairsOlderPlatformSnapshotWhenNoLaterSettlementDependsOnIt()
     {
         await using var fixture = await RankedFixture.CreateAsync("applied-reconcile");
-        var oldPlatformJson = File.ReadAllText(fixture.PlatformPath);
+        var oldPlatformJson = CommittedPlatformSnapshot(fixture.PlatformDbPath);
         fixture.Manager.Disconnect(fixture.SessionFor(fixture.ActingPlayer));
         fixture.Clock.UtcNow += TimeSpan.FromMinutes(4);
         await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);

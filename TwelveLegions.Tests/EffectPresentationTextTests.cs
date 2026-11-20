@@ -207,7 +207,7 @@ public sealed class EffectPresentationTextTests
             item => item.Trigger == "top-card");
         store.SaveEffectPresentationOverride(admin, scene, "较早文案");
 
-        var root = JsonNode.Parse(File.ReadAllText(seedPath))!.AsObject();
+        var root = CommittedSnapshot(seedPath);
         AssertAndCompleteEmptyLegacyDeckDomain(store, admin, root);
         var rows = root.First(item => item.Key.Equals("EffectPresentationOverrides",
             StringComparison.OrdinalIgnoreCase)).Value!.AsArray();
@@ -245,7 +245,7 @@ public sealed class EffectPresentationTextTests
         store.SaveEffectPresentationOverride(admin, scene, "较早文案");
         var committedVersion = store.Version;
 
-        var root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        var root = CommittedSnapshot(path);
         Assert.Equal(committedVersion, root.First(item => item.Key.Equals("Version",
             StringComparison.OrdinalIgnoreCase)).Value!.GetValue<long>());
         AssertAndCompleteEmptyLegacyDeckDomain(store, admin, root);
@@ -380,6 +380,16 @@ public sealed class EffectPresentationTextTests
         Assert.Empty(source["PublishedDecks"]!.AsArray());
         Assert.Empty(source.First(item => item.Key.Equals("Tournaments", StringComparison.OrdinalIgnoreCase))
             .Value!.AsArray());
+    }
+
+    private static JsonObject CommittedSnapshot(string path)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={Path.ChangeExtension(path, ".db")};Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;";
+        return JsonNode.Parse((string)command.ExecuteScalar()!)!.AsObject();
     }
 
     private static string TempDirectory(string suffix)
