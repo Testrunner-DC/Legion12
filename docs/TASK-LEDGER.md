@@ -6435,3 +6435,12 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
 - 空间处置（按既有规则）：删除两版之前的运行数据快照 `runtime-before-af17b7e9c9a7-20261118T222837Z.tar.gz`（`sha256sum -c` 校验通过，5,266,468,876 B），保留 `c9b91fde` 的快照作为回滚点；可用空间 `10.76 GB → 16.03 GB`，容量预检余量约 4.9 GB。部署入口已具备 `-PruneRuntimeBackups`，下次成功部署会按「保留最新 2 组」自动轮转。
 - **维护未解除**：部署未完成，现在解除维护会让玩家进入的仍是 `c9b91fde`（不是目标版本）。解除动作已备妥（管理员 CAS），将在下一次成功部署并通过健康核验后立即执行。
 - 下次部署建议（降低再次停服风险）：① 等我这边 SSH 静默后单次尝试；② 或从网络稳定的机器执行；③ 更稳的做法是上传包后在服务器用 `setsid nohup` 脱离会话执行 `deploy-legion12-release deploy`，并以轮询日志代替长连接，这样即使本地断线也不会把服务留在停服态。
+# 2026-11-21 部署重试与被拦：停服许可后手动重启会让部署安全中止（已恢复 c9b91fde）
+
+- 授权范围：用户「重新尝试部署」。本批仍**未完成部署**，线上仍是 `c9b91fde`（含 webp 修复的 `438ae0df`／`1d1706f7` 未上线），维护仍为 `maintenance=true`。
+- **关键教训（差点酿成第二次停服）**：部署一旦**消费停服许可并停止服务**，就绝不能手动 `systemctl start`。00:34 我在断线后重启服务，导致该事务的停服态快照随后被判定 `SNAPSHOT_NOT_LATEST`，部署按设计安全中止：`deployment-blocked.txt`（`failureStage=verify-stopped-runtime-backup`、`drainFailureCode=OWNER_OR_STATE_MISMATCH`、`disposition=pre-launch recovery could not be verified; manual recovery required`）并把 `serviceState` 留为 `stopped`。正确处理是等远端脚本自己收尾，再读 `deployment-blocked.txt` / `failures/` 判定后决定。
+- 恢复与清理过程：① 重启服务 → `active`、`/health` 读回 `c9b91fde`；② 归档 `deployment-blocked.txt` 到 `recovery/deployment-blocked-438ae0df-20261121T004006Z.txt`；③ 删除失败尝试产生的不可用快照 `runtime-before-438ae0df1748-20261121T002752Z.tar.gz`（含 `.sha256`/`.proof.json`，proof 已判 SNAPSHOT_NOT_LATEST，留着比删更危险）；④ 清除残留沙盒围栏 `/opt/legion12-runtime/.maintenance-sandbox-drain`（`schema=1 action=deploy commit=438ae0df… operationId=f1b17955…`，属死事务，`assert_sandbox_fence_absent` 会拒绝下一次部署）；⑤ 删除失败尝试留下的 `/opt/legion12-staging-…`。
+- 本次重试仍被拦的位置：上传阶段 `scp` 三次 `Connection timed out`（本轮无其它 SSH 进程竞争，本机 `Get-Process ssh/scp` 与 `Get-NetTCPConnection 154.201.80.91` 均无其它客户端）。判断仍是本机到 22 端口的突发新建连接限制。
+- **当前线上状态（复核）**：`https://legion-12.com/health` → `serverVersion=c9b91fdefc76…`、`maintenance=true`、首页 200；活动 release 未变；无 blocked 标记、无 staging 残留、无围栏；服务器只剩 1 份有效快照（`c9b91fdefc76`），可用 `16.02 GB`，容量预检余量约 4.9 GB。
+- 部署入口每次都会为目标 HEAD 重新验证并生成自己的包（本轮为 438ae0df 生成 `71fb8cb2…`），因此「本地已有包」并不等于「可跳过验证」；不同 HEAD 也会触发新的验证。
+- 下次建议：① SSH 静默 30 分钟以上的单一窗口，用标准入口执行一次，期间我这边零探测；② 或由网络稳定的机器执行（需在那台机器上以目标 HEAD 跑通 Release 再 `deploy-l12.ps1`）；③ 不建议手工拼 `deploy-legion12-release deploy` 的裸命令，因为它还包含 share-pages 激活等后置步骤，绕过会把发布状态搞成工具不认识的样子。
