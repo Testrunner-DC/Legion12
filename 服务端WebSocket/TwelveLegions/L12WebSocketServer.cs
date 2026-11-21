@@ -263,6 +263,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 engineVersion = build.EngineVersion,
             });
         });
+        _app.MapGet("/metrics", () =>
+        {
+            var runtime = _rooms.RuntimeStats();
+            var batch = L12PerformanceMetrics.TrySnapshot(out var snapshot) ? snapshot : null;
+            return Results.Ok(L12ServerMetrics.Build(_cardCount, _sockets.Count, runtime.RoomCount,
+                runtime.OnlineAccountCount, runtime.ActiveGameCount,
+                Environment.TickCount64 / 1000.0, batch));
+        });
+        _app.Logger.LogInformation("运行指标端点已就绪：/metrics（卡牌 {Cards} 张）", _cardCount);
         _app.MapGet("/api/operations/effective-policy", (HttpRequest request) =>
         {
             var policy = _platform.EffectiveOperationsPolicy();
