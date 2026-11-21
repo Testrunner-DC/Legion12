@@ -252,8 +252,11 @@ try {
     }
 
     if ($configChanged) {
+        # 只有 .codex 配置本身变更时才要求真实 Codex CLI；仅改 AGENTS.md 等由结构断言覆盖。
+        $codexRoutingArguments = @{}
+        if (Test-AnyPath @('^\.codex/')) { $codexRoutingArguments['RequireCli'] = $true }
         Invoke-CheckedPowerShellScript "Codex TOML and routing validation" `
-            (Join-Path $repoRoot "scripts\verify-l12-codex-routing.ps1")
+            (Join-Path $repoRoot "scripts\verify-l12-codex-routing.ps1") $codexRoutingArguments
     }
 
     if ($testStorageChanged) {
