@@ -271,7 +271,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 runtime.OnlineAccountCount, runtime.ActiveGameCount,
                 Environment.TickCount64 / 1000.0, batch));
         });
-        _app.Logger.LogInformation("运行指标端点已就绪：/metrics（卡牌 {Cards} 张）", _cardCount);
+        L12Log.Initialize(_app.Services.GetService<ILoggerFactory>());
+        L12Log.Info("server.startup", $"运行指标端点已就绪：/metrics（卡牌 {_cardCount} 张；结构化日志={L12Log.HasStructuredSink}）");
         _app.MapGet("/api/operations/effective-policy", (HttpRequest request) =>
         {
             var policy = _platform.EffectiveOperationsPolicy();

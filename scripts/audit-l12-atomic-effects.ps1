@@ -61,6 +61,12 @@ $noRuntimeEntranceCardIds = @($catalogOnlyCardIds | Where-Object {
 $unroutedWithTestEvidenceCardIds = @($catalogOnlyCardIds | Where-Object {
     $runtimeEvidence[$_].Tests.Count -gt 0
 } | Sort-Object -Unique)
+# 无效果卡与"未进入原子路由"的分解必须由脚本产出：手写分解是文档腐化的直接原因。
+$noEffectCardIds = @($cards | Where-Object { [string]$_.effect -eq $noEffectText } |
+    ForEach-Object { $_.id } | Sort-Object -Unique)
+$catalogOnlyNoEffectCardIds = @($catalogOnlyCardIds | Where-Object { $noEffectCardIds -contains $_ })
+# 无效果卡与"有权威入口"两个集合并非互斥：同时命中的卡片必须单列，否则分解式会凭空多出张数。
+$catalogOnlyNoEffectWithEntranceCardIds = @($catalogOnlyNoEffectCardIds | Where-Object { $unroutedRuntimeCardIds -contains $_ })
 $branchCounts = [ordered]@{}
 $details = New-Object System.Collections.Generic.List[object]
 foreach ($file in $runtimeFiles) {
@@ -137,6 +143,10 @@ $summary = [ordered]@{
     compositeTransitionRoutes = $compositeRouteMatches.Count
     compositeTransitionCards = $compositeCardIds.Count
     catalogOnlyPendingCards = $catalogOnlyCardIds.Count
+    noEffectCards = $noEffectCardIds.Count
+    catalogOnlyNoEffectCards = $catalogOnlyNoEffectCardIds.Count
+    catalogOnlyNoEffectWithEntranceCards = $catalogOnlyNoEffectWithEntranceCardIds.Count
+    catalogOnlyWithRuntimeEntranceCards = $unroutedRuntimeCardIds.Count
     unroutedWithAuthoritativeRuntimeCards = $unroutedRuntimeCardIds.Count
     noRuntimeEntranceCards = $noRuntimeEntranceCardIds.Count
     unroutedWithTestEvidenceCards = $unroutedWithTestEvidenceCardIds.Count

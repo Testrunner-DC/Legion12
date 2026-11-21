@@ -56,7 +56,7 @@ internal static class L12PerformanceMetrics
             if (ClientSampleLastTicks.TryGetValue(source, out var previous) && now - previous < minimumTicks) return;
             ClientSampleLastTicks[source] = now;
             if (ClientSampleLastTicks.Count > 4096) ClientSampleLastTicks.Clear();
-            Console.WriteLine("[L12性能] 客户端样本=1 来源=" + source + " 字节=" + bytes.ToString(CultureInfo.InvariantCulture) + " 样本=" + body);
+            L12Log.Info("performance.client", "[L12性能] 客户端样本=1 来源=" + source + " 字节=" + bytes.ToString(CultureInfo.InvariantCulture) + " 样本=" + body);
         }
         catch { } // 采样日志永远不能影响业务结果。
     }
@@ -70,13 +70,13 @@ internal static class L12PerformanceMetrics
     private static void Flush() => Window.TryFlush(batch =>
     {
         foreach (var row in batch.Series.Where(row => row.Count != 0 || row.DroppedContentionTotal != 0))
-            Console.WriteLine($"[L12性能] 阶段={row.Stage} 次数={row.Count} "
+            L12Log.Info("performance", $"[L12性能] 阶段={row.Stage} 次数={row.Count} "
                 + $"平均={Average(row)} 最大={row.Maximum:F2} "
                 + $"单位={row.Unit} P95桶={Band(row.P95)} P99桶={Band(row.P99)} "
                 + $"溢出样本={row.OverflowCount} 累计争用丢样={row.DroppedContentionTotal} "
                 + $"窗口开始={row.StartedAt:O} 窗口结束={row.EndedAt:O}");
         var diagnostic = batch.Diagnostics;
-        Console.WriteLine($"[L12性能] 固定阶段数={batch.Series.Count} "
+        L12Log.Info("performance", $"[L12性能] 固定阶段数={batch.Series.Count} "
             + $"累计未知阶段={diagnostic.UnknownStages} 累计无效样本={diagnostic.InvalidSamples} "
             + $"累计负值钳零={diagnostic.ClampedNegatives} 累计输出失败={diagnostic.SinkFailures} "
             + $"累计输出丢样={diagnostic.LostSinkSamples} 累计忙碌flush={diagnostic.SkippedFlushes}");

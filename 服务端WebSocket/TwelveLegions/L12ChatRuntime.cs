@@ -410,7 +410,7 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
                 try { Process(item); }
                 catch (Exception error)
                 {
-                    Console.Error.WriteLine($"聊天低优先级工作隔离：{error.GetType().Name}");
+                    L12Log.Error("chat.worker", $"聊天低优先级工作隔离：{error.GetType().Name}", error);
                     EmitFailure(item, "unavailable", "聊天服务当前不可用");
                 }
                 finally { ReleaseWork(item); }
