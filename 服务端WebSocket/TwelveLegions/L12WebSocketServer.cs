@@ -41,6 +41,18 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private readonly L12HttpPerformanceMonitor _httpPerformance = new();
     private readonly Func<L12ServerStorageView> _storageSnapshot;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
+
+    /// <summary>
+    /// 单进程并发连接上限：新连接在升级前被拒绝，避免连接耗尽把整个进程拖死。
+    /// 默认 512，可用 L12_MAX_SOCKETS 覆盖；非法或非正值回落到默认上限。
+    /// </summary>
+    private const int DefaultMaxConcurrentSockets = 512;
+
+    internal static int ResolveMaxConcurrentSockets(string? configured)
+        => int.TryParse(configured, out var value) && value > 0 ? value : DefaultMaxConcurrentSockets;
+
+    private static int MaxConcurrentSockets()
+        => ResolveMaxConcurrentSockets(Environment.GetEnvironmentVariable("L12_MAX_SOCKETS"));
     private readonly ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections = new();
     // Explicit test-only wiring; no production chat lane or mutation registry is installed.
     private L12ChatPairRegistry? _chatMutationRegistry = null;
@@ -4194,6 +4206,17 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         var lifetime = (ServerRequestLifetime)context.Items[RequestLifetimeKey]!;
         try
         {
+            lock (_lifecycleGate)
+            {
+                if (_sockets.Count >= MaxConcurrentSockets())
+                {
+                    // 拒绝而不是硬扛：503 + Retry-After 让客户端退避重连，进程继续服务已连接的玩家。
+                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    context.Response.Headers.RetryAfter = "30";
+                    lifetime.TransportReady.TrySetResult();
+                    return;
+                }
+            }
             socket = await context.WebSockets.AcceptWebSocketAsync();
             lock (_lifecycleGate) lifetime.Socket = socket;
             if (BeforeSocketRegistrationForTests is { } beforeRegistration) await beforeRegistration();

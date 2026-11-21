@@ -11,6 +11,9 @@ public sealed class RegistrationUsernameWorkIsolationTests
 {
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
 
+    // A4：重复用户名不再返回精确存在性文案，这里断言统一文案且不含"已存在"。
+    private const string UnavailableUsernameMessage = "用户名不可用，请更换用户名或直接登录";
+
     [Fact]
     public async Task RegistrationPasswordWorkDoesNotHoldSharedGate()
     {
@@ -142,7 +145,8 @@ public sealed class RegistrationUsernameWorkIsolationTests
         Assert.NotNull(winner.Account);
         Assert.NotNull(winner.Token);
         var loser = Assert.Single(results.Where(row => !row.Success));
-        Assert.Equal("用户名已存在", loser.Message);
+        Assert.Equal(UnavailableUsernameMessage, loser.Message);
+        Assert.DoesNotContain("已存在", loser.Message, StringComparison.Ordinal);
         Assert.Null(loser.Account);
         Assert.Null(loser.Token);
         Assert.Single(f.Store.Accounts().Where(row =>
@@ -178,11 +182,11 @@ public sealed class RegistrationUsernameWorkIsolationTests
             Assert.True(registered.Success, registered.Message);
             Assert.NotNull(registered.Token);
             Assert.False(renamed.Success);
-            Assert.Equal("用户名已存在", renamed.Message);
+            Assert.Equal(UnavailableUsernameMessage, renamed.Message);
         }
         else
         {
-            Assert.Equal("用户名已存在", registered.Message);
+            Assert.Equal(UnavailableUsernameMessage, registered.Message);
             Assert.Null(registered.Token);
             Assert.True(renamed.Success, renamed.Message);
         }

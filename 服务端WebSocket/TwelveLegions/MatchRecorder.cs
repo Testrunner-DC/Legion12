@@ -83,6 +83,20 @@ public sealed partial class MatchRecorder : IAsyncDisposable
                 await command.ExecuteScalarAsync(cancellationToken));
             if (configuredLimit != JournalSizeLimitBytes)
                 throw new InvalidOperationException("SQLite 未接受对局日志文件大小限制");
+            // synchronous 是连接级设置，只能逐连接设置：WAL 下 NORMAL 仍把提交持久到操作系统，
+            // 只有掉电才可能丢最后一次提交；默认 FULL 会让每条命令都做一次 fsync。
+            using (var synchronous = connection.CreateCommand())
+            {
+                synchronous.CommandText = "PRAGMA synchronous=NORMAL;";
+                await synchronous.ExecuteNonQueryAsync(cancellationToken);
+            }
+            using (var readBack = connection.CreateCommand())
+            {
+                readBack.CommandText = "PRAGMA synchronous;";
+                var mode = Convert.ToInt32(await readBack.ExecuteScalarAsync(cancellationToken));
+                if (mode != 1)
+                    throw new InvalidOperationException("SQLite 未接受对局日志的 NORMAL 同步级别");
+            }
             return connection;
         }
         catch

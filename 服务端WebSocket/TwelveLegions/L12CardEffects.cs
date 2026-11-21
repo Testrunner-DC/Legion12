@@ -154,9 +154,20 @@ public sealed partial class L12GameEngine
             case "trojan-expiry": ResolveS2TrojanHorseExpiry(item); break;
             case "trial-complete": ResolveTrialCompletionTriggerEffect(item); break;
             case "return-library-top": ResolveReturnToLibraryTopEffect(item); break;
-            default: FinishStackItem(item); break;
+            default:
+                if (!IsPipelineCompletionTrigger(item.Trigger))
+                    RecordResolutionFailure(item, "没有匹配的结算流程");
+                FinishStackItem(item);
+                break;
         }
     }
+
+    /// <summary>
+    /// 响应、堆叠延续类触发器由各自的响应管线结算，落到结构化复合路由的 default 属于正常结束；
+    /// 其余触发器（含通用 effect）落到这里说明该卡效没有权威结算流程，必须留下可见失败。
+    /// </summary>
+    private static bool IsPipelineCompletionTrigger(string trigger) => trigger is
+        "composite-continuation" or "response-block" or "response-negate" or "response-retarget-master";
 
     private static string NormalizeAtomicFlowKey(string value)
         => value == "\u5819\u706D" ? "湮灭" : value;

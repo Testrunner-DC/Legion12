@@ -35,6 +35,10 @@ $branchPatterns = [ordered]@{
     cardConditional = '(?m)^\s*(?:if|else\s+if)\s*\([^\r\n]*(?:CardId|SourceCardId)[^\r\n]*"' + $cardIdPattern + '"'
     cardSwitchArm = '(?m)^\s*"' + $cardIdPattern + '"\s*=>'
     effectTextInference = '(?:EffectText|\.Effect)\??\.Contains\s*\('
+    # 中文卡名分支：卡号 case 之外真正的逐卡分派面，与上一个计数分开计量、只降不升。
+    cardNameCase = 'case\s+"[^"]*[\u4e00-\u9fff][^"]*"\s*:'
+    # 静默 default：没有匹配流程时直接结束本段、不留任何可见结果。
+    silentDefault = 'default:\s*FinishStackItem\('
 }
 $routeSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12RuntimeEffectRoutes.cs'), [System.Text.Encoding]::UTF8)
 $fineProgramMatches = @(Get-L12FineAtomicProgramMatches -SourcePath $sourcePath)

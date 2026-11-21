@@ -7,6 +7,8 @@
   "legacyCardConditionalOccurrences": 187,
   "legacyCardSwitchArmOccurrences": 67,
   "legacyEffectTextInferenceOccurrences": 0,
+  "legacyCardNameCaseOccurrences": 140,
+  "legacySilentDefaultOccurrences": 9,
   "fineGrainedVerifiedPrograms": 57,
   "fineGrainedVerifiedCards": 52,
   "compositeTransitionRoutes": 180,

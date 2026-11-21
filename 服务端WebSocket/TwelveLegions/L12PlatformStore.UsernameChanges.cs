@@ -62,7 +62,7 @@ public sealed partial class L12PlatformStore
             if (string.Equals(row.Username, newUsername, StringComparison.OrdinalIgnoreCase)) return (false, "新用户名与当前用户名相同", null);
             if (_data.Accounts.Any(item => item.Id != accountId && !item.Deleted
                     && string.Equals(item.Username, newUsername, StringComparison.OrdinalIgnoreCase)))
-                return (false, "用户名已存在", null);
+                return (false, "用户名不可用，请更换用户名或直接登录", null);
             var previous = PublicUsername(row);
             row.Username = newUsername;
             row.SelfServiceUsernameChangeCount++;

@@ -582,7 +582,8 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             if (_data.Accounts.Any(row => string.Equals(row.Username, username, StringComparison.OrdinalIgnoreCase)))
-                return (false, "用户名已存在", null, null);
+                // 不区分"已存在"与其他不可用原因：精确存在性文案会直接把账号枚举的答案交给调用方。
+            return (false, "用户名不可用，请更换用户名或直接登录", null, null);
         }
         L12PasswordCredentialFields credential;
         using (PasswordWorkBudget.Acquire())
@@ -593,7 +594,8 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             if (_data.Accounts.Any(row => string.Equals(row.Username, username, StringComparison.OrdinalIgnoreCase)))
-                return (false, "用户名已存在", null, null);
+                // 不区分"已存在"与其他不可用原因：精确存在性文案会直接把账号枚举的答案交给调用方。
+            return (false, "用户名不可用，请更换用户名或直接登录", null, null);
             var row = new AccountRow { Username = username, Role = "player" };
             ApplyPassword(row, credential);
             _data.Accounts.Add(row);
@@ -834,7 +836,7 @@ public sealed partial class L12PlatformStore
             if (!row.MustChangeUsername) return (false, "当前账号无需强制修改用户名", ToView(row));
             if (_data.Accounts.Any(item => item.Id != accountId && !item.Deleted
                     && string.Equals(item.Username, newUsername, StringComparison.OrdinalIgnoreCase)))
-                return (false, "用户名已存在", null);
+                return (false, "用户名不可用，请更换用户名或直接登录", null);
             var previousPublicName = PublicUsername(row);
             row.Username = newUsername;
             row.MustChangeUsername = false;
