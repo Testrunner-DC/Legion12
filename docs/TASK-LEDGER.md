@@ -6426,3 +6426,12 @@ OPS-20260907-276：保持维护时完成发布健康核验。发布前发现业�
 - **环境修复（本机，非产品代码）**：`opcgpro-vue/dist` 与 `dist-testrun` 是指向已消失的 `cache/primary/t/log30/ui/...` 的悬挂 junction，导致 `vite build` 报 `ENOENT: mkdir .../dist`；已用 `cmd /c rmdir` 删除链接（不动目标），构建恢复。同类问题排查建议：先看 `Get-Item dist -Force | Select LinkType,Target`。
 - **远端并发**：推送时 `origin/main` 已被 `65df3d54`（异画动态图上传限额）推进，按既有规则做非破坏合并（`4506a64f`），无冲突；合并后服务端 `dotnet build` 与 `vue-tsc` 均 0 错。
 - 下一步：以当前 HEAD 跑一次完整 Release 产出可部署包；部署与维护窗口、以及批次 6 是否开工，等人类在拿到「营业后窗口读数」后决定。
+# 2026-11-21 部署尝试与事故恢复：服务一度停在停服态，已恢复 c9b91fde（含 webp 异画上传修复待随部署上线）
+
+- 授权范围：用户「均同意，部署时把另一对话推进的 webp 上传问题纳入进来，且部署后解除维护」。目标版本 `438ae0df`，其中已包含另一对话的 `65df3d54`「统一异画动态图上传限额并放宽帧数上限」（玩家条目 `20261121-altart-animated-upload-limits`：单张 16 MiB、400 帧以内动画 WebP 可保存上线，超限报明确原因）。
+- **事故（必须记录）**：00:2x UTC 的部署尝试消费了停服许可并停止 `legion12-test.service`，随后 SSH 通道中断，远端脚本未能继续把服务拉回，**生产在 `inactive` 状态约 10 分钟**（公网 502）。发现方式：下一次核对时 `/health` 无响应、`is-active=inactive`、公网返回 502。
+- **恢复动作与结果**：`systemctl start legion12-test.service` → `active`；本机与公网 `/health` 均读回 `serverVersion=c9b91fdefc76…`、`maintenance=true`；活动 release 仍是 `/opt/legion12-releases/c9b91fdefc76…`（**未发生版本切换**，`deployment-info` 源提交仍是 c9b91fde）；`deployment-drain/status` 重启后为 `phase=open / stopConsumed=false / owner=null / fenceSynchronized=true`，无残留围栏；删除失败尝试留下的 `/opt/legion12-staging-438ae0df1748-20261121T002752Z`。
+- **部署为何没做完**：今天共 5 次部署尝试，逐次分别死于 SSH 连接超时/限流（首次在预检回执、其后在上传、最后一次在停服阶段）。根因是我这台机器对 22 端口的突发连接被限流（普通 `ssh` 也会 20 s 超时后自愈），与本机高频探针叠加；**不是产品代码问题**，Release 已通过（规则 8809/8809、平台 3155/3155、双构建、归档；包 `artifacts/deploy/438ae0df…/l12-release-438ae0df….tar.gz`，manifest `C9B73EBE…`、release `d736fca0…`）。
+- 空间处置（按既有规则）：删除两版之前的运行数据快照 `runtime-before-af17b7e9c9a7-20261118T222837Z.tar.gz`（`sha256sum -c` 校验通过，5,266,468,876 B），保留 `c9b91fde` 的快照作为回滚点；可用空间 `10.76 GB → 16.03 GB`，容量预检余量约 4.9 GB。部署入口已具备 `-PruneRuntimeBackups`，下次成功部署会按「保留最新 2 组」自动轮转。
+- **维护未解除**：部署未完成，现在解除维护会让玩家进入的仍是 `c9b91fde`（不是目标版本）。解除动作已备妥（管理员 CAS），将在下一次成功部署并通过健康核验后立即执行。
+- 下次部署建议（降低再次停服风险）：① 等我这边 SSH 静默后单次尝试；② 或从网络稳定的机器执行；③ 更稳的做法是上传包后在服务器用 `setsid nohup` 脱离会话执行 `deploy-legion12-release deploy`，并以轮询日志代替长连接，这样即使本地断线也不会把服务留在停服态。
