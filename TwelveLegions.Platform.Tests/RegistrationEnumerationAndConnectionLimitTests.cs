@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -30,6 +31,37 @@ public sealed class RegistrationEnumerationAndConnectionLimitTests
         }
         finally
         {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AsyncDuplicateRegistrationSpendsTheAlignmentDelay()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            Assert.True(store.Register("delaytarget", "password-123").Success);
+
+            var spent = 0;
+            store.DuplicateRegistrationDelayMilliseconds = () => { spent++; return 0; };
+
+            var duplicate = await store.RegisterAsync("delaytarget", "password-123");
+            Assert.False(duplicate.Success);
+            Assert.Equal(L12PlatformStore.UnavailableUsernameMessage, duplicate.Message);
+            Assert.Equal(1, spent);
+
+            // 同步入口保持零额外等待（后台与测试路径），但文案必须一致。
+            var syncDuplicate = store.Register("delaytarget", "password-123");
+            Assert.False(syncDuplicate.Success);
+            Assert.Equal(L12PlatformStore.UnavailableUsernameMessage, syncDuplicate.Message);
+            Assert.Equal(1, spent);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
     }

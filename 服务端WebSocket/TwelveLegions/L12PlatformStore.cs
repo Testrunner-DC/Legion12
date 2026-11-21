@@ -573,17 +573,42 @@ public sealed partial class L12PlatformStore
         EnsureAlternateArtMetadataState();
     }
 
+    /// <summary>
+    /// 重复用户名的统一文案：不为"已存在"保留单独说法，否则等于把账号枚举的答案交给调用方。
+    /// </summary>
+    internal const string UnavailableUsernameMessage = "用户名不可用，请更换用户名或直接登录";
+
+    /// <summary>
+    /// 重复用户名的分支在查重处立即返回，与真正建号相差一次 PBKDF2，这条时序差可以
+    /// 绕过文案统一判出用户名是否存在。异步入口在该分支补 20-40ms 随机延迟，把两种
+    /// 响应拉回同一量级；测试可覆盖此钩子以避免真实等待。
+    /// </summary>
+    internal Func<int> DuplicateRegistrationDelayMilliseconds { get; set; } = static () => Random.Shared.Next(20, 41);
+
     public (bool Success, string Message, L12AccountView? Account, string? Token) Register(string username, string password)
+        => RegisterCoreAsync(username, password, false).GetAwaiter().GetResult();
+
+    public Task<(bool Success, string Message, L12AccountView? Account, string? Token)> RegisterAsync(
+        string username, string password)
+        => RegisterCoreAsync(username, password, true);
+
+    private async Task<(bool Success, string Message, L12AccountView? Account, string? Token)> RegisterCoreAsync(
+        string username, string password, bool asynchronous)
     {
         RequirePasswordWorkOutsideTransaction();
         username = username.Trim();
         var validation = ValidateCredentials(username, password);
         if (validation is not null) return (false, validation, null, null);
+        var duplicate = false;
         lock (_gate)
         {
-            if (_data.Accounts.Any(row => string.Equals(row.Username, username, StringComparison.OrdinalIgnoreCase)))
-                // 不区分"已存在"与其他不可用原因：精确存在性文案会直接把账号枚举的答案交给调用方。
-            return (false, "用户名不可用，请更换用户名或直接登录", null, null);
+            duplicate = _data.Accounts.Any(row => string.Equals(row.Username, username, StringComparison.OrdinalIgnoreCase));
+        }
+        if (duplicate)
+        {
+            if (asynchronous)
+                await Task.Delay(DuplicateRegistrationDelayMilliseconds()).ConfigureAwait(false);
+            return (false, UnavailableUsernameMessage, null, null);
         }
         L12PasswordCredentialFields credential;
         using (PasswordWorkBudget.Acquire())
@@ -593,9 +618,9 @@ public sealed partial class L12PlatformStore
         }
         lock (_gate)
         {
+            // 走到这里已经算过一次口令派生，重复分支的耗时与新建账号一致，无需再补延迟。
             if (_data.Accounts.Any(row => string.Equals(row.Username, username, StringComparison.OrdinalIgnoreCase)))
-                // 不区分"已存在"与其他不可用原因：精确存在性文案会直接把账号枚举的答案交给调用方。
-            return (false, "用户名不可用，请更换用户名或直接登录", null, null);
+                return (false, UnavailableUsernameMessage, null, null);
             var row = new AccountRow { Username = username, Role = "player" };
             ApplyPassword(row, credential);
             _data.Accounts.Add(row);

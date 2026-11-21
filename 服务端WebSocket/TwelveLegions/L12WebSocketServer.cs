@@ -1152,9 +1152,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     RequestMethod: "DELETE", RequestPath: request.Path.Value ?? string.Empty))
                 ? Results.NoContent() : Results.NotFound();
         });
-        _app.MapPost("/api/auth/register", (AuthRequest request) =>
+        _app.MapPost("/api/auth/register", async (AuthRequest request) =>
         {
-            var result = _platform.Register(request.Username ?? string.Empty, request.Password ?? string.Empty);
+            var result = await _platform.RegisterAsync(request.Username ?? string.Empty, request.Password ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Message, result.Account, result.Token }) : Results.BadRequest(new { result.Message });
         });
         _app.MapPost("/api/auth/login", async (HttpRequest request, AuthRequest body) =>
