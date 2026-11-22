@@ -26,8 +26,9 @@ public sealed record L12SessionRevocationResult(bool Found, string? SessionId, i
     bool AlreadyRevoked, IReadOnlyList<string> RevokedSessionIds);
 public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
     IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt,
-    IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
-    IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<string>? BenchIds = null, string? PublicationId = null, int? PublicationVersion = null,
     string Id = "", long Revision = 0, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? RepresentativeCardIds = null);
 public sealed record L12DeckMutationResult(string Status, L12AccountDeckView? Deck = null,
@@ -2142,6 +2143,8 @@ public sealed partial class L12PlatformStore
         var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);
         var author = owner is null ? "已注销玩家" : PublicUsername(owner);
         var payload = ExpandRuntimeDeckPayload(_data, CaptureDeckPayload(_data, row));
+        // Public views never expose the owner's alternate-art choices; only the ledger keeps
+        // them (published_decks.*_json) for play. The owner's own deck view carries them.
         var deck = new L12AccountDeckView(row.Name, row.MasterId, payload.MainCards, payload.MoraleCards,
             payload.SpecialCards, row.UpdatedAt,
             PublicationId: viewerAccountId == row.OwnerId ? row.Id : null,

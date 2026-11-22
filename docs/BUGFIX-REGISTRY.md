@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## DECK-20261122-COPY-NULL-SECTIONS｜公开牌库复制到我的牌库全量失败（本地已验，未部署）
+
+- 状态：local_verified_not_deployed
+- 现象：线上可用性核验 107 次公开牌库「复制到我的牌库」全部失败，提示「牌库缓存卡牌字段或数量超出限制」。
+- 根因：公开牌库视图 `L12AccountDeckView` 的 `BenchIds`/`AlternateArtSelections`/`AlternateArtCopies` 命中默认值 `null`（公开视图按既有契约不暴露发布者异画），序列化成 `"benchIds":null` 这类显式空值；客户端 `DeckLibraryPage.vue:566`、`PublicDeckDetailPage.vue:414` 裸展开服务端对象后进入 `decks.ts:460 normalizeSavedDeck` → `deckCacheCodec.ts:82`（及 `:99-100`）的 `!== undefined` 守卫把 `null` 当成数据，`validateCards(null)` 抛错。
+- 同型扫描：客户端 `benchIds`/`alternateArtSelections`/`alternateArtCopies` 引用逐个核对，只有缓存编码器的空值守卫直接吃服务端对象；`L12DeckEditor` 与站点页多用 `?? []` 派生，不受影响。服务端 4 个 `L12AccountDeckView` 构造点（`L12PlatformStore.cs:2145`、`PublicDeckDetailQueries.cs:146`、`PublicDeckVersionQueries.cs:188`、`PublicDeckDetails.cs:228`）全部核对：公开/历史视图确实不带这几个值。
+- 改动：① 客户端共享归一——`decks.ts normalizeSavedDeck` 把 8 个可选字段的 `null` 归一为「不存在」，远端同步、列表、复制三条路径共用同一漏斗；② 服务端 `L12AccountDeckView` 三个可空节补 `WhenWritingNull`，线上不再出现 `"x":null`。**未改**公开视图的异画语义：首轮按「传真实异画值」实现，被 `DeckDomainStorageTests.PublishedDecksPersistAlternateArtForPlayButPublicViewUsesOriginalArt` 打红（该契约要求公开视图为 null、异画只留在 `published_decks.*_json` 供对局使用），已回退。
+- 回归：新增 `DeckViewWireShapeTests`（2 项：未持久化的节不落线、持久化的节仍序列化）；平台定向 `DeckDomainStorageTests` + `PublicDeck*` **186/186**；前端 `test-deck-cache-codec.mjs` 通过、`vue-tsc --noEmit` 通过。
+- 验证：Focused 首轮 1 红（上述契约，3,173/3,174）→ 回退后定向 186/186；Batch 门禁结果见提交记录。
+- 回滚：恢复 `normalizeSavedDeck` 与三个 `WhenWritingNull` 即可；不涉及协议版本、存储格式或数据迁移。
+- 未做（决策6 待裁）：公开牌库本身不带备牌（`PublishedDeckRow` 无备牌列），复制出来的牌库也没有备牌；要带就得给公开牌库增列（与「尽量让存储更小」相反），不带则在界面上明示。
+
 ## PLATFORM-20261121-ALTART-ANIMATED-UPLOAD｜动态异画上传 413（已修复，待部署）
 
 - 现象：后台上传 9.4 MiB 动画 WebP 作为异画素材，点击上传后按钮回弹且没有任何提示。线上 nginx 访问日志 `20/Nov/2026:22:16:28`、`22:17:33`、`22:20:28` 三次 `POST /api/admin/site/media` 全部 413（139 字节响应），同路径 `11:19:03` 的静态上传为 200。

@@ -457,8 +457,16 @@ export function hasSavedDeckSelection(scope: L12DeckSelectionScope) {
 function deckCacheOwner(accountId?: string) {
   return accountId ? `account:${accountId}` : 'guest'
 }
-function normalizeSavedDeck(deck: SavedL12Deck): SavedL12Deck {
-  // Storage validation must retain original metadata, IDs and every copy's position.
+const OPTIONAL_DECK_KEYS = ['id', 'revision', 'publicationId', 'publicationVersion', 'benchIds',
+  'representativeCardIds', 'alternateArtSelections', 'alternateArtCopies'] as const
+function normalizeSavedDeck(source: SavedL12Deck): SavedL12Deck {
+  // Server deck views spell "not persisted" as null while the cache format only knows
+  // absent or present, so every nullable section is dropped here — the single funnel for
+  // remote, list and copy payloads. Storage validation still retains original metadata,
+  // IDs and every copy's position.
+  const cleaned: Record<string, unknown> = { ...source }
+  for (const key of OPTIONAL_DECK_KEYS) if (cleaned[key] === null) delete cleaned[key]
+  const deck = cleaned as unknown as SavedL12Deck
   return decodeDeckCache(encodeDeckCache(deck))
 }
 function readSavedDecks(storageKey: string): Record<string, SavedL12Deck> {
