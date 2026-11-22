@@ -161,7 +161,7 @@ public sealed class ControlPlanePlatformStoreTests
         {
             var store = new L12PlatformStore(path);
             var registered = store.Register("tlegacd8e56", "password-123");
-            var document = CommittedSnapshot(path);
+            var document = CommittedPlatformDocument.CommittedSnapshotWithSessions(path);
             foreach (var account in document["Accounts"]!.AsArray().OfType<JsonObject>())
                 account.Remove("PermissionVersion");
             foreach (var session in document["Sessions"]!.AsArray().OfType<JsonObject>())

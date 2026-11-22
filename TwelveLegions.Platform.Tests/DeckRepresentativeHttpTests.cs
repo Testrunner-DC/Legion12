@@ -161,7 +161,9 @@ public sealed class DeckRepresentativeHttpTests
         foreach (var table in new[] {"account_decks","published_decks","published_deck_versions"})
             Execute($"ALTER TABLE {table} DROP COLUMN representative_card_ids_json;");
         Execute("UPDATE platform_state SET schema_version=11; UPDATE storage_meta SET value='11' WHERE key='schema_version';");
-        Execute("CREATE TRIGGER fail_representative_schema BEFORE UPDATE OF schema_version ON platform_state WHEN NEW.schema_version=12 BEGIN SELECT RAISE(ABORT,'synthetic-representative-migration-failure'); END;");
+        // The representative-column step writes the current schema marker, so the trigger that
+        // forces its rollback must follow the contract rather than a pinned number.
+        Execute($"CREATE TRIGGER fail_representative_schema BEFORE UPDATE OF schema_version ON platform_state WHEN NEW.schema_version={PlatformSchemaTestContract.Current} BEGIN SELECT RAISE(ABORT,'synthetic-representative-migration-failure'); END;");
         Assert.Throws<L12PlatformStorageUnavailableException>(() => new L12PlatformStore(f.MirrorPath));
         Assert.Equal(11, Scalar("SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
         foreach (var table in new[] {"account_decks","published_decks","published_deck_versions"})

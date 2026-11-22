@@ -473,7 +473,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
         {
             var store = new L12PlatformStore(path);
             var account = store.Register("tlegaca79d6", "password-123");
-            var document = CommittedSnapshot(path);
+            var document = CommittedPlatformDocument.CommittedSnapshotWithSessions(path);
             document.Remove("LoginThrottles");
             document.Remove("Security");
             foreach (var item in document["Accounts"]!.AsArray().OfType<JsonObject>())

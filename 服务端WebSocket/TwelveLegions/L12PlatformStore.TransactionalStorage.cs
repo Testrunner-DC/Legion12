@@ -74,11 +74,11 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 12;
+    private const int PlatformStorageSchemaVersion = 13;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions =
-        CreatePlatformJsonOptions(false, includeAuditLedger: false);
+        CreatePlatformJsonOptions(false, includeAuditLedger: false, includeSessions: false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions =
-        CreatePlatformJsonOptions(true, includeAuditLedger: true);
+        CreatePlatformJsonOptions(true, includeAuditLedger: true, includeSessions: true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -191,6 +191,7 @@ public sealed partial class L12PlatformStore
             }
 
             data = EnsureAndHydrateDeckDomainStorage(connection, data);
+            data = EnsureAndHydrateAccountSessionStorage(connection, data);
             HydrateRankedBroadcastObjects(connection, data);
             MergeIndependentAudit(connection, data);
             _lastCommittedSnapshot = SerializeRollbackState(data);
@@ -344,6 +345,7 @@ public sealed partial class L12PlatformStore
             SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, _data);
             if (objectWrite is null && chatAccountDeletions.Length != 0)
                 SynchronizeChatAccountDeletions(connection, transaction, _data, chatAccountDeletions);
+            SynchronizeAccountSessionRows(connection, transaction, _data.Sessions);
             StorageFailureInjector?.Invoke("before-snapshot-write");
             var snapshot = PrepareCoreSnapshot(_data, connection, transaction);
             if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
@@ -526,6 +528,7 @@ public sealed partial class L12PlatformStore
                     // The new platform revision and normalized decks must be read from
                     // the same database generation, even for a no-op claim/preview.
                     HydrateDeckDomain(connection, latest, transaction);
+                    HydrateAccountSessions(connection, latest, transaction);
                     HydrateRankedBroadcastObjects(connection, latest, transaction);
                 }
                 var validatedAudit = MergeIndependentAudit(connection, latest, transaction, prepareAppend: true);
@@ -626,6 +629,7 @@ public sealed partial class L12PlatformStore
         PersistDeckDomainSnapshot(connection, transaction, data);
         VerifyDeckDomainSnapshot(connection, transaction, data);
         SetStorageMeta(connection, transaction, DeckDomainStateKey, DeckDomainActiveState);
+        SynchronizeAccountSessionRows(connection, transaction, data.Sessions);
         SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, data,
             allowLegacyDeliveryImport: initialLegacyProjection);
         var snapshot = PrepareCoreSnapshot(data, connection, transaction);
@@ -764,6 +768,10 @@ public sealed partial class L12PlatformStore
         SqliteTransaction? transaction = null, bool prepareAppend = false)
     {
         FilterMigratedAuditSnapshot(connection, data, transaction);
+        // The audit ledger and the sessions are both independently committed domains: whoever
+        // hydrates a stored snapshot back into memory re-reads them from their own table. A save
+        // keeps its staged in-memory sessions, so the append path never re-reads them.
+        if (!prepareAppend) HydrateAccountSessions(connection, data, transaction);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -901,11 +909,15 @@ public sealed partial class L12PlatformStore
         try
         {
             InitializeDeckDomainSchema(connection, existingSchemaVersion);
+            InitializeAccountSessionSchema(connection);
             InitializeRankedBroadcastObjectStorage(connection, ReadExistingStorageSchemaVersion(connection));
             InitializeAccountRankedRestrictionSchema(connection);
-            if (ReadExistingStorageSchemaVersion(connection) is not PlatformStorageSchemaVersion)
+            // One ladder step per stored version: each initializer runs for exactly the marker it
+            // upgrades, so a database one version behind is not rejected by a step it already took.
+            if (ReadExistingStorageSchemaVersion(connection) is < TournamentReputationSchemaVersion)
                 InitializeTournamentReputationSchema(connection);
-            InitializeRepresentativeSchema(connection);
+            if (ReadExistingStorageSchemaVersion(connection) is 11)
+                InitializeRepresentativeSchema(connection);
         }
         catch (L12PlatformStorageIncompatibleException)
         {
@@ -1017,20 +1029,23 @@ public sealed partial class L12PlatformStore
         return false;
     }
 
-    private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented, bool includeAuditLedger)
+    private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented, bool includeAuditLedger,
+        bool includeSessions)
     {
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
         {
             if (typeInfo.Type == typeof(DataFile))
             {
-                // The audit ledger lives in admin_audit_events and is merged back on load, so the
-                // core snapshot must not carry a second copy of it (~3.4 MB of every save). The
-                // compatibility mirror still does: it stays a complete offline copy of the
-                // platform, which is what the JSON fallback reads.
+                // The audit ledger lives in admin_audit_events and the sessions live in
+                // account_sessions; both are merged back from their table on load, so the core
+                // snapshot must not carry a second copy of either. The compatibility mirror still
+                // does: it stays a complete offline copy of the platform, which is what the JSON
+                // fallback reads.
                 foreach (var property in typeInfo.Properties.Where(property => property.Name is nameof(DataFile.Decks)
                              or nameof(DataFile.PublishedDecks) or nameof(DataFile.DeckPayloads)
-                             || (!includeAuditLedger && property.Name is nameof(DataFile.AdminAudit))))
+                             || (!includeAuditLedger && property.Name is nameof(DataFile.AdminAudit))
+                             || (!includeSessions && property.Name is nameof(DataFile.Sessions))))
                     property.ShouldSerialize = static (_, _) => false;
             }
             else if (typeInfo.Type == typeof(TournamentDeckSnapshotRow))

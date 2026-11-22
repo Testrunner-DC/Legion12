@@ -220,7 +220,7 @@ public sealed class ControlPlanePhaseTwoPlatformStoreTests
             var editorRegistration = store.Register("tlegac470cc", "password-123");
             var admin = store.Login("Admin", "L12master").Account!;
             Assert.True(store.SetRole(admin, editorRegistration.Account!.Id, "admin"));
-            var legacy = CommittedSnapshot(path);
+            var legacy = CommittedPlatformDocument.CommittedSnapshotWithSessions(path);
             foreach (var name in new[] { "BusinessVersion", "AdminCommands", "AdminApprovals", "ContentVersions", "ContentBatches" })
                 legacy.Remove(name);
             foreach (var entry in legacy["ContentEntries"]?.AsArray().OfType<JsonObject>() ?? [])

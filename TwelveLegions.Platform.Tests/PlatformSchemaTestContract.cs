@@ -2,6 +2,8 @@ namespace TwelveLegions.Platform.Tests;
 
 internal static class PlatformSchemaTestContract
 {
-    internal const int Current = 12;
+    // Mirrors L12PlatformStore.PlatformStorageSchemaVersion (12 -> 13 moves sessions into
+    // account_sessions).
+    internal const int Current = 13;
     internal const int Unsupported = Current + 1;
 }
