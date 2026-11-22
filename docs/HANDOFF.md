@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-11-22 B-2 步骤1 完成（本地已验，未部署；storage schema 13）
+
+- 会话/令牌已从核心快照拆到 `account_sessions`，迁移前自动落 `platform.db.pre-session-split`；核心快照不再含 `Sessions`，镜像仍含。
+- **部署前必知**：v13 对 v12 二进制不可读且构造即抛异常，回滚＝恢复数据库备份（或部署前 runtime 备份）。裁定：单向前进 + 先测试服再正式服 + 成功后解除维护。
+- 门禁：Lead 复跑 Focused exit 0，平台 3,180/3,180；Release 与两服切换未执行。
+
+
 > **域信息基线（2026-11-22 实测）**：正式站是 `legion-12.com`（`/health` 返回 `serverVersion = c9b91fde…`）。
 > 本文及登记表中出现的 `legion12.grand-umi.com`、`cards.legion12.grand-umi.com` 一律是**已下线的旧域历史记录**，
 > 只用于还原当时的故障与处置，**不得据此执行任何操作或推断当前线上状态**。

@@ -1,5 +1,15 @@
 # 十二军团任务台账
 
+## 2026-11-22 B-2 步骤1：会话/令牌拆表（schema 12→13，本地已验，未部署）
+
+- 存储契约：`PlatformStorageSchemaVersion` 12 → **13**；会话迁到独立表 `account_sessions`（8 列与 `SessionRow` 一致 + `(account_id)`/`(expires_utc)` 索引，全 `IF NOT EXISTS`），行级同步＝按 id upsert + `json_each` 删除内存已无的行。
+- 快照口径：核心快照 `includeSessions: false`（不再含 `Sessions`），兼容镜像 `true`（JSON 只读兜底仍需完整副本）。
+- 迁移与回滚通道：迁移前 `BackupDatabase` 落 `platform.db.pre-session-split`，写表与版本标记同事务；**v13 库对 v12 二进制不可读、构造即抛异常**（演练实测），回滚只能恢复该备份，不是回退二进制。用户裁定：单向前进 + 先测试服再正式服 + 成功后解除维护。
+- 阶梯守卫：`InitializeStorageSchema` 两处「版本恰为上一版」改为按版本序（`< TournamentReputationSchemaVersion` / `is 11`），否则 12→13 被旧守卫拒绝；10→11→13、11→13 语义不变。
+- 守卫：`SessionStorageMigrationTests` 6 项；三个既有夹具改为从 `account_sessions` 取会话（`CommittedPlatformDocument`，断言零改动）；`PlatformSchemaTestContract.Current` 12→13。
+- 验证：定向 6/6；Lead 独立复跑 `verify-l12-change.ps1 -Level Focused` **exit 0、平台 3,180/3,180（13m15s）**。
+- 未做完：两服切换与「生产库副本迁移 + `pre-session-split` 恢复」演练；Release 级验收尚未跑。
+
 ## 2026-11-22 线上可用性核验 G1/G3：公开牌库复制崩溃 + 文档旧域口径（G1 本地已验待部署，G3 已闭环）
 
 - 承接线上可用性核验：公开牌库「复制到我的牌库」107/107 全量失败（提示「牌库缓存卡牌字段或数量超出限制」），以及仓内文档仍在引用已下线的旧域。
