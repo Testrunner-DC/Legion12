@@ -188,6 +188,8 @@ try {
     # 改它们与改发布脚本同险，必须同样重跑部署行为套件。
     $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|deploy-l12-testrun|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs|verify-l12-runtime-backup\.py|l12-deployment-drain-consumer\.py)$', '^ops/server/(nginx-l12-[^/]+\.conf|activate-l12-[^/]+\.sh)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$', '^scripts/test-l12-(runtime-backup|deployment-drain-consumer)\.py$')
     $testrunDeploymentChanged = Test-AnyPath @('^ops/server/deploy-l12-testrun-release\.sh$', '^ops/server/(legion12-testrun[^/]*\.nginx|activate-l12-testrun-[^/]+\.sh)$', '^scripts/(test-l12-testrun-deploy-behavior|verify-l12-change)\.ps1$')
+    # 登记条目/结构文档自身的改动必须触发台账门禁，否则新增条目的前向 schema 没有人查（D5 二期）。
+    $documentationChanged = Test-AnyPath @('^docs/(BUGFIX-REGISTRY|TASK-LEDGER)\.md$', '^docs/l12/DOC-ENTRY-SCHEMA\.md$', '^scripts/test-l12-doc-ledger-schema\.ps1$')
 
     # Non-ASCII service paths are classified by their filename. Unknown shared
     # server sources intentionally exercise both suites rather than silently
@@ -280,8 +282,13 @@ try {
         Invoke-Checked "Release status source regression" "node" @(".\scripts\test-release-status.mjs")
         Invoke-CheckedPowerShellScript "Release verification gate regression" `
             (Join-Path $repoRoot "scripts\test-l12-release-gate.ps1")
+    }
+
+    if ($releaseGateChanged -or $documentationChanged) {
         Invoke-CheckedPowerShellScript "Documentation ledger consistency" `
             (Join-Path $repoRoot "scripts\verify-l12-doc-ledger.ps1")
+        Invoke-CheckedPowerShellScript "Documentation entry schema regression" `
+            (Join-Path $repoRoot "scripts\test-l12-doc-ledger-schema.ps1")
     }
 
     if ($deploymentBehaviorChanged) {
