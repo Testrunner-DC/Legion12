@@ -75,8 +75,10 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 public sealed partial class L12PlatformStore
 {
     private const int PlatformStorageSchemaVersion = 12;
-    private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
-    private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
+    private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions =
+        CreatePlatformJsonOptions(false, includeAuditLedger: false);
+    private static readonly JsonSerializerOptions PlatformMirrorJsonOptions =
+        CreatePlatformJsonOptions(true, includeAuditLedger: true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -92,6 +94,14 @@ public sealed partial class L12PlatformStore
     private bool _databaseIntegrityValid = true;
     private bool _snapshotChecksumValid = true;
     internal Action<string>? StorageFailureInjector { get; set; }
+
+    // Per-save audit accounting for the append path. Compared = staged rows that reached the
+    // unchanged check (every row the merge read back plus every newly staged one), inserted =
+    // rows actually written. Kept as guard assertions: a save that replays its own retained
+    // ledger has to show it here.
+    private long _auditComparedRows;
+    private long _auditInsertedRows;
+    internal (long Compared, long Inserted) LastAuditAppend => (_auditComparedRows, _auditInsertedRows);
 
     public string TransactionalStoragePath => _databasePath;
 
@@ -281,6 +291,8 @@ public sealed partial class L12PlatformStore
     {
         var operationMetric = L12PlatformOperationMetrics.Begin();
         var operationSucceeded = false;
+        _auditComparedRows = 0;
+        _auditInsertedRows = 0;
         var chatAccountDeletions = _pendingChatAccountDeletions.ToArray();
         try
         {
@@ -667,7 +679,7 @@ public sealed partial class L12PlatformStore
         WriteCoreSnapshotPayload(connection, snapshot);
     }
 
-    private static void AppendIndependentAudit(SqliteConnection connection, SqliteTransaction transaction,
+    private void AppendIndependentAudit(SqliteConnection connection, SqliteTransaction transaction,
         IEnumerable<AdminAuditRow> audits, ValidatedAuditAppend? validatedAudit = null)
     {
         var pending = audits.ToDictionary(row => row.Id, StringComparer.Ordinal);
@@ -675,11 +687,13 @@ public sealed partial class L12PlatformStore
         var present = validatedAudit is null ? ValidateExistingAuditRows(connection, transaction, pending) : null;
         foreach (var audit in pending.Values)
         {
+            _auditComparedRows++;
             if (validatedAudit?.ContainsUnchanged(audit) ?? present!.Contains(audit.Id)) continue;
             var payload = JsonSerializer.Serialize(audit, PlatformSnapshotJsonOptions);
             using var command = CreateAuditInsert(connection, transaction, audit, payload, Sha256(payload), ignore: false);
             if (command.ExecuteNonQuery() != 1)
                 throw new InvalidDataException("审计追加未写入唯一事件");
+            _auditInsertedRows++;
         }
     }
 
@@ -1003,15 +1017,20 @@ public sealed partial class L12PlatformStore
         return false;
     }
 
-    private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented)
+    private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented, bool includeAuditLedger)
     {
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
         {
             if (typeInfo.Type == typeof(DataFile))
             {
+                // The audit ledger lives in admin_audit_events and is merged back on load, so the
+                // core snapshot must not carry a second copy of it (~3.4 MB of every save). The
+                // compatibility mirror still does: it stays a complete offline copy of the
+                // platform, which is what the JSON fallback reads.
                 foreach (var property in typeInfo.Properties.Where(property => property.Name is nameof(DataFile.Decks)
-                             or nameof(DataFile.PublishedDecks) or nameof(DataFile.DeckPayloads)))
+                             or nameof(DataFile.PublishedDecks) or nameof(DataFile.DeckPayloads)
+                             || (!includeAuditLedger && property.Name is nameof(DataFile.AdminAudit))))
                     property.ShouldSerialize = static (_, _) => false;
             }
             else if (typeInfo.Type == typeof(TournamentDeckSnapshotRow))

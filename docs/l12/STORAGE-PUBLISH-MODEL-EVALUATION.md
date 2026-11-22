@@ -91,44 +91,44 @@
 补充方式：生产窗口抓一次 /api/metrics 即可（该端点已上线，暴露 bytes.platform.phase.* 与
 duration.platform.operation.transactional-save），无需改代码。
 
-## 8. B-1 施工预告（审计增量插入，尚未实施）
+## 8. B-1 / B-1b 施工结论（2026-11-22，已实施）
 
-### 为什么先做它
+### 8.1 先证伪：插入早已被跳过
 
-审计重放的字节与行数（4,427 行 / 3.43 MB）不随改动量变化，是「一次保存 = 全量重写」的第二大成本；
-且它不需要改 schema、不需要迁移，是三片里风险最低、见效最快的一片。
+4,400 条合成审计、连续保存，内部计数器实测（`L12PlatformStore.LastAuditAppend`）：
 
-### 现状（2026-11-22 读码定位）
+| 保存 | 到达比对 | 实际插入 |
+|---|---|---|
+| 导入后第 1 次 | 4,401 | 1 |
+| 第 2 次 | 4,401 | 1 |
 
-- 调用点：L12PlatformStore.TransactionalStorage.cs:342 ——
-  AppendIndependentAudit(connection, transaction, _data.AdminAudit, validatedAudit)
-- 实现：同文件 AppendIndependentAudit 逐条 INSERT OR IGNORE
-- 表：admin_audit_events(id, created_utc, category, outcome, actor_id, command_id, correlation_id, payload_json, payload_sha256)
+`AppendIndependentAudit` 的 `ContainsUnchanged` 早已跳过历史行，B-1 的目标
+「一次保存不再对全部审计行做插入尝试」**上游已实现**。每次保存仍在付的是**全账本完整性巡检**：
+读回全部审计行、逐行校验 SHA-256、逐行 JSON 序列化比对（生产 4,427 行 ≈ 3.43 MB × 3 次/保存）。
 
-### 要改什么
+### 8.2 审计水位：已实现并实测有效，但被否决
 
-1. 增加水位 _auditWatermarkCreatedUtc 与 _auditWatermarkId；在 ReadSnapshot 之后用
-   SELECT created_utc, id FROM admin_audit_events ORDER BY created_utc DESC, id DESC LIMIT 1 初始化。
-2. AppendIndependentAudit 只遍历严格大于水位的条目；插入成功后把水位推进到本批最大值。
-3. 事务失败不得推进内存水位（水位更新必须在 transaction.Commit() 成功之后）。
-4. 保留 INSERT OR IGNORE 作为幂等兜底，但不再重放历史行。
+水位能把巡检降到 0（实测到达比对 4,401 → 1），但会立刻打红 3 项既有安全契约——
+库外改元数据、暂存体被改、5000 窗口外同 id 异体，三者都要求拒绝保存。水位等于放弃
+「库外篡改在下次保存被检出」，因此未采用；实现存档为
+`D:\GPT\Legion12\artifacts\b1-audit-watermark\watermark-candidate.patch`。
 
-### 必须一起处理的边界
+### 8.3 已实施：核心快照不再序列化审计账本（B-1b）
 
-- FilterMigratedAuditSnapshot 与 validatedAudit 参数的语义不能被绕过
-- 审计保留策略会删除旧行：删除不影响水位（水位只用于判断哪些是新的）
-- 冲突重试路径（L12PlatformStorageConflictException）后水位必须与已提交状态一致
-- 恢复路径（recovered 分支）启动时必须从数据库重建水位，不能沿用内存值
+`CreatePlatformJsonOptions` 增加 `includeAuditLedger`：
 
-### 验收标准
+- 核心快照（`platform_state.snapshot_json`）**不写** `AdminAudit`；
+- 兼容镜像（`platform.json`）**仍然完整**——JSON 只读兜底与 `全量保存吸收增量审计` 的既有契约依赖它；
+- 加载时账本由 `admin_audit_events` 合并回内存，回滚缓存走另一套选项，仍含全量审计。
 
-1. 新增守卫：连续两次保存，第二次的审计插入次数应等于新增条数而非总数；用内部计数器断言
-2. 崩溃注入（现有 StorageFailureInjector）：失败后水位不前进，重试仍能写入该条审计
-3. 平台项目全量通过；admin_audit_events 行数与内存集合语义一致（不丢行、不重复）
-4. 重启后水位从数据库重建，首次保存不重放历史
+实测（1,200 条合成审计）：`snapshot_json` 不含 `"AdminAudit"` 且体积小于审计 payload 总和；
+`admin_audit_events` 行数不变；重启后 `RetainedAuditEvents` 与查询结果一致。
 
-### 为什么本轮没有实施
+### 8.4 守卫与残留
 
-该路径同时承担 CAS 快照写入、对象写、聊天同步、广播同步与冲突重试；改动必须完整读懂约 200 行事务体。
-在上下文不足时硬改耐久性关键路径，风险高于收益。定位、边界与验收已写在这里，下一轮可直接开工。
+- `TwelveLegions.Platform.Tests/AuditAppendReplayGuardTests.cs`：连续保存只插入新增审计、重启不重放、
+  失败提交不推进状态且重试仍写入、快照与镜像的账本归属。
+- `LastAuditAppend`（`Compared`/`Inserted`）保留为守卫断言点。
+- 残留：每次保存仍做全账本完整性巡检（≈3.43 MB × 3）。这是**有意保留**的篡改检测；
+  若要削它，必须先决定是否放弃该契约（见 8.2）。
 
