@@ -91,3 +91,44 @@
 补充方式：生产窗口抓一次 /api/metrics 即可（该端点已上线，暴露 bytes.platform.phase.* 与
 duration.platform.operation.transactional-save），无需改代码。
 
+## 8. B-1 施工预告（审计增量插入，尚未实施）
+
+### 为什么先做它
+
+审计重放的字节与行数（4,427 行 / 3.43 MB）不随改动量变化，是「一次保存 = 全量重写」的第二大成本；
+且它不需要改 schema、不需要迁移，是三片里风险最低、见效最快的一片。
+
+### 现状（2026-11-22 读码定位）
+
+- 调用点：L12PlatformStore.TransactionalStorage.cs:342 ——
+  AppendIndependentAudit(connection, transaction, _data.AdminAudit, validatedAudit)
+- 实现：同文件 AppendIndependentAudit 逐条 INSERT OR IGNORE
+- 表：admin_audit_events(id, created_utc, category, outcome, actor_id, command_id, correlation_id, payload_json, payload_sha256)
+
+### 要改什么
+
+1. 增加水位 _auditWatermarkCreatedUtc 与 _auditWatermarkId；在 ReadSnapshot 之后用
+   SELECT created_utc, id FROM admin_audit_events ORDER BY created_utc DESC, id DESC LIMIT 1 初始化。
+2. AppendIndependentAudit 只遍历严格大于水位的条目；插入成功后把水位推进到本批最大值。
+3. 事务失败不得推进内存水位（水位更新必须在 transaction.Commit() 成功之后）。
+4. 保留 INSERT OR IGNORE 作为幂等兜底，但不再重放历史行。
+
+### 必须一起处理的边界
+
+- FilterMigratedAuditSnapshot 与 validatedAudit 参数的语义不能被绕过
+- 审计保留策略会删除旧行：删除不影响水位（水位只用于判断哪些是新的）
+- 冲突重试路径（L12PlatformStorageConflictException）后水位必须与已提交状态一致
+- 恢复路径（recovered 分支）启动时必须从数据库重建水位，不能沿用内存值
+
+### 验收标准
+
+1. 新增守卫：连续两次保存，第二次的审计插入次数应等于新增条数而非总数；用内部计数器断言
+2. 崩溃注入（现有 StorageFailureInjector）：失败后水位不前进，重试仍能写入该条审计
+3. 平台项目全量通过；admin_audit_events 行数与内存集合语义一致（不丢行、不重复）
+4. 重启后水位从数据库重建，首次保存不重放历史
+
+### 为什么本轮没有实施
+
+该路径同时承担 CAS 快照写入、对象写、聊天同步、广播同步与冲突重试；改动必须完整读懂约 200 行事务体。
+在上下文不足时硬改耐久性关键路径，风险高于收益。定位、边界与验收已写在这里，下一轮可直接开工。
+
