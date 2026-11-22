@@ -578,13 +578,6 @@ public sealed partial class L12PlatformStore
     /// </summary>
     internal const string UnavailableUsernameMessage = "用户名不可用，请更换用户名或直接登录";
 
-    /// <summary>
-    /// 重复用户名的分支在查重处立即返回，与真正建号相差一次 PBKDF2，这条时序差可以
-    /// 绕过文案统一判出用户名是否存在。异步入口在该分支补 20-40ms 随机延迟，把两种
-    /// 响应拉回同一量级；测试可覆盖此钩子以避免真实等待。
-    /// </summary>
-    internal Func<int> DuplicateRegistrationDelayMilliseconds { get; set; } = static () => Random.Shared.Next(20, 41);
-
     public (bool Success, string Message, L12AccountView? Account, string? Token) Register(string username, string password)
         => RegisterCoreAsync(username, password, false).GetAwaiter().GetResult();
 
@@ -606,8 +599,10 @@ public sealed partial class L12PlatformStore
         }
         if (duplicate)
         {
-            if (asynchronous)
-                await Task.Delay(DuplicateRegistrationDelayMilliseconds()).ConfigureAwait(false);
+            // 曾在这里补 20-40ms 随机延迟想掩盖时序差，2026-11-22 测服实测证明无效：
+            // 新注册中位 1277ms、重复 190ms，差距来自整库 Save()，不是 PBKDF2。
+            // 真正的收口在存储发布模型（见 docs/l12/STORAGE-PUBLISH-MODEL-EVALUATION.md），
+            // 这里不再保留任何掩盖性延迟，避免"看起来已缓解"。
             return (false, UnavailableUsernameMessage, null, null);
         }
         L12PasswordCredentialFields credential;

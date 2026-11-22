@@ -37,7 +37,7 @@ public sealed class RegistrationEnumerationAndConnectionLimitTests
     }
 
     [Fact]
-    public async Task AsyncDuplicateRegistrationSpendsTheAlignmentDelay()
+    public async Task DuplicateRegistrationStaysImmediateAndUsesTheUnifiedMessage()
     {
         var root = TempRoot();
         try
@@ -45,19 +45,20 @@ public sealed class RegistrationEnumerationAndConnectionLimitTests
             var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
             Assert.True(store.Register("delaytarget", "password-123").Success);
 
-            var spent = 0;
-            store.DuplicateRegistrationDelayMilliseconds = () => { spent++; return 0; };
-
+            // 2026-11-22 实测证明 20-40ms 抖动对 ~1.1s 的真实差距无效，已移除。
+            // 这里锁住"不再有任何掩盖性延迟"与"两路文案一致"两点。
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             var duplicate = await store.RegisterAsync("delaytarget", "password-123");
+            stopwatch.Stop();
+
             Assert.False(duplicate.Success);
             Assert.Equal(L12PlatformStore.UnavailableUsernameMessage, duplicate.Message);
-            Assert.Equal(1, spent);
+            Assert.True(stopwatch.ElapsedMilliseconds < 500,
+                "重复注册出现可疑的人工延迟：" + stopwatch.ElapsedMilliseconds + "ms");
 
-            // 同步入口保持零额外等待（后台与测试路径），但文案必须一致。
             var syncDuplicate = store.Register("delaytarget", "password-123");
             Assert.False(syncDuplicate.Success);
             Assert.Equal(L12PlatformStore.UnavailableUsernameMessage, syncDuplicate.Message);
-            Assert.Equal(1, spent);
         }
         finally
         {
