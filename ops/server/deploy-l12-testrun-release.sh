@@ -1315,6 +1315,18 @@ if [[ -n "$test_root" ]]; then
   new_web_cache_bytes="${L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES:-$new_web_cache_bytes}"
   runtime_backup_allowance="${L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES:-$runtime_backup_allowance}"
 fi
+# Retention must run before the projection, not only after the switch: once the program
+# budget is exhausted the post-deploy cleanup never runs and the host can never deploy
+# again (the old order deadlocked the testrun host at 1630/1536 MB). Retention keeps the
+# active release plus its rollback window, failures and pins, so this only removes what
+# the post-deploy cleanup would have removed anyway.
+if [[ -z "$test_root" ]]; then
+  if select_retained_releases "$budget_previous_target" && prune_release_set; then
+    log "pre-budget release retention applied before the storage projection"
+  else
+    log "pre-budget release retention skipped: release retention cannot be proven"
+  fi
+fi
 validate_testrun_storage_budget "$release_unpacked_bytes" "$card_unpacked_bytes" \
   "$previous_web_cache_bytes" "$new_web_cache_bytes" "$runtime_backup_allowance"
 
