@@ -440,7 +440,10 @@ try {
     $remoteReleaseSource = "$remoteTransfer/$(Split-Path $artifact.ReleaseArchive -Leaf)"
     # 服务端 runtime 备份轮转默认关闭（prune_runtime_backups_enabled=0），而唯一 Windows 入口
     # 此前没有透传该开关，导致备份只增不减并最终撑爆 data 预算（2026-11-22 实测 10 组 / 152M）。
-    $prunePrefix = if ($env:L12_TESTRUN_PRUNE_RUNTIME_BACKUPS -eq '1') { 'L12_TESTRUN_PRUNE_RUNTIME_BACKUPS=1 ' } else { '' }
+    # 默认开启轮转：关闭时备份只增不减，会把 data 预算撑爆（实测 10 组 / 152M）。
+    # 需要保留全部备份调试时显式设置 L12_TESTRUN_PRUNE_RUNTIME_BACKUPS=0。
+    $pruneRuntimeBackups = if ($env:L12_TESTRUN_PRUNE_RUNTIME_BACKUPS -eq '0') { '0' } else { '1' }
+    $prunePrefix = "L12_TESTRUN_PRUNE_RUNTIME_BACKUPS=$pruneRuntimeBackups "
     $remoteAssetMove = if ($assetsCached) { ":" } else {
         "mv -f '$remoteTransfer/$(Split-Path $artifact.CardAssetsArchive -Leaf)' '$remoteAssets'"
     }
@@ -459,7 +462,23 @@ try {
         "(rmdir '$remoteTransfer' 2>/dev/null || true)"
     ) -join " && "
     Invoke-External ssh @sshOptions $endpoint.Destination $remoteCommand
-    if ($DryRun) { Write-Host "[L12 testrun deploy] Dry-run passed; the active testrun release was unchanged." }
+    if (-not $DryRun) {
+    # release 目录此前没有任何保留策略，每部署一次就多留 136M，直到撞上 1.5 GiB 程序预算。
+    # 这里在部署成功后只保留最新 3 个，且永不删除当前活动提交对应的目录。
+    $releaseRoot = '/opt/legion12-testrun-releases'
+    $listing = @(& ssh @sshOptions $endpoint.Destination "ls -1dt $releaseRoot/*/ 2>/dev/null")
+    $releaseDirs = @($listing | ForEach-Object { $_.Trim() } | Where-Object { $_ -like "$releaseRoot/*" })
+    if ($releaseDirs.Count -gt 3) {
+        $activeMatches = @($releaseDirs | Where-Object { $_ -like "*$($artifact.Commit)*" })
+        $toDelete = @($releaseDirs | Select-Object -Skip 3 | Where-Object { $activeMatches -notcontains $_ })
+        if ($toDelete.Count -gt 0) {
+            $removeArguments = ($toDelete | ForEach-Object { "'" + $_.TrimEnd('/') + "'" }) -join ' '
+            Invoke-External ssh @sshOptions $endpoint.Destination "rm -rf $removeArguments"
+            Write-Host "[L12 testrun deploy] pruned $($toDelete.Count) old release director(ies); kept the newest 3 and the active commit."
+        }
+    }
+}
+if ($DryRun) { Write-Host "[L12 testrun deploy] Dry-run passed; the active testrun release was unchanged." }
     else { Write-Host "[L12 testrun deploy] Deployment passed: https://legion-12.com/testrun/" }
 }
 finally {
