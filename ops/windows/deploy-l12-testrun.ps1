@@ -8,7 +8,9 @@ param(
     [string]$ArtifactManifestSha256 = "",
     [string]$CandidateRepository = "",
     [switch]$DryRun,
-    [switch]$ValidateArtifactOnly
+    [switch]$ValidateArtifactOnly,
+    # 回滚到旧产物时必须跳过“产物提交 == 当前 HEAD”的绑定，否则永远只能部署当前提交。
+    [switch]$Rollback
 )
 
 $ErrorActionPreference = "Stop"
@@ -386,8 +388,15 @@ try {
     Set-Location $repoRoot
     $dirty = @(& git status --porcelain)
     if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) { throw "The worktree is dirty; testrun archives must come from a clean commit." }
-    $head = (& git rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or $head -ne $artifact.Commit) { throw "Artifact commit does not match the clean worktree HEAD." }
+    if ($Rollback.IsPresent) {
+        # 回滚必然部署旧产物，不能要求产物提交等于当前 HEAD；干净工作树与产物本身的
+        # sha256 与清单契约校验照常保留，被跳过的内容在上面这行日志里写明。
+        Write-Host "[L12 testrun deploy] rollback mode: skipping the artifact-commit/HEAD binding; clean-tree and artifact integrity checks stay active."
+    }
+    else {
+        $head = (& git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or $head -ne $artifact.Commit) { throw "Artifact commit does not match the clean worktree HEAD." }
+    }
     $sshOptions = @(Resolve-TestrunSshOptions -Endpoint $endpoint -KnownHosts $KnownHostsFile -Identity $IdentityFile)
     $serverDeploy = Join-Path $repoRoot "ops\server\deploy-l12-testrun-release.sh"
     $healthVerifier = Join-Path $repoRoot "ops\server\verify-l12-health.mjs"
@@ -429,6 +438,9 @@ try {
 
     $mode = if ($DryRun) { "dry-run" } else { "deploy" }
     $remoteReleaseSource = "$remoteTransfer/$(Split-Path $artifact.ReleaseArchive -Leaf)"
+    # 服务端 runtime 备份轮转默认关闭（prune_runtime_backups_enabled=0），而唯一 Windows 入口
+    # 此前没有透传该开关，导致备份只增不减并最终撑爆 data 预算（2026-11-22 实测 10 组 / 152M）。
+    $prunePrefix = if ($env:L12_TESTRUN_PRUNE_RUNTIME_BACKUPS -eq '1') { 'L12_TESTRUN_PRUNE_RUNTIME_BACKUPS=1 ' } else { '' }
     $remoteAssetMove = if ($assetsCached) { ":" } else {
         "mv -f '$remoteTransfer/$(Split-Path $artifact.CardAssetsArchive -Leaf)' '$remoteAssets'"
     }
@@ -443,7 +455,7 @@ try {
         $remoteAssetMove,
         "rm -f '$remoteActivator' '$remoteSnippet' '$remoteService' '$remoteTool' '$remoteVerifier'",
         "/usr/local/sbin/deploy-legion12-testrun-release self-test",
-        "/usr/local/sbin/deploy-legion12-testrun-release $mode $($artifact.Commit) $($artifact.ReleaseSha256) $remoteRelease $($artifact.CardAssetsHash) $assetShaArgument $assetPathArgument",
+        "$prunePrefix/usr/local/sbin/deploy-legion12-testrun-release $mode $($artifact.Commit) $($artifact.ReleaseSha256) $remoteRelease $($artifact.CardAssetsHash) $assetShaArgument $assetPathArgument",
         "(rmdir '$remoteTransfer' 2>/dev/null || true)"
     ) -join " && "
     Invoke-External ssh @sshOptions $endpoint.Destination $remoteCommand
