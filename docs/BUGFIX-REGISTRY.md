@@ -1,5 +1,9 @@
 # Legion12 Bug 修复记录
 
+> **域信息基线（2026-11-22 实测）**：正式站是 `legion-12.com`（`/health` 返回 `serverVersion = c9b91fde…`）。
+> 本文及登记表中出现的 `legion12.grand-umi.com`、`cards.legion12.grand-umi.com` 一律是**已下线的旧域历史记录**，
+> 只用于还原当时的故障与处置，**不得据此执行任何操作或推断当前线上状态**。
+
 ## DECK-20261122-COPY-NULL-SECTIONS｜公开牌库复制到我的牌库全量失败（本地已验，未部署）
 
 - 状态：local_verified_not_deployed

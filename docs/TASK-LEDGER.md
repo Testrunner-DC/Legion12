@@ -1,5 +1,15 @@
 # 十二军团任务台账
 
+## 2026-11-22 线上可用性核验 G1/G3：公开牌库复制崩溃 + 文档旧域口径（G1 本地已验待部署，G3 已闭环）
+
+- 承接线上可用性核验：公开牌库「复制到我的牌库」107/107 全量失败（提示「牌库缓存卡牌字段或数量超出限制」），以及仓内文档仍在引用已下线的旧域。
+- G1 根因：公开牌库视图 `L12AccountDeckView` 的 `BenchIds`/`AlternateArtSelections`/`AlternateArtCopies` 命中默认 `null`（公开视图按既有契约不暴露发布者异画），被序列化成显式 `null`；前端 `DeckLibraryPage.vue`/`PublicDeckDetailPage.vue` 裸展开后进入 `deckCacheCodec.ts` 的 `!== undefined` 守卫，`validateCards(null)` 直接抛错。
+- G1 改动：客户端 `decks.ts normalizeSavedDeck` 把 8 个可选字段的 `null` 归一为「不存在」（远端同步、列表、复制三条路径共用）；服务端 `L12AccountDeckView` 三个可空节补 `WhenWritingNull`，线上不再出现 `"x":null`。**未改**公开视图异画语义：`DeckDomainStorageTests.PublishedDecksPersistAlternateArtForPlayButPublicViewUsesOriginalArt` 要求公开视图为 `null`，首轮「传真实异画」被该守卫打红并已回退。
+- G1 回归：新增 `DeckViewWireShapeTests`（空值不落线、有值仍序列化）；`DeckDomainStorageTests` + `PublicDeck*` 186/186；`vue-tsc --noEmit`、`test-deck-cache-codec.mjs`、`check-deck-editor-reference-flow.mjs` 通过；Batch 门禁 exit 0（平台 3,174/3,174、production+testrun 双构建）。提交 `5694edec` 已推送并回读一致。
+- G1 未做（决策6 待裁）：公开牌库本身不带备牌（`PublishedDeckRow` 无备牌列），复制出来的牌库也没有备牌；要带就得给公开牌库增列（与「尽量让存储更小」相反），不带则在界面上明示。
+- G3 改动：`docs/HANDOFF.md`、`docs/BUGFIX-REGISTRY.md`、`docs/CARD-ASSET-CDN-PLAN.md` 各加一段「域信息基线（2026-11-22 实测）」注记——正式站 `legion-12.com`（`/health` 返回 `serverVersion = c9b91fde…`），文中 `legion12.grand-umi.com` / `cards.legion12.grand-umi.com` 一律标注为已下线旧域历史，不得据此操作；历史条目正文一字未改。
+- G3 验证：`verify-l12-doc-ledger.ps1` 通过（625 条、重复 2、无日期 0、倒序 38/15、schema 违规 0）。
+
 ## 2026-11-21 异画动态图上传 413 修复（已验，待部署）
 
 - 承接线上反馈：后台上传 9.4 MiB 动画 WebP 作为异画素材时无提示回弹。服务端 nginx 访问日志三次 413（22:16:28 / 22:17:33 / 22:20:28 UTC，139 字节响应），确认是 HTTP 端点的静态读取上限与存储层动态限额不一致，不是浏览器解码失败，也不是 nginx 体积限制（该路由为 64m）。
