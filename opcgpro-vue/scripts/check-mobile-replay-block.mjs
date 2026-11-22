@@ -36,6 +36,8 @@ expect(records.includes("error.value = '请到电脑端查看回放'"), 'record 
 expect(replayTemplate.recordsMobileInlineBlock, 'mobile replay actions must use an inline summary notice instead of a blocking modal')
 expect(records.includes('function openReplayImport()') && records.includes('if (mobileReplayBlocked) return blockMobileReplay()'), 'JSON replay import must be blocked before opening a picker')
 expect(replay.includes('const mobileReplayBlocked = isMobileDeviceExperience()'), 'direct replay route must detect mobile before loading')
+expect(viewport.includes('export function canRenderReplayCanvas('), 'replay eligibility must stay a pure geometry predicate')
+expect(viewport.includes('return !canRenderReplayCanvas('), 'replay blocker must ask the replay-canvas question, not the layout classification')
 expect(replay.includes('if (!mobileReplayBlocked) void loadReplay()'), 'direct replay route must not request data on mobile')
 expect(replayTemplate.replayMobileBlocker, 'direct replay route must render the blocker page')
 expect(!hand.includes('mobileLandscapeViewport') && !tile.includes('mobileLandscapeViewport'), 'mobile geometry must not be implemented as a global hand/card scale')

@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## VIEWPORT-20261122-REPLAY-GEOMETRY-GATE｜回放被几何视口误判阻断（本地已验，未部署）
+
+- 状态：local_verified_not_deployed
+- 现象：1280×1024、1152×864、1024×768 的桌面窗口打开回放直接显示「请到电脑端查看回放」，切到 1600×900 立即恢复。
+- 根因：`mobileViewport.ts` 的 `compactLandscape` strict 档把 4:3/5:4 低分桌面判成移动端（phone：`w≤1120 && h≤820 && r≥1.24`；tablet：`w≤1366 && 700≤h≤1060 && 1.18≤r≤1.50`），而 `isMobileDeviceExperience()` 只是布局分类的别名，回放门禁跟着一起误判。
+- 同型扫描：`isMobileDeviceExperience()` 全仓仅 `ReplayPage.vue:38`、`MatchRecords.vue:22` 两处；`isMobileViewportExperience()` 供 GameBoard、`battleViewportLayout.ts`、`horizontalScrollArrows.ts` 使用——两个问题必须分开，混用即本缺陷。
+- 改动（决策5＝A+C）：① A：strict 档 ratio 下限 1.24 / 1.18 → **1.30**，把 5:4 桌面（1280×1024；没有任何在售平板是 5:4）移出移动布局；4:3 桌面与 4:3 平板几何完全重合，1024×768 与 1152×864 保留移动布局（取舍已文档化）。② C：新增纯几何 `canRenderReplayCanvas(width, height) = width >= 1000 && height >= 700`，`isMobileDeviceExperience()` 改为 `!canRenderReplayCanvas(物理视口)`——回放问的是「这块视口能不能放回放画布」，与布局分类解耦，仍满足守卫「分类不得依赖设备身份」。
+- 矩阵实测（复算同一公式，relaxed=false）：移动布局 1280×1024 Y→**N**、1024×768/1152×864 保持 Y；回放 1024×768、1152×864、1280×1024、1180×820、1080×810、1366×1024 由 N→**Y**；同时**收紧**原先的漏洞——390×844 竖屏手机与 820×1180 竖屏平板由 Y→**N**（旧逻辑不看竖屏，竟可进回放），844×390 手机横屏保持 N。
+- 回归：`check-mobile-replay-block.mjs` 增两条断言（必须存在 `canRenderReplayCanvas`；回放门禁不得复用布局分类），该脚本 12 项全部通过；`vue-tsc --noEmit` 通过；production + testrun 双构建通过。
+- 验证：Focused 门禁 exit 0；`npm run build` exit 0。
+- 回滚：恢复 `compactLandscape` 两个 ratio 下限与 `isMobileDeviceExperience()` 原实现（复用 `isMobileViewportExperience()`）即可；不涉及协议、存储或数据。
+- 未做：浏览器实机回归（`verify-deck-stale-tabs.mjs`、`verify-site-detail-reachability.mjs` 等 Playwright 脚本在本机缺依赖，见台账环境缺口记录）。
+
 > **域信息基线（2026-11-22 实测）**：正式站是 `legion-12.com`（`/health` 返回 `serverVersion = c9b91fde…`）。
 > 本文及登记表中出现的 `legion12.grand-umi.com`、`cards.legion12.grand-umi.com` 一律是**已下线的旧域历史记录**，
 > 只用于还原当时的故障与处置，**不得据此执行任何操作或推断当前线上状态**。

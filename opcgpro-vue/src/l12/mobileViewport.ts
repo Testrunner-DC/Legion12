@@ -23,13 +23,16 @@ let layout = {
 
 function compactLandscape(width: number, height: number, relaxed: boolean) {
   const ratio = width / Math.max(1, height)
+  // The strict floors exclude 5:4 desktop windows (ratio 1.25): no shipped tablet is
+  // 5:4, while 4:3 desks and 4:3 tablets are geometrically identical, so 1024x768 and
+  // 1152x864 keep the mobile layout and rely on the replay eligibility below instead.
   const phone = width <= (relaxed ? 1180 : 1120)
     && height <= (relaxed ? 860 : 820)
-    && ratio >= (relaxed ? 1.18 : 1.24)
+    && ratio >= (relaxed ? 1.18 : 1.30)
   const tablet = width <= (relaxed ? 1400 : 1366)
     && height >= 700
     && height <= (relaxed ? 1120 : 1060)
-    && ratio >= (relaxed ? 1.14 : 1.18)
+    && ratio >= (relaxed ? 1.14 : 1.30)
     && ratio <= (relaxed ? 1.56 : 1.50)
   return phone || tablet
 }
@@ -112,10 +115,22 @@ export function isMobileViewportExperience() {
   return resolveViewportMode(width, height, undefined, audioPreferences.mobileLayout).mobile
 }
 
-// Compatibility entry used by the replay blocker. Its result is now based on
-// geometry instead of device identity.
+/**
+ * Replay needs a desktop-sized physical viewport. This asks a different question than
+ * the mobile layout does (a phone in landscape qualifies for the layout but never for
+ * the replay canvas), so a desktop window that merely looks tablet-shaped keeps its
+ * mobile layout and still gets replay. Geometry only: no pointer, UA or orientation.
+ */
+export function canRenderReplayCanvas(width: number, height: number) {
+  return width >= 1000 && height >= 700
+}
+
+// Compatibility entry used by the replay blocker: it now answers the replay-canvas
+// question instead of reusing the layout classification.
 export function isMobileDeviceExperience() {
-  return isMobileViewportExperience()
+  if (typeof window === 'undefined') return true
+  const viewport = window.visualViewport
+  return !canRenderReplayCanvas(viewport?.width ?? window.innerWidth, viewport?.height ?? window.innerHeight)
 }
 
 export function landscapeTeleportTarget() {
