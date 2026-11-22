@@ -414,7 +414,7 @@ async function copyToMine() {
       const deck = { ...source, id: undefined, revision: undefined, name, publicationId: null, publicationVersion: null, cardIds: [...source.cardIds], moraleIds: [...source.moraleIds], specialIds: [...(source.specialIds ?? [])], updatedAt: new Date().toISOString() }
       const saved = await saveDeck(deck)
       if (current())
-        notice.value = `已复制《${saved.name}》到我的牌库`
+        notice.value = `已复制《${saved.name}》到我的牌库（公开牌库不含备牌，可自行补充）`
       if (!current()) return
       if (!isOfficialPublicDeckCounterTarget(entry.value!)) {
         try {

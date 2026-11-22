@@ -569,7 +569,7 @@ async function copyToMine(entry: PublishedDeck) {
         saved.value = loadSavedDecks()
         await loadMineDirectory()
         if (!current()) return
-        notice.value = `已复制《${confirmed.name}》到我的牌库`
+        notice.value = `已复制《${confirmed.name}》到我的牌库（公开牌库不含备牌，可自行补充）`
       }
       if (current() && !isOfficialPublicDeckCounterTarget(entry)) {
         try {

@@ -50,7 +50,7 @@ async function copyToLibrary() {
     if (!current()) return
     const copy = { ...original, name, updatedAt: new Date().toISOString() }
     const saved = await saveDeck(copy)
-    if (current()) emit('notice', `已复制《${saved.name}》到我的牌库`)
+    if (current()) emit('notice', `已复制《${saved.name}》到我的牌库（公开牌库不含备牌，可自行补充）`)
   } catch (error) {
     if (current() && deckErrorBelongsToCurrentAccount(error))
       emit('notice', error instanceof Error ? error.message : '复制到我的牌库失败')
