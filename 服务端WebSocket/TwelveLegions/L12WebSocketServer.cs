@@ -263,14 +263,19 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 engineVersion = build.EngineVersion,
             });
         });
-        _app.MapGet("/metrics", () =>
+        // 生产/测试服的 nginx 只把 ^~ /api/ 与 = /health 反代到应用，因此对外端点必须挂在
+        // /api/ 下；/metrics 仅用于本机 8084 直连排查。
+        _app.MapGet("/api/metrics", MetricsPayload);
+        _app.MapGet("/metrics", MetricsPayload);
+        object MetricsPayload()
         {
             var runtime = _rooms.RuntimeStats();
             var batch = L12PerformanceMetrics.TrySnapshot(out var snapshot) ? snapshot : null;
-            return Results.Ok(L12ServerMetrics.Build(_cardCount, _sockets.Count, runtime.RoomCount,
+            // 局部函数返回匿名对象；端点再包成 Results.Ok。
+            return L12ServerMetrics.Build(_cardCount, _sockets.Count, runtime.RoomCount,
                 runtime.OnlineAccountCount, runtime.ActiveGameCount,
-                Environment.TickCount64 / 1000.0, batch));
-        });
+                Environment.TickCount64 / 1000.0, batch);
+        }
         L12Log.Initialize(_app.Services.GetService<ILoggerFactory>());
         L12Log.Info("server.startup", $"运行指标端点已就绪：/metrics（卡牌 {_cardCount} 张；结构化日志={L12Log.HasStructuredSink}）");
         _app.MapGet("/api/operations/effective-policy", (HttpRequest request) =>
