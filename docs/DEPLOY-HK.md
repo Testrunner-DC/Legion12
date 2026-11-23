@@ -286,6 +286,25 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 `
 
 **备份保留核对（演练的前置条件）**：服务器上 `/opt/legion12-deployment/runtime-backups/` 必须至少存在两组完整可校验的 `runtime-before-*.tar.gz`。2026-11-23 实测该目录只剩 **1 组 tar 包却有 18 个 `.sha256`**——其余 17 组只剩校验文件，冷存回取尚未验证。只有一组时，下一次部署轮转即会失去服务器侧回滚通道，演练也必须先补回取。
 
+### `platform.db.pre-*` 的保留与退休规则（2026-11-23 定，B-2 步骤1 遗留项）
+
+`runtime/` 目录里存在两类 `platform.db.pre-*`，含义和处置完全不同，不得混谈：
+
+| 类别 | 例子 | 体量 | 能力 |
+|---|---|---|---|
+| 旧式 JSON 前像 | `platform.db.pre-deck-domain-v1.json.gz`、`platform.db.pre-deck-identity-v1.json.gz`/`.full.json.gz`、`platform.json.pre-sqlite.bak` | KB～MB 级 | **只有取证价值**，不能用来恢复库 |
+| 新式全库前像 | `platform.db.pre-<变更名>`（如 `pre-session-split`） | 与库等大（生产 285 MB、测试 44 MB） | 原地回退到该迁移**之前**状态的唯一镜像 |
+
+保留规则：
+
+1. **当前运行 schema 对应的最新一份 `pre-*` 必须保留**——它就是「本版本可原地回退的那一格」，任何清理都不得删除它。
+2. 更旧的 `pre-*` 只有在**同时**满足两条时才可退休：① `runtime-backups/` 里存在覆盖同一时点、`sha256sum -c` 通过的 `runtime-before-*.tar.gz`；② 该归档的 sha256 已写进部署回执。缺一条即保留。
+3. 退休动作只能发生在一次已授权的部署或数据动作里，并把「删了哪一份、依据哪份归档」写进回执；**不允许脚本自动删除**（现行代码也不删）。
+4. 与 `pre-*` 同目录的 `platform.db.pre-*-wal` / `-shm` 是残留校验产物，**不是恢复件**；恢复只拷 `pre-*` 本体，并在覆盖前清掉目标目录的 `-wal`/`-shm`（见上节演练第 6 步）。这些残留随同一次退休动作清理。
+5. 容量口径：每份新式 `pre-*` 在根盘上等于一份整库，而部署预检地板是 `10 GiB + 256 MiB reserve`；因此**同时存在的 `pre-*` 不应超过两份**（现行一份 + 迁移瞬间的第二份）。超限时按第 2 条退休旧的，**不得**用「删最新一份」换空间。
+
+现状（2026-11-23 实测，供对照）：生产 `/opt/legion12-runtime` 尚无 `pre-session-split`（B-2 迁移未跑），只有三份历史 `.json.gz` 与 `platform.json.pre-sqlite.bak`；测试服 `/opt/legion12-testrun-runtime` 有 `platform.db.pre-session-split`（44,384,256 B）以及 `-wal`/`-shm` 残留。
+
 发布脚本只切换程序并执行健康核验，不代表获得解除维护的授权。只有用户在当批任务中明确要求，才可另行结束维护；否则保持健康接口中的 `maintenance: true`。
 
 查看状态：
