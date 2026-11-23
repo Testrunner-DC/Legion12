@@ -141,6 +141,96 @@ public sealed class ServerStorageCategoryStateTests
         finally { Environment.SetEnvironmentVariable("L12_STORAGE_CATEGORIES", previous); }
     }
 
+[Fact]
+    public void ConcurrentReadsShareOneTraversal()
+    {
+        var traversals = 0;
+        var probe = new L12ServerStorageProbe(
+            () => DateTimeOffset.UtcNow,
+            () => new L12StorageVolumeProbeResult([new(1_000, 400, "/")], 0),
+            path =>
+            {
+                Interlocked.Increment(ref traversals);
+                Thread.Sleep(40);
+                return new L12StorageCategorySample(1, L12StorageCategoryState.Ok);
+            },
+            () => 256);
+        L12ServerStorageMonitor.ResetCacheForTest();
+        try
+        {
+            var results = new System.Collections.Concurrent.ConcurrentBag<L12ServerStorageView>();
+            Parallel.For(0, 10, _ => results.Add(L12ServerStorageMonitor.Read(probe, useSharedCache: true)));
+
+            // Ten concurrent requests, one traversal: everyone else waited for the same snapshot.
+            Assert.Equal(6, traversals);
+            Assert.Single(results.Select(result => result.ObservedAt).Distinct());
+        }
+        finally { L12ServerStorageMonitor.ResetCacheForTest(); }
+    }
+
+    [Fact]
+    public void SecondReadInsideTheCacheWindowReusesTheSnapshot()
+    {
+        var traversals = 0;
+        var probe = new L12ServerStorageProbe(
+            () => DateTimeOffset.UtcNow,
+            () => new L12StorageVolumeProbeResult([new(1_000, 400, "/")], 0),
+            _ =>
+            {
+                Interlocked.Increment(ref traversals);
+                return new L12StorageCategorySample(7, L12StorageCategoryState.Ok);
+            },
+            () => 256);
+        L12ServerStorageMonitor.ResetCacheForTest();
+        try
+        {
+            var first = L12ServerStorageMonitor.Read(probe, useSharedCache: true);
+            var second = L12ServerStorageMonitor.Read(probe, useSharedCache: true);
+
+            Assert.Equal(6, traversals);
+            Assert.Equal(first.ObservedAt, second.ObservedAt);
+            Assert.Equal(first.CachedFrom, second.CachedFrom);
+        }
+        finally { L12ServerStorageMonitor.ResetCacheForTest(); }
+    }
+
+    [Fact]
+    public void AWedgedCategoryTimesOutWithoutFailingTheSnapshot()
+    {
+        var previous = Environment.GetEnvironmentVariable("L12_STORAGE_CATEGORIES");
+        L12ServerStorageMonitor.ResetCacheForTest();
+        try
+        {
+            // One category only, so the 5 s budget is paid once.
+            Environment.SetEnvironmentVariable("L12_STORAGE_CATEGORIES",
+                "[{\"id\":\"slow\",\"label\":\"很慢\",\"path\":\"/slow\"}]");
+            var probe = new L12ServerStorageProbe(
+                () => DateTimeOffset.UtcNow,
+                () => new L12StorageVolumeProbeResult([new(1_000, 400, "/")], 0),
+                _ => new L12StorageCategorySample(0, L12StorageCategoryState.Missing),
+                () => 256,
+                (_, token) =>
+                {
+                    // Ignores the token on purpose: the budget, not cooperation, must end it.
+                    Thread.Sleep(TimeSpan.FromSeconds(20));
+                    return new L12StorageCategorySample(0, L12StorageCategoryState.Ok);
+                });
+
+            var started = DateTimeOffset.UtcNow;
+            var snapshot = L12ServerStorageMonitor.Read(probe);
+            var elapsed = DateTimeOffset.UtcNow - started;
+
+            Assert.Equal("timeout", Assert.Single(snapshot.Categories).State);
+            Assert.Equal("partial", snapshot.SampleState);
+            Assert.True(elapsed < TimeSpan.FromSeconds(8), $"timeout path took {elapsed.TotalSeconds:F1}s");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("L12_STORAGE_CATEGORIES", previous);
+            L12ServerStorageMonitor.ResetCacheForTest();
+        }
+    }
+
     [Fact]
     public void RealDirectoryReadsReportOkAndMissing()
     {

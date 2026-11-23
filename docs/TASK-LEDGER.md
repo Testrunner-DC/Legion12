@@ -1,5 +1,15 @@
 # 十二军团任务台账
 
+## 2026-11-23 批次 S3：采样成本、单飞与超时（本地已验，未部署）
+
+- 单飞：`lock(Gate)` 换成 `SemaphoreSlim(1,1)` + **有界等待 2 s**；快的路径先读缓存不抢锁，进锁后再复检一次缓存。抢不到锁的请求**直接返回上一次快照**（`UnavailableSnapshot()` 兜底），请求线程不再被整棵目录遍历挂住。
+- 每分类预算 5 s：`ReadCategoryWithTimeout` 用 `Task.Run` + `Wait(5s)`，超时即取消并把该分类标 `timeout`；`DirectoryBytes` 新增 `CancellationToken`（按目录粒度检查），`L12ServerStorageProbe` 新增可选 `ReadCategoryWithCancellation`（**保持既有 4 参构造可用**，测试只更新了需要的两处）。
+- 超时保留上一次成功值：新增 `LastGood[path] = (bytes, now)`，`timeout` 分类回报上次测得的字节数（`ObservedAt` 不变，说明它更旧）；`missing`/`denied` 仍一律 0 字节。
+- 视图新增 `CachedFrom`：正常采样时等于 `ObservedAt`；命中缓存或走保底快照时是那份数据的测量时间。前端据此显示「本次读取未能及时完成，以下为 UTC … 的采样」。
+- 状态语义收紧：**`missing` 只表示路径确实不存在**；读取过程中抛任何异常（权限、溢出、不支持）一律 `denied`（此前 `OverflowException` 被映成 `missing`，`CategoryOverflowKeepsHealthyVolumeFactsAndMarksSnapshotPartial` 正是这条契约）。
+- 守卫：新增 3 项——并发 10 次只遍历一次（6 个分类 = 6 次，且 10 个结果 `ObservedAt` 相同）、缓存窗口内两次读到同一 `ObservedAt`/`CachedFrom`、卡死分类在 **8 s 内**返回 `timeout` 且不抛。
+- 验证：定向 28/28；`verify-l12-change.ps1 -Level Focused` **exit 0**（平台 3,200/3,200、12m58s）；`vue-tsc --noEmit` 通过。
+- 未做（如实）：① **未加 403 端点测试**——需要起真实 HTTP 服务并省略令牌，比单元级重；② 卷信息仍随快照每 30 s 更新一次，**没有做到「卷每次实时、分类用缓存」**，理由是保持一份快照只有一个 `ObservedAt`，混用会让「哪个数字是几点的」说不清；③ 改前/改后截图仍缺（需测试服后台会话）。
 ## 2026-11-23 批次 S2：存储分类三态契约 + 卷归属（本地已验，未部署）
 
 - 契约：`L12StorageCategoryView(Id, Label, Bytes, State, VolumeMount)` 替换 `(…, bool Available)`——`State ∈ ok|missing|denied|timeout`，非 `ok` 时 `Bytes` 一律 0 且前端显示原因而不是「0 B」；`L12StorageVolumeView` 增 `MountPoint`（Linux 挂载点 / Windows 盘符），`L12StorageVolumeSample` 同步。

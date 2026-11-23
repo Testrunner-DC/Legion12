@@ -17,7 +17,10 @@ public sealed record L12ServerStorageView(DateTimeOffset ObservedAt, long Workin
     IReadOnlyList<L12StorageVolumeView> Volumes, IReadOnlyList<L12StorageCategoryView> Categories,
     string Health, string Conclusion, string Impact, string RecommendedAction,
     L12StorageThresholdView Thresholds, IReadOnlyList<L12StorageTrendPointView> Trend,
-    string TrendScope, string TrendDescription, string SampleState, int UnavailableSourceCount);
+    string TrendScope, string TrendDescription, string SampleState, int UnavailableSourceCount,
+    // When this snapshot was measured. A request that cannot enter the sampler in time is served
+    // this older snapshot instead of waiting for a traversal, so the page can say how old it is.
+    DateTimeOffset CachedFrom);
 
 internal sealed record L12StorageVolumeSample(long TotalBytes, long FreeBytes, string MountPoint);
 internal sealed record L12StorageVolumeProbeResult(
@@ -34,30 +37,46 @@ internal sealed record L12ServerStorageProbe(
     Func<DateTimeOffset> UtcNow,
     Func<L12StorageVolumeProbeResult> ReadVolumes,
     Func<string, L12StorageCategorySample> ReadCategory,
-    Func<long> ReadWorkingSet);
+    Func<long> ReadWorkingSet,
+    // Optional cancellation-aware reader; when absent the plain delegate is wrapped and the
+    // timeout still applies, it just cannot stop a traversal that is already running.
+    Func<string, CancellationToken, L12StorageCategorySample>? ReadCategoryWithCancellation = null);
 
 /// <summary>只读、限频的线上容量摘要；不执行 Shell 命令，也不包含任何清理能力。</summary>
 internal static class L12ServerStorageMonitor
 {
-    private static readonly object Gate = new();
+    // Single-flight: concurrent requests share one traversal. The wait is bounded, so a request
+    // thread is never parked for the duration of a full directory walk.
+    private static readonly SemaphoreSlim Gate = new(1, 1);
     private static L12ServerStorageView? _cached;
     private static readonly List<L12StorageTrendPointView> Trend = [];
+    private static readonly Dictionary<string, (long Bytes, DateTimeOffset MeasuredAt)> LastGood =
+        new(StringComparer.Ordinal);
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CategoryTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan GateWait = TimeSpan.FromSeconds(2);
     private static readonly HashSet<string> SupportedLinuxFileSystems = new(StringComparer.Ordinal)
     {
         "ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs", "jfs", "nilfs2", "bcachefs",
         "fuseblk", "ntfs3",
     };
 
-    internal static L12ServerStorageView Read(L12ServerStorageProbe? probe = null)
+    // useSharedCache lets a test drive the cached/single-flight path with an injected probe; the
+    // production caller never passes it.
+    internal static L12ServerStorageView Read(L12ServerStorageProbe? probe = null, bool useSharedCache = false)
     {
-        lock (Gate)
+        var usesSystemProbe = probe is null || useSharedCache;
+        if (usesSystemProbe && FreshSnapshot() is { } fresh) return fresh;
+        // Bounded wait: if another request is already sampling, take its result when it lands within
+        // the budget, otherwise serve the previous snapshot instead of parking this thread.
+        if (!Gate.Wait(GateWait))
+            return _cached ?? UnavailableSnapshot();
+        try
         {
+            if (usesSystemProbe && FreshSnapshot() is { } recheckedFresh) return recheckedFresh;
             var categoryDefinitions = CategoryDefinitions();
-            var usesSystemProbe = probe is null;
             probe ??= SystemProbe(categoryDefinitions.Select(item => item.Path).ToArray());
             var now = SafeRead(probe.UtcNow, DateTimeOffset.UtcNow, out _);
-            if (usesSystemProbe && _cached is not null && now - _cached.ObservedAt < CacheLifetime) return _cached;
 
             var unavailable = 0;
             var volumeProbe = SafeRead(probe.ReadVolumes,
@@ -75,11 +94,18 @@ internal static class L12ServerStorageMonitor
 
             var categories = categoryDefinitions.Select(item =>
             {
-                var result = SafeRead(() => probe.ReadCategory(item.Path),
-                    new L12StorageCategorySample(0, L12StorageCategoryState.Denied), out var failed);
-                var state = failed ? L12StorageCategoryState.Denied : result.State;
+                var result = ReadCategoryWithTimeout(probe, item.Path, now);
+                var state = result.State;
                 if (state != L12StorageCategoryState.Ok) unavailable++;
-                var bytes = state == L12StorageCategoryState.Ok ? Math.Max(0, result.Bytes) : 0;
+                // A timeout keeps the last measured size: the number is still the best fact we have,
+                // it is only older than ObservedAt.
+                var bytes = state switch
+                {
+                    L12StorageCategoryState.Ok => Math.Max(0, result.Bytes),
+                    L12StorageCategoryState.Timeout => LastGood.TryGetValue(item.Path, out var last)
+                        ? Math.Max(0, last.Bytes) : 0,
+                    _ => 0,
+                };
                 return new L12StorageCategoryView(item.Id, item.Label, bytes, WireState(state),
                     ResolveVolumeMount(item.Path, volumes));
             }).ToArray();
@@ -124,11 +150,81 @@ internal static class L12ServerStorageMonitor
             var result = new L12ServerStorageView(now, workingSet, volumes, categories, health,
                 conclusion, impact, action, new L12StorageThresholdView(80, 90, "服务端容量治理策略"), trend,
                 "current-process", "本次服务进程内的真实采样，重启后重新累计，最多保留 24 小时 / 120 个样本",
-                sampleState, unavailable);
+                sampleState, unavailable, now);
             if (usesSystemProbe) _cached = result;
             return result;
         }
+        finally
+        {
+            Gate.Release();
+        }
     }
+
+    internal static void ResetCacheForTest()
+    {
+        Gate.Wait(TimeSpan.FromSeconds(5));
+        try
+        {
+            _cached = null;
+            Trend.Clear();
+            LastGood.Clear();
+        }
+        finally { Gate.Release(); }
+    }
+
+    private static L12ServerStorageView? FreshSnapshot()
+        => _cached is not null && DateTimeOffset.UtcNow - _cached.CachedFrom < CacheLifetime ? _cached : null;
+
+    private static L12ServerStorageView UnavailableSnapshot() => new(
+        DateTimeOffset.UtcNow, 0, [], [], "unknown", "存储容量暂不可判定",
+        "当前采样没有可用卷信息，不能据此判断容量风险。", "稍后重试，或使用本次请求的关联 ID 检查服务日志。",
+        new L12StorageThresholdView(80, 90, "服务端容量治理策略"), [], "current-process",
+        "本次服务进程内的真实采样，重启后重新累计，最多保留 24 小时 / 120 个样本", "unavailable", 1,
+        DateTimeOffset.UtcNow);
+
+    // One category, one budget. On expiry the traversal is cancelled and the last measured size is
+    // reported as a timeout, so a huge or wedged path cannot stall the whole snapshot.
+    private static L12StorageCategorySample ReadCategoryWithTimeout(L12ServerStorageProbe probe,
+        string path, DateTimeOffset now)
+    {
+        using var cancellation = new CancellationTokenSource(CategoryTimeout);
+        try
+        {
+            var readWithCancellation = probe.ReadCategoryWithCancellation;
+            var task = readWithCancellation is not null
+                ? Task.Run(() => readWithCancellation(path, cancellation.Token), cancellation.Token)
+                : Task.Run(() => probe.ReadCategory(path), cancellation.Token);
+            if (!task.Wait(CategoryTimeout))
+            {
+                cancellation.Cancel();
+                return new L12StorageCategorySample(0, L12StorageCategoryState.Timeout);
+            }
+            var sample = task.Result;
+            if (sample.State == L12StorageCategoryState.Ok)
+                LastGood[path] = (Math.Max(0, sample.Bytes), now);
+            return sample;
+        }
+        catch (AggregateException error) when (error.InnerException is OperationCanceledException)
+        {
+            return new L12StorageCategorySample(0, L12StorageCategoryState.Timeout);
+        }
+        catch (AggregateException error) when (error.InnerException is { } inner && IsStorageAccessFailure(inner))
+        {
+            return new L12StorageCategorySample(0, ClassifyFailure(inner));
+        }
+        catch (OperationCanceledException)
+        {
+            return new L12StorageCategorySample(0, L12StorageCategoryState.Timeout);
+        }
+        catch (Exception error) when (IsStorageAccessFailure(error))
+        {
+            return new L12StorageCategorySample(0, ClassifyFailure(error));
+        }
+    }
+
+    // "missing" is reserved for a path that is genuinely absent. Anything that throws while reading
+    // (permission, overflow, unsupported entry) is a refused read, which is what "denied" reports.
+    private static L12StorageCategoryState ClassifyFailure(Exception error) => L12StorageCategoryState.Denied;
 
     // L12_STORAGE_CATEGORIES (JSON array of {id,label,path}) overrides the defaults so a deployment
     // layout change does not need a code change. The default set deliberately has no /var/log entry:
@@ -215,7 +311,12 @@ internal static class L12ServerStorageMonitor
             var measured = DirectoryBytes(path);
             return new L12StorageCategorySample(measured.Bytes, measured.State);
         },
-        () => System.Diagnostics.Process.GetCurrentProcess().WorkingSet64);
+        () => System.Diagnostics.Process.GetCurrentProcess().WorkingSet64,
+        (path, cancellationToken) =>
+        {
+            var measured = DirectoryBytes(path, cancellationToken: cancellationToken);
+            return new L12StorageCategorySample(measured.Bytes, measured.State);
+        });
 
     private static L12StorageVolumeProbeResult ReadSystemVolumes(IReadOnlyList<string> businessPaths)
     {
@@ -362,7 +463,7 @@ internal static class L12ServerStorageMonitor
         path => new FileInfo(path).Length);
 
     internal static (long Bytes, L12StorageCategoryState State) DirectoryBytes(string path,
-        L12StorageDirectoryProbe? fileSystem = null)
+        L12StorageDirectoryProbe? fileSystem = null, CancellationToken cancellationToken = default)
     {
         fileSystem ??= SystemDirectoryProbe();
         try
@@ -381,6 +482,12 @@ internal static class L12ServerStorageMonitor
             pending.Push(path);
             while (pending.Count > 0)
             {
+                // Cancellation is checked between directories: a single enormous directory can
+                // still take a while, but the request no longer waits for the whole tree.
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
                 var current = pending.Pop();
                 IReadOnlyList<string> entries;
                 try { entries = fileSystem.ReadEntries(current); }
@@ -405,8 +512,7 @@ internal static class L12ServerStorageMonitor
         }
         catch (Exception error) when (IsStorageAccessFailure(error))
         {
-            var denied = error is UnauthorizedAccessException or System.Security.SecurityException;
-            return (0, denied ? L12StorageCategoryState.Denied : L12StorageCategoryState.Missing);
+            return (0, L12StorageCategoryState.Denied);
         }
     }
 

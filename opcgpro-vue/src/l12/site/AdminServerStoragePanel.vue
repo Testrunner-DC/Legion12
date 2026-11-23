@@ -81,6 +81,14 @@ function categoryShare(category: { bytes: number; volumeMount: string | null }) 
   return `占${volume.label} ${share}%`
 }
 const canReadRuntime = computed(() => hasPermission('admin.runtime.read'))
+// The sampler serves a previously measured snapshot when it cannot enter within its budget, so the
+// page says that explicitly instead of implying the numbers are current.
+const staleLabel = computed(() => {
+  const cached = status.value?.cachedFrom
+  if (!cached || !status.value) return ''
+  if (Date.parse(cached) === Date.parse(status.value.observedAt)) return ''
+  return `本次读取未能及时完成，以下为 UTC ${formatUtc(cached)} 的采样`
+})
 const sampledLabel = computed(() => {
   const observed = status.value?.observedAt
   if (!observed) return ''
@@ -122,6 +130,7 @@ onMounted(load)
         <button type="button" :disabled="loading" @click="load">{{ refreshLabel }}</button>
       </div>
     </header>
+    <p v-if="staleLabel" class="stale" role="status">{{ staleLabel }}</p>
     <p v-if="error" class="failure" role="status">{{ error }} <button type="button" :disabled="loading" @click="load">重试</button></p>
     <template v-if="status">
       <section class="health-summary" :data-health="status.health"><small>当前结论</small><h3>{{ status.conclusion }}</h3><p>{{ status.impact }}</p><b>{{ status.recommendedAction }}</b></section>
@@ -157,6 +166,7 @@ onMounted(load)
 .storage-panel button:disabled{opacity:.6;cursor:default}
 .storage-panel button.ghost{background:transparent}
 .failure{margin:14px 0;padding:10px 12px;border:1px solid #9b3e49;background:rgba(38,10,14,.6);color:#f2b7bd}
+.stale{margin:14px 0 0;padding:8px 12px;border:1px solid #8a6b25;background:rgba(48,34,10,.6);color:#f1d77e}
 .health-summary{margin-top:16px;padding:14px;border:1px solid #35424a;background:#101a22}
 .health-summary h3{margin:6px 0;font-size:18px}
 .volumes{display:grid;gap:12px;margin-top:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}

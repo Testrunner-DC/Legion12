@@ -213,7 +213,7 @@ export interface AdminAnalyticsCoverage {
 export interface ServerStorageVolume { id: string; label: string; totalBytes: number; usedBytes: number; freeBytes: number; mountPoint: string }
 export interface ServerStorageCategory { id: string; label: string; bytes: number; state: 'ok' | 'missing' | 'denied' | 'timeout'; volumeMount: string | null }
 export interface ServerStorageTrendPoint { observedAt: string; workingSetBytes: number; volumeUsedPercent: Record<string, number> }
-export interface ServerStorageStatus { observedAt: string; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[]; health: 'healthy'|'warning'|'critical'|'unknown'; conclusion: string; impact: string; recommendedAction: string; thresholds: { warningPercent: number; criticalPercent: number; source: string }; trend: ServerStorageTrendPoint[]; trendScope: 'current-process'; trendDescription: string; sampleState: 'complete'|'partial'|'unavailable'; unavailableSourceCount: number }
+export interface ServerStorageStatus { observedAt: string; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[]; health: 'healthy'|'warning'|'critical'|'unknown'; conclusion: string; impact: string; recommendedAction: string; thresholds: { warningPercent: number; criticalPercent: number; source: string }; trend: ServerStorageTrendPoint[]; trendScope: 'current-process'; trendDescription: string; sampleState: 'complete'|'partial'|'unavailable'; unavailableSourceCount: number; cachedFrom: string }
 export interface AdminAnalyticsMetricCoverage {
   metric: string; unit: string; eligibleSamples: number; observedSamples: number
   exactFacts: number; inferredFacts: number; partialFacts: number
