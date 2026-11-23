@@ -1,5 +1,15 @@
 # 十二军团任务台账
 
+## 2026-11-23 批次 S2：存储分类三态契约 + 卷归属（本地已验，未部署）
+
+- 契约：`L12StorageCategoryView(Id, Label, Bytes, State, VolumeMount)` 替换 `(…, bool Available)`——`State ∈ ok|missing|denied|timeout`，非 `ok` 时 `Bytes` 一律 0 且前端显示原因而不是「0 B」；`L12StorageVolumeView` 增 `MountPoint`（Linux 挂载点 / Windows 盘符），`L12StorageVolumeSample` 同步。
+- 卷归属由服务端解析：`ResolveVolumeMount` 取最长前缀匹配（Linux 按段匹配、Windows 忽略大小写），未匹配返回 `null`；前端只按 `mountPoint` 查表，不再拼路径。**A3（分类占所属卷 %）随本批落地**。
+- 分类可配置：`L12_STORAGE_CATEGORIES`（JSON 数组 `{id,label,path}`）覆盖默认；非法 JSON / 空数组 / 缺 id 或 path → 回退默认；`label` 缺省用 `id`。
+- **`logs` 分类删除（有实机证据）**：2026-11-23 在测试服以服务账号实测 `/var/log` **可读**（`READ_OK`，426,100 KB ≈ 416 MB），并非方案推测的 denied；但本服务日志走 journald，这行只把无关系统日志塞进容量页，故移除，默认分类由 7 项变 6 项。
+- 事实修正：方案的「无第二种消费方」不成立——`AdminStorageAndWorkbenchRecoveryTests` / `AdminWorkbenchTimingTests` 共 6 处构造该探针，已按新契约更新（断言语义不变：不可用来源仍计入 `UnavailableSourceCount`）。
+- 守卫：新增 `ServerStorageCategoryStateTests` 8 项——三态区分（且非 ok 不得报为非零字节）、抛异常→denied、最深卷匹配、无卷→null、配置覆盖、四种非法配置回退、默认不含 logs、真实目录 ok/missing。
+- 验证：定向 25/25；`verify-l12-change.ps1 -Level Focused` **exit 0**（平台 3,197/3,197、12m47s）；`vue-tsc --noEmit` 通过。
+- 未做：`timeout` 状态尚未产生（S3 的 5 s 单分类超时）、单飞与请求线程耗时断言（S3）；改前/改后截图仍缺（需测试服后台会话）。
 ## 2026-11-23 批次 S1：服务器状态与存储页信息设计（纯前端，本地已验，未部署）
 
 - 范围：`AdminServerStoragePanel.vue` 重写 + `adminSections.ts` 侧边栏文案 + 未改接口/未改权限/未加任何定时器。

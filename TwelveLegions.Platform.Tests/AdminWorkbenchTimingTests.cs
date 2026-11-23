@@ -158,7 +158,7 @@ public sealed class AdminWorkbenchTimingTests(ITestOutputHelper output)
                         Thread.Sleep(25); // Controlled local dependency delay; not production sampling.
                         if (failStorage) throw new IOException("synthetic-storage-private-marker");
                         return L12ServerStorageMonitor.Read(new(() => DateTimeOffset.UtcNow,
-                            () => new([new(1_000, 600)], 0), _ => (0, true), () => 256));
+                            () => new([new(1_000, 600, "/")], 0), _ => new L12StorageCategorySample(0, L12StorageCategoryState.Ok), () => 256));
                     });
                 await f.server.StartAsync(0);
                 f.Client = new HttpClient { BaseAddress = new Uri(Assert.Single(f.server.Addresses)) };

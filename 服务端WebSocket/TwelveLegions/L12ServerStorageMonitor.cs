@@ -1,7 +1,15 @@
 namespace TwelveLegions.Server;
 
-public sealed record L12StorageVolumeView(string Id, string Label, long TotalBytes, long UsedBytes, long FreeBytes);
-public sealed record L12StorageCategoryView(string Id, string Label, long Bytes, bool Available);
+public sealed record L12StorageVolumeView(string Id, string Label, long TotalBytes, long UsedBytes, long FreeBytes,
+    string MountPoint);
+
+// A category is either measured (Ok) or refused for a reason the operator can act on. Collapsing
+// them into "0 B / available=false" made a permission problem look like an empty directory.
+public enum L12StorageCategoryState { Ok, Missing, Denied, Timeout }
+
+public sealed record L12StorageCategoryView(string Id, string Label, long Bytes, string State,
+    string? VolumeMount);
+public sealed record L12StorageCategorySample(long Bytes, L12StorageCategoryState State);
 public sealed record L12StorageThresholdView(int WarningPercent, int CriticalPercent, string Source);
 public sealed record L12StorageTrendPointView(DateTimeOffset ObservedAt, long WorkingSetBytes,
     IReadOnlyDictionary<string, int> VolumeUsedPercent);
@@ -11,7 +19,7 @@ public sealed record L12ServerStorageView(DateTimeOffset ObservedAt, long Workin
     L12StorageThresholdView Thresholds, IReadOnlyList<L12StorageTrendPointView> Trend,
     string TrendScope, string TrendDescription, string SampleState, int UnavailableSourceCount);
 
-internal sealed record L12StorageVolumeSample(long TotalBytes, long FreeBytes);
+internal sealed record L12StorageVolumeSample(long TotalBytes, long FreeBytes, string MountPoint);
 internal sealed record L12StorageVolumeProbeResult(
     IReadOnlyList<L12StorageVolumeSample> Volumes, int UnavailableSourceCount);
 internal sealed record L12StorageMountSample(string Identity, string MountPoint, string FileSystemType,
@@ -25,7 +33,7 @@ internal sealed record L12StorageDirectoryProbe(
 internal sealed record L12ServerStorageProbe(
     Func<DateTimeOffset> UtcNow,
     Func<L12StorageVolumeProbeResult> ReadVolumes,
-    Func<string, (long Bytes, bool Available)> ReadCategory,
+    Func<string, L12StorageCategorySample> ReadCategory,
     Func<long> ReadWorkingSet);
 
 /// <summary>只读、限频的线上容量摘要；不执行 Shell 命令，也不包含任何清理能力。</summary>
@@ -60,15 +68,20 @@ internal static class L12ServerStorageMonitor
                 var total = Math.Max(0, volume.TotalBytes);
                 var free = Math.Clamp(volume.FreeBytes, 0, total);
                 return new L12StorageVolumeView($"volume-{index + 1}",
-                    index == 0 ? "系统卷" : $"存储卷 {index + 1}", total, total - free, free);
+                    index == 0 ? "系统卷" : $"存储卷 {index + 1}", total, total - free, free,
+                    volume.MountPoint);
             }).ToArray();
             if (volumes.Length == 0 && unavailable == 0) unavailable++;
 
             var categories = categoryDefinitions.Select(item =>
             {
-                var result = SafeRead(() => probe.ReadCategory(item.Path), (0L, false), out var failed);
-                if (failed || !result.Item2) unavailable++;
-                return new L12StorageCategoryView(item.Id, item.Label, Math.Max(0, result.Item1), result.Item2);
+                var result = SafeRead(() => probe.ReadCategory(item.Path),
+                    new L12StorageCategorySample(0, L12StorageCategoryState.Denied), out var failed);
+                var state = failed ? L12StorageCategoryState.Denied : result.State;
+                if (state != L12StorageCategoryState.Ok) unavailable++;
+                var bytes = state == L12StorageCategoryState.Ok ? Math.Max(0, result.Bytes) : 0;
+                return new L12StorageCategoryView(item.Id, item.Label, bytes, WireState(state),
+                    ResolveVolumeMount(item.Path, volumes));
             }).ToArray();
             var workingSet = SafeRead(probe.ReadWorkingSet, 0L, out var workingSetFailed);
             if (workingSetFailed) unavailable++;
@@ -117,8 +130,18 @@ internal static class L12ServerStorageMonitor
         }
     }
 
+    // L12_STORAGE_CATEGORIES (JSON array of {id,label,path}) overrides the defaults so a deployment
+    // layout change does not need a code change. The default set deliberately has no /var/log entry:
+    // 2026-11-23 measured the service account reading /var/log fine (416 MB) while this service logs
+    // to journald, so that row only added unrelated noise to a capacity page.
     private static (string Id, string Label, string Path)[] CategoryDefinitions()
     {
+        var configured = Environment.GetEnvironmentVariable("L12_STORAGE_CATEGORIES");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            var parsed = ParseConfiguredCategories(configured);
+            if (parsed.Length > 0) return parsed;
+        }
         var runtime = Environment.GetEnvironmentVariable("L12_RUNTIME_DIR") ?? "/opt/legion12-runtime";
         return
         [
@@ -128,14 +151,70 @@ internal static class L12ServerStorageMonitor
             ("releases", "发布版本", Environment.GetEnvironmentVariable("L12_RELEASES_DIR") ?? "/www/legion12/releases"),
             ("runtime-backups", "运行备份", Environment.GetEnvironmentVariable("L12_RUNTIME_BACKUPS_DIR") ?? "/www/legion12/runtime-backups"),
             ("deployment-backups", "部署遗留备份", "/opt/legion12-deployment/runtime-backups"),
-            ("logs", "系统日志", "/var/log"),
         ];
+    }
+
+    internal static (string Id, string Label, string Path)[] ParseConfiguredCategories(string json)
+    {
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array) return [];
+            var result = new List<(string Id, string Label, string Path)>();
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
+                var id = element.TryGetProperty("id", out var idValue) ? idValue.GetString() : null;
+                var path = element.TryGetProperty("path", out var pathValue) ? pathValue.GetString() : null;
+                var label = element.TryGetProperty("label", out var labelValue) ? labelValue.GetString() : null;
+                if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(path)) continue;
+                if (result.Any(item => string.Equals(item.Id, id, StringComparison.Ordinal))) continue;
+                result.Add((id.Trim(), string.IsNullOrWhiteSpace(label) ? id.Trim() : label!.Trim(), path.Trim()));
+            }
+            return result.ToArray();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string WireState(L12StorageCategoryState state) => state switch
+    {
+        L12StorageCategoryState.Ok => "ok",
+        L12StorageCategoryState.Missing => "missing",
+        L12StorageCategoryState.Timeout => "timeout",
+        _ => "denied",
+    };
+
+    // The volume a category belongs to is decided here, once, so the page never builds paths.
+    private static string? ResolveVolumeMount(string path, IReadOnlyList<L12StorageVolumeView> volumes)
+    {
+        var windows = OperatingSystem.IsWindows();
+        var normalized = windows ? path.Replace('/', '\\') : NormalizeLinuxPath(path);
+        string? best = null;
+        foreach (var volume in volumes)
+        {
+            var mount = windows ? volume.MountPoint.Replace('/', '\\') : NormalizeLinuxPath(volume.MountPoint);
+            if (mount.Length == 0) continue;
+            var matches = windows
+                ? normalized.StartsWith(mount, StringComparison.OrdinalIgnoreCase)
+                : mount == "/" || normalized == mount
+                    || normalized.StartsWith(mount + "/", StringComparison.Ordinal);
+            if (!matches) continue;
+            if (best is null || mount.Length > best.Length) best = volume.MountPoint;
+        }
+        return best;
     }
 
     private static L12ServerStorageProbe SystemProbe(IReadOnlyList<string> businessPaths) => new(
         () => DateTimeOffset.UtcNow,
         () => ReadSystemVolumes(businessPaths),
-        path => DirectoryBytes(path),
+        path =>
+        {
+            var measured = DirectoryBytes(path);
+            return new L12StorageCategorySample(measured.Bytes, measured.State);
+        },
         () => System.Diagnostics.Process.GetCurrentProcess().WorkingSet64);
 
     private static L12StorageVolumeProbeResult ReadSystemVolumes(IReadOnlyList<string> businessPaths)
@@ -157,7 +236,7 @@ internal static class L12ServerStorageMonitor
             try
             {
                 if (!drive.IsReady) { unavailable++; continue; }
-                volumes.Add(new(drive.TotalSize, drive.AvailableFreeSpace));
+                volumes.Add(new(drive.TotalSize, drive.AvailableFreeSpace, drive.Name));
             }
             catch (Exception error) when (IsStorageAccessFailure(error)) { unavailable++; }
         }
@@ -184,7 +263,7 @@ internal static class L12ServerStorageMonitor
             try
             {
                 if (!drive.IsReady) return null;
-                return new L12StorageVolumeSample(drive.TotalSize, drive.AvailableFreeSpace);
+                return new L12StorageVolumeSample(drive.TotalSize, drive.AvailableFreeSpace, mountPoint);
             }
             catch (Exception error) when (IsStorageAccessFailure(error)) { return null; }
         });
@@ -282,7 +361,7 @@ internal static class L12ServerStorageMonitor
         File.GetAttributes,
         path => new FileInfo(path).Length);
 
-    internal static (long Bytes, bool Available) DirectoryBytes(string path,
+    internal static (long Bytes, L12StorageCategoryState State) DirectoryBytes(string path,
         L12StorageDirectoryProbe? fileSystem = null)
     {
         fileSystem ??= SystemDirectoryProbe();
@@ -290,11 +369,11 @@ internal static class L12ServerStorageMonitor
         {
             var rootIsFile = fileSystem.FileExists(path);
             var rootIsDirectory = !rootIsFile && fileSystem.DirectoryExists(path);
-            if (!rootIsFile && !rootIsDirectory) return (0, false);
+            if (!rootIsFile && !rootIsDirectory) return (0, L12StorageCategoryState.Missing);
             var rootAttributes = fileSystem.ReadAttributes(path);
-            if ((rootAttributes & FileAttributes.ReparsePoint) != 0) return (0, false);
-            if (rootIsFile) return (Math.Max(0, fileSystem.ReadLength(path)), true);
-            if ((rootAttributes & FileAttributes.Directory) == 0) return (0, false);
+            if ((rootAttributes & FileAttributes.ReparsePoint) != 0) return (0, L12StorageCategoryState.Denied);
+            if (rootIsFile) return (Math.Max(0, fileSystem.ReadLength(path)), L12StorageCategoryState.Ok);
+            if ((rootAttributes & FileAttributes.Directory) == 0) return (0, L12StorageCategoryState.Denied);
 
             long total = 0;
             var complete = true;
@@ -322,11 +401,12 @@ internal static class L12ServerStorageMonitor
                     catch (Exception error) when (IsStorageAccessFailure(error)) { complete = false; }
                 }
             }
-            return (total, complete);
+            return (total, complete ? L12StorageCategoryState.Ok : L12StorageCategoryState.Denied);
         }
         catch (Exception error) when (IsStorageAccessFailure(error))
         {
-            return (0, false);
+            var denied = error is UnauthorizedAccessException or System.Security.SecurityException;
+            return (0, denied ? L12StorageCategoryState.Denied : L12StorageCategoryState.Missing);
         }
     }
 

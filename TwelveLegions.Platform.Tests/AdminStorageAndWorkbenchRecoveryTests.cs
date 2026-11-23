@@ -25,7 +25,7 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
         Assert.Equal("unavailable", snapshot.SampleState);
         Assert.Equal("unknown", snapshot.Health);
         Assert.Empty(snapshot.Volumes);
-        Assert.All(snapshot.Categories, category => Assert.False(category.Available));
+        Assert.All(snapshot.Categories, category => Assert.Equal("denied", category.State));
         Assert.True(snapshot.UnavailableSourceCount >= 3);
         Assert.Contains("关联 ID", snapshot.RecommendedAction);
         var json = JsonSerializer.Serialize(snapshot);
@@ -39,7 +39,7 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
     {
         var probe = new L12ServerStorageProbe(
             () => DateTimeOffset.UtcNow,
-            () => new L12StorageVolumeProbeResult([new(1_000, 600)], 0),
+            () => new L12StorageVolumeProbeResult([new(1_000, 600, "/")], 0),
             _ => throw new OverflowException("simulated directory total overflow"),
             () => 256);
 
@@ -48,8 +48,8 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
         Assert.Equal("partial", snapshot.SampleState);
         Assert.Equal("healthy", snapshot.Health);
         Assert.Equal(400, Assert.Single(snapshot.Volumes).UsedBytes);
-        Assert.All(snapshot.Categories, category => Assert.False(category.Available));
-        Assert.DoesNotContain(snapshot.Categories, category => category.Available && category.Bytes == 0);
+        Assert.All(snapshot.Categories, category => Assert.Equal("denied", category.State));
+        Assert.DoesNotContain(snapshot.Categories, category => category.State == "ok" && category.Bytes == 0);
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
         var probe = new L12ServerStorageProbe(
             () => DateTimeOffset.UtcNow,
             () => new L12StorageVolumeProbeResult([], 0),
-            _ => (0, true),
+            _ => new L12StorageCategorySample(0, L12StorageCategoryState.Ok),
             () => 256);
 
         var snapshot = L12ServerStorageMonitor.Read(probe);
@@ -75,15 +75,15 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
     {
         var probe = new L12ServerStorageProbe(
             () => DateTimeOffset.UtcNow,
-            () => new L12StorageVolumeProbeResult([new(1_000, 100)], 0),
-            _ => (0, false),
+            () => new L12StorageVolumeProbeResult([new(1_000, 100, "/")], 0),
+            _ => new L12StorageCategorySample(0, L12StorageCategoryState.Missing),
             () => 256);
 
         var snapshot = L12ServerStorageMonitor.Read(probe);
 
         Assert.Equal("partial", snapshot.SampleState);
         Assert.Equal("critical", snapshot.Health);
-        Assert.All(snapshot.Categories, category => Assert.False(category.Available));
+        Assert.All(snapshot.Categories, category => Assert.Equal("missing", category.State));
         Assert.Contains("部分来源不可用", snapshot.Conclusion);
     }
 
@@ -92,12 +92,12 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
     {
         var capacities = new Dictionary<string, L12StorageVolumeSample>(StringComparer.Ordinal)
         {
-            ["/"] = new(1_000, 400),
-            ["/opt/legion12-runtime"] = new(1_000, 400),
-            ["/opt/legion12-deployment"] = new(1_000, 400),
-            ["/www"] = new(2_000, 1_200),
-            ["/snap/core20/1434"] = new(65_011_712, 0),
-            ["/quota"] = new(100, 0),
+            ["/"] = new(1_000, 400, "/"),
+            ["/opt/legion12-runtime"] = new(1_000, 400, "/opt/legion12-runtime"),
+            ["/opt/legion12-deployment"] = new(1_000, 400, "/opt/legion12-deployment"),
+            ["/www"] = new(2_000, 1_200, "/www"),
+            ["/snap/core20/1434"] = new(65_011_712, 0, "/snap/core20/1434"),
+            ["/quota"] = new(100, 0, "/quota"),
         };
         var businessPaths = new[]
         {
@@ -136,7 +136,7 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
         var snapshot = L12ServerStorageMonitor.Read(new(
             () => DateTimeOffset.UtcNow,
             () => result,
-            _ => (0, true),
+            _ => new L12StorageCategorySample(0, L12StorageCategoryState.Ok),
             () => 256));
         Assert.Equal("partial", snapshot.SampleState);
         Assert.Equal("critical", snapshot.Health);
@@ -161,7 +161,7 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
         var result = L12ServerStorageMonitor.DirectoryBytes("/data", fileSystem);
 
         Assert.Equal(128, result.Bytes);
-        Assert.False(result.Available);
+        Assert.Equal(L12StorageCategoryState.Denied, result.State);
 
         var linkedRoot = L12ServerStorageMonitor.DirectoryBytes("/linked", new(
             _ => false,
@@ -170,7 +170,7 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
             _ => FileAttributes.Directory | FileAttributes.ReparsePoint,
             _ => 0));
         Assert.Equal(0, linkedRoot.Bytes);
-        Assert.False(linkedRoot.Available);
+        Assert.Equal(L12StorageCategoryState.Denied, linkedRoot.State);
 
         var linkedFile = L12ServerStorageMonitor.DirectoryBytes("/linked-file", new(
             _ => true,
@@ -179,7 +179,7 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
             _ => FileAttributes.ReparsePoint,
             _ => throw new InvalidOperationException("reparse file target must not be read")));
         Assert.Equal(0, linkedFile.Bytes);
-        Assert.False(linkedFile.Available);
+        Assert.Equal(L12StorageCategoryState.Denied, linkedFile.State);
     }
 
     [Fact]

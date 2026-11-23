@@ -65,6 +65,21 @@ const trendSummary = computed(() => {
 })
 function volumeLabel(id: string) { return status.value?.volumes.find(volume => volume.id === id)?.label || '存储卷' }
 
+const categoryStates: Record<string, string> = {
+  ok: '',
+  missing: '未部署/路径不存在',
+  denied: '无权限读取（服务账号不可读）',
+  timeout: '读取超时',
+}
+function categoryStateLabel(category: { state: string }) { return categoryStates[category.state] ?? category.state }
+// The volume a category belongs to is decided by the server; the page only looks it up.
+function categoryShare(category: { bytes: number; volumeMount: string | null }) {
+  if (category.volumeMount === null) return ''
+  const volume = volumes.value.find(item => item.mountPoint === category.volumeMount)
+  if (!volume || volume.totalBytes <= 0) return ''
+  const share = Math.max(0, Math.round(category.bytes * 100 / volume.totalBytes))
+  return `占${volume.label} ${share}%`
+}
 const canReadRuntime = computed(() => hasPermission('admin.runtime.read'))
 const sampledLabel = computed(() => {
   const observed = status.value?.observedAt
@@ -122,7 +137,7 @@ onMounted(load)
         </article>
       </section>
       <section class="trend"><h3>本次服务进程趋势</h3><small>{{ status.trendDescription }}</small><p v-if="trendSummary">{{ trendSummary.samples }} 个样本 · {{ volumeLabel(trendSummary.id) }} 变化 {{ trendSummary.delta > 0 ? '+' : '' }}{{ trendSummary.delta }}%</p><p v-else>样本不足，暂不给出趋势结论。</p></section>
-      <details class="technical"><summary>占用分类</summary><section class="categories"><article v-for="category in status.categories" :key="category.id"><span><b>{{ category.label }}</b></span><span class="bytes">{{ category.available ? format(category.bytes) : '不可用' }}</span></article></section></details>
+      <details class="technical"><summary>占用分类</summary><section class="categories"><article v-for="category in status.categories" :key="category.id" :class="`state-${category.state}`"><span><b>{{ category.label }}</b><small v-if="categoryShare(category)" class="share">{{ categoryShare(category) }}</small></span><span class="bytes">{{ category.state === 'ok' ? format(category.bytes) : categoryStateLabel(category) }}</span></article></section></details>
     </template>
     <p v-else-if="!loading && !error" class="empty">暂无可用的服务器存储数据。</p>
     <footer class="sampled">
@@ -158,6 +173,10 @@ onMounted(load)
 .categories{display:grid;gap:6px;margin-top:8px}
 .categories article{display:flex;justify-content:space-between;gap:12px;color:#b9c2c6}
 .bytes{font-variant-numeric:tabular-nums}
+.categories small.share{margin-left:8px;color:#879092;font-variant-numeric:tabular-nums}
+.categories article.state-denied .bytes{color:#f2b7bd}
+.categories article.state-missing .bytes{color:#d8ba68}
+.categories article.state-timeout .bytes{color:#d8ba68}
 .sampled{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:16px;color:#879092;font-size:13px;font-variant-numeric:tabular-nums}
 @media(max-width:760px){.storage-panel header{align-items:stretch;flex-direction:column}.header-actions{flex-direction:column;align-items:stretch}.header-actions button{width:100%}.volumes{grid-template-columns:1fr}}
 </style>
