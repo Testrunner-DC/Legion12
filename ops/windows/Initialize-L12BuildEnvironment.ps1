@@ -90,6 +90,9 @@ $env:COREPACK_HOME = $paths.Corepack
 $env:L12_WORK_CACHE = $resolvedCacheRoot
 $env:L12_DEPENDENCY_CACHE = $resolvedDependencyRoot
 $env:L12_ARTIFACT_ROOT = [IO.Path]::GetFullPath($artifactRoot)
+# Playwright browsers are a governed dependency too: keep them beside the other caches instead of
+# the per-user profile, so a clean checkout can run the browser-level guards.
+$env:PLAYWRIGHT_BROWSERS_PATH = if ($env:PLAYWRIGHT_BROWSERS_PATH) { $env:PLAYWRIGHT_BROWSERS_PATH } else { Join-Path $resolvedCacheRoot 'ms-playwright' }
 $env:L12_ARCHIVE_ROOT = [IO.Path]::GetFullPath($archiveRoot)
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
