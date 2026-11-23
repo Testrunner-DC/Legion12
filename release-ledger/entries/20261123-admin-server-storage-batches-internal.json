@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "20261123-admin-server-storage-batches-internal",
+  "date": "2026-11-23",
+  "audience": "internal",
+  "reason": "后台「服务器状态与存储」页与采样器改造（S1 页面信息设计、S2 分类三态与卷归属、S3 单飞/超时/陈旧标注）：只影响管理员后台的容量展示与采样成本，玩家侧界面、规则与对局行为无变化，故不进入玩家更新日志。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/AdminServerStoragePanel.vue",
+    "opcgpro-vue/src/l12/site/adminSections.ts",
+    "opcgpro-vue/src/l12/platform.ts",
+    "服务端WebSocket/TwelveLegions/L12ServerStorageMonitor.cs"
+  ]
+}
