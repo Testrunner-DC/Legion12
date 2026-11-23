@@ -1,5 +1,16 @@
 # 十二军团任务台账
 
+## 2026-11-23 B-3 步骤1：登录限流拆表（schema 13→14，本地已验，未部署）
+
+- 目标与裁定：核心快照不再序列化 `LoginThrottles`。用户裁定分段＝**先 `LoginThrottles` 单独一批（本批）**，`Friends`+`BlockedAccounts` 另批；决策6 同期定案＝**公开牌库不带备牌、保持界面明示**（本批不涉及）。
+- 存储契约：`PlatformStorageSchemaVersion` 13 → **14**；新增 `login_throttles`（`key` 主键、`failure_count`、`window_started_utc`、`last_failure_utc`、`locked_until_utc`，外加 `(locked_until_utc)` 索引）。全 `IF NOT EXISTS`，可重复执行。
+- 快照口径：`CreatePlatformJsonOptions` 增 `includeLoginThrottles`；核心快照 `false`（不再含 `LoginThrottles`），兼容镜像 `true`（JSON 只读兜底仍需完整副本）。
+- 迁移与回滚通道：`EnsureAndHydrateLoginThrottleStorage` 在开库时若表为空且快照仍带限流行，先 `BackupDatabase` 落 `platform.db.pre-login-throttle-split`，再在**单事务**内行级写入并抬版本；表非空则以表覆盖内存——**表是唯一权威**。与 B-2 会话拆表同构。
+- 写路径：`Save` 的两条全量保存路径都在保存事务内 `SynchronizeLoginThrottleRows`（差集 upsert + `json_each` 删除缺席行），替换原先「随快照整体重写」。
+- 守卫：`LoginThrottleStorageMigrationTests` 2 项——① 13→14 迁移：备份文件存在、版本 14、行数保持、迁移前的锁仍生效、首次保存后核心快照不含 `LoginThrottles`、二次开库零移动；② 表是权威：表外清空后重开即解锁、新失败重新落表。
+- 镜像常量同步（非放宽断言）：`PlatformSchemaTestContract.Current` 13→14（其注释明写镜像 `PlatformStorageSchemaVersion`）；`SessionStorageMigrationTests` 四处版本断言 13→14——构建版本前移所致，该用例对会话拆表的行为断言（行数、token 可认证、`pre-session-split` 备份存在）一字未动。
+- 验证：定向 2/2（`test-254ce1b2a93e4663add1159288267cbb`）；平台全量见本次结果。
+- 未做完：`Friends`/`BlockedAccounts`（B-3b）；测试服 13→14 演练与 `pre-login-throttle-split` 恢复；发布与部署。
 ## 2026-11-22 B-2 步骤1：会话/令牌拆表（schema 12→13，本地已验，未部署）
 
 - 存储契约：`PlatformStorageSchemaVersion` 12 → **13**；会话迁到独立表 `account_sessions`（8 列与 `SessionRow` 一致 + `(account_id)`/`(expires_utc)` 索引，全 `IF NOT EXISTS`），行级同步＝按 id upsert + `json_each` 删除内存已无的行。

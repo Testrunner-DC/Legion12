@@ -25,15 +25,17 @@ public sealed class SessionStorageMigrationTests
 
             var migrated = new L12PlatformStore(path);
             Assert.Equal("sqlite", migrated.StorageStatus().Mode);
-            Assert.Equal(13, migrated.StorageStatus().SchemaVersion);
+            // B-3 raised the current schema to 14, so a schema-12 database now lands on 14 in one
+            // ladder. The session-split claims of this test (rows, token, backup) are unchanged.
+            Assert.Equal(14, migrated.StorageStatus().SchemaVersion);
             Assert.Equal(database + ".pre-session-split", migrated.StorageStatus().MigrationBackupPath);
             Assert.True(File.Exists(database + ".pre-session-split"),
                 "回滚唯一通道缺失：platform.db.pre-session-split");
             Assert.Equal(rows, RowCount(database));
             using (var connection = OpenReadOnly(database))
             {
-                Assert.Equal("13", Text(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-                Assert.Equal("13", Text(connection,
+                Assert.Equal("14", Text(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal("14", Text(connection,
                     "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
             }
 
@@ -45,7 +47,7 @@ public sealed class SessionStorageMigrationTests
 
             // A second open must not move a single row.
             var reopened = new L12PlatformStore(path);
-            Assert.Equal(13, reopened.StorageStatus().SchemaVersion);
+            Assert.Equal(14, reopened.StorageStatus().SchemaVersion);
             Assert.Equal(rows, RowCount(database));
             Assert.Equal(rows, reopened.Sessions(accountId).Count);
             Assert.NotNull(reopened.AuthenticateTokenSession(token));
@@ -198,7 +200,7 @@ public sealed class SessionStorageMigrationTests
                 Execute(connection, "DROP TRIGGER fail_session_split;");
             var retried = new L12PlatformStore(path);
             Assert.Equal("sqlite", retried.StorageStatus().Mode);
-            Assert.Equal(13, retried.StorageStatus().SchemaVersion);
+            Assert.Equal(14, retried.StorageStatus().SchemaVersion);
             Assert.Equal(rows, RowCount(database));
             var authenticated = retried.AuthenticateTokenSession(token);
             Assert.NotNull(authenticated);

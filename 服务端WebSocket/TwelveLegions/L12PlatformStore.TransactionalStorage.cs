@@ -77,11 +77,13 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 13;
+    private const int PlatformStorageSchemaVersion = 14;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions =
-        CreatePlatformJsonOptions(false, includeAuditLedger: false, includeSessions: false);
+        CreatePlatformJsonOptions(false, includeAuditLedger: false, includeSessions: false,
+            includeLoginThrottles: false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions =
-        CreatePlatformJsonOptions(true, includeAuditLedger: true, includeSessions: true);
+        CreatePlatformJsonOptions(true, includeAuditLedger: true, includeSessions: true,
+            includeLoginThrottles: true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -195,6 +197,7 @@ public sealed partial class L12PlatformStore
 
             data = EnsureAndHydrateDeckDomainStorage(connection, data);
             data = EnsureAndHydrateAccountSessionStorage(connection, data);
+            data = EnsureAndHydrateLoginThrottleStorage(connection, data);
             HydrateRankedBroadcastObjects(connection, data);
             MergeIndependentAudit(connection, data);
             _lastCommittedSnapshot = SerializeRollbackState(data);
@@ -352,6 +355,7 @@ public sealed partial class L12PlatformStore
             if (objectWrite is null && chatAccountDeletions.Length != 0)
                 SynchronizeChatAccountDeletions(connection, transaction, _data, chatAccountDeletions);
             SynchronizeAccountSessionRows(connection, transaction, _data.Sessions);
+            SynchronizeLoginThrottleRows(connection, transaction, _data.LoginThrottles);
             StorageFailureInjector?.Invoke("before-snapshot-write");
             var snapshot = PrepareCoreSnapshot(_data, connection, transaction);
             if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
@@ -535,6 +539,7 @@ public sealed partial class L12PlatformStore
                     // the same database generation, even for a no-op claim/preview.
                     HydrateDeckDomain(connection, latest, transaction);
                     HydrateAccountSessions(connection, latest, transaction);
+        HydrateLoginThrottles(connection, latest, transaction);
                     HydrateRankedBroadcastObjects(connection, latest, transaction);
                 }
                 var validatedAudit = MergeIndependentAudit(connection, latest, transaction, prepareAppend: true);
@@ -636,6 +641,7 @@ public sealed partial class L12PlatformStore
         VerifyDeckDomainSnapshot(connection, transaction, data);
         SetStorageMeta(connection, transaction, DeckDomainStateKey, DeckDomainActiveState);
         SynchronizeAccountSessionRows(connection, transaction, data.Sessions);
+        SynchronizeLoginThrottleRows(connection, transaction, data.LoginThrottles);
         SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, data,
             allowLegacyDeliveryImport: initialLegacyProjection);
         var snapshot = PrepareCoreSnapshot(data, connection, transaction);
@@ -783,6 +789,7 @@ public sealed partial class L12PlatformStore
         // hydrates a stored snapshot back into memory re-reads them from their own table. A save
         // keeps its staged in-memory sessions, so the append path never re-reads them.
         if (!prepareAppend) HydrateAccountSessions(connection, data, transaction);
+        if (!prepareAppend) HydrateLoginThrottles(connection, data, transaction);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -921,6 +928,7 @@ public sealed partial class L12PlatformStore
         {
             InitializeDeckDomainSchema(connection, existingSchemaVersion);
             InitializeAccountSessionSchema(connection);
+            InitializeLoginThrottleSchema(connection);
             InitializeRankedBroadcastObjectStorage(connection, ReadExistingStorageSchemaVersion(connection));
             InitializeAccountRankedRestrictionSchema(connection);
             // One ladder step per stored version: each initializer runs for exactly the marker it
@@ -1041,7 +1049,7 @@ public sealed partial class L12PlatformStore
     }
 
     private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented, bool includeAuditLedger,
-        bool includeSessions)
+        bool includeSessions, bool includeLoginThrottles)
     {
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
@@ -1056,7 +1064,8 @@ public sealed partial class L12PlatformStore
                 foreach (var property in typeInfo.Properties.Where(property => property.Name is nameof(DataFile.Decks)
                              or nameof(DataFile.PublishedDecks) or nameof(DataFile.DeckPayloads)
                              || (!includeAuditLedger && property.Name is nameof(DataFile.AdminAudit))
-                             || (!includeSessions && property.Name is nameof(DataFile.Sessions))))
+                             || (!includeSessions && property.Name is nameof(DataFile.Sessions))
+                             || (!includeLoginThrottles && property.Name is nameof(DataFile.LoginThrottles))))
                     property.ShouldSerialize = static (_, _) => false;
             }
             else if (typeInfo.Type == typeof(TournamentDeckSnapshotRow))

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261123-login-throttle-storage-split",
+  "date": "2026-11-23",
+  "audience": "internal",
+  "reason": "登录失败计数与锁定窗口从平台快照拆到独立表 login_throttles，核心快照不再携带该域副本；表成为唯一权威，开库时若表为空则从快照单事务搬迁并先落回滚备份。失败窗口、锁定阈值与 Prune 语义不变，玩家可见行为与文案无变化，故不进入玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.LoginThrottleStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs"
+  ]
+}
