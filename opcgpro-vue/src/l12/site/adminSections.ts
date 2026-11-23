@@ -22,7 +22,7 @@ export const adminSections = [
   { id: 'card-analytics', label: '卡牌数据', domain: 'operations', path: '/admin/operations/cards', icon: '◈', permissions: ['admin.analytics.read'] },
   { id: 'releases', label: '软件发布', domain: 'system', path: '/admin/system/releases', icon: '⇧', permissions: ['releases.read', 'releases.runtime.read'] },
   { id: 'security', label: '安全状态', domain: 'system', path: '/admin/system/security', icon: '◆', permissions: ['admin.security.read'] },
-  { id: 'storage', label: '服务健康与存储', domain: 'system', path: '/admin/system/storage', icon: '▤', permissions: ['admin.security.read'] },
+  { id: 'storage', label: '服务器状态', domain: 'system', path: '/admin/system/storage', icon: '▤', permissions: ['admin.security.read'] },
   { id: 'commands', label: '操作记录', domain: 'system', path: '/admin/system/commands', icon: '⌁', permissions: ['admin.commands.read'] },
   { id: 'audit', label: '审计日志', domain: 'system', path: '/admin/system/audit', icon: '≡', permissions: ['admin.audit.read'] },
 ] as const

@@ -1,5 +1,13 @@
 # 十二军团任务台账
 
+## 2026-11-23 批次 S1：服务器状态与存储页信息设计（纯前端，本地已验，未部署）
+
+- 范围：`AdminServerStoragePanel.vue` 重写 + `adminSections.ts` 侧边栏文案 + 未改接口/未改权限/未加任何定时器。
+- 已做：A1 卷阈值化（阈值取 `status.thresholds`，缺省 70/85；颜色 + 「正常/偏高/接近满载」文字双重编码）；A2 卷按已用百分比降序、最紧张置顶并打标；A4 页脚改为**绝对时间**「服务器采样 UTC … ｜ 本地 …」并保留 30 秒缓存说明，**删除原「N 秒前采样」相对时间**；A5 读取失败保留上次数据 + 内联错误条（含上次成功时间）；A6 刷新按钮 refreshing 期间 disabled、结束显示「刷新（数据 hh:mm:ss）」；A7 侧边栏「服务健康与存储」→「服务器状态」；A8 数值列 `tabular-nums`；A9 头部「→ 后端运行状态」按 `hasPermission('admin.runtime.read')` 渲染并 `router.push({name:'admin-operations'})`。
+- **A3 改挂 S2**：现行契约里 `ServerStorageCategory` 没有 `path` 字段，而 S2 明确规定「`VolumeMount` 由服务端解析下发，前端不再自行拼路径」——A3 的客户端最长前缀匹配与 S2 的契约相冲突，故按「占所属卷 X%」在 S2 随 `volumeMount` 一起做。
+- 事实基线修正（方案里的行号已漂移）：面板是**独立路由**（`router/index.ts:53` → `/admin/system/storage`），不是 AdminPage 内的页签；侧边栏文案在 `adminSections.ts:25`；运行探针页路由名是 `admin-operations`。
+- 验证：`npx vue-tsc --noEmit` 通过；`verify-l12-change.ps1 -Level Focused` **exit 0**。
+- 未完成（如实）：A 的验收要求「改前/改后截图各一对（1440 与 390）」尚未取得——本机 Playwright 浏览器刚通过 npmmirror 镜像装好，但截图需要能登录测试服后台的会话，当前没有可用凭据。
 ## 2026-11-23 测试基础设施：临时目录删除重试（不限产品范围，本地已验，未部署）
 
 - 问题（有证据）：`AdminPasswordWorkIsolationTests` 在 Focused 门禁负载下多次失败，失败点在用例 `finally` 的 `Directory.Delete(root,true)`——`ObjectDisposedException`/`IOException`（服务器与 recorder 的句柄尚未释放），而同一提交上平台全量 3,184 与隔离复跑 8/8 都绿。这是清理阶段的资源释放竞态，不是业务逻辑。
