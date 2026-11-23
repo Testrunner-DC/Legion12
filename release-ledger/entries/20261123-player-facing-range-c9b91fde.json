@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "20261123-player-facing-range-c9b91fde",
+  "date": "2026-11-23",
+  "audience": "players",
+  "title": "牌库复制、回放视口与对局提示",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "公开牌库「复制到我的牌库」恢复可用（此前全部失败），复制成功时会明确提示公开牌库不含备牌，可以自行补充。",
+      "paths": [
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/DeckSnapshotViewer.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue"
+      ]
+    },
+    {
+      "category": "replays",
+      "text": "1024×768、1152×864、1280×1024 这些桌面窗口尺寸下回放可以正常打开；竖屏手机仍然保持拦截，避免出现只画出一半的战场。",
+      "paths": [
+        "opcgpro-vue/src/l12/mobileViewport.ts"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "对局中行动按钮上方会显示断线与超时提示：连接中断时明确说明本次行动仍在计时并显示重连剩余时间；行动计时用尽时说明本次行动将由服务器代为处理。计时规则本身没有改变。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/OperationDeadlineNotice.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261123-server-internal-range-c9b91fde",
+  "date": "2026-11-23",
+  "audience": "internal",
+  "reason": "服务端内部批次：未知结构化卡效显式失败、日志门面统一、进程指标与对局记录器写入连接设置、改名审核与平台存储实现重构；不改变玩家可见行为与文案，故不进入玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12CardEffects.cs",
+    "服务端WebSocket/TwelveLegions/L12ChatRuntime.cs",
+    "服务端WebSocket/TwelveLegions/L12Log.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.UsernameChanges.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+    "服务端WebSocket/TwelveLegions/L12ServerMetrics.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+  ]
+}
