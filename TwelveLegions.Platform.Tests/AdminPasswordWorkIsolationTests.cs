@@ -70,7 +70,7 @@ public sealed class AdminPasswordWorkIsolationTests
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
             Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previous);
-            if (Directory.Exists(root)) Directory.Delete(root, true);
+            TestTempDirectory.Delete(root);
         }
     }
     [Theory]
@@ -176,7 +176,7 @@ public sealed class AdminPasswordWorkIsolationTests
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
             Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previous);
-            if (Directory.Exists(root)) Directory.Delete(root, true);
+            TestTempDirectory.Delete(root);
         }
     }
 }

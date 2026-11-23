@@ -1,5 +1,12 @@
 # 十二军团任务台账
 
+## 2026-11-23 测试基础设施：临时目录删除重试（不限产品范围，本地已验，未部署）
+
+- 问题（有证据）：`AdminPasswordWorkIsolationTests` 在 Focused 门禁负载下多次失败，失败点在用例 `finally` 的 `Directory.Delete(root,true)`——`ObjectDisposedException`/`IOException`（服务器与 recorder 的句柄尚未释放），而同一提交上平台全量 3,184 与隔离复跑 8/8 都绿。这是清理阶段的资源释放竞态，不是业务逻辑。
+- 改动：新增 `TestTempDirectory.Delete(path, attempts=10, delayMilliseconds=100)`（`SqliteConnection.ClearAllPools()` 之后调用，遇 `IOException`/`UnauthorizedAccessException` 有界重试，最后一次仍失败则照常抛出，不吞错）；`AdminPasswordWorkIsolationTests` 两处 `finally` 改为调用它。
+- 同批定性（不改代码）：`SeasonRefreshIncidentRegressionTests` 在全量压力下曾偶红 3 项，本轮隔离复跑 **65/65 通过（6 s）**；该类含 6 处 `Stopwatch` 墙钟断言，判定为**开发机负载导致的墙钟抖动**，不是产品缺陷，也不放宽断言。
+- 未完成：Playwright 缺口。`playwright@1.65.1` 模块可装且已实测解析成功，但 `npx playwright install chromium` 的 CDN 下载在本机持续停在 0%（两次尝试共约 25 分钟），因此依赖已回退、工作树保持干净。恢复网络后重跑：`$env:PLAYWRIGHT_BROWSERS_PATH='D:\GPT\Legion12\cache\primary\ms-playwright'; npx playwright install chromium`，再补 `playwright` 到 devDependencies。
+- 验证：`AdminPasswordWorkIsolationTests` 8/8；`verify-l12-change.ps1 -Level Focused` **exit 0**（平台 3,186/3,186、13m44s）。
 ## 2026-11-23 B-3 步骤2：好友与黑名单拆表（schema 14→15，本地已验，未部署）
 
 - 目标：核心快照不再序列化 `Friends` 与 `BlockedAccounts`（B-3 的第二批，接 B-3a 的 `LoginThrottles`）。
