@@ -1,5 +1,18 @@
 # 十二军团任务台账
 
+## 2026-11-23 B-3 步骤2：好友与黑名单拆表（schema 14→15，本地已验，未部署）
+
+- 目标：核心快照不再序列化 `Friends` 与 `BlockedAccounts`（B-3 的第二批，接 B-3a 的 `LoginThrottles`）。
+- 存储契约：`PlatformStorageSchemaVersion` 14 → **15**；新增 `account_friends`（`requester_id`+`addressee_id` 复合主键、`status`、`created_utc`、`updated_utc`、`(addressee_id)` 索引）与 `account_blocks`（`account_id`+`blocked_account_id` 复合主键、`created_utc`、`(blocked_account_id)` 索引）。全 `IF NOT EXISTS`。
+- 快照口径：`CreatePlatformJsonOptions` 增 `includeAccountRelationships`；核心快照 `false`（两域都不再写入），兼容镜像 `true`（JSON 兜底仍完整）。
+- 迁移与回滚通道：`EnsureAndHydrateAccountRelationshipStorage` 分域判定「表空且快照有行」，任一域需要搬迁就先 `BackupDatabase` 落 `platform.db.pre-account-relationship-split`，再在同一事务内搬两域并抬版本。
+- 写路径：`Save` 两条全量路径在事务内 `SynchronizeFriendRows` / `SynchronizeBlockedAccountRows`——复合主键差集 upsert，被移除的关系按主键定向 DELETE（关系集合小、删除罕见，避免 `json_each` 复合键拼装）。
+- **顺序语义（本批最容易被忽略的一条）**：`account_friends` 带 `ordinal` 列。会话与限流行的顺序无语义，但好友关系有——「同一无序对以先写入的那行为准」（`FindFriendRow` 取 `FirstOrDefault`），若按主键排序读回就会悄悄换掉谁是第一行。`CommittedChatAdmissionReadsTests.R01` 的 7 个用例正是这条契约，首版按主键 `ORDER BY` 读回时打红 5 个；改为写入列表序号、读回 `ORDER BY ordinal` 后全绿。
+- 读路径零改动：`_data.Friends` / `_data.BlockedAccounts` 的 20+ 处读取点保持原样，由开库 hydrate 灌回内存。
+- 守卫：`AccountRelationshipStorageMigrationTests` 2 项——① 14→15 迁移：备份文件、版本 15、两表行数、`AreFriends`/`Friends`/`BlockedAccounts` 行为不变、首次保存后核心快照不含 `Friends`/`BlockedAccounts`、二次开库零移动；② 表是权威：拆表并保存一次后，表外清空即关系消失、新关系重新落表。
+- 镜像常量同步：`PlatformSchemaTestContract.Current` 14→15；`SessionStorageMigrationTests` 与 `LoginThrottleStorageMigrationTests` 的版本断言 14→15（构建版本前移，各自域的行为断言未改）。
+- 验证：定向 10/10（关系 2 + 限流 4 + 会话 4）；平台全量 **3,186/3,186（13m29s）**；`verify-l12-change.ps1 -Level Focused` **exit 0**（平台 3,186、12m56s）。
+- 未做完：测试服 14→15 演练与 `pre-account-relationship-split` 恢复；发布与部署。
 ## 2026-11-23 B-3 步骤1：登录限流拆表（schema 13→14，本地已验，未部署）
 
 - 目标与裁定：核心快照不再序列化 `LoginThrottles`。用户裁定分段＝**先 `LoginThrottles` 单独一批（本批）**，`Friends`+`BlockedAccounts` 另批；决策6 同期定案＝**公开牌库不带备牌、保持界面明示**（本批不涉及）。

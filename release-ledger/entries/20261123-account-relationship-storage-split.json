@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261123-account-relationship-storage-split",
+  "date": "2026-11-23",
+  "audience": "internal",
+  "reason": "好友关系与黑名单从平台快照拆到 account_friends / account_blocks 两张独立表，核心快照不再携带这两域副本；开库时若表为空则从快照单事务搬迁并先落回滚备份，表成为唯一权威。好友申请/接受/拒绝/解除、屏蔽/取消屏蔽的判定顺序与文案不变，玩家可见行为无变化，故不进入玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AccountRelationshipStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs"
+  ]
+}

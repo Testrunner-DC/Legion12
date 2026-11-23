@@ -77,13 +77,13 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 14;
+    private const int PlatformStorageSchemaVersion = 15;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions =
         CreatePlatformJsonOptions(false, includeAuditLedger: false, includeSessions: false,
-            includeLoginThrottles: false);
+            includeLoginThrottles: false, includeAccountRelationships: false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions =
         CreatePlatformJsonOptions(true, includeAuditLedger: true, includeSessions: true,
-            includeLoginThrottles: true);
+            includeLoginThrottles: true, includeAccountRelationships: true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -198,6 +198,7 @@ public sealed partial class L12PlatformStore
             data = EnsureAndHydrateDeckDomainStorage(connection, data);
             data = EnsureAndHydrateAccountSessionStorage(connection, data);
             data = EnsureAndHydrateLoginThrottleStorage(connection, data);
+            data = EnsureAndHydrateAccountRelationshipStorage(connection, data);
             HydrateRankedBroadcastObjects(connection, data);
             MergeIndependentAudit(connection, data);
             _lastCommittedSnapshot = SerializeRollbackState(data);
@@ -356,6 +357,8 @@ public sealed partial class L12PlatformStore
                 SynchronizeChatAccountDeletions(connection, transaction, _data, chatAccountDeletions);
             SynchronizeAccountSessionRows(connection, transaction, _data.Sessions);
             SynchronizeLoginThrottleRows(connection, transaction, _data.LoginThrottles);
+            SynchronizeFriendRows(connection, transaction, _data.Friends);
+            SynchronizeBlockedAccountRows(connection, transaction, _data.BlockedAccounts);
             StorageFailureInjector?.Invoke("before-snapshot-write");
             var snapshot = PrepareCoreSnapshot(_data, connection, transaction);
             if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
@@ -540,6 +543,7 @@ public sealed partial class L12PlatformStore
                     HydrateDeckDomain(connection, latest, transaction);
                     HydrateAccountSessions(connection, latest, transaction);
         HydrateLoginThrottles(connection, latest, transaction);
+        HydrateAccountRelationshipStorage(connection, latest, transaction);
                     HydrateRankedBroadcastObjects(connection, latest, transaction);
                 }
                 var validatedAudit = MergeIndependentAudit(connection, latest, transaction, prepareAppend: true);
@@ -642,6 +646,8 @@ public sealed partial class L12PlatformStore
         SetStorageMeta(connection, transaction, DeckDomainStateKey, DeckDomainActiveState);
         SynchronizeAccountSessionRows(connection, transaction, data.Sessions);
         SynchronizeLoginThrottleRows(connection, transaction, data.LoginThrottles);
+        SynchronizeFriendRows(connection, transaction, data.Friends);
+        SynchronizeBlockedAccountRows(connection, transaction, data.BlockedAccounts);
         SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, data,
             allowLegacyDeliveryImport: initialLegacyProjection);
         var snapshot = PrepareCoreSnapshot(data, connection, transaction);
@@ -790,6 +796,7 @@ public sealed partial class L12PlatformStore
         // keeps its staged in-memory sessions, so the append path never re-reads them.
         if (!prepareAppend) HydrateAccountSessions(connection, data, transaction);
         if (!prepareAppend) HydrateLoginThrottles(connection, data, transaction);
+        if (!prepareAppend) HydrateAccountRelationshipStorage(connection, data, transaction);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -929,6 +936,7 @@ public sealed partial class L12PlatformStore
             InitializeDeckDomainSchema(connection, existingSchemaVersion);
             InitializeAccountSessionSchema(connection);
             InitializeLoginThrottleSchema(connection);
+            InitializeAccountRelationshipSchema(connection);
             InitializeRankedBroadcastObjectStorage(connection, ReadExistingStorageSchemaVersion(connection));
             InitializeAccountRankedRestrictionSchema(connection);
             // One ladder step per stored version: each initializer runs for exactly the marker it
@@ -1049,7 +1057,7 @@ public sealed partial class L12PlatformStore
     }
 
     private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented, bool includeAuditLedger,
-        bool includeSessions, bool includeLoginThrottles)
+        bool includeSessions, bool includeLoginThrottles, bool includeAccountRelationships)
     {
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
@@ -1065,7 +1073,9 @@ public sealed partial class L12PlatformStore
                              or nameof(DataFile.PublishedDecks) or nameof(DataFile.DeckPayloads)
                              || (!includeAuditLedger && property.Name is nameof(DataFile.AdminAudit))
                              || (!includeSessions && property.Name is nameof(DataFile.Sessions))
-                             || (!includeLoginThrottles && property.Name is nameof(DataFile.LoginThrottles))))
+                             || (!includeLoginThrottles && property.Name is nameof(DataFile.LoginThrottles))
+                             || (!includeAccountRelationships && property.Name is nameof(DataFile.Friends))
+                             || (!includeAccountRelationships && property.Name is nameof(DataFile.BlockedAccounts))))
                     property.ShouldSerialize = static (_, _) => false;
             }
             else if (typeInfo.Type == typeof(TournamentDeckSnapshotRow))

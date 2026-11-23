@@ -25,15 +25,15 @@ public sealed class LoginThrottleStorageMigrationTests
 
             var migrated = new L12PlatformStore(path);
             Assert.Equal("sqlite", migrated.StorageStatus().Mode);
-            Assert.Equal(14, migrated.StorageStatus().SchemaVersion);
+            Assert.Equal(15, migrated.StorageStatus().SchemaVersion);
             Assert.Equal(database + ".pre-login-throttle-split", migrated.StorageStatus().MigrationBackupPath);
             Assert.True(File.Exists(database + ".pre-login-throttle-split"),
                 "回滚唯一通道缺失：platform.db.pre-login-throttle-split");
 
             using (var connection = OpenReadOnly(database))
             {
-                Assert.Equal("14", Text(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-                Assert.Equal("14", Text(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+                Assert.Equal("15", Text(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal("15", Text(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
                 Assert.Equal(rows, ThrottleRowCount(connection));
             }
 
@@ -52,7 +52,7 @@ public sealed class LoginThrottleStorageMigrationTests
 
             // A second open must not move a single row or rewrite the backup.
             var reopened = new L12PlatformStore(path);
-            Assert.Equal(14, reopened.StorageStatus().SchemaVersion);
+            Assert.Equal(15, reopened.StorageStatus().SchemaVersion);
             using (var connection = OpenReadOnly(database))
                 Assert.Equal(rows, ThrottleRowCount(connection));
         }
