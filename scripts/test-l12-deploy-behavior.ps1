@@ -2171,6 +2171,39 @@ exit 255
     Assert-True ((Test-Path -LiteralPath (Join-Path $unverifiedLocalRecovery.Root "opt\legion12-deployment\deployment-blocked.txt"))) "本机身份错误被公网成功响应掩盖。"
     Assert-True (-not $unverifiedLocalRecovery.Output.Contains("上一版本已恢复并通过")) "本机身份失败后仍误报回滚成功。"
 
+    # ---- 正式部署包装入口：取令牌失败必须在调用任何外部命令前停止 ----
+    $productionWrapper = Join-Path $repoRoot 'ops\windows\deploy-l12-production.ps1'
+    Assert-True (Test-Path -LiteralPath $productionWrapper -PathType Leaf) '正式部署包装入口 deploy-l12-production.ps1 缺失。'
+    $wrapperText = Get-Content -LiteralPath $productionWrapper -Raw -Encoding utf8
+    Assert-True ($wrapperText.Contains('-DeploymentControlSessionToken') -and $wrapperText.Contains('ConvertTo-SecureString') -and $wrapperText.Contains('deploy-l12.ps1')) '正式部署包装入口没有把令牌以 SecureString 交给 deploy-l12.ps1。'
+    $wrapperRoot = Join-Path $fixtureRoot 'production-wrapper'
+    New-Item -ItemType Directory -Path (Join-Path $wrapperRoot 'bin') -Force | Out-Null
+    $wrapperSshMarker = Join-Path $wrapperRoot 'ssh-calls.txt'
+    Write-Utf8NoBom (Join-Path $wrapperRoot 'bin\ssh.cmd') ("@echo off" + [Environment]::NewLine + '>>"' + $wrapperSshMarker + '" echo ssh-called' + [Environment]::NewLine + 'exit /b 1' + [Environment]::NewLine)
+    $previousWrapperPath = $env:PATH
+    $previousWrapperUser = $env:L12_DEPLOY_ADMIN_USERNAME
+    $previousWrapperPassword = $env:L12_DEPLOY_ADMIN_PASSWORD
+    try {
+        $env:PATH = (Join-Path $wrapperRoot 'bin') + ';' + $previousWrapperPath
+        $env:L12_DEPLOY_ADMIN_USERNAME = ''
+        $env:L12_DEPLOY_ADMIN_PASSWORD = ''
+        $missingCredential = Invoke-NativeCapture -Executable 'pwsh' -Arguments @('-NoProfile','-File',$productionWrapper,'-ArtifactManifest',(Join-Path $wrapperRoot 'absent-manifest.json'),'-CredentialFile',(Join-Path $wrapperRoot 'absent-credentials.json'))
+        Assert-True ($missingCredential.ExitCode -ne 0) '包装入口缺少凭据时仍然成功退出。'
+        Assert-True ($missingCredential.Output.Contains('deploy_credentials_missing')) '包装入口缺少凭据时没有给出明确失败原因。'
+        Assert-True (-not (Test-Path -LiteralPath $wrapperSshMarker)) '包装入口缺少凭据时仍然调用了外部命令。'
+        $badTokenFile = Join-Path $wrapperRoot 'bad-token.json'
+        Write-Utf8NoBom $badTokenFile '{"token":"not-a-64-hex-token"}'
+        $badToken = Invoke-NativeCapture -Executable 'pwsh' -Arguments @('-NoProfile','-File',$productionWrapper,'-ArtifactManifest',(Join-Path $wrapperRoot 'absent-manifest.json'),'-CredentialFile',$badTokenFile)
+        Assert-True ($badToken.ExitCode -ne 0) '包装入口在令牌格式错误时仍然成功退出。'
+        Assert-True ($badToken.Output.Contains('deploy_control_token_invalid')) '包装入口在令牌格式错误时没有给出明确失败原因。'
+        Assert-True (-not $badToken.Output.Contains('not-a-64-hex-token')) '包装入口回显了令牌内容。'
+        Assert-True (-not (Test-Path -LiteralPath $wrapperSshMarker)) '包装入口在令牌格式错误时仍然调用了外部命令。'
+    }
+    finally {
+        $env:PATH = $previousWrapperPath
+        $env:L12_DEPLOY_ADMIN_USERNAME = $previousWrapperUser
+        $env:L12_DEPLOY_ADMIN_PASSWORD = $previousWrapperPassword
+    }
     Write-Host "[L12 deploy behavior] $serverScenarioCount isolated server scenarios passed: default/external paths, mount and capacity gates, atomic backup ownership, exact identity, and fail-closed recovery."
     $suitePassed = $true
 }
