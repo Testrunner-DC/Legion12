@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261123-operation-deadline-notice",
+  "date": "2026-11-23",
+  "audience": "players",
+  "title": "行动超时与断线提示",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对局中的行动按钮上方现在会说明两件原本看不到的事：连接中断时，本次行动**仍在按服务器时间计时**并显示重连剩余时间；行动计时已经用完时，明确提示本次行动将由服务器代为处理，不再让玩家误以为操作没被记时。计时规则本身没有任何改变。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/OperationDeadlineNotice.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    }
+  ]
+}

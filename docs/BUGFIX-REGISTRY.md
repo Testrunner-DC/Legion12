@@ -1,5 +1,19 @@
 # Legion12 Bug 修复记录
 
+## TIMER-20261123-OPERATION-DEADLINE-NOTICE｜断线仍计时与移动端无超时提示（本地已验，未部署）
+
+- 状态：local_verified_not_deployed
+- 现象：玩家反馈 `BUG-20261122-a3a83162`「连不上也算操作超时 + 移动端没有超时提示」。现行树里行动按钮组上方没有任何断线/超时说明；`net.ts:278-297` 只有 4 s「服务器响应较慢」；`PlayerTurnClock.vue:56-61` 的「本次剩余／重连剩余」只出现在玩家时钟内，移动端视线不落在那里。
+- 根因：服务端按墙钟计时（设计如此，裁定保持不改），而客户端把计时只渲染在玩家时钟组件里；移动端布局把行动按钮放进 `lane="primary"` 门户、时钟在 `lane="tools"`，两个不同屏区之间没有任何提示出口，于是断线照旧计时却看不出来、超时也没有交代。
+- 同型扫描：`grep -rn "服务器响应较慢|剩余|remaining" opcgpro-vue/src/l12` 全池只命中 `net.ts` 的 4 s 提示与 `PlayerTurnClock`／`SetupDecisionClock`／`PromptOverlay` 三处计时显示；行动按钮组所在的 `GameBoard.vue` `lane="primary"` 无任何提示出口，需补的仅此一处。
+- 定位（现行树复核）：`net.ts:278-297` 只有 4 s「服务器响应较慢」提示（与 `CLIENT-20261120-HEARTBEAT-PENDING-HINT` 同一契约）；`PlayerTurnClock.vue:56-61` 已有「本次剩余／重连剩余」，但只出现在玩家时钟里；行动按钮组所在的 `GameBoard.vue` `lane="primary"` 门户内、`action-panel` 上方没有任何断线或超时说明，移动端因此完全没有提示。
+- 改动：新增 `OperationDeadlineNotice.vue`，只读服务端已下发的 `rankedClock`（`receivedAtMs`／`operationRemainingMs`／`reconnectRemainingMs`／`connected`）做本地插值，**不新造截止时间、不发请求**；插入 `GameBoard.vue` 的 `lane="primary"` 门户、`action-panel` 之前，与按钮组同一 `!combat && !readOnly` 条件，桌面与移动端共用同一元素。文案三态：断线且尚可重连「连接中断，本次行动仍在计时（重连剩余 mm:ss）」；断线且重连用尽「连接中断且重连时间已用尽，本次行动将由服务器代为处理」；在线但本回合计时归零「本次行动已超时，服务器将代为处理」。
+- 性能锁：该组件登记 1 个 1 s 本地时钟（`ops/performance-budgets.json` 的 `approvedIntervalModules`，purpose「本地行动超时提示显示」），与 `PlayerTurnClock.vue` 同类；未放宽其他任何预算。
+- 回归：`check-mobile-action-dock.mjs` 新增 3 条断言——① 提示与行动面板同属 `lane="primary"` 门户且位于按钮组之前；② 只从既有快照派生（含 `operationRemainingMs`／`reconnectRemainingMs`／`receivedAtMs`，不含 `deadlineUtc`／`fetch(`）；③ 两种提示文案与 `data-ui-contract` 齐备。做过去掉「仍在计时」即红、恢复即绿的验证。
+- 验证：`vue-tsc --noEmit` 通过；`check-mobile-action-dock.mjs` 通过；`scripts/verify-l12-change.ps1 -Level Focused` exit 0。
+- 备注：服务端计时口径零改动（墙钟照旧，符合裁定）；移动端提示的浏览器级截图证据待部署后补；本条目与 `CLIENT-20261120-HEARTBEAT-PENDING-HINT`（`net.ts` 4 s 未确认提示）是互补关系，不重复覆盖。
+- 回滚：删除该组件与插入行、撤回 `performance-budgets.json` 登记与三条断言即可；无协议、无存储、无数据影响。
+
 ## VIEWPORT-20261122-REPLAY-GEOMETRY-GATE｜回放被几何视口误判阻断（本地已验，未部署）
 
 - 状态：local_verified_not_deployed

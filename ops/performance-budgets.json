@@ -38,6 +38,7 @@
     { "path": "src/l12/game/SetupDecisionClock.vue", "maximumCalls": 1, "purpose": "本地决定时钟显示" },
     { "path": "src/l12/game/PromptOverlay.vue", "maximumCalls": 1, "purpose": "本地骰子动画" },
     { "path": "src/l12/game/PlayerTurnClock.vue", "maximumCalls": 1, "purpose": "本地回合时钟显示" },
+    { "path": "src/l12/game/OperationDeadlineNotice.vue", "maximumCalls": 1, "purpose": "本地行动超时提示显示" },
     { "path": "src/l12/site/BattleHubPage.vue", "maximumCalls": 1, "purpose": "本地维护倒计时显示" }
   ],
   "routes": {

@@ -30,6 +30,7 @@ import MasterOverlay from './MasterOverlay.vue'
 import PhaseTrack from './PhaseTrack.vue'
 import PlayerMat from './PlayerMat.vue'
 import PlayerTurnClock from './PlayerTurnClock.vue'
+import OperationDeadlineNotice from './OperationDeadlineNotice.vue'
 import BattlePlayerIdentity from './BattlePlayerIdentity.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
@@ -1934,7 +1935,7 @@ function statusTexts(card: Card) {
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
             <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" :neutral-view="neutralLogView" @focus="focusCard = $event" />
           </section>
-          <BattleDockPortal lane="primary"><section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
+          <BattleDockPortal lane="primary"><OperationDeadlineNotice v-if="!combat && !readOnly" :ranked-clock="l12State.rankedClock" :player-index="viewMe.playerIndex" :phase="game.phase" /><section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
             :mulligan-count="mulliganIds.length" :defense-ids="defenseIds" :defense-target-type="defenseTargetType"
             :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="gameActionsBusy" @command="gameActionsCommand" /></section></BattleDockPortal>
         </aside>

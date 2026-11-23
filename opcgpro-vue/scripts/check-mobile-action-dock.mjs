@@ -151,4 +151,17 @@ for (const consumer of ['gm-placement-controls', 'inline-prompt-controls', 'boar
 const interaction = read('scripts/verify-mobile-interaction-matrix.mjs')
 for (const invariant of ['visibleRatio', 'elementFromPoint', 'touchscreen.tap', 'actorAboveDecisions', 'sameHitBox', 'nativeContextReveal', 'mouse.wheel', 'scrollTop'])
   assert.ok(interaction.includes(invariant), `combat runtime must preserve ${invariant}`)
+
+const deadlineNotice = read('src/l12/game/OperationDeadlineNotice.vue')
+const deadlineAnchor = '<BattleDockPortal lane="primary"><OperationDeadlineNotice v-if="!combat && !readOnly"'
+const deadlineIndex = board.indexOf(deadlineAnchor)
+assert.ok(deadlineIndex > -1, 'operation deadline notice must share the action panel lane and its visibility condition')
+const deadlineSegment = board.slice(deadlineIndex, board.indexOf('</BattleDockPortal>', deadlineIndex))
+assert.ok(deadlineSegment.includes('class="grand-panel action-panel"'), 'operation deadline notice must render directly above the action button group')
+assert.ok(deadlineNotice.includes('operationRemainingMs') && deadlineNotice.includes('reconnectRemainingMs') && deadlineNotice.includes('receivedAtMs')
+  && !deadlineNotice.includes('deadlineUtc') && !deadlineNotice.includes('fetch('),
+  'operation deadline notice must derive only from the existing server clock snapshot')
+assert.ok(deadlineNotice.includes('仍在计时') && deadlineNotice.includes('已超时')
+  && deadlineNotice.includes('data-ui-contract="operation-deadline-notice"'),
+  'operation deadline notice must state disconnected timing continues and the timeout handoff')
 console.log('Mobile action dock contracts passed: single owners, safe canvas, flow lanes, restored prompts, Settings feedback and desktop isolation.')
