@@ -20,7 +20,10 @@ public sealed record L12PlatformStorageStatusView(
     long BusinessVersion,
     long RetainedAuditEvents,
     string? Issue,
-    L12DeckStorageStatusView? DeckStorage = null);
+    L12DeckStorageStatusView? DeckStorage = null,
+    // Generation recorded when the compatibility mirror was last written. It always lags the
+    // database: ordinary saves do not rewrite a 130 MB offline copy.
+    long? FallbackMirrorVersion = null);
 
 public sealed record L12DeckStorageStatusView(
     long Payloads,
@@ -114,7 +117,7 @@ public sealed partial class L12PlatformStore
             return new L12PlatformStorageStatusView(_storageMode, _databasePath, _path, _migrationBackupPath,
                 PlatformStorageSchemaVersion, _databaseIntegrityValid, _snapshotChecksumValid,
                 _fallbackMirrorHealthy, _data.Version, _data.BusinessVersion ?? _data.Version, auditCount,
-                _storageIssue, deckStorage);
+                _storageIssue, deckStorage, _storageWritable ? ReadFallbackMirrorGeneration() : null);
         }
     }
 
@@ -220,6 +223,9 @@ public sealed partial class L12PlatformStore
                     throw new InvalidDataException("紧凑 JSON 镜像不包含可独立恢复的完整牌库正文");
                 var fallback = DeserializeDataAndValidate(fallbackJson);
                 ValidateCompactRuntimeDeckDomain(fallback);
+                // The offline copy is an older generation by design: ordinary saves never rewrite
+                // a 130 MB mirror. Say so instead of letting a recovery read look current.
+                _storageIssue += $"；正在使用 JSON 镜像代次 {fallback.Version}，其后的写入不在该恢复副本内";
                 _lastCommittedSnapshot = SerializeRollbackState(fallback);
                 return fallback;
             }
@@ -670,6 +676,11 @@ public sealed partial class L12PlatformStore
                 snapshot_sha256=excluded.snapshot_sha256,
                 updated_utc=excluded.updated_utc;
             INSERT INTO storage_meta(key,value) VALUES('fallback_json_sha256',$mirror)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+            -- The generation the mirror on disk belongs to. Ordinary saves do not rewrite the
+            -- mirror, so this lags storage_revision by design; keeping it lets the status view
+            -- and the JSON fallback report how much history a recovery copy is missing.
+            INSERT INTO storage_meta(key,value) VALUES('fallback_json_generation',$revision)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value;
             """;
         command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
@@ -1222,6 +1233,21 @@ public sealed partial class L12PlatformStore
     {
         using var connection = OpenDatabase(_databasePath, readOnly: true);
         return CountRetainedAuditEvents(connection);
+    }
+
+    private long? ReadFallbackMirrorGeneration()
+    {
+        try
+        {
+            using var connection = OpenDatabase(_databasePath, readOnly: true);
+            return long.TryParse(ReadMeta(connection, "fallback_json_generation"), out var generation)
+                ? generation
+                : null;
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            return null;
+        }
     }
 
     private static long CountRetainedAuditEvents(SqliteConnection connection)

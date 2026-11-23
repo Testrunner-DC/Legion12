@@ -3,7 +3,7 @@
   "id": "20261123-session-storage-split-internal",
   "date": "2026-11-23",
   "audience": "internal",
-  "reason": "会话与登录令牌从平台快照拆到独立表，核心快照不再携带会话副本，JSON 兼容镜像仍保留完整离线副本。认证、撤销与 30 天过期语义不变，玩家可见行为与文案无变化，故不进入玩家更新日志。",
+  "reason": "会话与登录令牌从平台快照拆到独立表，核心快照不再携带会话副本；同时记录 JSON 兼容镜像所属代次，使恢复副本的落后程度可读。认证、撤销与 30 天过期语义不变，玩家可见行为与文案无变化，故不进入玩家更新日志。",
   "paths": [
     "服务端WebSocket/TwelveLegions/L12PlatformStore.SessionStorage.cs",
     "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs"
