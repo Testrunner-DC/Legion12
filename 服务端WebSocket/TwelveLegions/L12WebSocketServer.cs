@@ -578,7 +578,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     includeRecentMatches, cancellation.Token, timing);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-detail",
                     cardId, AuditContext(request, permission), cancellation.Token);
-                return detail is null ? Results.NotFound() : Results.Ok(detail);
+                if (detail is null)
+                    return ApiError(request, "analytics_card_not_found",
+                        "该卡在当前筛选条件下没有任何收录记录", StatusCodes.Status404NotFound);
+                return Results.Ok(detail);
             }
             catch (ArgumentException error)
             {

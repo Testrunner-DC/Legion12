@@ -44,6 +44,37 @@ public sealed class CardAnalyticsFactsLoadedTests
         Assert.Equal("A", detail.Summary.CardId);
     }
 
+    // ⑧-b：卡存在但样本不足必须是 200 + reason，而不是和"卡不存在"共用一个 404。
+    [Fact]
+    public async Task InsufficientSampleReturnsRealNumbersWithAReason()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+
+        var detail = await fixture.Recorder.GetCardAnalyticsAsync("A",
+            new L12CardAnalyticsQuery(MinimumSampleSize: 999), includeRecentMatches: false);
+
+        Assert.NotNull(detail);
+        Assert.Equal("insufficient-sample", detail!.Reason);
+        Assert.True(detail.Summary.SampleSize > 0);
+        Assert.True(detail.Summary.SampleSize < 999);
+        Assert.Empty(detail.Breakdowns);
+        Assert.Empty(detail.QuantityDistribution);
+        Assert.Empty(detail.TurnDistribution);
+        Assert.Empty(detail.Matchups);
+        Assert.Empty(detail.RecentMatches);
+    }
+
+    [Fact]
+    public async Task UnknownCardStaysAnAbsentPayload()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+
+        var detail = await fixture.Recorder.GetCardAnalyticsAsync("NO-SUCH-CARD",
+            new L12CardAnalyticsQuery(MinimumSampleSize: 1), includeRecentMatches: false);
+
+        Assert.Null(detail);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly string _root;

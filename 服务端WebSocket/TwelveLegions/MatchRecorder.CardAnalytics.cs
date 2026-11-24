@@ -169,7 +169,15 @@ public sealed partial class MatchRecorder
             ReadAnalyticsPopulationAsync(connection, query).GetAwaiter().GetResult());
         var row = execution.Measure(CardAnalyticsStage.Rows, () =>
             ReadSingleCardAnalyticsRowAsync(connection, query, cardId).GetAwaiter().GetResult());
-        if (row is null || row.IncludedSamples < query.MinimumSampleSize) return null;
+        if (row is null) return null;
+        if (row.IncludedSamples < query.MinimumSampleSize)
+        {
+            // The card exists in scope but is below the threshold. Returning null here used to make
+            // this indistinguishable from "no such card"; the caller could only answer 404.
+            var insufficient = ToAnalyticsItem(row, population, null, null, factsLoaded: true);
+            return new L12CardAnalyticsDetail(insufficient, [], [], [], [], [],
+                insufficient.Coverage, "insufficient-sample");
+        }
         var target = new[] { cardId };
         var structures = execution.Measure(CardAnalyticsStage.Structures, () =>
             ReadAnalyticsSampleStructuresAsync(connection, target).GetAwaiter().GetResult());

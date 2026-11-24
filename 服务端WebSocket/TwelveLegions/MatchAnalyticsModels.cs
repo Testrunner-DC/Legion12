@@ -325,7 +325,11 @@ public sealed record L12CardAnalyticsDetail(
     IReadOnlyList<L12CardAnalyticsTurnBucket> TurnDistribution,
     IReadOnlyList<L12CardAnalyticsMatchup> Matchups,
     IReadOnlyList<L12AdminMatchSummary> RecentMatches,
-    L12AnalyticsCoverage Coverage);
+    L12AnalyticsCoverage Coverage,
+    // "insufficient-sample" means the card exists but has fewer eligible matches than the
+    // requested threshold: the numbers are real, the breakdown lists are intentionally empty.
+    // Absence of the card itself stays a 404 and must not be reported through this field.
+    string? Reason = null);
 
 public sealed record L12MasterAnalyticsItem(
     string MasterId,

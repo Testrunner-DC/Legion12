@@ -33,5 +33,10 @@ assert.doesNotMatch(source, /onMounted\([\s\S]*await loadAnalytics\(\)/,
 assert.match(source, /function observedPercent[\s\S]*coverageStatus === 'complete'/,
   'usage-rate enrichment must preserve unknown coverage instead of fabricating zeroes')
 
+assert.match(source, /reason !== 'insufficient-sample'[\s\S]*样本不足/,
+  '样本不足必须与"没有这张卡"分开呈现，不能用 404 文案代替')
+assert.match(source, /factsLoaded === false[\s\S]*未加载/,
+  '列表未读事实时必须标成未加载，不能把 0 当成从未发生')
+
 console.log('card analytics panel contract checks passed')
 await import('./test-admin-analytics-request-scope.mjs')

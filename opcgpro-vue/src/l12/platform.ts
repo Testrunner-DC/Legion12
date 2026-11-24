@@ -260,6 +260,8 @@ export interface AdminCardAnalyticsItem {
   sampleStructure?: AdminAnalyticsSampleStructure | null
   comparison?: AdminAnalyticsStratifiedComparison | null
   usage?: { metrics: AdminAnalyticsUsageMetric[] } | null
+  // false 表示这一行没读事实表：事实计数恒为 0 但那是"未加载"，不是"从未发生"。
+  factsLoaded?: boolean
 }
 export interface AdminAnalyticsUsageMetric {
   metric: string; observedParticipantSamples: number; eventCount: number
@@ -296,6 +298,8 @@ export interface AdminCardAnalyticsDetail {
   turnDistribution: Array<{ turn: number; firstDrawSamples: number; firstPlaySamples: number }>
   matchups: Array<{ masterId: string; opponentMasterId: string; sampleSize: number; eligibleSampleSize: number; wins: number; winRate: number; winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null; winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null }>
   recentMatches: AdminMatchSummary[]; coverage: AdminAnalyticsCoverage
+  // "insufficient-sample"：卡在该作用域内存在，但样本低于门槛；数值为真，切片列表按约定为空。
+  reason?: string | null
 }
 export interface AdminMasterAnalyticsItem {
   masterId: string; participantSamples: number; distinctMatches: number; distinctDecks: number
