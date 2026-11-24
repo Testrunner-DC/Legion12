@@ -248,14 +248,8 @@ public sealed partial class L12RoomManager
                     ConnectionGeneration = generation,
                 };
                 if (source.RoomCode is not null && _rooms.TryGetValue(source.RoomCode, out var recoveredRoom)
-                    && (!source.IsSpectator || CanRecoverTournamentSpectator(recoveredRoom, accountId)))
+                    && CanRecoverTournamentRoom(recoveredRoom, accountId, source.IsSpectator))
                 {
-                    if (!source.IsSpectator && recoveredRoom.TournamentId is not null
-                        && recoveredRoom.TournamentMatchId is not null)
-                    {
-                        _ = _platform?.TournamentRoomAccess(accountId, recoveredRoom.TournamentId,
-                            recoveredRoom.TournamentMatchId, source.IsSpectator);
-                    }
                     await recoveredRoom.Gate.WaitAsync();
                     try
                     {
@@ -1628,18 +1622,26 @@ public sealed partial class L12RoomManager
         finally { _sessionRecoveryGate.Release(); }
     }
 
-    private bool CanRecoverTournamentSpectator(Room room, string accountId)
+    // A reconnect must never fail because the tournament table behind this room already ended.
+    // The access check is the authority; when it refuses, the room is no longer this account's to
+    // re-enter, so recovery continues into the lobby instead of failing the whole handshake
+    // (2026-11-24: a finished table used to surface as a bare "commandFailed" on hello).
+    private bool CanRecoverTournamentRoom(Room room, string accountId, bool spectator)
     {
-        if (room.TournamentId is null || room.TournamentMatchId is null) return true;
+        if (room.TournamentId is null || room.TournamentMatchId is null || _platform is null) return true;
         try
         {
-            return _platform?.TournamentRoomAccess(accountId, room.TournamentId,
-                room.TournamentMatchId, spectate: true).CanSpectate == true;
+            var access = _platform.TournamentRoomAccess(accountId, room.TournamentId,
+                room.TournamentMatchId, spectator);
+            if (!spectator || access.CanSpectate) return true;
+            RecordConnectionClaimRejection(accountId, "tournament-spectate-no-longer-permitted");
+            return false;
         }
         catch (Exception error) when (error is L12TournamentScopeException
                                       or L12TournamentVersionConflictException
                                       or KeyNotFoundException or ArgumentException)
         {
+            RecordConnectionClaimRejection(accountId, "tournament-room-no-longer-enterable");
             return false;
         }
     }
