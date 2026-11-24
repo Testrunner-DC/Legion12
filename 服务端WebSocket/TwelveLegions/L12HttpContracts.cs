@@ -191,6 +191,10 @@ public sealed record TournamentJudgeCaseAppealRequest(string? CaseId, string? Re
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentRulingRequest(string? Kind, string? TargetAccountId, string? Decision,
     string? Reason, string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentAuthorityConclusionRequest(string? Decision, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentAuthorityConclusionCommandPayload(string TournamentId, string MatchId,
+    L12TournamentAuthorityConclusionPayload Conclusion);
 public sealed record TournamentRematchRequest(string? Reason, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentMatchReferenceRequest(string? RecordedMatchId, string? Reason,

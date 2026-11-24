@@ -30,7 +30,7 @@ public sealed record L12TournamentCareerView(
 
 internal sealed record L12TournamentRoomCommandView(
     string Id, string TournamentId, string Kind, string MatchId, string RoomCode, bool? Paused,
-    string Reason, DateTimeOffset CreatedAt, int Attempts, string? LastError);
+    string Reason, DateTimeOffset CreatedAt, int Attempts, string? LastError, string? Decision = null);
 
 public sealed partial class L12PlatformStore
 {
@@ -289,7 +289,7 @@ public sealed partial class L12PlatformStore
                     .Select(command => new L12TournamentRoomCommandView(command.Id, row.Id, command.Kind,
                         command.MatchId, RequireMatch(row, command.MatchId).Match.RoomCode,
                         command.Paused, command.Reason, command.CreatedAt,
-                        command.Attempts, command.LastError)))
+                        command.Attempts, command.LastError, command.Decision)))
                 // RoomCommands is an append-only persisted list. Preserve its durable
                 // insertion order; wall clocks can move and random IDs are not a sequence.
                 .ToArray();

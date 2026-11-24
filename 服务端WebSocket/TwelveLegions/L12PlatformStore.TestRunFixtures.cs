@@ -39,6 +39,13 @@ public sealed partial class L12PlatformStore
     }
 
     internal const string RehearsalAccountsEnvironmentKey = "L12_TOURNAMENT_REHEARSAL_ACCOUNTS";
+
+    // The authority-conclusion command rides the same switch as the rehearsal pool instead of
+    // a new one: whoever can sign the rehearsal accounts in is exactly who may end a rehearsal
+    // table from the server side.
+    internal static bool TournamentAuthorityConclusionEnabled()
+        => string.Equals(Environment.GetEnvironmentVariable(RehearsalAccountsEnvironmentKey), "1",
+            StringComparison.Ordinal);
     internal const string RehearsalPasswordEnvironmentKey = "L12_REHEARSAL_PASSWORD";
     private const string RehearsalPlayerPrefix = "彩排";
     private const int RehearsalPlayerCount = 8;

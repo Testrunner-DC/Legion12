@@ -268,6 +268,7 @@ public sealed record L12TournamentPhasePayload(string Phase, string Reason);
 public sealed record L12TournamentPostponePayload(DateTimeOffset NewStartAt, string Reason);
 public sealed record L12TournamentCancelPayload(string Reason);
 public sealed record L12TournamentMatchPausePayload(bool Paused, string Reason);
+public sealed record L12TournamentAuthorityConclusionPayload(string Decision, string Reason);
 public sealed record L12TournamentJudgeCaseCreatePayload(string MatchId, string Category, string Urgency,
     string Message);
 public sealed record L12TournamentJudgeCaseAssignPayload(string CaseId, string AssigneeAccountId, string Reason);
@@ -552,6 +553,7 @@ public sealed partial class L12PlatformStore
         public string Kind { get; set; } = string.Empty;
         public string MatchId { get; set; } = string.Empty;
         public bool? Paused { get; set; }
+        public string? Decision { get; set; }
         public string Reason { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset? CompletedAt { get; set; }
@@ -1254,6 +1256,42 @@ public sealed partial class L12PlatformStore
                     FinalizeRoundIfComplete(working, round);
                     ResumeAutomationAfterManualResult(working, round, DateTimeOffset.UtcNow);
                 }
+            });
+        }
+    }
+
+    // A table that has a live room is normally settled by playing it. The rehearsal gate adds
+    // one way to end that game from the server side, but it deliberately writes no result here:
+    // it queues a room command, the engine concludes the game, and the existing authoritative
+    // write-back (RecordTournamentGameResult) remains the only writer of match.Result. That is
+    // what keeps this from becoming a second result path beside staff rulings.
+    public L12TournamentView ConcludeTournamentMatchByAuthority(L12AccountView actor, string tournamentId,
+        string matchId, L12TournamentAuthorityConclusionPayload payload, long expectedVersion,
+        L12AdminAuditContext context, bool apply)
+    {
+        if (!TournamentAuthorityConclusionEnabled())
+            throw new L12TournamentScopeException(
+                "按权威结算仅在演练环境开放（L12_TOURNAMENT_REHEARSAL_ACCOUNTS=1）");
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            RequireStaff(actor, row, L12Permission.TournamentRulingsWrite);
+            var (_, match) = RequireMatch(row, matchId);
+            RequireIndependentMatchStaff(actor.Id, match);
+            var decision = payload.Decision.Trim().ToLowerInvariant();
+            if (decision is not ("player-a" or "player-b"))
+                throw new ArgumentException("按权威结算的胜方必须为 player-a 或 player-b");
+            var reason = RequireText(payload.Reason, "权威结算理由", 1000);
+            if (match.Status is not ("running" or "waiting"))
+                throw new L12TournamentVersionConflictException("只有进行中或等待到齐的桌次可以按权威结算");
+            return Mutate(actor, row, "authority-conclusion", matchId, context, apply, working =>
+            {
+                var target = RequireMatch(working, matchId).Match;
+                target.Events.Add(NewMatchEvent("authority-conclusion-requested", decision, null, actor.Id, reason));
+                working.RoomCommands.Add(new TournamentRoomCommandRow
+                {
+                    Kind = "conclude", MatchId = matchId, Decision = decision, Reason = reason,
+                });
             });
         }
     }

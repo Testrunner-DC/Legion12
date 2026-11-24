@@ -34,6 +34,10 @@ public sealed partial class L12RoomManager
                             command.MatchId, command.RoomCode, command.Reason),
                         "extend" => await ApplyPendingTournamentExtensionAsync(command.TournamentId,
                             command.MatchId, command.RoomCode),
+                        "conclude" => await ApplyPendingTournamentConclusionAsync(command.TournamentId,
+                            command.MatchId, command.RoomCode,
+                            command.Decision ?? throw new InvalidDataException("按权威结算待办缺少胜方"),
+                            command.Reason),
                         _ => throw new InvalidDataException($"未知赛事房间待办类型：{command.Kind}"),
                     };
                     if (!result.Applied)
@@ -87,6 +91,53 @@ public sealed partial class L12RoomManager
         if (room?.RankedClock is null || room.Game is null)
             return (await _recorder.HasUnfinishedRankedMatchForRoomAsync(roomCode) ? false : true, []);
         return (true, await ExtendTournamentClockAsync(tournamentId, matchId, 0));
+    }
+
+    private async Task<(bool Applied, IReadOnlyList<OutgoingMessage> Messages)>
+        ApplyPendingTournamentConclusionAsync(string tournamentId, string matchId, string roomCode,
+            string decision, string reason)
+    {
+        var winner = string.Equals(decision, "player-b", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        var room = _rooms.Values.FirstOrDefault(item => item.TournamentId == tournamentId
+            && item.TournamentMatchId == matchId);
+        // No live room means there is no game to conclude; the table has nothing to write back,
+        // so the command completes instead of inventing a result.
+        if (room?.Game is null)
+            return (await _recorder.HasUnfinishedRankedMatchForRoomAsync(roomCode) ? false : true, []);
+        return (true, await ConcludeTournamentMatchRoomByAuthorityAsync(room, winner, reason));
+    }
+
+    private async Task<IReadOnlyList<OutgoingMessage>> ConcludeTournamentMatchRoomByAuthorityAsync(
+        Room room, int winner, string reason)
+    {
+        await room.Gate.WaitAsync();
+        try
+        {
+            if (room.Game is null) return [];
+            if (room.Game.State.Phase != L12Phase.GameOver)
+            {
+                room.Game.ConcludeByAuthority(winner, $"按权威结算：{reason}");
+                if (room.RankedClock is { } clock) clock.ConclusionKind = "tournament-authority-conclusion";
+                room.CommandSequence++;
+                if (room.RankedClock is not null)
+                    await _recorder.AppendRankedAuthorityAsync(room.Game, room.CommandSequence,
+                        room.Game.State.WinnerReason ?? reason,
+                        CaptureRankedRuntime(room, _utcNow(), "completed"), null);
+                else
+                    await _recorder.AppendAuthorityAsync(room.Game, room.CommandSequence,
+                        room.Game.State.WinnerReason ?? reason);
+            }
+            var completionError = await CompleteTournamentRoomGameAsync(room);
+            if (completionError is not null && !completionError.Contains("缺少胜者", StringComparison.Ordinal))
+                throw new InvalidOperationException(completionError);
+            return BroadcastGame(room, forceCritical: true);
+        }
+        catch
+        {
+            if (!await ReloadRankedRoomFromRecorderAsync(room)) room.Closed = true;
+            throw;
+        }
+        finally { room.Gate.Release(); }
     }
 
     private async Task<(bool Applied, IReadOnlyList<OutgoingMessage> Messages)>
