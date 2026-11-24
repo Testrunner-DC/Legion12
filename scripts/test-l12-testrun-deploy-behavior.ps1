@@ -813,7 +813,7 @@ runtime_dir=synthetic-runtime; backup_dir=synthetic-backups; failure_dir=synthet
     Write-Utf8NoBom (Join-Path $root "opt\legion12-testrun") "$oldReleasePosix`n"
     Write-Utf8NoBom (Join-Path $cachedAssets "card-assets.manifest.json") "{}"
     Write-Utf8NoBom $pathSite "location = /testrun/ws {`nproxy_pass http://127.0.0.1:8084/ws;`n}`nlocation ^~ /testrun/assets/ {`nroot /opt/legion12-testrun-web-assets;`ntry_files `$uri =404;`n}`nlocation /testrun/ {`nalias /opt/legion12-testrun/opcgpro-vue/dist-testrun/;`n}`n"
-    Write-Utf8NoBom (Join-Path $root "etc\legion12-testrun.env") ("L12_ADMIN_PASSWORD=" + ("e" * 64) + "`nL12_EMAIL_FEATURE_ENABLED=false`nL12_PUBLIC_BASE_URL=https://legion-12.com/testrun`nL12_TESTRUN_MATCH_STORAGE=ephemeral`nL12_SMTP_HOST=`nL12_SMTP_PORT=`nL12_SMTP_USERNAME=`nL12_SMTP_PASSWORD=`nL12_SMTP_FROM_ADDRESS=`nL12_SMTP_FROM_NAME=`nL12_SMTP_ENABLE_SSL=`nL12_ENABLE_SECOND_APPROVER_BOOTSTRAP=false`nL12_SECOND_APPROVER_BOOTSTRAP_TOKEN=`n")
+    Write-Utf8NoBom (Join-Path $root "etc\legion12-testrun.env") ("L12_ADMIN_PASSWORD=" + ("e" * 64) + "`nL12_EMAIL_FEATURE_ENABLED=false`nL12_PUBLIC_BASE_URL=https://legion-12.com/testrun`nL12_TESTRUN_MATCH_STORAGE=ephemeral`nL12_SMTP_HOST=`nL12_SMTP_PORT=`nL12_SMTP_USERNAME=`nL12_SMTP_PASSWORD=`nL12_SMTP_FROM_ADDRESS=`nL12_SMTP_FROM_NAME=`nL12_SMTP_ENABLE_SSL=`nL12_ENABLE_SECOND_APPROVER_BOOTSTRAP=false`nL12_SECOND_APPROVER_BOOTSTRAP_TOKEN=`nL12_STORAGE_CATEGORIES=`nL12_TOURNAMENT_REHEARSAL_ACCOUNTS=1`nL12_REHEARSAL_PASSWORD=`n")
     Copy-Item $healthVerifier (Join-Path $root "usr\local\libexec\verify-legion12-testrun-health.mjs")
     Copy-Item $releaseArchive (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz")
     Write-Utf8NoBom (Join-Path $root "service.state") "running`n"
