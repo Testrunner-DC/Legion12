@@ -687,7 +687,7 @@ public sealed partial class MatchRecorder
             row.ActivatedSamples, row.SettledSamples, row.ResolvedSamples, row.NegatedSamples,
             row.FizzledSamples, row.ActivatedCount, row.ResolvedCount, row.NegatedCount,
             row.FizzledCount, coverage, ToSampleStructure(row, structure), comparison,
-            factsLoaded ? ToUsage(row) : null);
+            factsLoaded ? ToUsage(row) : null, FactsLoaded: factsLoaded);
     }
 
     private static async Task<IReadOnlyList<L12CardAnalyticsBreakdown>> ReadBreakdownsAsync(

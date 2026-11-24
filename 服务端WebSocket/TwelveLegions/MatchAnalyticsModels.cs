@@ -258,7 +258,11 @@ public sealed record L12CardAnalyticsItem(
     L12AnalyticsCoverage Coverage,
     L12AnalyticsSampleStructure? SampleStructure = null,
     L12AnalyticsStratifiedComparison? Comparison = null,
-    L12CardAnalyticsUsage? Usage = null);
+    L12CardAnalyticsUsage? Usage = null,
+    // The list is served without the fact tables (they are the expensive half). When that happens
+    // the fact counters below are 0 because nothing was read, not because nothing happened — this
+    // flag is the only honest way for a consumer to tell those apart.
+    bool FactsLoaded = true);
 
 public sealed record L12CardAnalyticsPageSummary(
     long EligibleMatches,
