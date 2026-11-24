@@ -3554,6 +3554,40 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     StatusCodes.Status413PayloadTooLarge);
             }
         });
+        // Replaces only the thumbnail of an existing asset: a delivered card-art animation keeps its
+        // desktop/mobile files and gains a static first-frame poster for lists.
+        _app.MapPut("/api/admin/site/media/{id}/thumbnail", async (HttpRequest request, string id) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!request.HasFormContentType)
+                return ApiError(request, "media_form_required", "素材上传必须使用 multipart/form-data",
+                    StatusCodes.Status415UnsupportedMediaType);
+            var bodySize = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (bodySize is { IsReadOnly: false })
+                bodySize.MaxRequestBodySize = L12PlatformStore.SiteMediaThumbnailMaxBytes + 65536;
+            try
+            {
+                var form = await request.ReadFormAsync(request.HttpContext.RequestAborted);
+                var thumbnail = await ReadRequiredFormFile(form, "thumbnail",
+                    L12PlatformStore.SiteMediaThumbnailMaxBytes, request.HttpContext.RequestAborted);
+                var result = _platform.ReplaceSiteMediaThumbnail(authenticated.Account, id, thumbnail.Bytes,
+                    form["thumbnailAltText"].ToString(), RequestAuditContext(request, permission));
+                return Results.Ok(result);
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "media_not_found", error.Message, StatusCodes.Status404NotFound);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "media_upload_invalid", error.Message, StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidDataException error)
+            {
+                return ApiError(request, "media_upload_invalid", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
         _app.MapDelete("/api/admin/site/media/{id}", (HttpRequest request, string id) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;

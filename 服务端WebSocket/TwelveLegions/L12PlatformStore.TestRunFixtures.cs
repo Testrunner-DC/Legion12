@@ -38,6 +38,49 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    internal const string RehearsalAccountsEnvironmentKey = "L12_TOURNAMENT_REHEARSAL_ACCOUNTS";
+    internal const string RehearsalPasswordEnvironmentKey = "L12_REHEARSAL_PASSWORD";
+    private const string RehearsalPlayerPrefix = "彩排";
+    private const int RehearsalPlayerCount = 8;
+
+    // A tournament rehearsal needs accounts a human can actually sign into. The acceptance pool above
+    // seeds players with a random 24-byte password, so it can create data but nobody can log in.
+    // Every guard here exists to keep a known password out of production: the switch is explicit, the
+    // password comes from the environment and is never written to source, and a missing/short
+    // password means "do nothing" rather than "seed a weak one".
+    internal int EnsureTournamentRehearsalAccounts()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable(RehearsalAccountsEnvironmentKey), "1",
+                StringComparison.Ordinal)) return 0;
+        var password = Environment.GetEnvironmentVariable(RehearsalPasswordEnvironmentKey);
+        if (string.IsNullOrWhiteSpace(password) || password.Length is < 8 or > 128) return 0;
+        lock (_gate)
+        {
+            var created = 0;
+            for (var index = 1; index <= RehearsalPlayerCount; index++)
+            {
+                var username = $"{RehearsalPlayerPrefix}{index:00}";
+                var account = _data.Accounts.FirstOrDefault(item =>
+                    string.Equals(item.Username, username, StringComparison.OrdinalIgnoreCase));
+                if (account is null)
+                {
+                    account = CreateAccount(username, password, "player");
+                    _data.Accounts.Add(account);
+                    created++;
+                }
+                else
+                {
+                    // Idempotent: a rehearsal pool must come back after a password rotation.
+                    SetPassword(account, password);
+                }
+                account.Disabled = false;
+                account.Deleted = false;
+            }
+            Save();
+            return created;
+        }
+    }
+
     internal L12TestRunAcceptanceFixtureSummary EnsureTestRunAcceptanceFixtures()
     {
         var templates = _officialDecks

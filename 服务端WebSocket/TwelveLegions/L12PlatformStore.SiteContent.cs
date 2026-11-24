@@ -701,7 +701,13 @@ public sealed partial class L12PlatformStore
         var mobileWebp = SanitizeDeliveryWebp(upload.MobileWebp, null, null, "移动 WebP", kind == "card-art");
         var thumbnailWebp = SanitizeDeliveryWebp(upload.ThumbnailWebp, null, null, "缩略图 WebP", kind == "card-art");
         var deliveryAnimated = IsAnimatedWebp(desktopWebp);
-        if (deliveryAnimated != IsAnimatedWebp(mobileWebp) || deliveryAnimated != IsAnimatedWebp(thumbnailWebp))
+        // A delivered card-art animation may carry a static first-frame poster as its thumbnail: the
+        // list renders the poster, the detail view renders the animation. Everything else keeps the
+        // "one medium" rule so a half-animated group can never be published by accident.
+        var independentPoster = kind == "card-art" && upload.IndependentVariants
+            && !IsAnimatedWebp(thumbnailWebp);
+        if (!independentPoster &&
+            (deliveryAnimated != IsAnimatedWebp(mobileWebp) || deliveryAnimated != IsAnimatedWebp(thumbnailWebp)))
             throw new ArgumentException("卡牌异画的桌面、移动和缩略版本必须统一为静态或动态图");
         var desktopDimensions = ReadWebpDimensions(desktopWebp);
         var mobileDimensions = ReadWebpDimensions(mobileWebp);
@@ -753,7 +759,7 @@ public sealed partial class L12PlatformStore
                 DesktopAltText = desktopAltText,
                 MobileAltText = mobileAltText,
                 ThumbnailAltText = thumbnailAltText,
-                IndependentVariants = kind == "hero" && upload.IndependentVariants,
+                IndependentVariants = (kind == "hero" && upload.IndependentVariants) || independentPoster,
                 FocalX = upload.FocalX,
                 FocalY = upload.FocalY,
                 OriginalFileName = LimitSiteText(Path.GetFileName(upload.OriginalFileName), 180),
@@ -864,6 +870,49 @@ public sealed partial class L12PlatformStore
             AddAdminAudit(actor, "site-media", "soft-delete", row.Id, row.OriginalHash, null,
                 "内容寻址文件保留用于恢复与审计", context);
             Save();
+        }
+    }
+
+    // A card-art animation is uploaded as one heavy file for all three variants, so every list that
+    // renders it pays for the whole animation. Replacing only the thumbnail with a static first-frame
+    // poster keeps the delivered art untouched while making lists cheap.
+    public L12SiteMediaView ReplaceSiteMediaThumbnail(L12AccountView actor, string id, byte[] thumbnailWebp,
+        string? thumbnailAltText, L12AdminAuditContext? context = null)
+    {
+        ArgumentNullException.ThrowIfNull(thumbnailWebp);
+        // The poster is a single frame by construction; an animated thumbnail would defeat the point.
+        var sanitized = SanitizeDeliveryWebp(thumbnailWebp, null, null, "缩略图 WebP");
+        var dimensions = ReadWebpDimensions(sanitized);
+        var hash = ContentHash(sanitized);
+        var prepared = PrepareImmutableMediaGroup(new PendingMediaFile(sanitized, hash, ".webp"));
+        try
+        {
+            lock (_gate)
+            {
+                var row = ActiveMedia(id) ?? throw new KeyNotFoundException("素材不存在");
+                var previousHash = row.ThumbnailHash;
+                if (string.Equals(previousHash, hash, StringComparison.Ordinal))
+                    return ToSiteMediaView(row);
+                PublishImmutableMediaGroup(prepared);
+                row.ThumbnailFile = prepared.Files[0];
+                row.ThumbnailHash = hash;
+                row.ThumbnailWidth = dimensions.Width;
+                row.ThumbnailHeight = dimensions.Height;
+                row.ThumbnailAltText = LimitSiteText(
+                    string.IsNullOrWhiteSpace(thumbnailAltText) ? row.AltText : thumbnailAltText, 180);
+                // From here on the variants are deliberately different; record it so a later full
+                // upload path does not "repair" the poster back into the animation.
+                row.IndependentVariants = true;
+                AddAdminAudit(actor, "site-media", "thumbnail-replace", row.Id, previousHash, hash,
+                    $"kind={row.Kind};thumb={hash}", context);
+                Save();
+                return ToSiteMediaView(row);
+            }
+        }
+        catch
+        {
+            DeletePreparedMediaFiles(prepared);
+            throw;
         }
     }
 

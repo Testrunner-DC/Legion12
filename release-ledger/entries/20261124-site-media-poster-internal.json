@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261124-site-media-poster-internal",
+  "date": "2026-11-24",
+  "audience": "internal",
+  "reason": "卡牌异画可以携带静态首帧海报作为缩略变体（列表不再拉整段动画），并新增「只替换缩略变体」的后台入口；另加测试服赛事彩排账号池（环境变量开关 + 环境变量口令）。玩家侧界面、规则与对局行为无变化，故不进入玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TestRunFixtures.cs"
+  ]
+}

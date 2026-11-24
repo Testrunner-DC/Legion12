@@ -72,4 +72,48 @@ public sealed class TestRunAcceptanceFixtureTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    [Fact]
+    public void RehearsalAccounts_StayOffUnlessSwitchedOnAndAcceptTheConfiguredPassword()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-rehearsal-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var previousSwitch = Environment.GetEnvironmentVariable(
+            L12PlatformStore.RehearsalAccountsEnvironmentKey);
+        var previousPassword = Environment.GetEnvironmentVariable(
+            L12PlatformStore.RehearsalPasswordEnvironmentKey);
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts);
+
+            // Default: nothing is seeded, so a production node that never sets the switch is untouched.
+            Environment.SetEnvironmentVariable(L12PlatformStore.RehearsalAccountsEnvironmentKey, null);
+            Environment.SetEnvironmentVariable(L12PlatformStore.RehearsalPasswordEnvironmentKey, "rehearsal-secret");
+            Assert.Equal(0, store.EnsureTournamentRehearsalAccounts());
+            Assert.DoesNotContain(store.Accounts(), account => account.Username.StartsWith("彩排"));
+
+            // Switch without a usable password is still a no-op rather than a weak default.
+            Environment.SetEnvironmentVariable(L12PlatformStore.RehearsalAccountsEnvironmentKey, "1");
+            Environment.SetEnvironmentVariable(L12PlatformStore.RehearsalPasswordEnvironmentKey, "short");
+            Assert.Equal(0, store.EnsureTournamentRehearsalAccounts());
+
+            Environment.SetEnvironmentVariable(L12PlatformStore.RehearsalPasswordEnvironmentKey,
+                "rehearsal-secret");
+            Assert.Equal(8, store.EnsureTournamentRehearsalAccounts());
+
+            // Idempotent: a second start resets the same eight accounts instead of adding more.
+            Assert.Equal(0, store.EnsureTournamentRehearsalAccounts());
+            var seeded = store.Accounts().Where(account => account.Username.StartsWith("彩排")).ToArray();
+            Assert.Equal(8, seeded.Length);
+            Assert.All(seeded, account => Assert.False(account.Disabled));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(L12PlatformStore.RehearsalAccountsEnvironmentKey, previousSwitch);
+            Environment.SetEnvironmentVariable(L12PlatformStore.RehearsalPasswordEnvironmentKey, previousPassword);
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

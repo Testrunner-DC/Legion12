@@ -45,6 +45,9 @@ if (L12TestRunStorageProfile.AcceptanceDataEnabled(ephemeralTestMatches,
         Environment.GetEnvironmentVariable(L12TestRunStorageProfile.AcceptanceDataEnvironmentKey)))
 {
     var fixtures = platform.EnsureTestRunAcceptanceFixtures();
+    var rehearsalCreated = platform.EnsureTournamentRehearsalAccounts();
+    if (rehearsalCreated > 0)
+        Console.WriteLine($"Tournament rehearsal accounts seeded: {rehearsalCreated}");
     Console.WriteLine($"Test-run acceptance data: owner={fixtures.Owner}; "
                       + $"decks={fixtures.Decks}; publicDecks={fixtures.PublicDecks}; "
                       + $"guidedDecks={fixtures.GuidedDecks}; rankedPlayers={fixtures.RankedPlayers}; "

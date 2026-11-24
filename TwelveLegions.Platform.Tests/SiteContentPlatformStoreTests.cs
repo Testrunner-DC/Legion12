@@ -31,6 +31,53 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void ReplacingOnlyTheThumbnailLeavesTheDeliveredAnimationUntouched()
+    {
+        WithUploadStore((store, admin, _) =>
+        {
+            // A card-art animation is uploaded as one file for all three variants; that is exactly
+            // why every list that shows it pays for the whole animation.
+            var animated = AnimatedWebp(997, 331, 512 * 1024);
+            var saved = store.UploadSiteMedia(admin, new L12SiteMediaUpload(
+                "card-art", "poster-source.webp", "image/webp",
+                animated, animated, animated, animated, "海报测试", .5, .5));
+            static string HashOf(string url) => url.Split('/')[^1];
+            Assert.True(saved.IsAnimated);
+            /** 上传时三变体是同一份文件：只有 URL 里的变体名不同，内容哈希相同。 */
+            Assert.Equal(HashOf(saved.DesktopUrl), HashOf(saved.ThumbnailUrl));
+
+            var poster = Webp(421, 137);
+            var replaced = store.ReplaceSiteMediaThumbnail(admin, saved.Id, poster, "静态海报");
+
+            Assert.NotEqual(HashOf(saved.DesktopUrl), HashOf(replaced.ThumbnailUrl));
+            Assert.Contains("/thumbnail/", replaced.ThumbnailUrl);
+            Assert.Equal(saved.DesktopUrl, replaced.DesktopUrl);
+            Assert.Equal(saved.MobileUrl, replaced.MobileUrl);
+
+            // Idempotent: the same poster bytes resolve to the same thumbnail URL instead of a new one.
+            var again = store.ReplaceSiteMediaThumbnail(admin, saved.Id, poster, "静态海报");
+            Assert.Equal(replaced.ThumbnailUrl, again.ThumbnailUrl);
+
+            Assert.Throws<KeyNotFoundException>(() =>
+                store.ReplaceSiteMediaThumbnail(admin, "missing-media-id", poster, null));
+
+            // Uploading the poster together with the animation is now allowed for card-art, so a
+            // future upload does not need the backfill step at all.
+            var posterUpload = store.UploadSiteMedia(admin, new L12SiteMediaUpload(
+                "card-art", "poster-with-animation.webp", "image/webp",
+                animated, animated, animated, poster, "海报同行上传", .5, .5,
+                IndependentVariants: true));
+            Assert.True(posterUpload.IsAnimated);
+            Assert.NotEqual(HashOf(posterUpload.DesktopUrl), HashOf(posterUpload.ThumbnailUrl));
+
+            // The old "one medium" rule still holds when the poster is not declared independent.
+            Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin, new L12SiteMediaUpload(
+                "card-art", "mixed-without-flag.webp", "image/webp",
+                animated, animated, animated, poster, "未声明独立", .5, .5)));
+        });
+    }
+
+    [Fact]
     public void FailureBeforeMediaSaveRestoresTheWholeAuditWindowAfterTrimming()
     {
         WithUploadStore((store, admin, root) =>
