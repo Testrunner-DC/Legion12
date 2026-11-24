@@ -191,27 +191,8 @@ public sealed partial class MatchRecorder
         var summary = ToAnalyticsItem(row, population, structures.GetValueOrDefault(cardId),
             comparisons.GetValueOrDefault(cardId), factsLoaded: true);
         var breakdowns = execution.Measure(CardAnalyticsStage.Breakdowns, () =>
-        {
-            var result = new List<L12CardAnalyticsBreakdown>();
-            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
-                "master", "COALESCE(e.master_id,'unknown')").GetAwaiter().GetResult());
-            execution.Check();
-            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
-                "opponent-master", "COALESCE(e.opponent_master_id,'unknown')").GetAwaiter().GetResult());
-            execution.Check();
-            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
-                "initiative", InitiativeExpression("e")).GetAwaiter().GetResult());
-            execution.Check();
-            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
-                "rules-version", "COALESCE(e.rules_version,'legacy')").GetAwaiter().GetResult());
-            execution.Check();
-            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
-                "effect-version", "e.effect_version").GetAwaiter().GetResult());
-            execution.Check();
-            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
-                "season", "COALESCE(e.season_id,'unassigned')").GetAwaiter().GetResult());
-            return result;
-        });
+            ReadBreakdownsAsync(connection, query, cardId).GetAwaiter().GetResult());
+        execution.Check();
         var quantities = execution.Measure(CardAnalyticsStage.Quantity, () =>
             ReadQuantityDistributionAsync(connection, query, cardId).GetAwaiter().GetResult());
         var turns = execution.Measure(CardAnalyticsStage.Turns, () =>
@@ -711,9 +692,10 @@ public sealed partial class MatchRecorder
             factsLoaded ? ToUsage(row) : null, FactsLoaded: factsLoaded);
     }
 
+    // One statement for all six dimensions: the scoped rows are materialized once in "base" and
+    // projected six ways, instead of running the same eligible/inclusions join per dimension.
     private static async Task<IReadOnlyList<L12CardAnalyticsBreakdown>> ReadBreakdownsAsync(
-        SqliteConnection connection, L12CardAnalyticsQuery query, string cardId,
-        string dimension, string valueExpression)
+        SqliteConnection connection, L12CardAnalyticsQuery query, string cardId)
     {
         var cte = MaterializedAnalyticsCte;
         var parameters = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -722,33 +704,59 @@ public sealed partial class MatchRecorder
         parameters["$take"] = MaximumAnalyticsBreakdowns;
         var command = connection.CreateCommand();
         command.CommandText = $"""
-            {cte}
-            SELECT {valueExpression} AS value,
-                   COUNT(*),
-                   SUM(CASE WHEN e.winner=e.player_index THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN i.card_id IS NOT NULL THEN 1 ELSE 0 END),
-                   COUNT(DISTINCT CASE WHEN i.card_id IS NOT NULL THEN e.match_id END),
-                   SUM(CASE WHEN i.card_id IS NOT NULL AND e.winner=e.player_index THEN 1 ELSE 0 END)
-            FROM eligible e
-            LEFT JOIN inclusions i ON i.match_id=e.match_id AND i.player_index=e.player_index
-                                   AND i.card_id=$card
-            GROUP BY value
-            HAVING SUM(CASE WHEN i.card_id IS NOT NULL THEN 1 ELSE 0 END) >= $minimum
-            ORDER BY value
-            LIMIT $take;
+            {cte},
+            base AS (
+                SELECT e.match_id AS match_id, e.player_index AS player_index, e.winner AS winner,
+                       i.card_id AS card_id, e.master_id AS master_id,
+                       e.opponent_master_id AS opponent_master_id, e.rules_version AS rules_version,
+                       e.effect_version AS effect_version, e.season_id AS season_id,
+                       {InitiativeExpression("e")} AS initiative
+                FROM eligible e
+                LEFT JOIN inclusions i ON i.match_id=e.match_id AND i.player_index=e.player_index
+                                       AND i.card_id=$card
+            ),
+            buckets AS (
+                SELECT 'master' AS dimension, COALESCE(master_id,'unknown') AS value, base.* FROM base
+                UNION ALL SELECT 'opponent-master', COALESCE(opponent_master_id,'unknown'), base.* FROM base
+                UNION ALL SELECT 'initiative', initiative, base.* FROM base
+                UNION ALL SELECT 'rules-version', COALESCE(rules_version,'legacy'), base.* FROM base
+                UNION ALL SELECT 'effect-version', effect_version, base.* FROM base
+                UNION ALL SELECT 'season', COALESCE(season_id,'unassigned'), base.* FROM base
+            ),
+            grouped AS (
+                SELECT dimension, value,
+                       COUNT(*) AS population,
+                       SUM(CASE WHEN card_id IS NOT NULL THEN 1 ELSE 0 END) AS included,
+                       COUNT(DISTINCT CASE WHEN card_id IS NOT NULL THEN match_id END) AS included_matches,
+                       SUM(CASE WHEN card_id IS NOT NULL AND winner=player_index THEN 1 ELSE 0 END) AS wins
+                FROM buckets
+                GROUP BY dimension, value
+                HAVING SUM(CASE WHEN card_id IS NOT NULL THEN 1 ELSE 0 END) >= $minimum
+            )
+            SELECT dimension, value, population, included, included_matches, wins
+            FROM (
+                SELECT dimension, value, population, included, included_matches, wins,
+                       ROW_NUMBER() OVER (PARTITION BY dimension ORDER BY value) AS bucket_rank,
+                       CASE dimension WHEN 'master' THEN 1 WHEN 'opponent-master' THEN 2
+                                      WHEN 'initiative' THEN 3 WHEN 'rules-version' THEN 4
+                                      WHEN 'effect-version' THEN 5 ELSE 6 END AS dimension_rank
+                FROM grouped
+            )
+            WHERE bucket_rank <= $take
+            ORDER BY dimension_rank, value;
             """;
         AddParameters(command, parameters);
         var result = new List<L12CardAnalyticsBreakdown>();
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            var populationSamples = reader.GetInt64(1);
+            var populationSamples = ReadLong(reader, 2);
             var included = ReadLong(reader, 3);
             var includedMatches = ReadLong(reader, 4);
             var wins = ReadLong(reader, 5);
             var winRate = Rate(wins, included);
             var winRateConfidence = WilsonInterval(wins, included);
-            result.Add(new L12CardAnalyticsBreakdown(dimension, reader.GetString(0), included,
+            result.Add(new L12CardAnalyticsBreakdown(reader.GetString(0), reader.GetString(1), included,
                 populationSamples, includedMatches, wins, winRate, winRateConfidence, null,
                 null, null, null));
         }
