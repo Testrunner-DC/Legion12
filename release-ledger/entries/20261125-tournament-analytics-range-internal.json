@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261125-tournament-analytics-range-internal",
+  "date": "2026-11-25",
+  "audience": "internal",
+  "reason": "本次正式区间（798f6777 起）此前各批的后台与分析面改动：赛事按权威结果结算的测试服门控入口与赛事命令面整理、单卡分析后台的前端与记录侧改动、HTTP 契约整理。赛事自动结算路径仅在验收/测试服开关下生效，生产行为不变；分析后台与契约均为管理面，玩家侧界面、规则与对局行为无变化，故不进入玩家更新日志。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminCardAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminPage.vue",
+    "服务端WebSocket/TwelveLegions/L12HttpContracts.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentAutomation.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentOperations.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.TournamentCommands.cs",
+    "服务端WebSocket/TwelveLegions/MatchAnalyticsModels.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardAnalytics.cs"
+  ]
+}

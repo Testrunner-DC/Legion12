@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261125-tutankhamun-summon-plan",
+  "date": "2026-11-25",
+  "audience": "players",
+  "title": "图坦卡蒙登场不再叫不出墓地的陵墓守卫",
+  "changes": [
+    {
+      "category": "cards",
+      "text": "〈图坦卡蒙〉登场时，只要「我方军团数量少于对方」在登场后仍然成立，就会正常让你选择墓地里的〈陵墓守卫〉活跃登场；条件不成立时也不会再让你先选完才失败，战报里会说明原因。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs"
+      ]
+    }
+  ]
+}
