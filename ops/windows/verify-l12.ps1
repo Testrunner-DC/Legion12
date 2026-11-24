@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$OutputDirectory = $(if ($env:L12_DEPLOY_CACHE) { $env:L12_DEPLOY_CACHE } elseif (Test-Path "D:\GPT\Legion12") { "D:\GPT\Legion12\artifacts\deploy" } else { Join-Path ([IO.Path]::GetTempPath()) "l12-deploy-artifacts" }),
     [string]$CacheRoot = "",
@@ -647,12 +647,27 @@ try {
     }
 
     $releaseSha256 = (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
-    $cardAssetsArchive = Join-Path $OutputDirectory "l12-card-assets-$cardAssetsHash.tar.gz"
+    # Both archives belong to the same commit directory: the deploy scripts resolve the card-asset
+    # archive next to the manifest, so writing it one level up produced a manifest that pointed at a
+    # file no deployer could find.
+    $cardAssetsArchive = Join-Path $artifactDirectory "l12-card-assets-$cardAssetsHash.tar.gz"
     if (-not (Test-Path -LiteralPath $cardAssetsArchive)) {
         Write-Host "[L12 验证] 首次生成内容寻址优化卡图包：$cardAssetsHash"
         Invoke-TimedExternal "card-assets-archive" tar -czf $cardAssetsArchive -C $CardAssetDirectory .
     }
     $cardAssetsSha256 = (Get-FileHash -LiteralPath $cardAssetsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    # A manifest is only useful if both archives exist where it says they do; assert it here instead
+    # of letting a deployer discover a dangling path after a 25-minute package run.
+    foreach ($entry in @(
+        @{ Path = $releaseArchive; Hash = $releaseSha256 },
+        @{ Path = $cardAssetsArchive; Hash = $cardAssetsSha256 })) {
+        if (-not (Test-Path -LiteralPath $entry.Path -PathType Leaf)) {
+            throw "发布包归档缺失，清单不可用：$($entry.Path)"
+        }
+        if ((Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Hash) {
+            throw "发布包归档哈希与清单不一致：$($entry.Path)"
+        }
+    }
     Assert-CleanCommit -ExpectedCommit $commit -Operation "写入发布包清单"
     [ordered]@{
         schema = 3
