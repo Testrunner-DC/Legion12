@@ -112,6 +112,33 @@ public sealed class TournamentPhaseStatusTests
         Assert.Equal("running", final.GetProperty("status").GetString());
     }
 
+    // B4: cancel and completion must move Status and Phase together; a reader that trusts
+    // either one must never see two different lifecycles.
+    [Fact]
+    public void CancelAndCompletionKeepStatusAndPhaseInStep()
+    {
+        using (var fixture = new Fixture())
+        {
+            var completed = fixture.CompletedTournament();
+            var finished = fixture.Store.CompleteTournament(fixture.Organizer, completed.Id,
+                completed.Version, Context("complete"), true);
+            Assert.Equal("completed", finished.Status);
+            Assert.Equal("completed", finished.Phase);
+            Assert.False(finished.RegistrationOpen);
+        }
+
+        using (var fixture = new Fixture())
+        {
+            var started = fixture.StartedTournament();
+            var canceled = fixture.Store.CancelTournament(fixture.Organizer, started.Id,
+                new L12TournamentCancelPayload("synthetic cancel"), started.Version,
+                Context("cancel"), true);
+            Assert.Equal("canceled", canceled.Status);
+            Assert.Equal("canceled", canceled.Phase);
+            Assert.False(canceled.RegistrationOpen);
+        }
+    }
+
     private static L12AdminAuditContext Context(string correlation)
         => new(correlation, "tournaments.manage", RequestMethod: "TEST", RequestPath: "/test/tournament-phase");
 
