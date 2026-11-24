@@ -123,7 +123,12 @@ public sealed partial class L12PlatformStore
                     if (target == "pre-check-in")
                         CaptureTournamentCheckInStart(working, DateTimeOffset.UtcNow, "manual", actor.Id, context.CorrelationId);
                     working.RegistrationOpen = target == "registration-open";
-                    working.Status = target == "result-confirmation" ? "running" : "registration";
+                    // Status follows the phase family, not "anything that is not result-confirmation".
+                    // Demoting a running tournament back to registration on the way out of
+                    // result-confirmation would silently reopen a started event.
+                    working.Status = target is "registration-open" or "registration-closed" or "pre-check-in"
+                        ? "registration"
+                        : "running";
                 });
         }
     }
@@ -519,6 +524,7 @@ public sealed partial class L12PlatformStore
         var blockers = new List<string>();
         var warnings = new List<string>();
         if (row.Status != "registration") blockers.Add("赛事不在赛前阶段");
+        if (row.Rounds.Count > 0) blockers.Add("赛事已有轮次，不能重复开赛");
         var actualEligible = row.Participants.Count(item => !item.Dropped && !item.Removed && !item.Waitlisted
             && item.TournamentCheckedInAt is not null);
         var eligible = planned.Participants.Where(item => !item.Dropped && !item.Removed && !item.Waitlisted

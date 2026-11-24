@@ -310,6 +310,11 @@ public sealed partial class L12PlatformStore
     private void StartTournamentCore(TournamentRow working, DateTimeOffset now,
         string? actorId = null, string? correlationId = null)
     {
+        // A start must create the first round. If rounds already exist the event was started
+        // before, whatever its status says, so refusing here keeps the guard independent of
+        // the status/phase bookkeeping that a manual phase change can distort.
+        if (working.Rounds.Count > 0)
+            throw new L12TournamentVersionConflictException("赛事已有轮次，不能重复开赛");
         CaptureDueTournamentCheckInStart(working, now);
         CaptureTournamentCheckInStart(working, now, actorId is null ? "automatic-start" : "manual-start",
             actorId, correlationId);
