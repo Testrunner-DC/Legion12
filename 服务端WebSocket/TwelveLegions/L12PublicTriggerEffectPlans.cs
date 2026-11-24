@@ -887,8 +887,16 @@ public sealed partial class L12GameEngine
             }
             case ("S01-0207", "enter", _):
             {
-                var guards = player.Graveyard.Where(card => card.CardId == PublicTriggerTombGuardCard)
-                    .Select(card => card.InstanceId).ToList();
+                // 卡面条件「我方军团数量少于对方」在结算时判定，且图坦卡蒙自己算在我方军团里
+                // （用户裁定 2026-11-25）。计划阶段构建时 playCard 已完成、这张牌**已在场上**，
+                // 所以 PublicLegions(player) 已经包含它，绝不能再 +1（那会双重计数，恰好吞掉
+                // "登场后仍少一张"的合法选择）。条件不成立就不给步骤，避免玩家选完才失败
+                // （BUG-20261118-8fe7d553）。
+                var opponentLegions = PublicLegions(State.Players[1 - candidate.Controller]).Count();
+                var guards = PublicLegions(player).Count() < opponentLegions
+                    ? player.Graveyard.Where(card => card.CardId == PublicTriggerTombGuardCard)
+                        .Select(card => card.InstanceId).ToList()
+                    : [];
                 var maximum = Math.Min(2, Math.Min(guards.Count, EmptySlots(player).Count()));
                 steps = maximum == 0 ? [] :
                 [
