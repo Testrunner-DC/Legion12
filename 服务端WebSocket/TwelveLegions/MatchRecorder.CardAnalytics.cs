@@ -80,8 +80,9 @@ public sealed partial class MatchRecorder
             PrepareAnalyticsScopeAsync(connection, normalized, includeFacts: true).GetAwaiter().GetResult());
         var population = execution.Measure(CardAnalyticsStage.Population, () =>
             ReadAnalyticsPopulationAsync(connection, normalized).GetAwaiter().GetResult());
-        var rows = execution.Measure(CardAnalyticsStage.Rows, () =>
+        var pageRows = execution.Measure(CardAnalyticsStage.Rows, () =>
             ReadCardAnalyticsRowsAsync(connection, normalized, normalized.Limit).GetAwaiter().GetResult());
+        var rows = pageRows.Rows;
         var cardIds = rows.Select(row => row.CardId).ToArray();
         var structures = execution.Measure(CardAnalyticsStage.Structures, () =>
             ReadAnalyticsSampleStructuresAsync(connection, cardIds).GetAwaiter().GetResult());
@@ -90,8 +91,12 @@ public sealed partial class MatchRecorder
         var items = rows.Select(row => ToAnalyticsItem(row, population,
             structures.GetValueOrDefault(row.CardId), comparisons.GetValueOrDefault(row.CardId),
             factsLoaded: false)).ToArray();
-        var total = execution.Measure(CardAnalyticsStage.Count, () =>
-            CountCardAnalyticsRowsAsync(connection, normalized).GetAwaiter().GetResult());
+        // A page past the end has no row to carry the window count, so only then pay for the
+        // separate count query. Every other page reuses the number the grouped pass already had.
+        var total = rows.Count > 0
+            ? pageRows.Total
+            : execution.Measure(CardAnalyticsStage.Count, () =>
+                CountCardAnalyticsRowsAsync(connection, normalized).GetAwaiter().GetResult());
         var coverage = execution.Measure(CardAnalyticsStage.Coverage, () =>
             ReadAnalyticsCoverageAsync(connection, normalized, population.SampleSize,
                 factsLoaded: false).GetAwaiter().GetResult());
@@ -476,8 +481,9 @@ public sealed partial class MatchRecorder
             reader.IsDBNull(2) ? 0 : reader.GetInt64(2));
     }
 
-    private static async Task<List<CardAnalyticsRow>> ReadCardAnalyticsRowsAsync(SqliteConnection connection,
-        L12CardAnalyticsQuery query, int take)
+    // The window count rides on the same grouped pass, so total no longer needs its own GROUP BY.
+    private static async Task<(List<CardAnalyticsRow> Rows, long Total)> ReadCardAnalyticsRowsAsync(
+        SqliteConnection connection, L12CardAnalyticsQuery query, int take)
     {
         var cte = MaterializedAnalyticsCte;
         var parameters = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -522,7 +528,8 @@ public sealed partial class MatchRecorder
                    SUM(CASE WHEN {exactDraw} THEN 1 ELSE 0 END),
                    SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END),
                    SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END)
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END),
+                   COUNT(*) OVER ()
             FROM inclusions i
             JOIN eligible e ON e.match_id=i.match_id AND e.player_index=i.player_index
             LEFT JOIN fact_stats f ON f.match_id=i.match_id AND f.player_index=i.player_index
@@ -535,9 +542,15 @@ public sealed partial class MatchRecorder
             """;
         AddParameters(command, parameters);
         var rows = new List<CardAnalyticsRow>();
+        long total = 0;
         await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) rows.Add(ReadCardAnalyticsRow(reader));
-        return rows;
+        while (await reader.ReadAsync())
+        {
+            rows.Add(ReadCardAnalyticsRow(reader));
+            // COUNT(*) OVER () counts every group that passed HAVING, i.e. the real total.
+            total = reader.IsDBNull(reader.FieldCount - 1) ? 0 : reader.GetInt64(reader.FieldCount - 1);
+        }
+        return (rows, total);
     }
 
     private static async Task<long> CountCardAnalyticsRowsAsync(SqliteConnection connection,
