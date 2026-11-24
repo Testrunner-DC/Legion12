@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "20261125-effect-reasons-and-response-visibility",
+  "date": "2026-11-25",
+  "audience": "players",
+  "title": "效果失败有原因、绝防双方都有记录、单副本异画不再丢失",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "效果没能完成结算时，战报里现在会写明原因（比如目标已失效、该军团当前不能登场、费用不返还），不再只有一句「效果未能完成结算」。必发效果发动时本来就没有可用对象，会如实显示为「没有合法处理对象、跳过该效果段」，而不是记成一次失败。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "双方先后使用〈绝对防御〉时，抵挡和无效现在各留一条记录；防御失效、进攻中止、支援跳过、进攻结束这几种情况也会出现在战报里，不再显示「结果未记录」。同时修正了一处记录归属：防守方的响应时点不会再被记成进攻方那张卡效果失败。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12CardFactSignals.cs"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "只给牌库里某一张副本单独配的异画，进入对局后不会再回落到目录原画（此前排队期间每 5 秒的轮询会把它洗掉）。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs"
+      ]
+    }
+  ]
+}
