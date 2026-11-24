@@ -52,7 +52,13 @@
 
 `服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs`（未提交）：图坦卡蒙 `case ("S01-0207","enter",_)` 现在按"登场后=我方+1"预估军团数，条件不成立就**不构建** entryCards/entrySlot 步骤（用户裁定"图坦卡蒙自己算在内"，因此判定时序不变，只补计划阶段拦截）。**已编译通过，未跑测试、未过门禁、未提交。**
 
-两个子代理正在并行（都只写一个测试文件、不改生产代码）：
+**子代理已回收（2026-11-25 晚）**，结论如下，且**已提交 `18fcc7aa`、已推送、门禁规则套件 8817/8817 通过**：
+- `tut-guard-tests` → `TwelveLegions.Tests/TutankhamunTombGuardPlanTests.cs`（2 例）。**它抓出了我初版的错误**：我把计划阶段写成 `PublicLegions(player).Count() + 1`，但 `playCard` 完成时这张牌已在场上，`+1` 是双重计数，恰好吞掉"登场后仍少一张"（= 玩家报告的场景）。已改为不加 1，两例转绿。
+- `death-trigger-repro` → `TwelveLegions.Tests/DeathTriggerRevalidationTests.cs`（3 例）。证明格温莉安与立花两条**当前都不复现**，已据此关单。
+
+**Bug 收口进度（14 条未结 → 已处理 9 条）**：`a0a70c1a`/`1749ac85` → resolved/fixed_verified；`20fd1129`/`0fa59e88`/`c7902235`/`76745b4c`/`e1dc0f6b` → closed/rejected（后三条分别在 comment 里点名规则裁定与回归用例）。
+
+**新增待办批次（用户已选 A）**：「静默失败可见性」。用户追问"同类不该只有这几个"是对的：全仓扫到 **28 处丢弃返回值**（`_ = Try…`，分布 `L12S1FactionEffects` 10、`L12S2FactionEffects` 4、`L12S1ExtendedEffects` 3…）与 **74 处 `effect-noop`/`effect-cancelled` 记录点**。真正的缺陷类要按"**已声明/已付费的效果在结算失败时不留终局事实**"来界定，逐条 triage 28 处而不是全改。已知必做：图坦卡蒙被抑制路径补 `effect-noop` + 玩家安全原因；阿伊（S01-0208）、布伦希尔德（S01-0309）忽略返回值。
 - `tut-guard-tests`：`TwelveLegions.Tests/TutankhamunTombGuardPlanTests.cs`（不满足→无选择步骤；满足→可选且召唤成功）+ 8 条同类计划的前置校验核对表。
 - `death-trigger-repro`：`TwelveLegions.Tests/DeathTriggerRevalidationTests.cs`（格温莉安被神妙行军击杀后是否触发；立花支援位阵亡是否触发亡语）。
 
