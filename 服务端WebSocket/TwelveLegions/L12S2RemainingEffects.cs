@@ -535,10 +535,16 @@ public sealed partial class L12GameEngine
                 else
                 {
                     if (!string.IsNullOrWhiteSpace(destination))
-                        _ = TryMoveDeclaredPublicLegion(item, targetController, targetId, destination,
-                            current => current.InstanceId != item.Data.GetValueOrDefault("moved"), requireAdjacent: true,
-                            "声明的相邻位置已失效；跳过位移，但费用降低继续结算",
-                            current => $"月读使〈{current.Name}〉位移1格");
+                    {
+                        // 位移跳过但“本回合费用-1”照常生效：这一段不能整段记成 failed，
+                        // 否则玩家会看到“效果未能完成结算”，而实际上效果生效了。
+                        if (!TryMoveDeclaredPublicLegion(item, targetController, targetId, destination,
+                                current => current.InstanceId != item.Data.GetValueOrDefault("moved"), requireAdjacent: true,
+                                "声明的相邻位置已失效；跳过位移，但费用降低继续结算",
+                                current => $"月读使〈{current.Name}〉位移1格", recordFailure: false))
+                            AddEvent("effect-noop", item.Controller,
+                                $"〈{target.Name}〉的声明相邻位已失效，月读跳过位移；其余效果继续结算", target);
+                    }
                     else
                         AddEvent("effect-noop", item.Controller,
                             $"〈{target.Name}〉没有相邻空位，月读跳过位移", target);

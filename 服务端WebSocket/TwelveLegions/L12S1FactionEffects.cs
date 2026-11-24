@@ -141,6 +141,10 @@ public sealed partial class L12GameEngine
                     if (declaredGuards.Length > 0)
                         RecordTargetSettlementFailure(item, string.Join('|', declaredGuards),
                             "声明后军团数量条件失效：我方军团数量不再少于对方；不执行登场，已支付费用不返还");
+                    else
+                        RecordTargetSettlementFailure(item, declaredTarget: null,
+                            "发动时我方军团数量不少于对方，计划阶段即未产生可选陵墓守卫；本次登场不发生",
+                            playerReason: "我方军团数量不少于对方，本次没有可登场的陵墓守卫");
                     FinishStackItem(item); return true;
                 }
                 if (declaredGuards.Length > 0)
@@ -151,6 +155,9 @@ public sealed partial class L12GameEngine
                         candidate => candidate.CardId == PublicTriggerTombGuardCard);
                     FinishStackItem(item); return true;
                 }
+                RecordTargetSettlementFailure(item, declaredTarget: null,
+                    "发动时墓地没有可登场的陵墓守卫或我方已无空位；本次登场不发生",
+                    playerReason: "墓地没有可登场的陵墓守卫，或我方已无空位");
                 FinishStackItem(item); return true;
             }
             case "阿伊":
@@ -2143,7 +2150,13 @@ public sealed partial class L12GameEngine
     {
         if (!TrySummonFromAnyPrivateZone(sourceOwner, destinationPlayerIndex,
                 instanceId, slotChoice, tapped, out var presentationFactSequence, allowResolvingSource))
+        {
+            // 11 处召唤丢弃返回值最终都汇聚到这个 wrapper：原因写在这里一次，而不是在
+            // 每个调用点各写一遍，也不是从事件文本反推（见 RecordPlayerSafeEffectReason 注释）。
+            RecordPlayerSafeEffectReason(presentationOwner,
+                "声明的登场对象或位置已失效，或该军团当前不能登场；本次登场未发生，已支付费用不返还");
             return false;
+        }
         if (presentationFactSequence is { } sequence)
             RegisterPresentationFact(presentationOwner, sequence);
         return true;
@@ -2180,7 +2193,11 @@ public sealed partial class L12GameEngine
             .Where(candidate => candidate.InstanceId == instanceId).ToArray();
         if (matches.Length != 1 || !IsFieldLegion(matches[0]))
         {
-            AddEvent("effect-cancelled", sourceOwner.PlayerIndex, "声明的登场卡牌真实实例已失效；仅取消本次登场");
+            // 没有声明对象（计划阶段就没有可选对象）是必发效果的空处理，不是一次结算失败。
+            if (string.IsNullOrWhiteSpace(instanceId))
+                AddEvent("effect-noop", sourceOwner.PlayerIndex, "发动时没有可登场的卡牌；本次登场不发生");
+            else
+                AddEvent("effect-cancelled", sourceOwner.PlayerIndex, "声明的登场卡牌真实实例已失效；仅取消本次登场");
             return false;
         }
 

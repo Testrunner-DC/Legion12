@@ -183,8 +183,9 @@ public sealed partial class L12GameEngine
     /// </summary>
     private static void RecordPlayerSafeEffectReason(L12StackItem item, string? playerReason)
     {
-        // A producer must opt in with a reason that is safe for every public recipient.
-        // Never derive one from an event's text or whichever item happens to top the stack.
+        // Only a producer-supplied structured reason may reach this field.
+        // Never derive one from an event's text or whichever item happens to top the stack;
+        // the effect-result receipt builds no player-log semantic at all for a hidden source.
         if (!string.IsNullOrWhiteSpace(playerReason))
             item.Data["effectPlayerReason"] = playerReason;
     }
@@ -195,7 +196,9 @@ public sealed partial class L12GameEngine
         var wasDeclared = !string.IsNullOrWhiteSpace(declaredTarget)
             && !declaredTarget.StartsWith("mode:", StringComparison.OrdinalIgnoreCase);
         item.Data["effectResultStatus"] = wasDeclared ? "failed" : "skipped";
-        RecordPlayerSafeEffectReason(item, playerReason);
+        // reason 是同一条事件正文里已经对同一受众出现过的结构化文案，因此它默认就是安全原因；
+        // 调用方只有在能给出更精确的措辞时才传 playerReason。接手时不要反过来从 event.Text 反推。
+        RecordPlayerSafeEffectReason(item, playerReason ?? reason);
         var source = FindSource(item) ?? item.SourceSnapshot;
         AddEvent(wasDeclared ? "effect-failed" : "effect-noop", item.Controller,
             wasDeclared
@@ -211,7 +214,7 @@ public sealed partial class L12GameEngine
     private void RecordResolutionFailure(L12StackItem item, string reason, string? playerReason = null)
     {
         item.Data["effectResultStatus"] = "failed";
-        RecordPlayerSafeEffectReason(item, playerReason);
+        RecordPlayerSafeEffectReason(item, playerReason ?? reason);
         var source = FindSource(item) ?? item.SourceSnapshot;
         AddEvent("effect-failed", item.Controller,
             $"〈{item.SourceName}〉结算时无法继续：{reason}", source is null ? [] : [source]);

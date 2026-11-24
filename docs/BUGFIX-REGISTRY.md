@@ -1,5 +1,28 @@
 # Legion12 Bug 修复记录
 
+## PLATFORM-20261125-QUEUED-DECK-ALTART-COPY｜匹配队列轮询把单副本异画洗成原画（本地已验，未部署）
+
+- 状态：local_verified_not_deployed
+- 现象：玩家报告 `BUG-20261120-2e7ce237`（异画傀儡）。为牌库里**某一张副本**配了异画（编辑器只写 `AlternateArtCopies`、不写整卡 `AlternateArtSelections`）时，进对局后场上那张回落目录原画；整卡异画不受影响，所以只有"挑单独一张配图"的玩家能撞见。
+- 根因：客户端排队期间每 5 秒发 `pollMatchmaking`（`net.ts:552-557` → `L12WebSocketServer.cs:4489`），服务端 `PollMatchmakingAsync` 用**重建的提交体**替换队列条目（`L12RoomManager.cs:695`）。旧重建只拷了 `AlternateArtSelections`，漏掉 `AlternateArtCopies`、`BenchIds`、`RepresentativeCardIds`；配对成功后 `entry.Deck` 直接成为 `session.CustomDeck`（`L12RoomManager.cs:608-610`），解析异画时只剩基础键。**不是实例化缺陷**——注册表原文"已排除实例化路径"的判断成立，漏的是队列这一跳。
+- 同型扫描：`grep "new L12CustomDeckSubmission" 服务端WebSocket` 只有 `L12DeckValidator.cs:19`（校验归一）与 `L12RoomManager.cs:695`（唯一重建点）两处；`grep "new L12PresetDeckDefinition"` 无第二处重建。`CreateCard(` 88 处调用点里另有 2 处同类残差（太阳城守卫补建 `L12GameEngine.cs:1183`、效果来源快照重建 `L12AttackPublicTriggerPlans.cs:355`），已登记为独立待办，不在本条夹带。
+- 改动：`L12RoomManager.cs` 新增 `RebuildQueuedDeck(L12PresetDeckDefinition)`，**逐字段**拷全部展示字段（含 `AlternateArtCopies`／`BenchIds`／`RepresentativeCardIds`），`PollMatchmakingAsync` 改为调用它；以后新增展示字段只改这一处。`internal` 可见性仅为让回归用例直接钉住这层重建。
+- 回归：`MatchmakingAlternateArtProjectionTests.QueuedDeckRebuildKeepsEverySubmissionFieldIncludingPerCopyAlternateArt`（新增；现有两条只覆盖 `AlternateArtSelections`，所以本缺陷此前全绿）。修前必红：断言 `AlternateArtCopies["S02-0005"] == ["art-copy-1", ""]`。
+- 验证：定向 `TwelveLegions.Platform.Tests` 3/3 通过（回执 `cache/primary/test-evidence/test-7665f92dc709490cbb1a529222604d08/receipt.json`）；全量 Focused 门禁待跑（本机受限沙箱下门禁的 node 契约脚本 `spawnSync git` 得 EPERM，需放宽权限重跑）。
+- 回滚：把 `PollMatchmakingAsync` 改回内联构造并删掉 `RebuildQueuedDeck` 即可；无协议、无存储、无 V2 存档影响——`alternateArtCopies` 字段本就存在于 `L12CustomDeckSubmission`／`SavedL12Deck`／`gameStatePropertyNamesV1.json`。公开牌库"必须回落原画"的契约（`DeckDomainStorageTests`）未被触碰。
+- 备注：`BUG-20261120-b99c66cc`（孙悟空变身）与此条无关，它已由 `307b7adc` 修复并随正式服 `798f6777` 上线；队列里仍是 `new` 是终态 CAS 未写，不是代码缺失。
+
+## EFFECT-20261125-SILENT-FAILURE-PLAYER-REASON｜效果失败不再静默：原因进入玩家回执（本地已验，未部署）
+
+- 状态：local_verified_not_deployed
+- 现象：玩家只看到「〈X〉的效果未能完成结算」，不知道是目标失效、费用仍扣、还是自己没得选。对局事实（`effect-failed`／`effect-noop`／`effect-cancelled`）其实都写了，缺的是**原因**。
+- 根因：`effect-result` 回执只在 `item.Data["effectPlayerReason"]` 存在时才拼「原因：…」（`L12GameEngine.EffectPresentations.cs:151-165`），而 `RecordTargetSettlementFailure`（:192）与 `RecordResolutionFailure`（:211）都把 `playerReason` 默认成 `null`；`grep "playerReason:"` 全仓 **0 命中**，即 176 个结算失败调用点没有一个写原因。召唤路径更直接：11 处 `_ = TrySummonFromAnyPrivateZone(…)` 的失败原因只写进 `effect-cancelled` 事件正文，从不进回执。
+- 同型扫描：交接文档列的 28 处 `_ = Try…` 逐条 triage 后 **A 类真实缺陷 0、B 类 0、C 类无害 3、D 类已被共享层覆盖 25**——共享义务本来就由 `L12S1FactionEffects.cs:2140` wrapper→`:2156` 核心（6 条出口写 `effect-cancelled`）与 `RecordTargetSettlementFailure` 承担，所以调用方丢返回值本身不是缺陷。真正的缺陷面是"原因从不写"，以 `grep "RecordTargetSettlementFailure("` 计 **176 处**。
+- 改动：① `RecordPlayerSafeEffectReason(item, playerReason ?? reason)`——结构化 `reason` 本来就插在同一条事件正文里、对同一受众出现，因此默认即安全原因；调用方可传更精确措辞覆盖。回执在源卡隐藏时整体不产生 `L12PlayerLogSemantic`，故不扩大泄露面。② 召唤 wrapper 的 false 分支补公开安全文案（覆盖 11 处召唤丢弃的唯一汇聚点）。③ 无声明对象改记 `effect-noop`（原文把"没得选"记成"结算失败"）。④ 图坦卡蒙两条被抑制路径补 `effect-noop` + 原因（原来 `FinishStackItem` 静默结束）。⑤ 月读位移失败改 `recordFailure:false` + 局部 `effect-noop`（费用-1 已生效，不能整段标 failed）。
+- 回归：`SilentEffectFailureReasonTests.FailedDeclaredTargetSettlementCarriesAPlayerFacingReason`、`TutankhamunTombGuardPlanTests.SuppressedEntryLeavesAnObservableNoopFactWithAPlayerFacingReason`（均为新增）。`SilentEffectFailureReasonTests.AyFrontlineAttackMayDeclareHerselfAndKeepsHerOwnTroopsModifier` 钉住 `BUG-20261118-f8bd01fb` 的选择层：候选集合本就含攻击者自己，**该场景在现行树上不复现**。
+- 验证：定向 `TwelveLegions.Tests` 5/5 通过（回执 `cache/primary/test-evidence/test-00fe791388524fae98cc3a9dbeb437e3/receipt.json`）；全量 Focused 门禁待跑（同上，受限沙箱 EPERM）。
+- 回滚：把两处 `playerReason ?? reason` 改回 `playerReason`、撤回 wrapper 与两条 `effect-noop` 即可；不动状态语义、不动 `effectResultStatus` 取值、不动协议与存档。
+
 ## TIMER-20261123-OPERATION-DEADLINE-NOTICE｜断线仍计时与移动端无超时提示（本地已验，未部署）
 
 - 状态：local_verified_not_deployed

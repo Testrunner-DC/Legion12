@@ -72,6 +72,42 @@ public sealed class MatchmakingAlternateArtProjectionTests
         fixture.AcceptCleanup();
     }
 
+    // BUG-20261120-2e7ce237：排队期间客户端每 5 秒轮询一次，服务端用重建的提交体替换队列条目。
+    // 重建漏掉 AlternateArtCopies 时，只有“单张副本异画”的牌库会被静默洗成纯原画，
+    // 而现有两条用例只覆盖 AlternateArtSelections，所以这个缺陷此前全绿。
+    [Fact]
+    public void QueuedDeckRebuildKeepsEverySubmissionFieldIncludingPerCopyAlternateArt()
+    {
+        var queued = new L12PresetDeckDefinition
+        {
+            PublicationId = "publication-queued-1",
+            PublicationVersion = 7,
+            RepresentativeCardIds = ["S02-0005"],
+            Name = "轮询重建保真",
+            MasterId = "S01-01M1",
+            CardIds = ["S02-0005", "S02-0005"],
+            MoraleIds = ["S01-01C1"],
+            SpecialIds = ["S01-0001"],
+            BenchIds = ["S01-0002"],
+            AlternateArtSelections = new(StringComparer.OrdinalIgnoreCase) { ["S01-01M1"] = "art-master" },
+            AlternateArtCopies = new(StringComparer.OrdinalIgnoreCase) { ["S02-0005"] = ["art-copy-1", ""] },
+        };
+
+        var rebuilt = L12RoomManager.RebuildQueuedDeck(queued);
+
+        Assert.Equal("publication-queued-1", rebuilt.PublicationId);
+        Assert.Equal(7, rebuilt.PublicationVersion);
+        Assert.Equal(["S02-0005"], rebuilt.RepresentativeCardIds);
+        Assert.Equal("轮询重建保真", rebuilt.Name);
+        Assert.Equal("S01-01M1", rebuilt.MasterId);
+        Assert.Equal(["S02-0005", "S02-0005"], rebuilt.CardIds);
+        Assert.Equal(["S01-01C1"], rebuilt.MoraleIds);
+        Assert.Equal(["S01-0001"], rebuilt.SpecialIds);
+        Assert.Equal(["S01-0002"], rebuilt.BenchIds);
+        Assert.Equal("art-master", rebuilt.AlternateArtSelections["S01-01M1"]);
+        Assert.Equal(["art-copy-1", ""], rebuilt.AlternateArtCopies["S02-0005"]);
+    }
+
     private static (L12AlternateArtView Art, L12PresetDeckDefinition Preset) GrantEligibleMasterArt(
         Fixture fixture, L12AccountView owner)
     {

@@ -183,4 +183,25 @@ public sealed class TutankhamunTombGuardPlanTests
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Cards.Any(card => card.InstanceId == SourceId));
     }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0207")]
+    [Trait("L12Evidence", "bug:BUG-20261118-8fe7d553")]
+    [Trait("L12Evidence", "entry:tomb-guard-suppressed-records-noop")]
+    public void SuppressedEntryLeavesAnObservableNoopFactWithAPlayerFacingReason()
+    {
+        // 条件不成立时「不登场」是正确行为，但不能静默结束：玩家必须在战报里看到
+        // 一条 noop 事实与原因，否则同一个效果在不同路径上有的留事实、有的不留。
+        var game = Create(91503, opposingLegions: 1);
+        var played = game.Handle(0, new L12Command("playCard", SourceId, Row: 0, Slot: 0));
+        Assert.True(played.Accepted, played.Error);
+        PassResponses(game);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-noop"
+            && entry.Cards.Any(card => card.InstanceId == SourceId));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == SourceId)
+            && entry.PlayerLogSemantic is { OutcomeLabel: not null }
+            && entry.PlayerLogSemantic!.OutcomeLabel.Contains("原因：", StringComparison.Ordinal));
+    }
 }

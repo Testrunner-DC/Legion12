@@ -692,19 +692,27 @@ public sealed partial class L12RoomManager
             return
                 [new OutgoingMessage(sessionId, new { type = "matchmakingState", queued = false,
                     message = "当前不在匹配队列" })];
-        var deck = new L12CustomDeckSubmission
-        {
-            PublicationId = existing.Deck.PublicationId,
-            PublicationVersion = existing.Deck.PublicationVersion,
-            Name = existing.Deck.Name,
-            MasterId = existing.Deck.MasterId,
-            CardIds = [.. existing.Deck.CardIds],
-            MoraleIds = [.. existing.Deck.MoraleIds],
-            SpecialIds = [.. existing.Deck.SpecialIds],
-            AlternateArtSelections = new Dictionary<string, string>(existing.Deck.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
-        };
-        return await JoinMatchmakingAsync(sessionId, existing.Mode, deck);
+        return await JoinMatchmakingAsync(sessionId, existing.Mode, RebuildQueuedDeck(existing.Deck));
     }
+
+    // 重建队列提交体必须原样保留牌库的全部展示字段：漏一个字段，轮询（客户端每 5 秒一次）
+    // 就会把只带 AlternateArtCopies 的牌库静默洗成纯原画（BUG-20261120-2e7ce237）。
+    // 以后新增展示字段只改这里，不要在调用点再拼一份。
+    internal static L12CustomDeckSubmission RebuildQueuedDeck(L12PresetDeckDefinition existing) => new()
+    {
+        PublicationId = existing.PublicationId,
+        PublicationVersion = existing.PublicationVersion,
+        RepresentativeCardIds = existing.RepresentativeCardIds is null ? null : [.. existing.RepresentativeCardIds],
+        Name = existing.Name,
+        MasterId = existing.MasterId,
+        CardIds = [.. existing.CardIds],
+        MoraleIds = [.. existing.MoraleIds],
+        SpecialIds = [.. existing.SpecialIds],
+        BenchIds = [.. existing.BenchIds],
+        AlternateArtSelections = new Dictionary<string, string>(existing.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
+        AlternateArtCopies = existing.AlternateArtCopies.ToDictionary(item => item.Key,
+            item => new List<string>(item.Value), StringComparer.OrdinalIgnoreCase),
+    };
 
     private bool IsQueueEntryValid(MatchmakingEntry entry)
         => _sessions.TryGetValue(entry.SessionId, out var session) && session.Connected
