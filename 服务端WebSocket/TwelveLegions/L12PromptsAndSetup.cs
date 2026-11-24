@@ -2683,7 +2683,10 @@ public sealed partial class L12GameEngine
         {
             State.PendingPrompts.RemoveAll(prompt => prompt.StackItemId == item.StackItemId);
             ResolveNegatedSourceSpecialCase(item);
-            AddEvent("stack-resolve", item.Controller, $"〈{item.SourceName}〉的{item.Text}未产生效果");
+            AddSemanticPlayerLogEvent("stack-resolve", item.Controller,
+                $"〈{item.SourceName}〉的{item.Text}未产生效果",
+                new L12PlayerLogSemantic("效果", "被无效，未产生效果", item.SourceInstanceId, item.SourceName),
+                FindSource(item) is { } negatedSource ? [negatedSource] : []);
             if (item.Trigger == "attack")
             {
                 AddEvent("combat-stage", item.Controller,
@@ -2692,8 +2695,12 @@ public sealed partial class L12GameEngine
             else if (item.Trigger == "opponent-attack" && State.PendingDefense is not null)
             {
                 State.PendingDefense.BlockedByResponse = true;
-                AddEvent("combat-stage", 1 - State.PendingDefense.AttackerPlayer,
-                    "〈绝对防御〉抵挡本次进攻；已结算的进攻时效果不回退");
+                AddSemanticPlayerLogEvent("combat-stage", 1 - State.PendingDefense.AttackerPlayer,
+                    "〈绝对防御〉抵挡本次进攻；已结算的进攻时效果不回退",
+                    new L12PlayerLogSemantic("抵挡", "本次进攻被抵挡；已结算的进攻时效果不回退",
+                        item.SourceInstanceId, item.SourceName,
+                        State.PendingDefense.AttackerInstanceId),
+                    item.SourceSnapshot is { } blockedSource ? [blockedSource] : []);
             }
             FinishStackItem(item);
             return;
@@ -2713,8 +2720,11 @@ public sealed partial class L12GameEngine
                 {
                     AddEvent("effect", item.Controller, $"〈{item.SourceName}〉声明抵挡本次进攻");
                     // 保留历史消费者使用的响应结算事件类型；规则状态不再把根进攻项标为 Negated。
-                    AddEvent("effect-negated", item.Controller,
-                        $"〈{item.SourceName}〉将抵挡原进攻；已发动的进攻时效果不回退");
+                    AddSemanticPlayerLogEvent("effect-negated", item.Controller,
+                        $"〈{item.SourceName}〉将抵挡原进攻；已发动的进攻时效果不回退",
+                        new L12PlayerLogSemantic("抵挡", "将抵挡原进攻；已发动的进攻时效果不回退",
+                            item.SourceInstanceId, item.SourceName, target.SourceInstanceId),
+                        item.SourceSnapshot is { } blockDeclaredSource ? [blockDeclaredSource] : []);
                 }
                 else
                     RecordTargetSettlementFailure(item, target.StackItemId, "原抵挡/支援窗口已经结束");
@@ -2722,7 +2732,13 @@ public sealed partial class L12GameEngine
             else
             {
                 target.Negated = true;
-                AddEvent("effect-negated", item.Controller, $"〈{target.SourceName}〉的{target.Text}被无效");
+                // 互相绝防时"无效"这一侧原先只有隐藏事件类型，玩家战报里只剩抵挡那一方
+                // （BUG-20261124-8548fff3）。给无效侧一条玩家侧语义，双方各留一条。
+                AddSemanticPlayerLogEvent("effect-negated", item.Controller,
+                    $"〈{target.SourceName}〉的{target.Text}被无效",
+                    new L12PlayerLogSemantic("无效", $"〈{item.SourceName}〉无效了〈{target.SourceName}〉的{target.Text}",
+                        item.SourceInstanceId, item.SourceName, target.SourceInstanceId, target.SourceName),
+                    item.SourceSnapshot is { } negateSource ? [negateSource] : []);
             }
             FinishStackItem(item);
             return;

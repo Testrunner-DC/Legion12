@@ -76,4 +76,25 @@ foreach ($legacy in @('s2-ruin-mode', 's2-ruin-discard', 's2-plunder-return', 'b
     }
 }
 
+# 记录层（BUG-20261124-8548fff3 / BUG-20261124-f8bd01fb）：无效与抵挡两侧都必须留下玩家可见事实，
+# 且防守方响应时点不得被记成进攻方那张卡的效果。
+$facts = Read-Source 'L12CardFactSignals.cs'
+$engine = Read-Source 'L12GameEngine.cs'
+$timeline = Read-Source 'L12CombatTimeline.cs'
+
+Assert-Contains $engine 'ResponseCombatSemantic' `
+    'Response-class combat facts must carry a player-visible semantic instead of staying in the client hidden set.'
+Assert-Contains $engine '"defense-invalid" => new L12PlayerLogSemantic' `
+    'Invalid defense must render for players instead of "结果未记录".'
+Assert-Contains $facts 'attributeToCard' `
+    'Stack facts must be able to drop card attribution for response timing windows.'
+Assert-Contains $facts 'item.Data.ContainsKey("combatTiming")' `
+    'A response timing window must be recognised so its empty settle is not recorded as a card effect.'
+Assert-Contains $timeline 'Trigger = "opponent-attack"' `
+    'Defender attack timing window must stay the placeholder that opens the response window.'
+Assert-Contains $prompts 'new L12PlayerLogSemantic("无效"' `
+    'The negate side must leave a player-visible fact; mutual counter defense otherwise keeps only the block side.'
+Assert-Contains $prompts 'new L12PlayerLogSemantic("抵挡"' `
+    'The block side must leave a player-visible fact.'
+
 Write-Host 'Public response declaration and independent-segment guard passed.'

@@ -63,7 +63,7 @@ public sealed partial class L12GameEngine
             destinationZone, amount, coverage, data);
 
     private void TrackStackFact(string kind, L12StackItem item, string coverage = "exact",
-        IReadOnlyDictionary<string, string>? data = null)
+        IReadOnlyDictionary<string, string>? data = null, bool attributeToCard = true)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -72,7 +72,11 @@ public sealed partial class L12GameEngine
         };
         if (data is not null)
             foreach (var pair in data) metadata[pair.Key] = pair.Value;
-        TrackCardFact(kind, item.Controller, item.SourceCardId, item.SourceInstanceId,
+        // 响应时点占位项（combatTiming）借用进攻方实例来复用绑定逻辑，它本身不是那张卡的效果；
+        // 把窗口的空转记成进攻方卡片的 fizzle 会污染对局记录与卡片统计（BUG-20261124-f8bd01fb）。
+        TrackCardFact(kind, item.Controller,
+            attributeToCard ? item.SourceCardId : null,
+            attributeToCard ? item.SourceInstanceId : null,
             coverage: coverage, data: metadata);
     }
 
@@ -130,10 +134,12 @@ public sealed partial class L12GameEngine
         if (!string.IsNullOrWhiteSpace(recordedStatus) || recordedFizzle)
         {
             var status = string.IsNullOrWhiteSpace(recordedStatus) ? "failed" : recordedStatus;
+            var isTimingWindow = item.Data.ContainsKey("combatTiming");
             TrackStackFact("fizzle", item, "partial", new Dictionary<string, string>
             {
                 ["resultStatus"] = status,
-            });
+                ["attribution"] = isTimingWindow ? "timing-window" : "card-effect",
+            }, attributeToCard: !isTimingWindow);
             return status;
         }
         TrackStackFact("resolve", item);

@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## LOG-20261125-RESPONSE-VISIBILITY-AND-TIMING-ATTRIBUTION｜互相绝防只剩一方记录、响应时点被记成进攻方卡片（本地已验，未部署）
+
+- 状态：local_verified_not_deployed
+- 现象：① 玩家报告 `BUG-20261124-8548fff3`：双方先后使用〈绝对防御〉时，战报里只剩"抵挡"那一方，"无效"那一方没有任何条目。② 玩家报告 `BUG-20261124-f8bd01fb`（阿伊）：对局记录显示她的效果 `fizzle`。
+- 根因：两处都在记录层，不在规则层。① 引擎事实齐全（`State.Events` 有 `defense/blocked` 与 `effect-negated`，回放映射 `replayIndex.ts:16` 也有），但"无效"侧只写 `effect-negated`/`stack-resolve`/`combat-stage`，三者都在客户端 `PLAYER_LOG_HIDDEN_TYPES`（`logViewModel.ts:46-60`）里，唯一放行条件是 `playerLogSemantic`（`:1191`），而这几条不带 → 只剩可见的 `defense`。② `OpenDefenderAttackTiming`（`L12CombatTimeline.cs:192-201`）给防守方开响应时点时，把占位堆叠项的 `SourceCardId/SourceInstanceId` 设成**进攻方**那张卡以复用绑定逻辑，而 `TrackStackFact`（`L12CardFactSignals.cs:65-77`）无条件把事实记到 `item.SourceCardId` 名下 → 防守方那个空转窗口被记成进攻方卡片的 `fizzle`。实测对局 `68792c0affce4c9bb20e2ed44d2dba` 里 `stack-37`(attack) 是 `resolve`、`stack-38`(opponent-attack) 才是 `fizzle`，且阿伊卡面无"对方进攻时"能力（`cards.s1.json:753`），可证归属错误。
+- 同型扫描：`grep "AddPlayerCombatEvent\(" 服务端WebSocket` 覆盖 9 类战斗事件（attack/defense/defense-invalid/support/attack-aborted/attack-ended/combat/piercing/damage）；前端隐藏集合还含 `effect-prevented`／`heal-prevented` 等，本次只处理响应类四类，其余按原样。
+- 改动：`L12CardFactSignals.cs`（`TrackStackFact` 增 `attributeToCard`，`TrackStackCompletion` 识别 `combatTiming` 时点项记 `attribution=timing-window` 且不归属卡片）；`L12GameEngine.cs` 新增 `ResponseCombatSemantic` 给 `defense-invalid`／`attack-aborted`／`support-skipped`／`attack-ended` 四类补玩家侧语义；`L12PromptsAndSetup.cs` 把"被无效／抵挡本次进攻／将抵挡原进攻／无效对方效果"四条路径改走 `AddSemanticPlayerLogEvent`。前端零改动（`logViewModel.ts:792` 已是"有语义即按语义投影"）。
+- 回归：`scripts/test-l12-public-response-declarations.ps1` 新增 7 条源契约断言（无效侧/抵挡侧必须有语义、响应时点不得归属到卡）。修前红：`CounterBlockAuthorityRegressionTests`／`NewSystemsTests.AbsoluteDefense*`／`DisasterDamagePriorityTests`／`CombatTimelineRegressionTests`／`EffectPresentationBranchSegmentTests` 共 7 例因 `params` 传入可空卡实例而 NRE，修后 233/233 通过。
+- 验证：Focused 门禁 exit 0——规则 **8,820/8,820**（回执 `cache/primary/test-evidence/test-1e805c32e568447c8852975cdb7cbe4c`）、平台 **3,228/3,228**（回执 `cache/primary/test-evidence/test-65936976c1864590a7d1686882ec27dd`）。
+- 回滚：撤回三处语义与 `attributeToCard` 开关即可；不动协议字段、不动存档、不动公开视图，也不改前端隐藏集合。
+
 ## PLATFORM-20261125-QUEUED-DECK-ALTART-COPY｜匹配队列轮询把单副本异画洗成原画（本地已验，未部署）
 
 - 状态：local_verified_not_deployed

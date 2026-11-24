@@ -2853,7 +2853,31 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private void AddPlayerCombatEvent(string type, int? playerIndex, string text,
         L12PlayerCombatPresentation combat, params L12CardInstance[] cards)
         => AddEventCoreWithCombat(type, playerIndex, text, null, null,
-            null, null, null, null, combat, null, cards);
+            null, null, null, ResponseCombatSemantic(type, combat), combat, null, cards);
+
+    /// <summary>
+    /// 抵挡失效／进攻中止／支援跳过／进攻结束这几类战斗事实原先只落在客户端的隐藏事件集合里，
+    /// 玩家看到的是「结果未记录」或者干脆什么都没有。这里给它们一条玩家侧语义，由同一套语义投影
+    /// 渲染；其余战斗事件（attack/damage/combat/defense 等）不在此列，既有呈现一字不动。
+    /// </summary>
+    private static L12PlayerLogSemantic? ResponseCombatSemantic(string type, L12PlayerCombatPresentation combat)
+        => type switch
+        {
+            "defense-invalid" => new L12PlayerLogSemantic("抵挡",
+                combat.PublicReasonCode switch
+                {
+                    "context-unavailable" => "本次进攻已结束，未支付额外费用",
+                    "choice-unavailable" => "抵挡或支援已无法继续，未支付额外费用",
+                    _ => "抵挡未能成立",
+                }, combat.AttackerInstanceId, null, combat.TargetInstanceId, null),
+            "attack-aborted" => new L12PlayerLogSemantic("进攻", "本次进攻已中止",
+                combat.AttackerInstanceId, null, combat.TargetInstanceId, null),
+            "support-skipped" => new L12PlayerLogSemantic("支援", "本次支援已跳过",
+                combat.AttackerInstanceId, null, combat.TargetInstanceId, null),
+            "attack-ended" => new L12PlayerLogSemantic("进攻", "本次进攻已结束",
+                combat.AttackerInstanceId, null, combat.TargetInstanceId, null),
+            _ => null,
+        };
 
     private void AddPlayerBattlefieldMovementEvent(string type, int? playerIndex, string text,
         L12PlayerBattlefieldMovement movement, params L12CardInstance[] cards)
