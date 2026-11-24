@@ -13,6 +13,7 @@ const currentNavigationPath = computed(() => sections.value.find(item => item.id
 const visibleDomains = computed(() => adminDomains.filter(domain =>
   sections.value.some(section => section.domain === domain.id)))
 const notice = ref('')
+const cachedAdminSections = ['AdminCardAnalyticsPage']
 watch(() => route.fullPath, () => { notice.value = '' })
 useSectionScroll(() => platformState.account?.id ?? 'guest')
 
@@ -41,7 +42,7 @@ onMounted(() => { void refreshCurrentAccount() })
           </router-link>
         </nav>
       </aside>
-      <main class="admin-content"><router-view v-slot="{ Component }"><component :is="Component" @notice="notice = $event"/></router-view><p v-if="notice" class="admin-notice" role="status">{{ notice }}</p></main>
+      <main class="admin-content"><router-view v-slot="{ Component }"><KeepAlive :include="cachedAdminSections"><component :is="Component" @notice="notice = $event"/></KeepAlive></router-view><p v-if="notice" class="admin-notice" role="status">{{ notice }}</p></main>
     </div>
   </div>
 </template>

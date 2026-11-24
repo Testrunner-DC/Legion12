@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CardImage from '@/l12/CardImage.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
@@ -19,7 +19,7 @@ import {
 } from '@/l12/platform'
 
 type AnalyticsTab = 'single' | 'list' | 'master'
-type AnalyticsRange = 'all' | '7d' | '30d' | 'season'
+type AnalyticsRange = 'all' | '7d' | '30d' | 'season' | 'custom'
 type AnalyticsSort = 'name' | 'sampleSize' | 'inclusionRate' | 'winRate' | 'gih' | 'iwd'
 
 const emit = defineEmits<{ notice: [message: string]; openMatch: [matchId: string] }>()
@@ -40,6 +40,10 @@ const sortKey = ref<AnalyticsSort>('sampleSize')
 const sortDirection = ref<'asc' | 'desc'>('desc')
 const loading = ref(false)
 const detailLoading = ref(false)
+const listLoaded = ref(false)
+const detailLoaded = ref(false)
+const localError = ref('')
+const exporting = ref(false)
 function localDateInput(value: Date) {
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')
@@ -55,6 +59,7 @@ const filters = ref({
 type CardAppliedScope = {
   range: AnalyticsRange
   seasonName: string
+  search: string
   query: {
     mode: string
     from: string
@@ -87,7 +92,8 @@ const cardScopeSummary = computed(() => {
   if (!scope) return ''
   if (scope.range === 'season') return `本赛季 · ${scope.seasonName || scope.query.seasonId || '赛季名称未返回'}`
   if (scope.range === 'all') return '全部已记录时间（无日期限制）'
-  return `${scope.query.from || '未设置开始日'} 至 ${scope.query.to || '未设置结束日'}`
+  const dates = `${scope.query.from || '未设置开始日'} 至 ${scope.query.to || '未设置结束日'}`
+  return scope.range === 'custom' ? `自定义区间 · ${dates}` : dates
 })
 const cardScopeSample = computed(() => activeTab.value === 'single' && detail.value
   ? `${detail.value.summary.sampleSize} 份携带参赛方 · ${detail.value.summary.includedMatches} 场`
@@ -104,7 +110,6 @@ const cardScopeItems = computed(() => {
     `作废／暂扣对局及禁用／删除账号参与的对局不计；查询门槛为 ${query.minimumSample} 份，方向判断仍要求样本与置信区间支持，不把低样本相关性写成因果。`,
   ]
 })
-const listPageCount = computed(() => Math.max(1, Math.ceil(page.value.total / listPageSize)))
 const maximumTiming = computed(() => Math.max(1, ...(detail.value?.turnDistribution || [])
   .flatMap(bucket => [bucket.firstDrawSamples, bucket.firstPlaySamples])))
 const maximumQuantity = computed(() => Math.max(1, ...(detail.value?.quantityDistribution || [])
@@ -224,6 +229,10 @@ function applyRange(next: AnalyticsRange) {
   filters.value.from = localDateInput(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1))
   filters.value.to = localDateInput(now)
 }
+function applyCustomDates() {
+  range.value = 'custom'
+  filters.value.seasonId = ''
+}
 function chooseCard(card: SingleCardPickerItem) {
   pickerOpen.value = false
   selectedCardId.value = card.id
@@ -248,14 +257,24 @@ function setSort(next: AnalyticsSort) {
   void loadAnalytics()
 }
 function sortMarker(key: AnalyticsSort) { return sortKey.value === key ? (sortDirection.value === 'asc' ? ' ↑' : ' ↓') : '' }
+function ariaSort(key: AnalyticsSort) {
+  if (sortKey.value !== key) return 'none'
+  return sortDirection.value === 'asc' ? 'ascending' : 'descending'
+}
+function openCard(cardId: string) {
+  activeTab.value = 'single'
+  void selectCard(cardId)
+}
+function changeListPage(next: number) { listPage.value = next; void loadAnalytics() }
 async function loadAnalytics() {
   const request = ++listRequest
   const query = analyticsQuery()
-  const nextScope: CardAppliedScope = { query, range: range.value,
-    seasonName: query.seasonId === currentSeason.value?.id ? currentSeason.value?.name || '' : '' }
   const search = listSearch.value.trim()
+  const nextScope: CardAppliedScope = { query, range: range.value, search,
+    seasonName: query.seasonId === currentSeason.value?.id ? currentSeason.value?.name || '' : '' }
   page.value = { items: [], total: 0 }
   listAppliedScope.value = null
+  listLoaded.value = false
   loading.value = true
   try {
     const next = await adminApi.cardAnalytics({ ...query, search, page: listPage.value,
@@ -263,46 +282,120 @@ async function loadAnalytics() {
     if (request !== listRequest) return
     page.value = next
     listAppliedScope.value = nextScope
-  } catch (error) { if (request === listRequest) emit('notice', error instanceof Error ? error.message : '卡牌数据加载失败') }
-  finally { if (request === listRequest) loading.value = false }
+    listLoaded.value = true
+  } catch (error) {
+    if (request === listRequest) {
+      listLoaded.value = false
+      localError.value = error instanceof Error ? error.message : '卡牌数据加载失败'
+    }
+  } finally { if (request === listRequest) loading.value = false }
 }
 async function selectCard(cardId = selectedCardId.value) {
   if (!cardId) return
   selectedCardId.value = cardId
   const request = ++detailRequest
   const query = analyticsQuery()
-  const nextScope: CardAppliedScope = { query, range: range.value,
+  const nextScope: CardAppliedScope = { query, range: range.value, search: listSearch.value.trim(),
     seasonName: query.seasonId === currentSeason.value?.id ? currentSeason.value?.name || '' : '' }
   detail.value = null
   detailAppliedScope.value = null
+  detailLoaded.value = false
   detailLoading.value = true
   try {
     const next = await adminApi.cardAnalyticsDetail(cardId, query)
     if (request === detailRequest) {
       detail.value = next
       detailAppliedScope.value = nextScope
+      detailLoaded.value = true
     }
   }
   catch (error) {
     if (request === detailRequest) {
       detail.value = null
-      emit('notice', error instanceof Error ? error.message : '卡牌数据详情加载失败')
+      detailLoaded.value = false
+      localError.value = error instanceof Error ? error.message : '卡牌数据详情加载失败'
     }
   } finally { if (request === detailRequest) detailLoading.value = false }
 }
-function reloadList() { listPage.value = 1; void loadAnalytics() }
+function reloadList() { clearFiltersReload(); listPage.value = 1; void loadAnalytics() }
 
-watch(filters, () => {
-  ++detailRequest
-  detail.value = null
-  detailAppliedScope.value = null
-  detailLoading.value = false
+const filtersReloadDelay = 300
+const csvMaxPages = 50
+let filtersReloadTimer: ReturnType<typeof setTimeout> | undefined
+function clearFiltersReload() {
+  if (filtersReloadTimer === undefined) return
+  if (typeof globalThis.clearTimeout === 'function') globalThis.clearTimeout(filtersReloadTimer)
+  filtersReloadTimer = undefined
+}
+function discardInFlight() {
   ++listRequest
-  page.value = { items: [], total: 0 }
-  listAppliedScope.value = null
+  ++detailRequest
   listPage.value = 1
   loading.value = false
-}, { deep: true, flush: 'sync' })
+  detailLoading.value = false
+  listLoaded.value = false
+  detailLoaded.value = false
+  localError.value = ''
+}
+function reloadActive() {
+  clearFiltersReload()
+  localError.value = ''
+  if (activeTab.value === 'master') return
+  if (activeTab.value === 'single') { if (selectedCardId.value) void selectCard(); return }
+  reloadList()
+}
+function scheduleFiltersReload() {
+  clearFiltersReload()
+  // 无计时器的脚本宿主直接跳过调度，避免防抖抛出而掩盖其余断言。
+  if (typeof globalThis.setTimeout !== 'function') return
+  filtersReloadTimer = globalThis.setTimeout(() => { filtersReloadTimer = undefined; reloadActive() }, filtersReloadDelay)
+}
+watch(filters, () => { discardInFlight(); scheduleFiltersReload() }, { deep: true, flush: 'post' })
+watch(listSearch, () => {
+  if (activeTab.value !== 'list') return
+  discardInFlight()
+  scheduleFiltersReload()
+}, { flush: 'post' })
+onBeforeUnmount(clearFiltersReload)
+
+function csvCell(value: string) { return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value }
+function downloadCsv(filename: string, rows: string[][]) {
+  const content = rows.map(row => row.map(csvCell).join(',')).join('\r\n')
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(new Blob([`\ufeff${content}`], { type: 'text/csv;charset=utf-8' }))
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+async function exportListCsv() {
+  const scope = listAppliedScope.value
+  if (!scope || exporting.value) return
+  exporting.value = true
+  localError.value = ''
+  try {
+    const rows: AdminCardAnalyticsItem[] = []
+    let reportedTotal = 0
+    for (let pageNumber = 1; pageNumber <= csvMaxPages; pageNumber++) {
+      const next = await adminApi.cardAnalytics({ ...scope.query, search: scope.search, page: pageNumber,
+        limit: listPageSize, sort: serverSort(), direction: sortDirection.value })
+      if (listAppliedScope.value !== scope) return
+      rows.push(...next.items)
+      reportedTotal = next.total
+      if (!next.items.length || rows.length >= reportedTotal) break
+    }
+    downloadCsv(`卡牌数据清单-${localDateInput(new Date())}.csv`, [
+      ['卡牌ID', '卡牌名称', '收录率', '携带胜率', '抽到胜率', '上手提升', '参赛方样本', '抽到样本', '样本提示', '结论'],
+      ...rows.map(item => [item.cardId, cardById.value.get(item.cardId)?.nameZh || item.cardId,
+        percent(item.inclusionRate), percent(item.winRate),
+        item.gihSamples >= 30 ? percent(item.gihWinRate) : '—',
+        item.gihSamples >= 30 && item.gnsSamples >= 30 ? signedPercent(item.inHandWinRateDelta) : '—',
+        String(item.sampleSize), String(item.gihSamples), isLowSample(item) ? '样本不足' : '样本达标', resultText(item)]),
+    ])
+    if (reportedTotal > rows.length) emit('notice', `导出达到 ${rows.length} 行上限（共 ${reportedTotal} 行），请缩小筛选范围后再导出`)
+  } catch (error) {
+    localError.value = error instanceof Error ? error.message : '卡牌清单导出失败'
+  } finally { exporting.value = false }
+}
 
 onMounted(async () => {
   const [catalogResult, policyResult] = await Promise.allSettled([loadDeckCatalog(), getEffectiveOperationsPolicy()])
@@ -318,18 +411,20 @@ onMounted(async () => {
   <section class="card-analytics">
     <header class="module-header">
       <div><small>排位卡牌仪表盘</small><h2>卡牌数据</h2><p>查看卡牌收录、胜率和实际使用表现。</p></div>
-      <button v-if="activeTab !== 'master'" :disabled="loading || detailLoading || (activeTab === 'single' && !selectedCardId)" @click="activeTab === 'single' ? selectCard() : loadAnalytics()">刷新数据</button>
+      <button v-if="activeTab !== 'master'" :disabled="loading || detailLoading" @click="reloadActive()">{{ loading || detailLoading ? '刷新中…' : '刷新数据' }}</button>
     </header>
+
+    <p v-if="localError" class="panel-error" role="alert"><span>{{ localError }}</span><button type="button" @click="localError = ''">关闭</button></p>
 
     <nav class="module-tabs" aria-label="卡牌数据视图">
       <button :class="{ active: activeTab === 'single' }" @click="activeTab = 'single'">单卡仪表盘</button>
-      <button :class="{ active: activeTab === 'list' }" @click="activeTab = 'list'; loadAnalytics()">卡牌数据清单</button>
+      <button :class="{ active: activeTab === 'list' }" @click="activeTab = 'list'; reloadList()">卡牌数据清单</button>
       <button :class="{ active: activeTab === 'master' }" @click="activeTab = 'master'">主宰</button>
     </nav>
 
     <AdminMasterAnalyticsPanel v-if="activeTab === 'master'" @notice="emit('notice', $event)"/>
     <section v-else class="filter-panel" aria-label="卡牌数据筛选">
-      <label v-if="activeTab === 'list'" class="search">清单搜索<input v-model="listSearch" type="search" placeholder="卡名、编号或 ID" @keyup.enter="loadAnalytics()"/></label>
+      <label v-if="activeTab === 'list'" class="search">清单搜索<input v-model="listSearch" type="search" placeholder="卡名、编号或 ID" @keyup.enter="reloadList()"/></label>
       <div class="master-filter master-picker-filter"><span>使用方主宰</span><div><button type="button" aria-label="选择使用方主宰" @click="masterPickerTarget = 'masterId'"><CardImage v-if="filters.masterId" :card-id="filters.masterId" :legacy-url="cardById.get(filters.masterId)?.imageUrl" :alt="masterLabel(filters.masterId)" intent="thumb"/><span>{{ filters.masterId ? `${masterLabel(filters.masterId)} · ${filters.masterId}` : '全部主宰' }}</span></button><button v-if="filters.masterId" type="button" aria-label="清除使用方主宰筛选" @click="clearMasterFilter('masterId')">清除</button></div></div>
       <button v-if="activeTab === 'single'" class="card-choice" type="button" @click="pickerOpen = true">
         分析卡牌
@@ -340,7 +435,8 @@ onMounted(async () => {
       <label>先后手<select v-model="filters.initiative"><option value="">全部</option><option value="first">先手</option><option value="second">后手</option></select></label>
       <label>运营规则版本<input v-model.trim="filters.rulesVersion" placeholder="全部运营规则"/></label>
       <label>最小参赛方样本<input v-model.number="filters.minimumSample" type="number" min="1" max="1000"/></label>
-      <button class="query" :disabled="activeTab === 'single' ? (!selectedCardId || detailLoading) : loading" @click="activeTab === 'single' ? selectCard() : reloadList()">{{ activeTab === 'single' ? '查询这张卡' : '刷新卡牌清单' }}</button>
+      <label>自定义开始日期<input v-model="filters.from" type="date" aria-label="自定义开始日期" @change="applyCustomDates()"/></label>
+      <label>自定义结束日期<input v-model="filters.to" type="date" aria-label="自定义结束日期" @change="applyCustomDates()"/></label>
     </section>
     <p v-if="activeTab !== 'master'" class="version-note">{{ filters.effectVersion === 'current' ? '当前范围只纳入查询时当前“引擎构建＋卡池”版本；切换后无样本不代表丢数。' : '全部版本仅供跨版本描述性观察；单卡可展开版本切片，不作平衡变化结论。' }}</p>
     <StatisticsScope v-if="activeTab !== 'master' && activeCardScope" :summary="cardScopeSummary" :sample="cardScopeSample" :items="cardScopeItems"/>
@@ -352,22 +448,39 @@ onMounted(async () => {
     </div>
 
     <section v-if="activeTab === 'list'" class="card-list panel-shell">
-      <header><div><b>卡牌数据清单</b><span>当前筛选结果</span></div><em>第 {{ listPage }} / {{ listPageCount }} 页</em></header>
-      <div class="list-sort" aria-label="卡牌清单排序">
-        <button @click="setSort('name')">卡牌{{ sortMarker('name') }}</button><button @click="setSort('inclusionRate')">收录率{{ sortMarker('inclusionRate') }}</button><button @click="setSort('winRate')">携带胜率{{ sortMarker('winRate') }}</button><button @click="setSort('gih')">抽到胜率{{ sortMarker('gih') }}</button><button @click="setSort('iwd')">上手提升{{ sortMarker('iwd') }}</button><button @click="setSort('sampleSize')">参赛方样本{{ sortMarker('sampleSize') }}</button>
-      </div>
-      <button v-for="item in page.items" :key="item.cardId" class="card-row" :data-low-sample="isLowSample(item)" @click="activeTab = 'single'; selectCard(item.cardId)">
-        <CardImage :card-id="item.cardId" :legacy-url="cardById.get(item.cardId)?.imageUrl" :alt="cardById.get(item.cardId)?.nameZh || item.cardId" intent="thumb"/>
-        <span><b>{{ cardById.get(item.cardId)?.nameZh || item.cardId }}</b><small>{{ item.cardId }}</small></span>
-        <span>{{ percent(item.inclusionRate) }}</span><span>{{ percent(item.winRate) }}</span><span>{{ item.gihSamples >= 30 ? percent(item.gihWinRate) : '—' }}</span><span :data-tone="resultTone(item)">{{ item.gihSamples >= 30 && item.gnsSamples >= 30 ? signedPercent(item.inHandWinRateDelta) : '—' }}</span><span>{{ item.sampleSize }}</span>
-      </button>
-      <div v-if="loading" class="empty">正在读取卡牌清单…</div>
-      <div v-else-if="listAppliedScope && !page.items.length" class="empty">排位数据不足，尚无卡牌达到当前样本门槛</div>
-      <footer v-if="page.items.length" class="pagination"><button :disabled="listPage <= 1" @click="listPage--; loadAnalytics()">上一页</button><span>{{ (listPage - 1) * listPageSize + 1 }}–{{ Math.min(listPage * listPageSize, page.total) }} / {{ page.total }}</span><button :disabled="listPage >= listPageCount" @click="listPage++; loadAnalytics()">下一页</button></footer>
+      <header><div><b>卡牌数据清单</b><span>当前筛选结果</span></div><button type="button" class="export" :disabled="!listLoaded || exporting" @click="exportListCsv()">{{ exporting ? '正在导出…' : '导出 CSV' }}</button></header>
+      <p class="scroll-hint card-list-hint">窄屏可横向滚动表格查看全部列</p>
+      <PagedCollection :items="page.items" :page-size="listPageSize" :server-page="listPage" :server-total="page.total" :busy="loading" label="卡牌数据清单" @page="changeListPage">
+        <template #default="{ items }">
+          <div class="card-table-scroll" tabindex="0" aria-label="卡牌数据清单表格，可横向滚动">
+            <table class="card-table">
+              <caption>卡牌数据清单：当前筛选与排序下的收录率、胜率、上手提升与样本</caption>
+              <thead><tr>
+                <th scope="col" :aria-sort="ariaSort('name')"><button type="button" @click="setSort('name')">卡牌{{ sortMarker('name') }}</button></th>
+                <th scope="col" :aria-sort="ariaSort('inclusionRate')"><button type="button" @click="setSort('inclusionRate')">收录率{{ sortMarker('inclusionRate') }}</button></th>
+                <th scope="col" :aria-sort="ariaSort('winRate')"><button type="button" @click="setSort('winRate')">携带胜率{{ sortMarker('winRate') }}</button></th>
+                <th scope="col" :aria-sort="ariaSort('gih')"><button type="button" @click="setSort('gih')">抽到胜率{{ sortMarker('gih') }}</button></th>
+                <th scope="col" :aria-sort="ariaSort('iwd')"><button type="button" @click="setSort('iwd')">上手提升{{ sortMarker('iwd') }}</button></th>
+                <th scope="col" :aria-sort="ariaSort('sampleSize')"><button type="button" @click="setSort('sampleSize')">参赛方样本{{ sortMarker('sampleSize') }}</button></th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="item in items" :key="item.cardId" class="card-row" :data-low-sample="isLowSample(item)" @click="openCard(item.cardId)">
+                  <th scope="row"><span class="card-cell"><CardImage :card-id="item.cardId" :legacy-url="cardById.get(item.cardId)?.imageUrl" :alt="cardById.get(item.cardId)?.nameZh || item.cardId" intent="thumb"/><span><b>{{ cardById.get(item.cardId)?.nameZh || item.cardId }}</b><small>{{ item.cardId }}</small><small v-if="isLowSample(item)" class="low-sample-tag">样本不足</small></span></span></th>
+                  <td>{{ percent(item.inclusionRate) }}</td><td>{{ percent(item.winRate) }}</td><td>{{ item.gihSamples >= 30 ? percent(item.gihWinRate) : '—' }}</td><td :data-tone="resultTone(item)">{{ item.gihSamples >= 30 && item.gnsSamples >= 30 ? signedPercent(item.inHandWinRateDelta) : '—' }}</td><td>{{ item.sampleSize }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </PagedCollection>
+      <p v-if="loading" class="empty" role="status">正在读取卡牌清单…</p>
+      <p v-else-if="!page.items.length && listLoaded" class="empty">已加载完成：当前筛选下没有卡牌达到样本门槛</p>
+      <p v-else-if="!page.items.length && localError" class="empty">清单加载失败，已在上方提示；可点击“刷新数据”重试</p>
+      <p v-else-if="!page.items.length" class="empty">尚未加载卡牌清单：修改任一筛选会在 300 毫秒后自动加载，也可点击“刷新数据”</p>
     </section>
 
       <main v-else-if="activeTab === 'single'" class="analysis-detail panel-shell">
-        <div v-if="detailLoading" class="empty">正在读取卡牌数据…</div>
+        <div v-if="detailLoading" class="empty" role="status">正在读取卡牌数据…</div>
         <template v-else-if="detail">
           <ScopedDisasterAnalytics v-if="detailAppliedScope" :key="detail.summary.cardId" :scope="detailAppliedScope.query" :card-id="detail.summary.cardId" :cards="cards" />
           <header class="card-heading">
@@ -472,7 +585,9 @@ onMounted(async () => {
             <div v-if="!detail.recentMatches.length" class="empty compact">暂无符合当前切片的已结束对局</div>
           </details>
         </template>
-        <div v-else class="empty">选择一张卡查看事实仪表盘</div>
+        <div v-else-if="localError" class="empty">单卡数据加载失败，已在上方提示；可点击“刷新数据”重试</div>
+        <div v-else-if="detailLoaded" class="empty">已加载完成 · 这张卡在当前筛选下没有可展示的样本</div>
+        <div v-else class="empty">尚未选择卡牌 · 选择一张卡查看事实仪表盘</div>
       </main>
     <SingleCardPicker v-if="pickerOpen" title="选择要分析的卡牌" @select="chooseCard" @close="pickerOpen = false"/>
     <SingleCardPicker v-if="masterPickerTarget" :title="masterPickerTarget === 'masterId' ? '选择使用方主宰' : '选择对方主宰'" :items="masterPickerItems" :allowed-types="['master']" @select="chooseMasterFilter" @close="masterPickerTarget = null"/>
@@ -481,7 +596,7 @@ onMounted(async () => {
 
 <style scoped>
 .master-picker-filter{display:grid;min-width:0;gap:6px;color:#aab4b7;font-size:13px;font-weight:900}.master-picker-filter>div{display:flex;min-width:0;gap:5px}.master-picker-filter>div>button:first-child{display:flex;flex:1;min-width:0;align-items:center;gap:7px;text-align:left}.master-picker-filter button span{min-width:0;overflow-wrap:anywhere}.master-picker-filter :deep(.l12-card-image){flex:none;width:23px;height:32px}.version-note{margin:0;padding:10px 12px;border:1px solid var(--line);background:#0b151d;color:#aab4b7;font-size:12px;line-height:1.65;overflow-wrap:anywhere}
-.card-analytics,.card-analytics :deep(*){font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.card-analytics{--line:#33434d;--panel:#0e171f;--panel-2:#091117;--muted:#839198;--gold:#e0c46f;--cyan:#64c8ce;display:grid;gap:12px;color:#f1f3ef;color-scheme:dark}.module-header,.filter-panel,.scope-summary,.panel-shell{border:1px solid var(--line);background:var(--panel)}.module-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:19px 21px;background:linear-gradient(115deg,#101b24,#15160f)}.module-header small,.card-heading small{color:var(--gold);font-size:13px;font-weight:900;letter-spacing:.12em}.module-header h2{margin:4px 0;font-size:clamp(23px,2.2vw,30px)}.module-header p{max-width:850px;margin:0;color:#99a5a8;line-height:1.65}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{box-sizing:border-box;min-height:40px;border:1px solid #53636d;background:#060d12;color:#f4f3ed;padding:9px 10px;font-size:14px;font-weight:800}.module-header button{flex:none;color:var(--gold)}.filter-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end;gap:9px;padding:13px}.filter-panel .search{grid-column:span 2}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:6px;color:#aab4b7;font-size:13px;font-weight:900}.filter-panel input,.filter-panel select{width:100%;min-width:0}.filter-panel select option{background:#071016;color:#fff}.filter-panel input:focus,.filter-panel select:focus,.filter-panel button:focus-visible{border-color:var(--cyan);outline:2px solid #64c8ce55;outline-offset:1px}.filter-panel .query{border-color:#9a7c30;background:#31270e;color:#f4d77b}.scope-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}.scope-summary article{display:flex;min-height:92px;flex-direction:column;justify-content:flex-end;gap:4px;padding:14px;background:#0a131a}.scope-summary small{color:#8f9da2;font-size:13px;font-weight:900}.scope-summary b{font-size:23px}.scope-summary span{color:#74838a;font-size:13px;line-height:1.45}.analytics-workspace{display:grid;grid-template-columns:minmax(300px,.58fr) minmax(640px,1.42fr);align-items:start;gap:12px}.panel-shell{min-width:0}.card-list{max-height:calc(100vh - 160px);overflow:auto}.card-list>header{position:sticky;z-index:2;top:0;display:flex;align-items:center;justify-content:space-between;padding:13px;background:#081118;border-bottom:1px solid var(--line)}.card-list>header div{display:grid;gap:3px}.card-list>header span,.card-list>header em{color:#77878e;font-size:13px;font-style:normal}.card-row{display:grid;width:100%;grid-template-columns:45px minmax(0,1fr) 72px;align-items:center;gap:10px;padding:10px;border:0;border-bottom:1px solid #283740;background:transparent;color:#fff;text-align:left}.card-row:hover,.card-row.selected{background:#17242d}.card-row.selected{box-shadow:inset 3px 0 var(--gold)}.card-row[data-low-sample="true"]{border-left:3px solid #91772f}.card-row>.l12-card-image{width:45px;height:63px}.card-row>span{display:flex;min-width:0;flex-direction:column;gap:3px}.card-row span b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-row span small{color:#718189;font-size:12px;letter-spacing:.03em}.card-row span em{color:#78bdc1;font-size:12px;font-style:normal}.row-numbers{text-align:right}.row-numbers b{font-size:16px}.row-numbers small[data-tone="positive"],[data-tone="positive"]{color:#73ddb0!important}.row-numbers small[data-tone="negative"],[data-tone="negative"]{color:#ef8994!important}[data-tone="neutral"]{color:#e1c56e!important}[data-tone="unavailable"]{color:#73838a!important}.load-more{width:100%;padding:13px;border:0;background:#15222a;color:var(--gold);font-weight:900}.analysis-detail{padding:17px}.card-heading{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:17px;padding-bottom:16px;border-bottom:1px solid var(--line)}.card-heading>.l12-card-image{width:112px;height:156px}.card-heading h3{margin:6px 0;font-size:clamp(22px,2vw,28px)}.card-heading p{margin:0;color:#8d9a9f;line-height:1.55}.card-heading em{display:inline-block;margin-top:10px;padding:6px 9px;border:1px solid currentColor;background:#071016;font-size:13px;font-style:normal;font-weight:900}.key-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.key-metrics article{display:flex;min-height:98px;flex-direction:column;justify-content:flex-end;gap:4px;padding:13px;border:1px solid var(--line);background:#071016}.key-metrics small{color:#84939a;font-size:13px;font-weight:900}.key-metrics b{font-size:22px}.key-metrics span{color:#77868c;font-size:12px;line-height:1.5}.dashboard-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.dashboard-panel{min-width:0;margin-top:12px;padding:14px;border:1px solid var(--line);background:#071016}.dashboard-pair .dashboard-panel{margin-top:0}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid #2b3942}.dashboard-panel h3{margin:0;font-size:17px}.dashboard-panel p{margin:4px 0 0;color:#7d8c92;font-size:13px;line-height:1.55}.funnel{display:grid;gap:9px;margin-top:13px}.funnel article>span{display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px}.funnel article>span em{color:var(--gold);font-style:normal}.funnel i,.quantity-bars i{display:block;height:8px;overflow:hidden;background:#18262e}.funnel i b,.quantity-bars i span{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#32878e,var(--gold))}.settlement-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:13px}.settlement-grid article{display:grid;min-height:78px;align-content:end;gap:4px;padding:11px;border:1px solid #2c3c45;background:#0d1820}.settlement-grid small{color:#89979c;font-size:12px}.settlement-grid b{font-size:20px}.settlement-grid span{color:#6f8087;font-size:12px}.quantity-bars,.turn-chart{display:grid;gap:9px;margin-top:13px}.quantity-bars article{display:grid;grid-template-columns:48px minmax(80px,1fr) minmax(120px,auto);align-items:center;gap:9px;font-size:12px}.quantity-bars em{color:#89979c;font-style:normal;text-align:right}.turn-chart{max-height:320px;overflow:auto}.turn-chart article{display:grid;grid-template-columns:68px 1fr 1fr;align-items:center;gap:8px;font-size:12px}.turn-chart article>div{position:relative;display:flex;height:18px;align-items:center;background:#14222a}.turn-chart i{height:100%;min-width:1px}.turn-chart i.draw{background:#47aeb5}.turn-chart i.play{background:#d4b354}.turn-chart article span{position:absolute;right:5px;color:#fff;font-size:11px;font-weight:900}.legend{display:flex;gap:10px;color:#8d999e;font-size:12px}.legend span::before{content:'';display:inline-block;width:8px;height:8px;margin-right:5px}.legend .draw::before{background:#47aeb5}.legend .play::before{background:#d4b354}.heat-scroll{margin-top:12px;overflow:auto}.heat-scroll table{width:100%;min-width:620px;border-collapse:collapse;font-size:12px}.heat-scroll th,.heat-scroll td{min-width:100px;padding:9px;border:1px solid #2c3b44;text-align:center}.heat-scroll th{background:#101c24;color:#b9c3c5}.heat-scroll td{background:#0c171e}.heat-scroll td[data-tone="positive"]{background:#0d342c}.heat-scroll td[data-tone="negative"]{background:#35141c}.heat-scroll td[data-tone="neutral"]{background:#302c17}.heat-scroll td b,.heat-scroll td span,.heat-scroll td small{display:block}.heat-scroll td b{font-size:15px}.heat-scroll td span{margin-top:3px;color:#90a0a5}.heat-scroll td small{margin-top:3px;color:currentColor}.breakdown-head,.breakdowns>article{display:grid;grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 75px;align-items:center;gap:8px;padding:9px}.breakdown-head{margin-top:8px;color:#74838a;font-size:12px;font-weight:900}.breakdowns>article{border-top:1px solid #293840;font-size:12px}.breakdowns>article small{color:#70c1c6;font-weight:900}.breakdowns>article strong{text-align:right}.quality-panel>header>strong{color:var(--gold);font-size:13px}.coverage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:12px}.coverage-grid article{display:grid;gap:5px;padding:11px;border:1px solid #2d3c44;background:#0c171e}.coverage-grid b{font-size:13px}.coverage-grid span,.coverage-grid small{color:#829198;font-size:12px;line-height:1.45}.quality-panel details{margin-top:11px;border:1px solid #2c3b43;background:#0a141a}.quality-panel summary{padding:10px;color:#c6b777;font-size:13px;cursor:pointer}.quality-panel ul{margin:0;padding:0 28px 12px;color:#87969b;font-size:12px;line-height:1.65}.recent-matches>button{display:grid;width:100%;grid-template-columns:minmax(0,1fr) 108px auto;align-items:center;gap:9px;padding:10px;border:0;border-bottom:1px solid #293840;background:transparent;color:#fff;text-align:left}.recent-matches>button:hover,.recent-matches>button:focus-visible{background:#15232b;outline:1px solid var(--cyan);outline-offset:-1px}.recent-matches>button span:first-child{display:flex;min-width:0;flex-direction:column;gap:4px}.recent-matches>button small{color:#74858b;font-size:12px}.recent-matches .match-id{overflow:hidden;color:#75909b;font-size:12px;text-overflow:ellipsis}.recent-matches em{color:var(--gold);font-size:12px;font-style:normal}.empty{display:grid;min-height:170px;place-items:center;color:#718189;text-align:center}.empty.compact{min-height:80px}button:disabled{cursor:not-allowed;opacity:.5}
+.card-analytics,.card-analytics :deep(*){font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.card-analytics{--line:#33434d;--panel:#0e171f;--panel-2:#091117;--muted:#839198;--gold:#e0c46f;--cyan:#64c8ce;display:grid;gap:12px;color:#f1f3ef;color-scheme:dark}.module-header,.filter-panel,.scope-summary,.panel-shell{border:1px solid var(--line);background:var(--panel)}.module-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:19px 21px;background:linear-gradient(115deg,#101b24,#15160f)}.module-header small,.card-heading small{color:var(--gold);font-size:13px;font-weight:900;letter-spacing:.12em}.module-header h2{margin:4px 0;font-size:clamp(23px,2.2vw,30px)}.module-header p{max-width:850px;margin:0;color:#99a5a8;line-height:1.65}.module-header button,.filter-panel input,.filter-panel select,.filter-panel button{box-sizing:border-box;min-height:40px;border:1px solid #53636d;background:#060d12;color:#f4f3ed;padding:9px 10px;font-size:14px;font-weight:800}.module-header button{flex:none;color:var(--gold)}.filter-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end;gap:9px;padding:13px}.filter-panel .search{grid-column:span 2}.filter-panel label{display:flex;min-width:0;flex-direction:column;gap:6px;color:#aab4b7;font-size:13px;font-weight:900}.filter-panel input,.filter-panel select{width:100%;min-width:0}.filter-panel select option{background:#071016;color:#fff}.filter-panel input:focus,.filter-panel select:focus,.filter-panel button:focus-visible{border-color:var(--cyan);outline:2px solid #64c8ce55;outline-offset:1px}.filter-panel .query{border-color:#9a7c30;background:#31270e;color:#f4d77b}.scope-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}.scope-summary article{display:flex;min-height:92px;flex-direction:column;justify-content:flex-end;gap:4px;padding:14px;background:#0a131a}.scope-summary small{color:#8f9da2;font-size:13px;font-weight:900}.scope-summary b{font-size:23px}.scope-summary span{color:#74838a;font-size:13px;line-height:1.45}.analytics-workspace{display:grid;grid-template-columns:minmax(300px,.58fr) minmax(640px,1.42fr);align-items:start;gap:12px}.panel-shell{min-width:0}.card-list{max-height:calc(100vh - 160px);overflow:auto}.card-list>header{position:sticky;z-index:2;top:0;display:flex;align-items:center;justify-content:space-between;padding:13px;background:#081118;border-bottom:1px solid var(--line)}.card-list>header div{display:grid;gap:3px}.card-list>header span,.card-list>header em{color:#77878e;font-size:13px;font-style:normal}.card-table{width:100%;min-width:640px;border-collapse:collapse;table-layout:fixed;font-size:13px}.card-table thead th:first-child{width:32%}.card-table thead th:nth-child(n+2){width:13.6%}.card-table caption{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.card-table thead th{padding:0;border-bottom:1px solid var(--line);background:#101c24;text-align:left}.card-table thead button{display:flex;box-sizing:border-box;width:100%;min-height:44px;align-items:center;gap:4px;padding:8px 10px;border:0;background:transparent;color:#aeb9bc;font-size:12px;font-weight:900;text-align:left;cursor:pointer}.card-table thead button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}.card-table thead th:nth-child(n+2) button{justify-content:flex-end;text-align:right}.card-table thead th[aria-sort="ascending"] button,.card-table thead th[aria-sort="descending"] button{color:var(--gold)}.card-row{cursor:pointer;color:#fff}.card-row:hover,.card-row:focus-visible,.card-row.selected{background:#17242d}.card-row.selected{box-shadow:inset 3px 0 var(--gold)}.card-row[data-low-sample="true"]{box-shadow:inset 3px 0 #91772f}.card-row th,.card-row td{padding:9px 10px;border-bottom:1px solid #283740;text-align:right;font-size:13px;font-weight:900}.card-row th{text-align:left}.card-cell{display:flex;min-width:190px;align-items:center;gap:10px}.card-cell>span{display:flex;min-width:0;flex-direction:column;gap:3px}.card-cell>.l12-card-image{flex:none;width:38px;height:53px}.card-cell b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card-cell small{color:#718189;font-size:12px;letter-spacing:.03em}.low-sample-tag{display:inline-block;width:fit-content;padding:1px 6px;border:1px solid #91772f;background:#241d0b;color:#e1c56e!important;font-size:11px;font-weight:900}.row-numbers{text-align:right}.row-numbers b{font-size:16px}.row-numbers small[data-tone="positive"],[data-tone="positive"]{color:#73ddb0!important}.row-numbers small[data-tone="negative"],[data-tone="negative"]{color:#ef8994!important}[data-tone="neutral"]{color:#e1c56e!important}[data-tone="unavailable"]{color:#73838a!important}.load-more{width:100%;padding:13px;border:0;background:#15222a;color:var(--gold);font-weight:900}.analysis-detail{padding:17px}.card-heading{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:17px;padding-bottom:16px;border-bottom:1px solid var(--line)}.card-heading>.l12-card-image{width:112px;height:156px}.card-heading h3{margin:6px 0;font-size:clamp(22px,2vw,28px)}.card-heading p{margin:0;color:#8d9a9f;line-height:1.55}.card-heading em{display:inline-block;margin-top:10px;padding:6px 9px;border:1px solid currentColor;background:#071016;font-size:13px;font-style:normal;font-weight:900}.key-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.key-metrics article{display:flex;min-height:98px;flex-direction:column;justify-content:flex-end;gap:4px;padding:13px;border:1px solid var(--line);background:#071016}.key-metrics small{color:#84939a;font-size:13px;font-weight:900}.key-metrics b{font-size:22px}.key-metrics span{color:#77868c;font-size:12px;line-height:1.5}.dashboard-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.dashboard-panel{min-width:0;margin-top:12px;padding:14px;border:1px solid var(--line);background:#071016}.dashboard-pair .dashboard-panel{margin-top:0}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid #2b3942}.dashboard-panel h3{margin:0;font-size:17px}.dashboard-panel p{margin:4px 0 0;color:#7d8c92;font-size:13px;line-height:1.55}.funnel{display:grid;gap:9px;margin-top:13px}.funnel article>span{display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px}.funnel article>span em{color:var(--gold);font-style:normal}.funnel i,.quantity-bars i{display:block;height:8px;overflow:hidden;background:#18262e}.funnel i b,.quantity-bars i span{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#32878e,var(--gold))}.settlement-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:13px}.settlement-grid article{display:grid;min-height:78px;align-content:end;gap:4px;padding:11px;border:1px solid #2c3c45;background:#0d1820}.settlement-grid small{color:#89979c;font-size:12px}.settlement-grid b{font-size:20px}.settlement-grid span{color:#6f8087;font-size:12px}.quantity-bars,.turn-chart{display:grid;gap:9px;margin-top:13px}.quantity-bars article{display:grid;grid-template-columns:48px minmax(80px,1fr) minmax(120px,auto);align-items:center;gap:9px;font-size:12px}.quantity-bars em{color:#89979c;font-style:normal;text-align:right}.turn-chart{max-height:320px;overflow:auto}.turn-chart article{display:grid;grid-template-columns:68px 1fr 1fr;align-items:center;gap:8px;font-size:12px}.turn-chart article>div{position:relative;display:flex;height:18px;align-items:center;background:#14222a}.turn-chart i{height:100%;min-width:1px}.turn-chart i.draw{background:#47aeb5}.turn-chart i.play{background:#d4b354}.turn-chart article span{position:absolute;right:5px;color:#fff;font-size:11px;font-weight:900}.legend{display:flex;gap:10px;color:#8d999e;font-size:12px}.legend span::before{content:'';display:inline-block;width:8px;height:8px;margin-right:5px}.legend .draw::before{background:#47aeb5}.legend .play::before{background:#d4b354}.heat-scroll{margin-top:12px;overflow:auto}.heat-scroll table{width:100%;min-width:620px;border-collapse:collapse;font-size:12px}.heat-scroll th,.heat-scroll td{min-width:100px;padding:9px;border:1px solid #2c3b44;text-align:center}.heat-scroll th{background:#101c24;color:#b9c3c5}.heat-scroll td{background:#0c171e}.heat-scroll td[data-tone="positive"]{background:#0d342c}.heat-scroll td[data-tone="negative"]{background:#35141c}.heat-scroll td[data-tone="neutral"]{background:#302c17}.heat-scroll td b,.heat-scroll td span,.heat-scroll td small{display:block}.heat-scroll td b{font-size:15px}.heat-scroll td span{margin-top:3px;color:#90a0a5}.heat-scroll td small{margin-top:3px;color:currentColor}.breakdown-head,.breakdowns>article{display:grid;grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 75px;align-items:center;gap:8px;padding:9px}.breakdown-head{margin-top:8px;color:#74838a;font-size:12px;font-weight:900}.breakdowns>article{border-top:1px solid #293840;font-size:12px}.breakdowns>article small{color:#70c1c6;font-weight:900}.breakdowns>article strong{text-align:right}.quality-panel>header>strong{color:var(--gold);font-size:13px}.coverage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:12px}.coverage-grid article{display:grid;gap:5px;padding:11px;border:1px solid #2d3c44;background:#0c171e}.coverage-grid b{font-size:13px}.coverage-grid span,.coverage-grid small{color:#829198;font-size:12px;line-height:1.45}.quality-panel details{margin-top:11px;border:1px solid #2c3b43;background:#0a141a}.quality-panel summary{padding:10px;color:#c6b777;font-size:13px;cursor:pointer}.quality-panel ul{margin:0;padding:0 28px 12px;color:#87969b;font-size:12px;line-height:1.65}.recent-matches>button{display:grid;width:100%;grid-template-columns:minmax(0,1fr) 108px auto;align-items:center;gap:9px;padding:10px;border:0;border-bottom:1px solid #293840;background:transparent;color:#fff;text-align:left}.recent-matches>button:hover,.recent-matches>button:focus-visible{background:#15232b;outline:1px solid var(--cyan);outline-offset:-1px}.recent-matches>button span:first-child{display:flex;min-width:0;flex-direction:column;gap:4px}.recent-matches>button small{color:#74858b;font-size:12px}.recent-matches .match-id{overflow:hidden;color:#75909b;font-size:12px;text-overflow:ellipsis}.recent-matches em{color:var(--gold);font-size:12px;font-style:normal}.empty{display:grid;min-height:170px;place-items:center;color:#718189;text-align:center}.empty.compact{min-height:80px}button:disabled{cursor:not-allowed;opacity:.5}
 .key-metrics{grid-template-columns:repeat(4,1fr)}
 .key-metrics article,.coverage-grid article{min-width:0;overflow-wrap:anywhere}
 .breakdowns>article>b{min-width:0;overflow-wrap:anywhere}
@@ -490,12 +605,12 @@ onMounted(async () => {
 .module-tabs{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);background:#081118}.module-tabs button{min-height:44px;border:0;border-right:1px solid var(--line);background:transparent;color:#85949a;font-size:14px;font-weight:900}.module-tabs button:last-child{border-right:0}.module-tabs button.active{background:#1b2a32;color:var(--gold);box-shadow:inset 0 -3px var(--gold)}.module-tabs button:focus-visible,.list-sort button:focus-visible,.pagination button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}.module-tabs button,.range-filter button,.list-sort button,.pagination button{display:flex;box-sizing:border-box;width:100%;height:100%;min-height:44px;align-items:center;justify-content:center;line-height:1.25;text-align:center;white-space:normal;overflow-wrap:anywhere}.filter-panel .query,.module-header>button{display:flex;min-height:44px;align-items:center;justify-content:center;text-align:center;white-space:normal}
 .diagnostic-fold>summary{display:flex;justify-content:space-between;gap:12px;padding:2px 0;cursor:pointer;list-style:none}.diagnostic-fold>summary::-webkit-details-marker{display:none}.diagnostic-fold>summary::after{content:'＋';color:var(--gold)}.diagnostic-fold[open]>summary{padding-bottom:10px;border-bottom:1px solid #2b3942}.diagnostic-fold[open]>summary::after{content:'－'}.diagnostic-fold>summary span{color:#7d8c92;font-size:12px}.diagnostic-fold>.coverage-grid,.diagnostic-fold>.heat-scroll,.diagnostic-fold>.breakdown-head,.diagnostic-fold>button,.diagnostic-fold>.empty,.diagnostic-fold>p,.diagnostic-fold>details{margin-top:10px}
 .filter-panel .master-filter{grid-column:span 2}.filter-panel .card-choice{display:flex;grid-column:span 2;height:44px;min-height:44px;align-items:center;justify-content:center;padding:7px 12px;text-align:center;white-space:normal}.range-filter{display:grid;grid-column:span 3;grid-template-columns:repeat(4,minmax(92px,1fr));align-items:stretch;gap:5px;min-width:0;margin:0;padding:6px 8px 8px;border:1px solid #40515b}.range-filter legend{padding:0 5px;color:#aab4b7;font-size:13px;font-weight:900}.range-filter button{padding:7px}.range-filter button.active{border-color:var(--gold);background:#302710;color:#f2d77f}.behavior-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}.behavior-metrics article{display:grid;min-width:0;gap:4px;padding:12px;border:1px solid #2c3c45;background:#0b1820}.behavior-metrics small,.behavior-metrics span{color:#829198;font-size:12px}.behavior-metrics b{font-size:19px}
-.card-list{max-height:none;overflow:hidden}.card-list>header{position:static}.list-sort{display:grid;grid-template-columns:minmax(220px,1fr) repeat(5,minmax(74px,.5fr));align-items:stretch;border-bottom:1px solid var(--line);background:#101c24}.list-sort button{padding:7px;border:0;border-right:1px solid #293840;background:transparent;color:#aeb9bc;font-size:12px;font-weight:900}.list-sort button:first-child{justify-content:flex-start;text-align:left}.card-list .card-row{grid-template-columns:45px minmax(150px,1fr) repeat(5,minmax(70px,.5fr))}.card-list .card-row>span:not(:nth-child(2)){display:block;text-align:center;font-size:13px;font-weight:900}.pagination{display:flex;align-items:stretch;justify-content:center;gap:14px;padding:10px;border-top:1px solid var(--line);background:#091218}.pagination button{flex:0 1 110px;padding:7px 14px;border:1px solid #53636d;background:#111d24;color:#e6e8e4;font-weight:900}.pagination span{display:flex;align-items:center;color:#829198;font-size:13px}
+.card-list{max-height:none;overflow:auto}.card-list>header{position:static}.card-list>header .export{padding:7px 12px;border:1px solid #53636d;background:#111d24;color:#e1c56e;font-size:13px;font-weight:900}.card-table-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-gutter:stable}.card-table-scroll:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}.card-list-hint{display:none}.panel-error{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:10px 12px;border:1px solid #7a4a3a;border-left:3px solid #d98b6a;background:#2a1712;color:#f3d3c4;font-size:13px;line-height:1.6}.panel-error span{min-width:0;overflow-wrap:anywhere}.panel-error button{flex:none;padding:6px 10px;border:1px solid #7a4a3a;background:#160c09;color:#f3d3c4;font-size:12px;font-weight:900;cursor:pointer}.pagination{display:flex;align-items:stretch;justify-content:center;gap:14px;padding:10px;border-top:1px solid var(--line);background:#091218}.pagination button{flex:0 1 110px;padding:7px 14px;border:1px solid #53636d;background:#111d24;color:#e6e8e4;font-weight:900}.pagination span{display:flex;align-items:center;color:#829198;font-size:13px}
 @media(max-width:1500px){.analytics-workspace{grid-template-columns:minmax(290px,.52fr) minmax(600px,1.48fr)}.filter-panel{grid-template-columns:repeat(4,minmax(140px,1fr))}.filter-panel .search{grid-column:span 2}}
 @media(max-width:1120px){.analytics-workspace{grid-template-columns:1fr}.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.scope-summary{grid-template-columns:1fr 1fr}.range-filter{grid-column:span 2}}
 @media(max-width:820px){.dashboard-pair{grid-template-columns:1fr}.breakdowns{overflow:auto}.breakdown-head,.breakdowns>article{min-width:720px}.module-header{align-items:flex-start}.module-header button{margin-top:3px}}
 @media(max-width:650px){.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search,.filter-panel .master-filter,.filter-panel .card-choice,.range-filter{grid-column:1/-1}.range-filter{grid-template-columns:1fr 1fr}.scope-summary,.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.card-heading>.l12-card-image{width:84px;height:117px}.settlement-grid{grid-template-columns:1fr 1fr}.quantity-bars article{grid-template-columns:44px 1fr}.quantity-bars em{grid-column:1/-1;text-align:left}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches .match-id{display:none}}
-@media(max-width:650px){.list-sort{display:none}.card-list .card-row{grid-template-columns:42px minmax(0,1fr) repeat(2,minmax(58px,.42fr));gap:7px}.card-list .card-row>span:nth-child(5),.card-list .card-row>span:nth-child(6),.card-list .card-row>span:nth-child(7){grid-column:2/-1;display:flex!important;justify-content:space-between;text-align:left}.card-list .card-row>span:nth-child(5)::before{content:'抽到胜率'}.card-list .card-row>span:nth-child(6)::before{content:'上手提升'}.card-list .card-row>span:nth-child(7)::before{content:'参赛方样本'}.pagination{gap:8px}.pagination button{flex:1}.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search,.filter-panel .master-filter,.filter-panel .card-choice,.range-filter{grid-column:1/-1}.range-filter{grid-template-columns:1fr 1fr}.scope-summary,.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.card-heading>.l12-card-image{width:84px;height:117px}.settlement-grid{grid-template-columns:1fr 1fr}.quantity-bars article{grid-template-columns:44px 1fr}.quantity-bars em{grid-column:1/-1;text-align:left}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches .match-id{display:none}}
+@media(max-width:650px){.card-table{min-width:560px}.card-cell{min-width:150px}.card-list-hint{display:block}.pagination{gap:8px}.pagination button{flex:1}.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search,.filter-panel .master-filter,.filter-panel .card-choice,.range-filter{grid-column:1/-1}.range-filter{grid-template-columns:1fr 1fr}.scope-summary,.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.card-heading>.l12-card-image{width:84px;height:117px}.settlement-grid{grid-template-columns:1fr 1fr}.quantity-bars article{grid-template-columns:44px 1fr}.quantity-bars em{grid-column:1/-1;text-align:left}.recent-matches>button{grid-template-columns:1fr auto}.recent-matches .match-id{display:none}}
 @media(max-width:430px){.filter-panel,.scope-summary,.key-metrics,.behavior-metrics,.settlement-grid{grid-template-columns:1fr}.module-header{display:grid}.module-header button{width:100%}.turn-chart article{grid-template-columns:62px 1fr}.turn-chart article>div:last-child{grid-column:2}.card-heading{grid-template-columns:72px minmax(0,1fr)}.card-heading>.l12-card-image{width:72px;height:100px}}
 .heat-scroll{max-height:520px}.heat-scroll th{position:sticky;top:0;z-index:1}.breakdowns :deep(article){display:grid;grid-template-columns:105px minmax(150px,1.3fr) 80px 80px 70px 70px 105px;align-items:center;gap:8px;padding:9px;border-top:1px solid #293840;font-size:12px}.breakdowns :deep(article>b){min-width:0;overflow-wrap:anywhere}.breakdowns :deep(article small){color:#70c1c6;font-weight:900}.breakdowns :deep(article strong){display:grid;gap:2px;text-align:right}.breakdowns :deep(article strong small){font-size:10px;font-weight:700}@media(max-width:820px){.breakdowns :deep(article){min-width:720px}}
 .card-analytics,.card-analytics>*,.module-header>*,.filter-panel,.scope-summary,.analytics-workspace{box-sizing:border-box;min-width:0;max-width:100%}.scroll-hint{margin:10px 0 0;color:#d8c16f!important;font-size:12px}.heat-scroll,.breakdowns{max-width:100%;overscroll-behavior-inline:contain;scrollbar-gutter:stable}.heat-scroll:focus-visible,.breakdowns:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}@container (max-width:820px){.filter-panel .range-filter{grid-column:1/-1;grid-template-columns:1fr 1fr}.dashboard-pair{grid-template-columns:1fr}.breakdowns{overflow-x:auto}.breakdown-head,.breakdowns :deep(article){min-width:720px}}@container (max-width:650px){.module-header{display:grid;align-items:start}.module-header button{width:100%}.filter-panel{grid-template-columns:1fr 1fr}.filter-panel .search,.filter-panel .master-filter,.filter-panel .card-choice,.range-filter{grid-column:1/-1}.range-filter{grid-template-columns:1fr 1fr}.scope-summary,.key-metrics,.behavior-metrics{grid-template-columns:1fr 1fr}.analysis-detail{padding:12px}.card-heading{grid-template-columns:84px minmax(0,1fr)}.dashboard-pair{grid-template-columns:1fr}.breakdowns{overflow-x:auto}.breakdown-head,.breakdowns :deep(article){min-width:720px}}
