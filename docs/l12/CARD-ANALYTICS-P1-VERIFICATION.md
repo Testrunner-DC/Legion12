@@ -34,6 +34,20 @@ Invoke-L12TestRun -Executable dotnet -Arguments @('test','TwelveLegions.Platform
 ## 5. 门禁与验收（Lead 自己跑，不信转述）
 `scripts/verify-l12-change.ps1 -Level Focused` 必过；动到服务端生产 `.cs` 时跑 `TwelveLegions.Platform.Tests` 全量（串行，不用过滤器）。前端改动另跑 `vue-tsc --noEmit` 与门禁里的 `check:ui-contracts` 全链（须由 `Initialize-L12BuildEnvironment` 提供存储根，否则 `test-tutorial-contract` 会假红）。测试证据必须对应最终源码；改完源码要重跑。
 
+## 量测记录：TEMP 索引维度对齐（⑨③，2026-11-24）
+分层比较按 `(master_id, opponent_master_id, effect_version)` 探 `temp.l12_analytics_eligible`，
+而现有维度索引前缀是 `(mode_id, started_utc, ...)`——不匹配是结构性事实。但补一条对齐索引
+（`ix_l12_analytics_eligible_strata`）后实测**更慢**，故不采用：
+
+| 夹具 | 无对齐索引（5 轮冷启动中位） | 加对齐索引 | 结论 |
+|---|---|---|---|
+| 4 000 场 | 列表 431.5 ms / 详情 75.2 ms | 454.7 / 70.9 | 噪声内，混合 |
+| 20 000 场 | 列表 2 552.5 ms / 详情 429.1 ms | 3 030.0 / 441.7 | 列表 **+18.7%**，详情无改善 |
+
+复现：`L12_ANALYTICS_MEASURE_MATCHES=20000 L12_ANALYTICS_MEASURE_OUT=xxx.json` 后跑
+`CardAnalyticsMeasurementHarness`（默认跳过，不影响门禁）。真正的大头是列表作用域本身
+（20 000 场 2.55 s），属 P2「按 epoch 物化持久化作用域」，不在 ⑨ 范围内。
+
 ## 本轮清点结论（2026-11-24）
 | 点 | 结论 | 证据 |
 |---|---|---|

@@ -425,6 +425,10 @@ public sealed partial class MatchRecorder
                 ON l12_analytics_eligible(match_id,player_index);
             CREATE INDEX temp.ix_l12_analytics_eligible_dimensions
                 ON l12_analytics_eligible(mode_id,started_utc,master_id,opponent_master_id);
+            -- 分层比较按 (master_id,opponent_master_id,effect_version) 探 eligible，前缀与上面那条
+            -- 不匹配；但 2026-11-24 实测（4000/20000 场夹具，5 轮冷启动）加对齐索引后列表反而
+            -- 慢 19%（2.55s→3.03s）、详情无改善，故不加。结论见 docs/l12/CARD-ANALYTICS-P1-VERIFICATION.md。
+
 
             CREATE TEMP TABLE l12_analytics_inclusions AS
             SELECT e.match_id,e.player_index,d.card_id,SUM(d.quantity) AS quantity
