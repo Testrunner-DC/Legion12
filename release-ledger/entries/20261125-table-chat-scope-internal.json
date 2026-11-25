@@ -3,7 +3,7 @@
   "id": "20261125-table-chat-scope-internal",
   "date": "2026-11-25",
   "audience": "internal",
-  "reason": "新增本桌聊天作用域（服务端切片）：受众＝两名选手 + 本桌裁判，裁判可发言且裁判之间互相可见，普通观战者不在内。前端尚未接出，玩家侧暂时看不到任何变化，因此记内部账本；前端切片落地后另行登记玩家侧说明。",
+  "reason": "新增本桌聊天作用域（服务端切片）：受众＝两名选手 + 本桌裁判，裁判可发言且裁判之间互相可见，普通观战者不在内。前端入口已在同批接出（见 20261125-table-chat-channel 的玩家侧条目），本条只保留服务端契约说明，避免重复。",
   "paths": [
     "服务端WebSocket/TwelveLegions/L12ChatRuntime.cs",
     "服务端WebSocket/TwelveLegions/L12RoomManager.Chat.cs",

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261125-table-chat-channel",
+  "date": "2026-11-25",
+  "audience": "players",
+  "title": "房间内新增「本桌」频道",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对局房间里的聊天新增「本桌」频道：双方选手和本桌裁判在同一个频道里交流，裁判能看到双方的对话也可以发言；普通观战者不在这个频道内。",
+      "paths": [
+        "opcgpro-vue/src/l12/chatResource.ts",
+        "opcgpro-vue/src/l12/site/ChatPanel.vue",
+        "opcgpro-vue/src/l12/site/SocialPopover.vue",
+        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue"
+      ]
+    }
+  ]
+}
