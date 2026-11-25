@@ -126,7 +126,7 @@ public sealed partial class L12WebSocketServer
         if (!pair.Available || !pair.BothAccountsActive || !pair.Unblocked) return false;
         if (metadata.Scope == L12ChatDeliveryScope.Friend)
             return pair.AcceptedAndUnblocked;
-        if (metadata.Scope != L12ChatDeliveryScope.Opponent
+        if (metadata.Scope is not (L12ChatDeliveryScope.Opponent or L12ChatDeliveryScope.Table)
             || !IsChatRequestFresh(metadata.Origin)) return false;
         var scope = _rooms.ReadCommittedOpponentChatScope(metadata.SenderAccountId,
             metadata.RecipientAccountId, metadata.MatchId);

@@ -175,7 +175,7 @@ internal static class L12ChatTextPolicy
 internal readonly record struct L12ChatRequestIdentity(Guid SessionId, string PlatformSessionId,
     string AccountId, long ConnectionGeneration);
 
-internal enum L12ChatDeliveryScope { Legacy, Control, Friend, Opponent }
+internal enum L12ChatDeliveryScope { Legacy, Control, Friend, Opponent, Table }
 
 internal sealed record L12ChatDeliveryMetadata(
     string PairFirstId,
@@ -300,9 +300,9 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
             return;
         }
         var fingerprint = L12ChatTextPolicy.Fingerprint(normalizedScope, validatedPeer,
-            normalizedScope == "opponent" ? matchId : null, sourceText!);
+            IsMatchScoped(normalizedScope) ? matchId : null, sourceText!);
         var work = new Work(WorkKind.Send, identity, validatedRequest, normalizedScope,
-            validatedPeer, normalizedScope == "opponent" ? matchId : null, text,
+            validatedPeer, IsMatchScoped(normalizedScope) ? matchId : null, text,
             fingerprint, null, 0, issuedAt, WorkCharge(validatedRequest, normalizedScope, validatedPeer,
                 matchId, text.Text, fingerprint));
         if (!TryQueue(work)) EmitSendFailure(identity, validatedRequest, normalizedScope,
@@ -333,7 +333,7 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
             return;
         }
         var work = new Work(WorkKind.Sync, identity, validatedRequest, normalizedScope,
-            validatedPeer, normalizedScope == "opponent" ? matchId : null, null, null,
+            validatedPeer, IsMatchScoped(normalizedScope) ? matchId : null, null, null,
             beforeSeq, 0, default, WorkCharge(validatedRequest, normalizedScope, validatedPeer, matchId));
         if (!TryQueue(work)) EmitHistoryFailure(identity, validatedRequest, normalizedScope,
             validatedPeer, matchId, "busy", "聊天队列正忙，请稍后重试");
@@ -363,7 +363,7 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
             return;
         }
         var work = new Work(WorkKind.Read, identity, validatedRequest, normalizedScope,
-            validatedPeer, normalizedScope == "opponent" ? matchId : null, null, null,
+            validatedPeer, IsMatchScoped(normalizedScope) ? matchId : null, null, null,
             null, seq, default, WorkCharge(validatedRequest, normalizedScope, validatedPeer, matchId));
         if (!TryQueue(work)) EmitReadFailure(identity, validatedRequest, normalizedScope,
             validatedPeer, matchId, "busy", "聊天队列正忙，请稍后重试");
@@ -608,7 +608,7 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
             var sequence = conversation.NextSequence;
             if (sequence is <= 0 or > L12PlatformStore.ChatMaximumSafeSequence)
                 throw new L12ChatOperationException("unavailable", "本局聊天序号不可用", true);
-            var entry = new L12ChatEntry(Guid.NewGuid().ToString("N"), sequence, "opponent",
+            var entry = new L12ChatEntry(Guid.NewGuid().ToString("N"), sequence, work.Scope,
                 scope.MatchId, work.Identity.AccountId, pair.SenderName, work.PeerAccountId,
                 work.Text!.Text, _utcNow().ToUniversalTime(), work.Text.Moderated,
                 work.Text.PolicyVersion);
@@ -809,7 +809,12 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
         string scope, string senderId,
         string recipientId, string? matchId, long generation, object payload)
     {
-        var kind = scope == "friend" ? L12ChatDeliveryScope.Friend : L12ChatDeliveryScope.Opponent;
+        var kind = scope switch
+        {
+            "friend" => L12ChatDeliveryScope.Friend,
+            "table" => L12ChatDeliveryScope.Table,
+            _ => L12ChatDeliveryScope.Opponent,
+        };
         _emit(new(transport, new(senderId, recipientId, kind, senderId, recipientId,
             matchId, generation, transport, origin), payload));
     }
@@ -823,16 +828,19 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
         failure = string.Empty;
         if (validRequest.Length is < 1 or > 128 || validRequest.Any(char.IsControl))
             failure = "requestId 无效";
-        else if (scope is not ("friend" or "opponent")) failure = "聊天范围无效";
+        else if (scope is not ("friend" or "opponent" or "table")) failure = "聊天范围无效";
         else if (validPeer.Length is < 1 or > 128 || validPeer.Any(char.IsControl)
                  || validPeer == identity.AccountId) failure = "聊天对象无效";
-        else if (scope == "opponent" && (string.IsNullOrWhiteSpace(matchId)
+        else if (IsMatchScoped(scope) && (string.IsNullOrWhiteSpace(matchId)
                  || matchId.Length > 128 || matchId.Any(char.IsControl))) failure = "对局标识无效";
         else return true;
         return false;
     }
 
     private static string NormalizeScope(string? scope) => (scope ?? string.Empty).Trim().ToLowerInvariant();
+
+    // 本桌频道（table）与对手频道共用同一套「以对局标识为键」的内存会话，区别只在作用域标签与受众。
+    private static bool IsMatchScoped(string scope) => scope is "opponent" or "table";
 
     private static bool TryParseRequestIssuedAt(string requestId, DateTimeOffset now,
         out DateTimeOffset issuedAt, out string failure)

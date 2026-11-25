@@ -2,6 +2,12 @@ using System.Collections.Concurrent;
 
 namespace TwelveLegions.Server;
 
+/// <summary>本桌频道的第三方成员（当前只装裁判）：账号 + 会话 + 连接代次，逐帧复核。</summary>
+internal sealed record L12CommittedChatMember(string AccountId, Guid SessionId, long ConnectionGeneration);
+
+// 本桌频道：两名选手固定，裁判成员可有可无（用户 2026-11-25 裁定受众＝选手+裁判，裁判可发言，
+// 且**裁判之间互相可见**；普通观战者一律不在内）。裁判身份是逐请求算出来的，所以成员表在
+// 作用域刷新时重算，判定失败即不放入。
 internal sealed record L12CommittedOpponentChatScope(
     string MatchId,
     long ScopeGeneration,
@@ -10,19 +16,28 @@ internal sealed record L12CommittedOpponentChatScope(
     long FirstConnectionGeneration,
     string SecondAccountId,
     Guid SecondSessionId,
-    long SecondConnectionGeneration)
+    long SecondConnectionGeneration,
+    IReadOnlyList<L12CommittedChatMember>? Referees = null)
 {
+    internal IReadOnlyList<L12CommittedChatMember> Members
+        => Referees is { Count: > 0 }
+            ? [new L12CommittedChatMember(FirstAccountId, FirstSessionId, FirstConnectionGeneration),
+               new L12CommittedChatMember(SecondAccountId, SecondSessionId, SecondConnectionGeneration),
+               .. Referees]
+            : [new L12CommittedChatMember(FirstAccountId, FirstSessionId, FirstConnectionGeneration),
+               new L12CommittedChatMember(SecondAccountId, SecondSessionId, SecondConnectionGeneration)];
+
+    internal bool ContainsMember(string accountId)
+        => Members.Any(member => string.Equals(member.AccountId, accountId, StringComparison.Ordinal));
+
+    /// <summary>本桌成员两两可见：选手↔选手、选手↔裁判、裁判↔裁判。</summary>
     internal bool ContainsPair(string firstId, string secondId)
-        => string.Equals(FirstAccountId, firstId, StringComparison.Ordinal)
-               && string.Equals(SecondAccountId, secondId, StringComparison.Ordinal)
-           || string.Equals(FirstAccountId, secondId, StringComparison.Ordinal)
-               && string.Equals(SecondAccountId, firstId, StringComparison.Ordinal);
+        => !string.Equals(firstId, secondId, StringComparison.Ordinal)
+           && ContainsMember(firstId) && ContainsMember(secondId);
 
     internal bool ContainsConnection(string accountId, Guid sessionId, long connectionGeneration)
-        => string.Equals(FirstAccountId, accountId, StringComparison.Ordinal)
-               && FirstSessionId == sessionId && FirstConnectionGeneration == connectionGeneration
-           || string.Equals(SecondAccountId, accountId, StringComparison.Ordinal)
-               && SecondSessionId == sessionId && SecondConnectionGeneration == connectionGeneration;
+        => Members.Any(member => string.Equals(member.AccountId, accountId, StringComparison.Ordinal)
+            && member.SessionId == sessionId && member.ConnectionGeneration == connectionGeneration);
 }
 
 public sealed partial class L12RoomManager
@@ -53,7 +68,8 @@ public sealed partial class L12RoomManager
     internal L12ChatQueueResult StartCommittedOpponentChatScope(L12ChatDeliveryMetadata metadata,
         Func<L12ChatQueueResult> kickoff)
     {
-        if (metadata.Scope != L12ChatDeliveryScope.Opponent || metadata.MatchId is null
+        if (metadata.Scope is not (L12ChatDeliveryScope.Opponent or L12ChatDeliveryScope.Table)
+            || metadata.MatchId is null
             || !_opponentChatScopes.TryGetValue(metadata.MatchId, out var slot))
             return L12ChatQueueResult.Suppressed;
         lock (slot.StartGate)
@@ -100,9 +116,37 @@ public sealed partial class L12RoomManager
             WithdrawOpponentChatScopeLocked(room);
             return;
         }
+        // 裁判成员：带裁判权且不是本桌参赛者的观战会话（用户裁定裁判可发言且裁判之间互相可见）。
+        // 判定失败一律不放入——宁可在本桌频道里少一个人，也不能把围观者放进来。
+        var referees = new List<L12CommittedChatMember>();
+        if (room.TournamentId is not null && room.TournamentMatchId is not null && _platform is not null)
+        {
+            List<Guid> spectators;
+            lock (room.Spectators) spectators = [.. room.Spectators];
+            foreach (var spectatorSession in spectators)
+            {
+                if (!_sessions.TryGetValue(spectatorSession, out var observer) || !observer.Connected
+                    || !observer.IsSpectator || string.IsNullOrWhiteSpace(observer.AccountId)
+                    || observer.RoomCode != room.Code
+                    || observer.AccountId == first.AccountId || observer.AccountId == second.AccountId)
+                    continue;
+                var canReferee = false;
+                try
+                {
+                    var access = _platform.TournamentRoomAccess(observer.AccountId, room.TournamentId,
+                        room.TournamentMatchId, spectate: true);
+                    canReferee = access is not null && access.CanRefereeView && !access.CanPlay
+                        && access.RoomCode == room.Code;
+                }
+                catch { canReferee = false; }
+                if (canReferee)
+                    referees.Add(new L12CommittedChatMember(observer.AccountId, observer.Id,
+                        observer.ConnectionGeneration));
+            }
+        }
         var published = new L12CommittedOpponentChatScope(matchId, generation,
             first.AccountId, first.Id, first.ConnectionGeneration,
-            second.AccountId, second.Id, second.ConnectionGeneration);
+            second.AccountId, second.Id, second.ConnectionGeneration, referees);
         lock (slot.StartGate) Volatile.Write(ref slot.Current, published);
         NotifyOpponentChatScopeChanged(matchId, generation, available: true);
     }
