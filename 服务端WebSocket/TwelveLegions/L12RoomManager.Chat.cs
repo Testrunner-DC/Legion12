@@ -65,6 +65,16 @@ public sealed partial class L12RoomManager
         return scope;
     }
 
+    // 本桌广播：发送者只需是本桌成员，不需要指定单一收件人（peer 用通配）。
+    internal L12CommittedOpponentChatScope? ReadCommittedTableChatScope(string accountId, string? matchId)
+    {
+        if (string.IsNullOrWhiteSpace(matchId) || string.IsNullOrWhiteSpace(accountId)
+            || !_opponentChatScopes.TryGetValue(matchId, out var slot)
+            || Volatile.Read(ref slot.Current) is not { } scope
+            || !scope.ContainsMember(accountId)) return null;
+        return scope;
+    }
+
     internal L12ChatQueueResult StartCommittedOpponentChatScope(L12ChatDeliveryMetadata metadata,
         Func<L12ChatQueueResult> kickoff)
     {

@@ -483,6 +483,21 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
                 entry = stored.Entry,
             });
         if (stored.Duplicate || stored.Entry is null) return;
+        if (work.Scope == "table" && work.PeerAccountId == TableBroadcastPeer)
+        {
+            // 一条消息按本桌成员逐个送达：发送者自己不再重复收（已由 chatAck 确认）。
+            var broadcastScope = _rooms.ReadCommittedTableChatScope(work.Identity.AccountId, work.MatchId);
+            if (broadcastScope is null) return;
+            foreach (var member in broadcastScope.Members)
+            {
+                if (string.Equals(member.AccountId, work.Identity.AccountId, StringComparison.Ordinal)) continue;
+                if (_resolveRecipient(member.AccountId) is not { } memberTarget) continue;
+                EmitScoped(memberTarget, work.Identity, work.Scope, work.Identity.AccountId,
+                    member.AccountId, work.MatchId, scopeGeneration,
+                    new { type = "chatMessage", entry = stored.Entry });
+            }
+            return;
+        }
         var recipient = _resolveRecipient(work.PeerAccountId);
         if (recipient is not { } target) return;
         EmitScoped(target, work.Identity, work.Scope, work.Identity.AccountId, work.PeerAccountId,
@@ -568,8 +583,10 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
         var requestKey = string.Concat(work.Identity.AccountId, "\0", work.RequestId);
         lock (_opponentGate)
         {
-            var currentScope = _rooms.ReadCommittedOpponentChatScope(work.Identity.AccountId,
-                work.PeerAccountId, work.MatchId);
+            var currentScope = work.Scope == "table" && work.PeerAccountId == TableBroadcastPeer
+                ? _rooms.ReadCommittedTableChatScope(work.Identity.AccountId, work.MatchId)
+                : _rooms.ReadCommittedOpponentChatScope(work.Identity.AccountId, work.PeerAccountId,
+                    work.MatchId);
             if (!ReferenceEquals(currentScope, scope))
                 throw new L12ChatOperationException("scopeUnavailable", "本局聊天范围已变化");
             if (!_opponent.TryGetValue(scope.MatchId, out var conversation))
@@ -675,6 +692,16 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
     private L12CommittedChatPairView RequireOpponentAdmission(Work work,
         out L12CommittedOpponentChatScope scope)
     {
+        if (work.Scope == "table" && work.PeerAccountId == TableBroadcastPeer)
+        {
+            // 本桌广播只要求发送者是本桌成员；收件人在扇出时逐个复核（含屏蔽状态）。
+            scope = _rooms.ReadCommittedTableChatScope(work.Identity.AccountId, work.MatchId)
+                    ?? throw new L12ChatOperationException("scopeUnavailable", "当前不在同一有效对局");
+            if (!scope.ContainsConnection(work.Identity.AccountId, work.Identity.SessionId,
+                    work.Identity.ConnectionGeneration))
+                throw new L12ChatOperationException("staleSession", "原发送连接已不再占用本桌席位");
+            return _platform.ReadCommittedChatPair(work.Identity.AccountId, work.Identity.AccountId);
+        }
         var pair = _platform.ReadCommittedChatPair(work.Identity.AccountId, work.PeerAccountId);
         if (!pair.Available)
             throw new L12ChatOperationException("unavailable", "平台已提交账号状态当前不可用", true);
@@ -841,6 +868,9 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
 
     // 本桌频道（table）与对手频道共用同一套「以对局标识为键」的内存会话，区别只在作用域标签与受众。
     private static bool IsMatchScoped(string scope) => scope is "opponent" or "table";
+
+    /// <summary>本桌广播的通配收件人：由服务端按作用域成员展开，客户端无需枚举裁判。</summary>
+    internal const string TableBroadcastPeer = "*";
 
     private static bool TryParseRequestIssuedAt(string requestId, DateTimeOffset now,
         out DateTimeOffset issuedAt, out string failure)

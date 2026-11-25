@@ -32,7 +32,20 @@ public sealed class TableChatScopeTests
         PublishScope(rooms, new L12CommittedOpponentChatScope(matchId, 1,
             sender.Id, senderSession, 1, recipient.Id, recipientSession, 1,
             [new L12CommittedChatMember(referee.Id, refereeSession, 1)]));
-        var runtime = new L12ChatRuntime(fixture.Store, rooms, _ => true, _ => null, frame =>
+        // 三名成员的连接身份都可解析，广播用例才能观察到逐个送达。
+        // out 形参不能进 lambda，先落到局部变量。
+        var senderAccountId = sender.Id;
+        var recipientAccountId = recipient.Id;
+        var refereeAccountId = referee.Id;
+        var senderSid = senderSession;
+        var recipientSid = recipientSession;
+        var refereeSid = refereeSession;
+        Func<string, L12ChatRequestIdentity?> resolve = accountId =>
+            accountId == senderAccountId ? new L12ChatRequestIdentity(senderSid, "s", senderAccountId, 1)
+            : accountId == recipientAccountId ? new L12ChatRequestIdentity(recipientSid, "r", recipientAccountId, 1)
+            : accountId == refereeAccountId ? new L12ChatRequestIdentity(refereeSid, "f", refereeAccountId, 1)
+            : null;
+        var runtime = new L12ChatRuntime(fixture.Store, rooms, _ => true, resolve, frame =>
         {
             emitted.Enqueue(JsonSerializer.SerializeToElement(frame.Payload, Web));
             return true;
@@ -105,6 +118,35 @@ public sealed class TableChatScopeTests
         }
     }
 
+    [Fact]
+    public async Task BroadcastMessageReachesEveryOtherTableMember()
+    {
+        var emitted = new ConcurrentQueue<JsonElement>();
+        var matchId = $"table-{Guid.NewGuid():N}";
+        var (runtime, _, fixture) = Create(matchId, out var senderSession, out var recipientSession,
+            out var refereeSession, out var sender, out var recipient, out var referee, emitted);
+        using (fixture)
+        await using (runtime)
+        {
+            var identity = new L12ChatRequestIdentity(senderSession, "s", sender.Id, 1);
+            var requestId = $"c1.{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}.{Guid.NewGuid():D}";
+            runtime.QueueSend(identity, requestId, "table", L12ChatRuntime.TableBroadcastPeer, matchId, "全桌通知");
+
+            // 收件人写在送达元数据里而不是载荷里，所以按条数断言：
+            // 两名选手 + 一名裁判 = 三个成员，发送者自己不再重复收 → 另外两人各一条 chatMessage。
+            var messages = 0;
+            for (var i = 0; i < 600 && messages < 2; i++)
+            {
+                messages = emitted.Count(frame => frame.TryGetProperty("type", out var type)
+                    && type.GetString() == "chatMessage");
+                await Task.Delay(10);
+            }
+
+            var ack = emitted.FirstOrDefault(frame => frame.TryGetProperty("type", out var type)
+                && type.GetString() == "chatAck");
+            Assert.True(messages == 2, $"chatMessage={messages}; ack={ack}");
+        }
+    }
     private static void PublishScope(L12RoomManager rooms, L12CommittedOpponentChatScope scope)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;

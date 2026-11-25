@@ -780,6 +780,8 @@ public sealed partial class L12RoomManager
                     session.PlayerIndex = null;
                     session.CustomDeck = observation.CustomDeck;
                     session.IsSpectator = true;
+                    // 恢复/重连回到观战席位时同样纳入本桌频道（P4 切片③）。
+                    RefreshOpponentChatScopeLocked(observation.Room);
                     return;
                 }
             }
@@ -1429,6 +1431,8 @@ public sealed partial class L12RoomManager
                 session.PlayerIndex = null;
                 session.IsSpectator = true;
             }
+            // 观战者/裁判中途加入要立刻纳入本桌频道受众（P4 切片③），否则要等下一次房间变更。
+            RefreshOpponentChatScopeLocked(room);
             return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
             {
                 type = "gameState",
@@ -1614,6 +1618,8 @@ public sealed partial class L12RoomManager
                 session.PlayerIndex = null;
                 session.IsSpectator = true;
             }
+            // 赛事裁判加入本桌观战即刻纳入本桌频道（P4 切片③）。
+            RefreshOpponentChatScopeLocked(room);
             return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
             {
                 type = "gameState", spectating = true, gmEnabled = false,
