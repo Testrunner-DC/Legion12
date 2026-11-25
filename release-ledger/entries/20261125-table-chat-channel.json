@@ -12,7 +12,8 @@
         "opcgpro-vue/src/l12/chatResource.ts",
         "opcgpro-vue/src/l12/site/ChatPanel.vue",
         "opcgpro-vue/src/l12/site/SocialPopover.vue",
-        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue"
+        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue",
+        "opcgpro-vue/src/l12/notifications/realtimeNotificationPolicy.ts"
       ]
     }
   ]
