@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## PLATFORM-20261125-ANIMATED-CARDART-POSTER-GUARD｜动画卡牌异画缺静态首帧缩略图的上传期守卫（本地已验，未部署）
+
+- 状态：local_verified_not_deployed
+- 现象：列表页卡顿长期存在。根因是动画卡牌异画（异画主宰等）把**同一份动画**同时当作桌面/移动/缩略三个变体提交，列表拿到的「缩略图」其实是整段动画——23 个资产合计 179.7 MB，单张最大 13.8 MB。2026-11-25 已用回填补齐（缩略图降到 25.34 MB），但那只救了存量；服务端不生成海报，之后用非浏览器工具上传动画仍会退回同一形态。
+- 根因：上传校验只要求「桌面/移动/缩略统一为静态或动态」，因此「三份都是动画」是**合法**输入；海报只由前端上传 UI 在浏览器侧生成，服务端从未强制。替换缩略图的入口也不校验新缩略图是否静态。
+- 同型扫描：`grep "IsAnimatedWebp" 服务端WebSocket` → 动画检测只在上传校验与 sanitize 两处；`grep "IndependentVariants"` → 独立变体语义只对 hero 与 `independentPoster` 生效。受影响面为**所有** `card-art` 上传与缩略图替换，共 2 个入口，均已加守卫。
+- 改动：① `UploadSiteMedia` 在动画检测后追加：桌面为动画且缩略图也为动画 → 拒绝（"动画卡牌异画必须同时提交静态首帧缩略图"）；② `ReplaceSiteMediaThumbnail` 在 sanitize 后追加：缩略图是动画 → 拒绝（"缩略图必须是静态首帧海报"）。存量资产不受影响（替换入口用静态海报仍可修）。
+- 回归：新增 `SiteContentPlatformStoreTests.AnimatedCardArtWithoutAStaticPosterIsRejectedAtUpload` 与 `AnimatedBytesCannotReplaceAStaticPoster`（后者还断言拒绝后旧海报原样保留）。既有三条按旧契约书写的用例同步改为携带静态海报：`AnimatedCardArtAcceptsSixMiBVariantsWithinExpandedHotfixLimit`（范围下界 6MiB×3 → 6MiB×2）、`SiteContentHttpMutationsRejectPlayerTokensAndAcceptAdminPermission` 的动态异画上传、`ReplacingOnlyTheThumbnailLeavesTheDeliveredAnimationUntouched`。
+- 验证：定向 `SiteContentPlatformStoreTests|SiteMedia` **80/80** 通过（回执 `cache/primary/test-evidence/test-2b1271bb5a694ff19f3c66623e257530`）；`scripts/verify-l12-change.ps1 -Level Focused` exit 0。
+- 回滚：删掉两处守卫判断即可；无协议、无存档、无存量数据变更。
+
 ## RULES-20261125-TRIAL-ADVANCE-OVERFLOW｜试炼推进溢出被丢弃，不结转到下一张（本地已验，未部署）
 
 - 状态：local_verified_not_deployed

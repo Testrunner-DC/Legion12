@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "20261125-animated-cardart-poster-guard-internal",
+  "date": "2026-11-25",
+  "audience": "internal",
+  "reason": "上传期强制动画卡牌异画携带静态首帧缩略图（管理后台契约）。玩家侧界面与规则无变化，但它决定了列表页未来是否还会被整段动画拖慢，故记入内部账本而不进玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs"
+  ]
+}

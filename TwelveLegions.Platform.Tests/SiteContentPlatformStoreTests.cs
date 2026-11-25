@@ -19,12 +19,15 @@ public sealed class SiteContentPlatformStoreTests
         WithUploadStore((store, admin, _) =>
         {
             var animated = AnimatedWebp(997, 331, 6 * 1024 * 1024);
+            // 2026-11-25 起动画卡牌异画必须自带静态首帧缩略图（P1 服务端海报守卫），
+            // 本用例只关心 16 MiB 上限，因此提供一张静态海报以满足新契约。
             var saved = store.UploadSiteMedia(admin, new L12SiteMediaUpload(
                 "card-art", "animated-card-art.webp", "image/webp",
-                animated, animated, animated, animated, "动态图异画", .5, .5));
+                animated, animated, animated, Webp(421, 137), "动态图异画", .5, .5,
+                IndependentVariants: true));
 
             Assert.True(saved.IsAnimated);
-            Assert.InRange(saved.DeliveryBytes, 6 * 1024 * 1024L * 3, 16 * 1024 * 1024L * 3);
+            Assert.InRange(saved.DeliveryBytes, 6 * 1024 * 1024L * 2, 16 * 1024 * 1024L * 3);
             Assert.Equal(L12PlatformStore.SiteMediaAnimatedCardArtMaxBytes, 16 * 1024 * 1024);
             Assert.Equal(L12PlatformStore.SiteMediaRequestMaxBytes, 64L * 1024 * 1024);
         });
@@ -35,18 +38,18 @@ public sealed class SiteContentPlatformStoreTests
     {
         WithUploadStore((store, admin, _) =>
         {
-            // A card-art animation is uploaded as one file for all three variants; that is exactly
-            // why every list that shows it pays for the whole animation.
+            // 动画卡牌异画自带静态首帧海报：列表只看海报，详情才拉动画。
             var animated = AnimatedWebp(997, 331, 512 * 1024);
             var saved = store.UploadSiteMedia(admin, new L12SiteMediaUpload(
                 "card-art", "poster-source.webp", "image/webp",
-                animated, animated, animated, animated, "海报测试", .5, .5));
+                animated, animated, animated, Webp(421, 137), "海报测试", .5, .5,
+                IndependentVariants: true));
             static string HashOf(string url) => url.Split('/')[^1];
             Assert.True(saved.IsAnimated);
-            /** 上传时三变体是同一份文件：只有 URL 里的变体名不同，内容哈希相同。 */
-            Assert.Equal(HashOf(saved.DesktopUrl), HashOf(saved.ThumbnailUrl));
+            /** 动画本体与海报是两个不同文件，交付 URL 的哈希必须不同。 */
+            Assert.NotEqual(HashOf(saved.DesktopUrl), HashOf(saved.ThumbnailUrl));
 
-            var poster = Webp(421, 137);
+            var poster = Webp(431, 141);
             var replaced = store.ReplaceSiteMediaThumbnail(admin, saved.Id, poster, "静态海报");
 
             Assert.NotEqual(HashOf(saved.DesktopUrl), HashOf(replaced.ThumbnailUrl));
@@ -77,6 +80,39 @@ public sealed class SiteContentPlatformStoreTests
         });
     }
 
+    // P1 服务端海报守卫（2026-11-25 立项）：动画卡牌异画必须在**上传期**就带上静态首帧缩略图，
+    // 否则列表页会整段拉动画（单张曾达 13.8 MB），只能靠事后回填补救。
+    [Fact]
+    public void AnimatedCardArtWithoutAStaticPosterIsRejectedAtUpload()
+    {
+        WithUploadStore((store, admin, _) =>
+        {
+            var animated = AnimatedWebp(997, 331, 512 * 1024);
+            var rejected = Assert.Throws<ArgumentException>(() => store.UploadSiteMedia(admin,
+                new L12SiteMediaUpload("card-art", "no-poster.webp", "image/webp",
+                    animated, animated, animated, animated, "缺海报", .5, .5)));
+            Assert.Contains("静态首帧缩略图", rejected.Message, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void AnimatedBytesCannotReplaceAStaticPoster()
+    {
+        WithUploadStore((store, admin, _) =>
+        {
+            var animated = AnimatedWebp(997, 331, 512 * 1024);
+            var saved = store.UploadSiteMedia(admin, new L12SiteMediaUpload("card-art", "poster-guard.webp",
+                "image/webp", animated, animated, animated, Webp(421, 137), "海报守卫", .5, .5,
+                IndependentVariants: true));
+            var rejected = Assert.Throws<ArgumentException>(() =>
+                store.ReplaceSiteMediaThumbnail(admin, saved.Id, animated, "动画缩略图"));
+            Assert.NotEmpty(rejected.Message);
+            // 拒绝之后海报必须原样保留，不能留下半更新状态。
+            var untouched = store.ReplaceSiteMediaThumbnail(admin, saved.Id, Webp(421, 137), "静态海报");
+            Assert.Equal(untouched.ThumbnailUrl, store.ReplaceSiteMediaThumbnail(
+                admin, saved.Id, Webp(421, 137), "静态海报").ThumbnailUrl);
+        });
+    }
     [Fact]
     public void FailureBeforeMediaSaveRestoresTheWholeAuditWindowAfterTrimming()
     {
@@ -2618,10 +2654,11 @@ public sealed class SiteContentPlatformStoreTests
                 Assert.Contains("64MB", payload.GetProperty("message").GetString());
             }
 
-            // 动态异画把同一份动画 WebP 提交给三个交付版本，单份可超过静态 5MB 限额。
+            // 动态异画的动画本体可超过静态 5MB 限额；缩略版本必须是静态首帧海报（P1 服务端守卫）。
             var animatedCardArt = AnimatedWebpFrames(800, 1117, 238, 33, 6 * 1024 * 1024);
             using (var request = AuthorizedMedia(admin.Token!, MediaForm("card-art", animatedCardArt,
-                       animatedCardArt, animatedCardArt, animatedCardArt, originalName: "S01-01M1OLA.webp")))
+                       animatedCardArt, animatedCardArt, Webp(421, 137), originalName: "S01-01M1OLA.webp",
+                       independentVariants: true)))
             using (var response = await client.SendAsync(request))
             {
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);

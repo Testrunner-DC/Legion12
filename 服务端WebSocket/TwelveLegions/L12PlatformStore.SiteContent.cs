@@ -709,6 +709,11 @@ public sealed partial class L12PlatformStore
         if (!independentPoster &&
             (deliveryAnimated != IsAnimatedWebp(mobileWebp) || deliveryAnimated != IsAnimatedWebp(thumbnailWebp)))
             throw new ArgumentException("卡牌异画的桌面、移动和缩略版本必须统一为静态或动态图");
+        // 动画卡牌异画必须自带静态首帧缩略图。此前只靠前端上传 UI 自觉生成海报，用非浏览器
+        // 工具上传时缩略图会退回整段动画（单张曾达 13.8 MB，列表页直接拉满），这正是 webp
+        // 卡顿的根因，只能靠事后回填补救。这里改成上传期 fail-closed。
+        if (deliveryAnimated && IsAnimatedWebp(thumbnailWebp))
+            throw new ArgumentException("动画卡牌异画必须同时提交静态首帧缩略图；缩略版本不能是同一段动画");
         var desktopDimensions = ReadWebpDimensions(desktopWebp);
         var mobileDimensions = ReadWebpDimensions(mobileWebp);
         var thumbnailDimensions = ReadWebpDimensions(thumbnailWebp);
@@ -882,6 +887,8 @@ public sealed partial class L12PlatformStore
         ArgumentNullException.ThrowIfNull(thumbnailWebp);
         // The poster is a single frame by construction; an animated thumbnail would defeat the point.
         var sanitized = SanitizeDeliveryWebp(thumbnailWebp, null, null, "缩略图 WebP");
+        if (IsAnimatedWebp(sanitized))
+            throw new ArgumentException("缩略图必须是静态首帧海报，不能提交动画");
         var dimensions = ReadWebpDimensions(sanitized);
         var hash = ContentHash(sanitized);
         var prepared = PrepareImmutableMediaGroup(new PendingMediaFile(sanitized, hash, ".webp"));
