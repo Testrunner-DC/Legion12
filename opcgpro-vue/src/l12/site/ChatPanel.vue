@@ -23,7 +23,7 @@ onBeforeUnmount(() => document.removeEventListener('visibilitychange', visibilit
 
 <template>
   <section class="chat-panel" aria-label="聊天">
-    <header><b>{{ peerName }}</b><span>{{ (scope ?? 'friend') === 'opponent' ? '本局对话' : '好友消息' }}</span><button type="button" :disabled="readOnly || !chatResource.state.enabled || !chatResource.canUse(conversation) || thread?.retired || thread?.loading" @click="refresh">刷新</button></header>
+    <header><b>{{ peerName }}</b><span>{{ (scope ?? 'friend') === 'opponent' ? '本局对话' : (scope === 'table' ? '本桌频道（含裁判）' : '好友消息') }}</span><button type="button" :disabled="readOnly || !chatResource.state.enabled || !chatResource.canUse(conversation) || thread?.retired || thread?.loading" @click="refresh">刷新</button></header>
     <p v-if="!chatResource.state.enabled" class="chat-notice" role="status">聊天尚未启用或连接未就绪。</p>
     <p v-else-if="!chatResource.canUse(conversation)" class="chat-notice" role="status">当前会话不可用；请先确认好友或屏蔽状态。</p>
     <p v-if="readOnly" class="chat-notice">本局对话已结束，仅可查看已接收消息。</p>

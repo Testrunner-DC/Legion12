@@ -1,6 +1,8 @@
 import { reactive } from 'vue'
 
-export type ChatScope = 'friend' | 'opponent'
+export type ChatScope = 'friend' | 'opponent' | 'table'
+// 本桌频道（table）：两名选手 + 本桌裁判，裁判可发言且裁判之间互相可见；普通观战者不在内。
+const isMatchScoped = (scope: ChatScope) => scope === 'opponent' || scope === 'table'
 export interface ChatConversation { scope: ChatScope; peerAccountId: string; matchId?: string }
 export interface ChatEntry {
   id: string; seq: number; scope: ChatScope; matchId?: string
@@ -16,7 +18,7 @@ type ChatWire = Record<string, unknown>
 const MAX_THREADS = 16
 const MAX_ENTRIES = 200
 const validId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 128
-export const chatKey = (value: ChatConversation) => JSON.stringify([value.scope, value.peerAccountId, value.scope === 'opponent' ? value.matchId : ''])
+export const chatKey = (value: ChatConversation) => JSON.stringify([value.scope, value.peerAccountId, isMatchScoped(value.scope) ? value.matchId : ''])
 
 // Account-owned, bounded, memory-only resource. It owns no socket and never polls.
 export function createChatResource() {
@@ -36,8 +38,8 @@ export function createChatResource() {
   function conversationKey(value: ChatConversation): string | null {
     void state.privacyRevision
     if (!validId(value.peerAccountId) || value.peerAccountId === state.accountId
-      || (value.scope !== 'friend' && value.scope !== 'opponent')
-      || (value.scope === 'opponent' && !validId(value.matchId)) || !allowed(value.peerAccountId, value.scope)) return null
+      || (value.scope !== 'friend' && value.scope !== 'opponent' && value.scope !== 'table')
+      || (isMatchScoped(value.scope) && !validId(value.matchId)) || !allowed(value.peerAccountId, value.scope)) return null
     const key = chatKey(value)
     return key
   }
@@ -145,8 +147,8 @@ export function createChatResource() {
     if (!value || typeof value !== 'object') return null
     const e = value as ChatEntry
     if (!validId(e.id) || !validId(e.senderId) || !validId(e.recipientId) || e.senderId === e.recipientId
-      || !Number.isSafeInteger(e.seq) || e.seq <= 0 || !['friend', 'opponent'].includes(e.scope)
-      || (e.scope === 'opponent' && !validId(e.matchId))
+      || !Number.isSafeInteger(e.seq) || e.seq <= 0 || !['friend', 'opponent', 'table'].includes(e.scope)
+      || (isMatchScoped(e.scope) && !validId(e.matchId))
       || typeof e.text !== 'string' || new TextEncoder().encode(e.text).length > 512
       || typeof e.senderName !== 'string' || e.senderName.length > 128
       || typeof e.createdAt !== 'string' || !Number.isFinite(Date.parse(e.createdAt))
@@ -263,7 +265,7 @@ export function createChatResource() {
   function retireOpponent(matchId: string) {
     const expectedEpoch = accountEpoch
     for (const [key, item] of Object.entries(state.threads)) {
-      if (item.scope !== 'opponent' || item.matchId !== matchId || item.retired) continue
+      if (!isMatchScoped(item.scope as ChatScope) || item.matchId !== matchId || item.retired) continue
       item.retired = true; item.notice = '本局对话已结束，仅临时保留已接收消息。'
       if (item.pending) { const timer = timers.get(item.pending.id); if (timer) clearTimeout(timer); timers.delete(item.pending.id); item.pending = null }
       opponentExpiry.set(key, setTimeout(() => {
