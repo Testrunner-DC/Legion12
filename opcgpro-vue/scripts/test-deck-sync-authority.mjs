@@ -799,6 +799,8 @@ async function unavailablePrivateCacheDoesNotBlockPublicLibrary() {
     getEffectiveOperationsPolicy: async () => ({ defaultPresetDeckIds: [] }),
     deckErrorBelongsToCurrentAccount: decksModule.deckErrorBelongsToCurrentAccount,
     loadSavedDecksState: decksModule.loadSavedDecksState,
+    // 2026-11-26 起首次快照前先等本机牌库就绪：这层夹具用真实实现即可（未初始化时会自行失败）。
+    whenDeckCacheReady: decksModule.whenDeckCacheReady,
     loadMineDirectory: async () => {},
     nextTick: async () => {}, sessionStorage: { getItem: () => null }, route: { fullPath: '/decks' },
   }
@@ -846,7 +848,7 @@ await unavailablePrivateCacheDoesNotBlockPublicLibrary()
     let contextCurrent = true, privateStarts = 0
     const environment = {
       restoreFiltersFromRoute: () => {}, libraryMounted: false,
-      window: { addEventListener() {} }, initializeDeckCache: async () => {},
+      window: { addEventListener() {} }, initializeDeckCache: async () => {}, whenDeckCacheReady: async () => true,
       libraryContext: () => ({}), libraryContextCurrent: () => contextCurrent,
       loadSummarySources: () => publicRead.promise, loadOwnReferences: () => {},
       loadDeckCatalog: async () => { privateStarts++; return [] },

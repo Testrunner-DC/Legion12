@@ -43,7 +43,7 @@ export const spectateRoom=roomCode=>sent.push({type:'spectateRoom',roomCode})
 export const leaveRoom=()=>sent.push({type:'leaveRoom'}),cancelMatchmaking=()=>{},joinMatchmaking=()=>{},selectCustomDeck=()=>{},setReady=()=>{}
 export const L12_DECK_SELECTION_SCOPES=['ranked','casual','friendly','sandbox-player','sandbox-opponent']
 const emptyDecks={},requireDeckScope=scope=>{if(!L12_DECK_SELECTION_SCOPES.includes(scope))throw Error('unexpected deck selection scope')}
-export const initializeDeckCache=async()=>{},loadSavedDecks=()=>emptyDecks,hasSavedDeckSelection=scope=>{requireDeckScope(scope);return false}
+export const initializeDeckCache=async()=>{},whenDeckCacheReady=async()=>true,deckCacheReady=()=>true,loadSavedDecks=()=>emptyDecks,hasSavedDeckSelection=scope=>{requireDeckScope(scope);return false}
 export const loadSavedDecksState=()=>({status:'ready',decks:emptyDecks}),loadSelectedDeckName=(scope,decks)=>{requireDeckScope(scope);return Object.keys(decks)[0]??''},saveSelectedDeckName=async(scope,name)=>{requireDeckScope(scope);if(!Object.hasOwn(emptyDecks,name))throw Error('unexpected selection of an absent fixture deck')}
 export const ensureOfficialPrebuiltDecks=async()=>({}),loadDeckCatalog=async()=>[],loadPrivateDeckBody=async()=>{throw Error('unexpected private body read')}
 export const deckErrorBelongsToCurrentAccount=()=>true,deckCountSummary=()=>({label:'0'}),validateDeck=()=>''

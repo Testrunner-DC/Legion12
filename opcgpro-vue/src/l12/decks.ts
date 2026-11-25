@@ -993,6 +993,28 @@ export async function initializeDeckCache() {
   await registerLegacyDeckSources(context)
   return currentDeckSnapshot(context)
 }
+
+// 同步读只认内存快照，而快照要等该作用域第一次 IndexedDB 事务完成才存在：
+// 登录后、账号切换后的首批渲染因此会把「还在打开」当成「不可用」报给用户。
+// 这两个入口让界面能区分「正在打开」与「确实不可用」。
+const deckCacheWarmups = new Map<string, Promise<boolean>>()
+function deckCacheWarmKey() {
+  const scope = deckDatabaseScope(deploymentBasePath, deckCacheOwner(platformState.account?.id))
+  return `${scope.environment}|${scope.owner}`
+}
+export function deckCacheReady(): boolean {
+  return deckCacheDatabase.ready(deckDatabaseScope(deploymentBasePath, deckCacheOwner(platformState.account?.id)))
+}
+export async function whenDeckCacheReady(): Promise<boolean> {
+  const key = deckCacheWarmKey()
+  if (deckCacheReady()) return true
+  const pending = deckCacheWarmups.get(key)
+  if (pending) return pending
+  const warm = initializeDeckCache().then(() => deckCacheReady()).catch(() => false)
+    .finally(() => { deckCacheWarmups.delete(key) })
+  deckCacheWarmups.set(key, warm)
+  return warm
+}
 export function legacyDeckCacheCandidates(item: LegacyDeckImport): SavedL12Deck[] {
   if (item.source !== 'cache') return []
   return Object.values(requireDeckCache(readDeckCache({ getItem: () => item.raw }, item.sourceKey, deckCacheOwner(platformState.account?.id))).decks)

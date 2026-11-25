@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261126-deck-cache-readiness",
+  "date": "2026-11-26",
+  "audience": "players",
+  "title": "牌库页不再误报「本机事务牌库尚未就绪」",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "刚登录或切换账号后打开牌库、对战大厅，不再弹出「本机事务牌库尚未就绪，请稍后重试」；本机牌库还在读取时界面会等它就绪再显示，只有真的不可用才提示。",
+      "paths": [
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/site/BattleHubPage.vue",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue"
+      ]
+    }
+  ]
+}

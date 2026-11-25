@@ -291,7 +291,7 @@ async function runAuthenticatedMount(relative) {
     maintenanceClockTimer: 0,
     window: { setInterval: () => 1, addEventListener: () => {} },
     onOperationsResource: () => {},
-    initializeDeckCache: async () => {}, loadSavedDecks: () => cachedDecks.value,
+    initializeDeckCache: async () => {}, whenDeckCacheReady: async () => true, deckCacheReady: () => true, loadSavedDecks: () => cachedDecks.value,
     refreshPersistentDecks: () => {}, refreshCacheView: () => {},
     platformState,
     identityEpoch: 0,
@@ -325,7 +325,7 @@ async function runGuestMount(relative) {
     maintenanceClockTimer: 0,
     window: { setInterval: () => 1, addEventListener: () => {} },
     onOperationsResource: () => {}, platformState, identityEpoch: 0,
-    initializeDeckCache: async () => {}, loadSavedDecks: () => cachedDecks.value,
+    initializeDeckCache: async () => {}, whenDeckCacheReady: async () => true, deckCacheReady: () => true, loadSavedDecks: () => cachedDecks.value,
     refreshPersistentDecks: () => {}, refreshCacheView: () => {},
     identityCurrent: (epoch, accountId, token) => epoch === 0 && platformState.account?.id === accountId && platformState.token === token,
     ensureOfficialPrebuiltDecks: async () => { officialCalls++; return { [official.name]: official } },
@@ -468,7 +468,7 @@ function createBattleMatchHarness(deckModule, scope = 'ranked', { matchmakingOnl
     operationsAllowed: () => true, ensureConnected: async () => true,
     deckSelectorOpen: ref(false), deckSelectorConfirming: ref(false), deckSelectorError: ref(''),
     visibleDecks: () => cachedDecks.value, hydrateDeckSelections: () => {}, refreshGuestDecks: async () => {},
-    initializeDeckCache: async () => {}, loadSavedDecks: () => cachedDecks.value,
+    initializeDeckCache: async () => {}, whenDeckCacheReady: async () => true, deckCacheReady: () => true, loadSavedDecks: () => cachedDecks.value,
     joinMatchmaking: (mode, deck) => joins.push({ mode, deck }),
   })
   return { runtime, refs: { selectedDecks, selectionMessages, selectedMatchMode, modeActionPending }, selection, joins, validationCalls, l12State, rule }

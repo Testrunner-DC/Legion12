@@ -145,8 +145,42 @@ public sealed class TableChatScopeTests
             var ack = emitted.FirstOrDefault(frame => frame.TryGetProperty("type", out var type)
                 && type.GetString() == "chatAck");
             Assert.True(messages == 2, $"chatMessage={messages}; ack={ack}");
+            // 发送者必须拿到成功回执：线上「发送结果未确认」正是这条回执被投递闸门丢掉的结果。
+            Assert.True(ack.ValueKind == JsonValueKind.Object && ack.GetProperty("success").GetBoolean(),
+                $"ack={ack}");
         }
     }
+    // 投递闸门（L12WebSocketServer.FreshChatDelivery）曾把本桌通配收件人当成账号去查账号对，
+    // 于是发送者的 chatAck 与 chatHistory 被静默丢弃。这条用例直接钉住闸门的判定。
+    [Fact]
+    public async Task TableBroadcastRecipientIsAdmittedByMembershipInsteadOfAccountPair()
+    {
+        var emitted = new ConcurrentQueue<JsonElement>();
+        var matchId = $"table-{Guid.NewGuid():N}";
+        var (runtime, rooms, fixture) = Create(matchId, out var senderSession, out _, out _,
+            out var sender, out _, out _, emitted);
+        using (fixture)
+        await using (runtime)
+        {
+            var origin = new L12ChatRequestIdentity(senderSession, "s", sender.Id, 1);
+            var metadata = new L12ChatDeliveryMetadata(sender.Id, L12ChatRuntime.TableBroadcastPeer,
+                L12ChatDeliveryScope.Table, sender.Id, L12ChatRuntime.TableBroadcastPeer, matchId, 1,
+                origin, origin);
+
+            Assert.True(L12ChatRuntime.IsTableBroadcast(metadata.Scope, metadata.RecipientAccountId));
+            Assert.True(L12ChatRuntime.TableBroadcastAdmitted(metadata, rooms, originCurrent: true));
+
+            var outsider = fixture.Store.Register($"tx{Guid.NewGuid():N}"[..10], "Password123!").Account!;
+            var foreign = metadata with { SenderAccountId = outsider.Id };
+            Assert.False(L12ChatRuntime.TableBroadcastAdmitted(foreign, rooms, originCurrent: true));
+            Assert.False(L12ChatRuntime.TableBroadcastAdmitted(metadata, rooms, originCurrent: false));
+
+            // 普通账号对投递仍走原判定：本桌通配不能顺手放宽别的分支。
+            Assert.False(L12ChatRuntime.IsTableBroadcast(L12ChatDeliveryScope.Opponent,
+                L12ChatRuntime.TableBroadcastPeer));
+        }
+    }
+
     private static void PublishScope(L12RoomManager rooms, L12CommittedOpponentChatScope scope)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261126-table-chat-delivery",
+  "date": "2026-11-26",
+  "audience": "players",
+  "title": "修复「本桌」频道发不出消息",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对局里的「本桌」频道现在能正常互发了：发出的消息会得到确认并显示在频道里，本桌的另一名选手和本桌裁判都能收到；此前会出现「发送结果未确认」且对方收不到。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12ChatRuntime.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.Chat.cs",
+        "opcgpro-vue/src/l12/chatResource.ts",
+        "TwelveLegions.Platform.Tests/TableChatScopeTests.cs"
+      ]
+    }
+  ]
+}

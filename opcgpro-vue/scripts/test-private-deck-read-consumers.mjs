@@ -375,7 +375,7 @@ function mountRuntime(account) {
   const context = { account: platformState.account?.id, token: platformState.token, epoch: 1, route: '/decks?tab=mine', tab: 'mine' }
   const mounted = mountedCallback({
     restoreFiltersFromRoute: () => {}, platformState, privateLoadState,
-    window: { addEventListener() {} }, initializeDeckCache: async () => {},
+    window: { addEventListener() {} }, initializeDeckCache: async () => {}, whenDeckCacheReady: async () => true,
     libraryContext: () => context, loadSavedDecksState: () => ({ status: 'missing', decks: {} }),
     loadSummarySources: async () => {}, libraryContextCurrent: () => true,
     loadDeckCatalog: async () => [], loadMineDirectory: async () => { calls.summaries++ },

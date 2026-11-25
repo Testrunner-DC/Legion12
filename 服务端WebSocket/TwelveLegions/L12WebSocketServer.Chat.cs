@@ -121,6 +121,9 @@ public sealed partial class L12WebSocketServer
     {
         if (!IsChatRequestFresh(metadata.Transport)) return false;
         if (metadata.Scope == L12ChatDeliveryScope.Control) return true;
+        // 本桌广播按成员放行；别的分支才需要发送者与收件人之间的账号对。
+        if (L12ChatRuntime.IsTableBroadcast(metadata.Scope, metadata.RecipientAccountId))
+            return L12ChatRuntime.TableBroadcastAdmitted(metadata, _rooms, IsChatRequestFresh(metadata.Origin));
         var pair = _platform.ReadCommittedChatPair(metadata.SenderAccountId,
             metadata.RecipientAccountId);
         if (!pair.Available || !pair.BothAccountsActive || !pair.Unblocked) return false;

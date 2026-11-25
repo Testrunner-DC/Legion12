@@ -872,6 +872,25 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
     /// <summary>本桌广播的通配收件人：由服务端按作用域成员展开，客户端无需枚举裁判。</summary>
     internal const string TableBroadcastPeer = "*";
 
+    // 本桌广播的收件人是通配符，不是账号。投递放行只能看发送者是否仍是本桌成员并占用着席位：
+    // 拿 "*" 去查账号对必然查不到，会把发送者自己的 chatAck 与 chatHistory 一起静默丢掉。
+    internal static bool IsTableBroadcast(L12ChatDeliveryScope scope, string recipientId)
+        => scope == L12ChatDeliveryScope.Table
+           && string.Equals(recipientId, TableBroadcastPeer, StringComparison.Ordinal);
+
+    internal static bool TableBroadcastAdmitted(L12ChatDeliveryMetadata metadata, L12RoomManager rooms,
+        bool originCurrent)
+    {
+        if (!originCurrent) return false;
+        var scope = rooms.ReadCommittedTableChatScope(metadata.SenderAccountId, metadata.MatchId);
+        return scope is not null
+               && scope.ScopeGeneration == metadata.ScopeGeneration
+               && scope.ContainsConnection(metadata.Origin.AccountId, metadata.Origin.SessionId,
+                   metadata.Origin.ConnectionGeneration)
+               && scope.ContainsConnection(metadata.Transport.AccountId, metadata.Transport.SessionId,
+                   metadata.Transport.ConnectionGeneration);
+    }
+
     private static bool TryParseRequestIssuedAt(string requestId, DateTimeOffset now,
         out DateTimeOffset issuedAt, out string failure)
     {

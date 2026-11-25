@@ -3,7 +3,7 @@ import { optionalSessionStorage as sessionStorage } from '@/l12/browserStorage'
 import { vHorizontalScrollArrows, type HorizontalScrollArrowOptions } from '@/l12/horizontalScrollArrows'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { captureDeckAccountGuard, deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, initializeDeckCache, loadDeckCatalog, loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, loadPrivatePublicationSource, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type PrivateDeckSummary, type PrivateDeckSummaryPage, type PrivateDeckSummaryQuery, type SavedL12Deck } from '@/l12/decks'
+import { captureDeckAccountGuard, deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, initializeDeckCache, loadDeckCatalog, whenDeckCacheReady, loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, loadPrivatePublicationSource, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type PrivateDeckSummary, type PrivateDeckSummaryPage, type PrivateDeckSummaryQuery, type SavedL12Deck } from '@/l12/decks'
 import { alternateArtApi, deckLibraryApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, publicDeckReadApi, type AlternateArt, type EffectiveOperationsPolicy, type PublishedDeck, type PublicDeckGuide, type PublicDeckMatchup, type PublicDeckSummary, type PublicDeckSummaryPage, type PublicDeckSummaryQuery, type OwnPublicDeckReference } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import DeckCover from '@/l12/DeckCover.vue'
@@ -190,6 +190,10 @@ watch(() => [platformState.account?.id, platformState.token], async () => {
   mineBodyReadSequence++
   publishRequestSequence++
   pendingPublicDeckPublish = null
+  // 账号切换后的首批读取常常早于本机牌库打开：先等它就绪，别把「正在打开」报成错误。
+  const switchEpoch = libraryAccountEpoch
+  await whenDeckCacheReady()
+  if (switchEpoch !== libraryAccountEpoch) return
   const context = libraryContext(), snapshot = loadSavedDecksState()
   saved.value = snapshot.status === 'unavailable' ? {} : snapshot.decks
   privateSummaryPage.value = null
@@ -294,7 +298,7 @@ onBeforeUnmount(() => {
 function applyLibraryCacheSnapshot() {
   const snapshot = loadSavedDecksState()
   saved.value = snapshot.status === 'unavailable' ? {} : snapshot.decks
-  if (snapshot.status === 'unavailable') notice.value = snapshot.error.message
+  notice.value = snapshot.status === 'unavailable' ? snapshot.error.message : ''
 }
 onMounted(async () => {
   restoreFiltersFromRoute()
@@ -305,6 +309,8 @@ onMounted(async () => {
     window.addEventListener('pointercancel', releaseHotDeckTouches, true)
   }
   libraryMounted = true
+  // 首次快照前先等本机牌库就绪，避免把「正在打开」显示成错误。
+  await whenDeckCacheReady()
   window.addEventListener('l12-deck-cache-changed', applyLibraryCacheSnapshot)
   if (!platformState.account) privateLoadState.value = 'available'
   const context = libraryContext()

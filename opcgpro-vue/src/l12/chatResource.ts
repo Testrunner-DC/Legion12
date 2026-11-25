@@ -18,6 +18,8 @@ type ChatWire = Record<string, unknown>
 const MAX_THREADS = 16
 const MAX_ENTRIES = 200
 const validId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 128
+// 与服务端 L12ChatRuntime.TableBroadcastPeer 对齐：本桌广播没有单一收件人。
+const TABLE_BROADCAST_PEER = '*'
 export const chatKey = (value: ChatConversation) => JSON.stringify([value.scope, value.peerAccountId, isMatchScoped(value.scope) ? value.matchId : ''])
 
 // Account-owned, bounded, memory-only resource. It owns no socket and never polls.
@@ -157,6 +159,9 @@ export function createChatResource() {
     return { id: e.id, seq: e.seq, scope: e.scope, matchId: e.matchId, senderId: e.senderId, senderName: e.senderName, recipientId: e.recipientId, text: e.text, createdAt: e.createdAt, moderated: e.moderated === true, policyVersion: e.policyVersion }
   }
   function entryConversation(entry: ChatEntry): ChatConversation {
+    // 本桌是广播作用域：线程固定开在通配收件人上，收到的条目也归到这条线程，
+    // 否则按发送者反推 peer 会把消息记到一条永不渲染的线程里。
+    if (entry.scope === 'table') return { scope: 'table', peerAccountId: TABLE_BROADCAST_PEER, matchId: entry.matchId }
     return { scope: entry.scope, peerAccountId: entry.senderId === state.accountId ? entry.recipientId : entry.senderId, matchId: entry.matchId }
   }
   function merge(item: ChatThread, values: ChatEntry[], incoming: boolean) {

@@ -55,7 +55,8 @@ function visibleDecks(): Record<string, SavedL12Deck> {
   if (snapshot.status === 'unavailable') { l12State.notice = snapshot.error.message; return {} }
   return snapshot.decks
 }
-const cachedDecks = ref(visibleDecks())
+// 首帧不读本机牌库：它通常还在打开，读了只会报「尚未就绪」；onMounted 读完之后再填。
+const cachedDecks = ref<Record<string, SavedL12Deck>>({})
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const seasonTimeFormatter = new Intl.DateTimeFormat('zh-CN', {

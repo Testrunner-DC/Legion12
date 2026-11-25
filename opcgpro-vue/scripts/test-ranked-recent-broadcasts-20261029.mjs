@@ -59,6 +59,8 @@ function mount(options={}){
     '@/l12/decks':{deckCountSummary:()=>({label:43}),ensureOfficialPrebuiltDecks:async()=>emptyDecks,L12_DECK_SELECTION_SCOPES:deckScopes,
       loadDeckCatalog:async()=>[],loadPrivateDeckBody:async()=>null,loadSavedDecksState:()=>({status:'ready',decks:emptyDecks}),deckErrorBelongsToCurrentAccount:()=>false,
       initializeDeckCache:async()=>{},loadSavedDecks:()=>emptyDecks,
+      // 本机牌库就绪门（2026-11-26 新增）：这层夹具里本机牌库视为已就绪。
+      deckCacheReady:()=>true,whenDeckCacheReady:async()=>true,
       hasSavedDeckSelection(scope){requireDeckScope(scope);return false},
       loadSelectedDeckName(scope,decks){requireDeckScope(scope);return Object.keys(decks)[0]??''},
       async saveSelectedDeckName(scope,name){requireDeckScope(scope);assert.ok(Object.hasOwn(emptyDecks,name),'No saved deck in this broadcast fixture')},

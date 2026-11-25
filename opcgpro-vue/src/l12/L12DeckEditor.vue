@@ -9,7 +9,7 @@ import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import { samplePublicDeckOpeningHand } from './site/publicDeckHands'
 import {
   MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, derivedExtraCardIdsForMaster, buildMoraleDeck, cardProductLabels, deckProductOptions, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, enableRepresentativeCards, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, trialCapacityForMaster,
-  loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, saveDeck, validateDeck, initializeDeckCache, loadLegacyDeckImports, legacyDeckCacheCandidates, legacyDeckImportWarning, type DeckCard,
+  loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, saveDeck, validateDeck, initializeDeckCache, loadLegacyDeckImports, legacyDeckCacheCandidates, legacyDeckImportWarning, deckCacheReady, whenDeckCacheReady, type DeckCard,
   type PrivateDeckSummary, type PrivateDeckSummaryPage, type SavedL12Deck,
 } from './decks'
 import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, type AlternateArt, type OperationsCardRestriction } from './platform'
@@ -1201,6 +1201,8 @@ onBeforeUnmount(() => {
 })
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
 onMounted(() => window.addEventListener('l12-deck-cache-changed', refreshEditorCacheView))
+// 首次渲染常常早于本机牌库打开：这里补一次就绪重读，界面不必先报错再自愈。
+onMounted(() => { void whenDeckCacheReady().then((ready) => { if (ready) refreshEditorCacheView() }) })
 function refreshEditorCacheView() {
   const cache = loadSavedDecksState()
   if (cache.status !== 'unavailable') savedDecks.value = cache.decks
@@ -1262,7 +1264,13 @@ function applyEditorAccountChange(previous: string | undefined) {
   notice.value = preserveError ? `账号已切换；原账号修改仍在当前页面待暂存：${preserveError}`
     : pendingAccountDrafts.size ? '账号已切换；原账号修改正在暂存到原账号，不会进入当前账号'
       : '账号已切换；当前仅显示此账号的牌库和草稿'
-  if (cache.status === 'unavailable') notice.value += '；当前账号的本机事务牌库尚未就绪'
+  if (cache.status === 'unavailable') {
+    if (deckCacheReady()) notice.value += '；当前账号的本机事务牌库尚未就绪'
+    else void whenDeckCacheReady().then((ready) => {
+      if (ready) refreshEditorCacheView()
+      else notice.value += '；当前账号的本机事务牌库尚未就绪'
+    })
+  }
 }
 
 async function refreshEditorAccountReads(context: ReturnType<typeof editorContext>) {
