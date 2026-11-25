@@ -8,7 +8,7 @@ import { isFriendOnline, onlineFirstFriends } from '../friendListPresentation'
 import ChatPanel from './ChatPanel.vue'
 const FriendHistoryPanel = defineAsyncComponent(() => import('./FriendHistoryPanel.vue'))
 const historyVisible = ref(false)
-const props = defineProps<{ anchor?: HTMLElement | null; positionAnchor?: HTMLElement | null; initialTab?: 'friends' | 'online' | 'opponent' | 'spectators'; initialPeerId?: string; opponentId?: string; opponentName?: string; matchId?: string; opponentReadOnly?: boolean; spectators?: readonly { accountId?: string | null; name: string }[]; teleportTarget?: string; layer?: 'default' | 'battle' }>()
+const props = defineProps<{ anchor?: HTMLElement | null; positionAnchor?: HTMLElement | null; initialTab?: 'friends' | 'online' | 'opponent' | 'spectators' | 'table'; initialPeerId?: string; opponentId?: string; opponentName?: string; matchId?: string; opponentReadOnly?: boolean; tableChannel?: boolean; spectators?: readonly { accountId?: string | null; name: string }[]; teleportTarget?: string; layer?: 'default' | 'battle' }>()
 const emit = defineEmits<{ close: [] }>()
 const tab = ref(props.initialTab ?? 'friends')
 const selectedId = ref(props.initialPeerId ?? '')
@@ -53,11 +53,12 @@ onBeforeUnmount(() => {
   <Teleport :to="props.teleportTarget || 'body'">
     <section ref="panel" class="social-popover ui-state-scope" :class="{ 'battle-social-popover': props.layer === 'battle' }" data-l12-social-popover :style="position" role="dialog" aria-modal="false" aria-label="好友与聊天">
       <header><b>好友与聊天</b><button type="button" aria-label="关闭好友与聊天" @click="close(true)">×</button></header>
-      <nav aria-label="社交功能"><button type="button" :aria-pressed="tab === 'friends'" @click="tab = 'friends'">好友</button><button v-if="$slots.online" type="button" :aria-pressed="tab === 'online'" @click="tab = 'online'">在线</button><button v-if="opponentId && matchId" type="button" :aria-pressed="tab === 'opponent'" @click="tab = 'opponent'">本局对手</button><button v-if="spectators !== undefined" type="button" :aria-pressed="tab === 'spectators'" @click="tab = 'spectators'">观战 {{ spectators.length }}</button></nav>
+      <nav aria-label="社交功能"><button type="button" :aria-pressed="tab === 'friends'" @click="tab = 'friends'">好友</button><button v-if="$slots.online" type="button" :aria-pressed="tab === 'online'" @click="tab = 'online'">在线</button><button v-if="opponentId && matchId" type="button" :aria-pressed="tab === 'opponent'" @click="tab = 'opponent'">本局对手</button><button v-if="tableChannel && matchId" type="button" :aria-pressed="tab === 'table'" @click="tab = 'table'">本桌</button><button v-if="spectators !== undefined" type="button" :aria-pressed="tab === 'spectators'" @click="tab = 'spectators'">观战 {{ spectators.length }}</button></nav>
       <p v-if="notice" role="status">{{ notice }}</p>
       <div v-if="tab === 'friends' && selected" class="social-person"><button type="button" @click="selectedId = ''">返回好友</button><b>{{ selected.username }}</b><button type="button" :aria-pressed="historyVisible" @click="historyVisible = !historyVisible">{{ historyVisible ? '返回聊天' : '查看战绩' }}</button><button type="button" @click="blockSelected">屏蔽</button></div>
       <div v-if="tab === 'online'" class="social-content"><slot name="online"/></div>
       <div v-else-if="tab === 'opponent' && opponentId && matchId" class="social-content"><ChatPanel :key="matchId + opponentId" :peer-account-id="opponentId" :peer-name="opponentName || '本局对手'" scope="opponent" :match-id="matchId" :read-only="opponentReadOnly"/></div>
+      <div v-else-if="tab === 'table' && matchId" class="social-content"><ChatPanel :key="'table-' + matchId" peer-account-id="*" peer-name="本桌频道" scope="table" :match-id="matchId" :read-only="opponentReadOnly"/></div>
       <div v-else-if="tab === 'spectators'" class="social-content spectator-list" role="list" aria-label="完整观战玩家列表"><p v-if="!spectators?.length">当前没有其他观战玩家。</p><div v-for="(spectator, index) in spectators" :key="spectator.accountId || `${spectator.name}-${index}`" role="listitem"><span>{{ spectator.name }}</span><small>观战中</small></div></div>
       <div v-else class="social-content">
         <template v-if="selected"><FriendHistoryPanel v-if="historyVisible" :key="selected.accountId" :account-id="selected.accountId" :friend-name="selected.username"/><ChatPanel v-else :key="selected.accountId" :peer-account-id="selected.accountId" :peer-name="selected.username"/></template>
