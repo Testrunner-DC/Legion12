@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## RULES-20261125-TRIAL-ADVANCE-OVERFLOW｜试炼推进溢出被丢弃，不结转到下一张（本地已验，未部署）
+
+- 状态：local_verified_not_deployed
+- 现象：玩家报告 `BUG-20261124-d5ca2036`「安格斯溢出的试炼值应该可以增加到下一张试炼」；用户在 2026-11-25 明确裁定**反馈正确**，属缺陷。表现：一次给多点试炼推进的效果（安格斯主控等）打在一张快满的试炼上时，超过 8 的点数凭空消失，下一张试炼进度不动。
+- 根因：`AdvanceTrialCore`（`L12S2FactionEffects.cs:223`）只挑**一张**未完成试炼，并把结果夹断在 8：`trial.TrialProgress = Math.Min(8, trial.TrialProgress + count)`，`count` 的余量从未被分配给后续试炼。
+- 同型扫描：`grep "AdvanceTrial\(|AdvanceTrialWithoutAngusTrigger\(" 服务端WebSocket` 共 18 个调用点（含 `L12TrialAdvanceEffectPlans.cs` 的 Finn/安格斯共用 batch、`L12AtomicRuntimeIntegration.cs:136` 的原子效果、`L12StarterRemainingEffects.cs` 等），**全部汇聚到同一个 `AdvanceTrialCore`**，因此一处修复覆盖全部。既有用例 `SimpleDeathTrialAdvanceTriggerConsistencyTests.CompletedTrialIsSkippedAndOnlyTheFirstIncompleteTrialAdvancesWithCapEight` 断言的正是旧行为（`later == 3`），已按裁定改名并更新为 `4`。
+- 改动：`AdvanceTrialCore` 改为循环——每轮取第一张未完成且进度 <8 的试炼，补到 8 后把余量留给下一张，直到点数用完或没有可推进的试炼；每张各留一条「试炼进度 x → y」玩家日志。`TrialLevel` 维持原口径（指向本次实际推进到的那张，结转时为最后一张），不改成多张聚合值（那会改变既有 UI 语义，与本题无关）。安格斯符文触发仍然只在 `advanced` 为真时发一次。源码契约 `test-l12-trial-completion-declarations.ps1` 的对应字面同步为 `trial!`（`trial` 改为循环内赋值、编译期可空），契约意图不变。
+- 回归：`AngusSecondTrialTests.OverflowingTrialAdvanceCarriesTheRemainderIntoTheNextTrial`（7 + 4 → 第一张 8、第二张 3）；更新后的 `SimpleDeathTrialAdvanceTriggerConsistencyTests.CompletedTrialIsSkippedAndTheRemainderCarriesIntoTheNextIncompleteTrial`（7 → 8 后余 1 点进下一张 3 → 4）。
+- 验证：定向 `Angus|Trial|SimpleDeathTrialAdvance|S2Faction|TrialAdvanceModeBranch|Bug20260920UnifiedRules` **484/484** 通过（回执 `cache/primary/test-evidence/test-7c079b17dee4445d878c4111b661bc0f`）；`scripts/verify-l12-change.ps1 -Level Focused` exit 0，规则 **8,821/8,821**（回执 `test-e4ebb0820e654d18912e93dd62c4ca6a`）。
+- 回滚：把循环体换回单张 `Math.Min(8, …)` 赋值并删掉结转日志即可；不动协议、存档与卡面数据。
+
 ## LOG-20261125-RESPONSE-VISIBILITY-AND-TIMING-ATTRIBUTION｜互相绝防只剩一方记录、响应时点被记成进攻方卡片（本地已验，未部署）
 
 - 状态：local_verified_not_deployed

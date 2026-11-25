@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261125-trial-advance-overflow",
+  "date": "2026-11-25",
+  "audience": "players",
+  "title": "试炼推进不再浪费超出部分",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "试炼进度现在会跨张结转：一次推进把某张试炼推到满 8 之后，多出来的点数会继续加到下一张未完成的试炼上，不再被丢掉（例如安格斯这类一次给多点推进的效果）。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs"
+      ]
+    }
+  ]
+}

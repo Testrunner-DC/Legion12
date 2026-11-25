@@ -121,6 +121,27 @@ public sealed class AngusSecondTrialTests
         Assert.True(legion.Tapped);
     }
 
+    [Fact]
+    [Trait("L12Evidence", "bug:BUG-20261124-d5ca2036")]
+    [Trait("L12Evidence", "entry:trial-advance-overflow-carries")]
+    public void OverflowingTrialAdvanceCarriesTheRemainderIntoTheNextTrial()
+    {
+        var game = Create(); var player = game.State.Players[0];
+        var first = player.SpecialZones.Trials[0]; var second = player.SpecialZones.Trials[1];
+        first.TrialProgress = 7; second.TrialProgress = 0;
+        // 隔离安格斯自身的可选符文触发（另有覆盖）。
+        player.UsedAbilities.Add($"trigger:angus-trial-rune:{game.State.TurnSerial}");
+
+        typeof(L12GameEngine).GetMethod("AdvanceTrial", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(game, [0, 4, first]);
+
+        // 7 + 4：第一张只吃 1 点补满到 8，剩下 3 点必须结转到第二张，而不是被吞掉。
+        Assert.Equal(8, first.TrialProgress);
+        Assert.Equal(3, second.TrialProgress);
+        Assert.False(first.TrialCompleted);
+        Assert.Contains(game.State.Events, entry => entry.Type == "trial"
+            && entry.Text.Contains(second.Name, StringComparison.Ordinal));
+    }
     private static void Complete(L12GameEngine game, L12CardInstance trial)
     {
         var result = game.Handle(0, new L12Command("activateAbility", trial.InstanceId, Ability: "completeTrial"));

@@ -75,7 +75,7 @@ Assert-Contains $tests 'FenianRepeatMayChooseTheSameStillLegalTargetInASecondInd
 $remaining = Read-Source 'L12S2RemainingEffects.cs'
 $advancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $angusTests = Read-Source 'EffectBatch294RegressionTests.cs'
-Assert-Contains $s2 'if (advanced && queueAngusTrigger) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial)' 'Ordinary trial progress must queue Angus only after actual progress increases.'
+Assert-Contains $s2 'if (advanced && queueAngusTrigger) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial!)' 'Ordinary trial progress must queue Angus only after actual progress increases.'
 Assert-Contains $advancePlans 'if (AdvanceTrialWithoutAngusTrigger(playerIndex, source.TrialValue, source))' 'Finn trial progress must defer Angus until the shared same-timing follow-up batch is built.'
 Assert-Contains $advancePlans 'QueueFinnTrialAdvanceFollowups(playerIndex, source, source)' 'Finn and Angus must enter one shared same-timing trigger batch.'
 Assert-Contains $remaining 'CreateTriggerCandidate(playerIndex, master, "trial-advance"' 'Angus must be a separate optional trial-progress candidate.'

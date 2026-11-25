@@ -193,7 +193,7 @@ public sealed class SimpleDeathTrialAdvanceTriggerConsistencyTests
 
     [Fact]
     [Trait("L12Evidence", "entry:simple-death-trial-advance-current")]
-    public void CompletedTrialIsSkippedAndOnlyTheFirstIncompleteTrialAdvancesWithCapEight()
+    public void CompletedTrialIsSkippedAndTheRemainderCarriesIntoTheNextIncompleteTrial()
     {
         var game = Create(10211);
         var completed = AddTrial(game, 0, "completed-first", progress: 8, completed: true);
@@ -204,10 +204,15 @@ public sealed class SimpleDeathTrialAdvanceTriggerConsistencyTests
 
         Assert.Equal(8, completed.TrialProgress);
         Assert.Equal(8, current.TrialProgress);
-        Assert.Equal(3, later.TrialProgress);
-        Assert.Equal(8, game.State.Players[0].SpecialZones.TrialLevel);
+        // 2026-11-25 用户裁定 BUG-20261124-d5ca2036 反馈正确：一张试炼封顶 8 之后，
+        // 溢出的推进点数结转到下一张未完成试炼，而不是丢弃（原断言为 3，编码的是旧行为）。
+        Assert.Equal(4, later.TrialProgress);
+        // 结转后 TrialLevel 指向本次实际推进到最后的那张（later 3→4），与未结转时同口径。
+        Assert.Equal(4, game.State.Players[0].SpecialZones.TrialLevel);
         Assert.Contains(game.State.Events, entry => entry.Type == "trial"
             && entry.Text.Contains("7 → 8", StringComparison.Ordinal));
+        Assert.Contains(game.State.Events, entry => entry.Type == "trial"
+            && entry.Text.Contains("3 → 4", StringComparison.Ordinal));
     }
 
     [Fact]

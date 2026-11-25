@@ -224,23 +224,38 @@ public sealed partial class L12GameEngine
         bool queueAngusTrigger, string? playerLogGroupId = null, string? playerLogTiming = null)
     {
         var player = State.Players[playerIndex];
-        var trial = player.SpecialZones.Trials.FirstOrDefault(card => !card.TrialCompleted
-            && card.TrialProgress < 8);
-        if (trial is null || count <= 0) return false;
-        var before = trial.TrialProgress;
-        trial.TrialProgress = Math.Min(8, trial.TrialProgress + count);
-        player.SpecialZones.TrialLevel = trial.TrialProgress;
+        if (count <= 0) return false;
         var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
         var publicSource = source is { CardType: not "trial", Hidden: false } ? source : null;
-        AddStructuredPlayerLogEvent("trial", playerIndex,
-            $"《{trial.Name}》试炼进度 {before} → {trial.TrialProgress}",
-            playerLogGroupId ?? origin?.Data.GetValueOrDefault("playerLogGroupId"),
-            playerLogTiming ?? origin?.Data.GetValueOrDefault("playerLogTiming") ?? origin?.Trigger,
-            new L12PlayerLogSemantic("推进试炼", $"试炼 {before}→{trial.TrialProgress}",
-                publicSource?.InstanceId, publicSource?.Name, trial.InstanceId, trial.Name),
-            publicSource is null ? [] : [publicSource]);
-        var advanced = trial.TrialProgress > before;
-        if (advanced && queueAngusTrigger) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial);
+        var advanced = false;
+        // trial 指向本次实际推进到的那张（结转时为最后一张），Angus 触发与 TrialLevel 都读它。
+        L12CardInstance? trial = null;
+        var remaining = count;
+        // 试炼进度跨张结转：一次推进把当前试炼推到 8 之后，多出来的点数要继续推到下一张
+        // 未完成的试炼，而不是被 Math.Min(8, …) 静默吞掉（BUG-20261124-d5ca2036，用户裁定反馈正确）。
+        // 「推进点数为 0 就不推进」仍然成立；已被置为 completed 的试炼由 !TrialCompleted 排除。
+        while (remaining > 0)
+        {
+            var current = player.SpecialZones.Trials.FirstOrDefault(card => !card.TrialCompleted
+                && card.TrialProgress < 8);
+            if (current is null) break;
+            var before = current.TrialProgress;
+            var applied = Math.Min(8 - before, remaining);
+            current.TrialProgress = before + applied;
+            remaining -= applied;
+            AddStructuredPlayerLogEvent("trial", playerIndex,
+                $"《{current.Name}》试炼进度 {before} → {current.TrialProgress}",
+                playerLogGroupId ?? origin?.Data.GetValueOrDefault("playerLogGroupId"),
+                playerLogTiming ?? origin?.Data.GetValueOrDefault("playerLogTiming") ?? origin?.Trigger,
+                new L12PlayerLogSemantic("推进试炼", $"试炼 {before}→{current.TrialProgress}",
+                    publicSource?.InstanceId, publicSource?.Name, current.InstanceId, current.Name),
+                publicSource is null ? [] : [publicSource]);
+            if (current.TrialProgress > before) { advanced = true; trial = current; }
+        }
+        // TrialLevel 保持原有口径：推进后指向"本次实际推进到的那张试炼"（结转时为最后一张），
+        // 不做成多张试炼的聚合值——那会改变既有 UI 语义，与本次缺陷无关。
+        if (trial is not null) player.SpecialZones.TrialLevel = trial.TrialProgress;
+        if (advanced && queueAngusTrigger) QueueS2AngusTrialAdvanceRune(playerIndex, source ?? trial!);
         return advanced;
     }
 
