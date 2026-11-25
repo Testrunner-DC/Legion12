@@ -6,10 +6,13 @@ const OUT = 'D:/GPT/Legion12/artifacts/a3-table-chat'
 fs.mkdirSync(OUT, { recursive: true })
 
 const password = fs.readFileSync('D:/GPT/Legion12/artifacts/rehearsal-secret.txt', 'utf8').trim()
-const deckCode = fs.readFileSync('D:/GPT/Legion12/artifacts/rehearsal-deckcode.txt', 'utf8').trim()
-const deckName = fs.readFileSync('D:/GPT/Legion12/artifacts/rehearsal-deckname.txt', 'utf8').trim()
+// 彩排牌库码不是每轮都在：只有在需要导入牌库时才读，缺失时给出明确提示而不是让脚本在启动阶段崩掉。
+const readRehearsalFile = (name) => {
+  try { return fs.readFileSync('D:/GPT/Legion12/artifacts/' + name, 'utf8').trim() } catch { return '' }
+}
+const deckName = readRehearsalFile('rehearsal-deckname.txt') || '天廷预组 S1'
 
-const evidence = { startedAt: new Date().toISOString(), deckName, steps: [] }
+const evidence = { startedAt: new Date().toISOString(), deckName, steps: [], wsFrames: { a: [], b: [] } }
 const note = (step, data) => evidence.steps.push({ step, ...data })
 const bodyText = (page) => page.evaluate(() => document.body.innerText)
 
@@ -33,9 +36,24 @@ async function clickButton(page, name, { exact = false, timeout = 25000 } = {}) 
 
 const browser = await chromium.launch()
 
-async function login(name) {
+// 聊天帧取证：本桌频道的成败只在 WS 帧上看得见（界面只说「未确认」）。
+function tapChatFrames(side, page) {
+  page.on('websocket', (ws) => {
+    const keep = (dir) => (frame) => {
+      const text = String(frame.payload)
+      if (!text.includes('chat')) return
+      evidence.wsFrames[side].push({ dir, at: new Date().toISOString(), text: text.slice(0, 320) })
+      if (evidence.wsFrames[side].length > 12) evidence.wsFrames[side].shift()
+    }
+    ws.on('framesent', keep('out'))
+    ws.on('framereceived', keep('in'))
+  })
+}
+
+async function login(name, side) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   const page = await context.newPage()
+  if (side) tapChatFrames(side, page)
   await page.goto(BASE + '/me', { waitUntil: 'domcontentloaded' })
   await page.fill('form input[autocomplete=username]', name)
   await page.fill('form input[type=password]', password)
@@ -45,6 +63,8 @@ async function login(name) {
 }
 
 async function ensureSavedDeck(page, tag) {
+  const deckCode = readRehearsalFile('rehearsal-deckcode.txt')
+  if (!deckCode) return { tag, skipped: 'no-deck-code' }
   await page.goto(BASE + '/decks', { waitUntil: 'domcontentloaded' })
   await clickButton(page, '我的牌库', { exact: true })
   await page.waitForTimeout(1200)
@@ -56,12 +76,29 @@ async function ensureSavedDeck(page, tag) {
   return { tag, imported: true }
 }
 
+// 好友房入口的按钮文案随页面改版变过（创建新房间 / 创建好友房），两个都认。
+const CREATE_ROOM_LABELS = ['创建新房间', '创建好友房']
+
+async function hasCreateRoom(page) {
+  for (const name of CREATE_ROOM_LABELS) {
+    if (await page.getByRole('button', { name }).count()) return true
+  }
+  return false
+}
+
+async function createRoom(page) {
+  for (const name of CREATE_ROOM_LABELS) {
+    if (await page.getByRole('button', { name }).count()) { await clickButton(page, name); return name }
+  }
+  throw new Error('create room button not found')
+}
+
 // 确保回到大厅（不在任何房间里）：大厅才同时具备「好友房」页签与「创建新房间」。
 async function ensureLobby(page) {
   await page.goto(BASE + '/battle', { waitUntil: 'domcontentloaded' })
   for (let attempt = 0; attempt < 8; attempt++) {
     await page.waitForTimeout(1300)
-    if (await page.getByRole('button', { name: '创建新房间' }).count()) return
+    if (await hasCreateRoom(page)) return
     // 上一轮可能停在一局未结束的对局里：必须先投降才能离开（这正是残留房间的成因）。
     const surrender = page.getByRole('button', { name: '投降', exact: true })
     if (await surrender.count()) {
@@ -95,8 +132,8 @@ try {
   // 同一账号进过某房间后现场控件会变化，复测换号（台账 2026-11-25 已记）。
   const firstPlayer = process.env.L12_A3_P1 || '彩排01'
   const secondPlayer = process.env.L12_A3_P2 || '彩排02'
-  const a = await login(firstPlayer)
-  const b = await login(secondPlayer)
+  const a = await login(firstPlayer, 'a')
+  const b = await login(secondPlayer, 'b')
   if (!process.env.L12_SKIP_DECK_IMPORT) {
     const imports = []
     for (const [tag, page] of [['a', a.page], ['b', b.page]]) {
@@ -109,7 +146,7 @@ try {
   await openFriendPanel(a.page)
   // 建房后必须是空房：若还显示已加入的对手，说明又回到了旧现场，先退出重来。
   for (let attempt = 0; attempt < 3; attempt++) {
-    await clickButton(a.page, '创建新房间')
+    note('create-room', { button: await createRoom(a.page) })
     await waitForText(a.page, '复制房间码')
     if ((await bodyText(a.page)).includes('等待玩家')) break
     for (const name of ['关闭房间并返回大厅', '离开房间并返回大厅']) {
@@ -138,7 +175,10 @@ try {
     const slot = page.locator('text=点击封面选择牌库').first()
     if (await slot.count()) { try { await slot.click({ force: true }) } catch { } }
     await page.waitForTimeout(1600)
-    const option = page.locator('[role=dialog]').locator('text=' + deckName).first()
+    const dialog = page.locator('[role=dialog]').first()
+    // 每个账号存的是自己的牌库（01 天廷预组 S1、02 高天原预组 S1）：先按名字找，找不到就取第一副。
+    let option = dialog.locator('text=' + deckName).first()
+    if (!(await option.count())) option = dialog.locator('text=张主牌').first()
     if (await option.count()) { try { await option.click({ force: true }) } catch { } }
     await page.waitForTimeout(600)
     if (await page.getByRole('button', { name: '确认使用' }).count()) {
@@ -222,6 +262,9 @@ try {
   await aPopover.getByRole('button', { name: '发送', exact: true }).click({ force: true })
   await a.page.waitForTimeout(2500)
   note('sent', { token })
+  // 客户端 10 秒后才把未回执判定为「未确认」：留够窗口再判断，避免把慢回执写成失败。
+  await a.page.waitForTimeout(11000)
+  note('sender-panel', { text: (await aPopover.innerText()).replace(/\s+/g, ' ').slice(0, 200) })
 
   const deliveredToB = await b.page
     .waitForFunction((value) => document.body.innerText.includes(value), token, { timeout: 25000 })
