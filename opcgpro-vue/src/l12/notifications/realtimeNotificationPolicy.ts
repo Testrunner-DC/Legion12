@@ -58,7 +58,8 @@ export interface ChatNotificationEntrySnapshot {
 export interface ChatNotificationThreadSnapshot {
   key: string
   instanceId: string
-  scope: 'friend' | 'opponent'
+  // 本桌频道（table）与对手频道同属「按对局键控」的一类，通知策略对它一视同仁。
+  scope: 'friend' | 'opponent' | 'table'
   unread: number
   readSeq: number
   entries: ChatNotificationEntrySnapshot[]
@@ -67,7 +68,7 @@ export interface ChatNotificationThreadSnapshot {
 export interface ChatNotificationCandidate {
   id: string
   threadKey: string
-  scope: 'friend' | 'opponent'
+  scope: 'friend' | 'opponent' | 'table'
 }
 
 export interface RealtimeNotificationOwner {
