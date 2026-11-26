@@ -784,7 +784,7 @@ public sealed partial class L12PlatformStore
             var row = ReadValidatedAudit(reader);
             result.Add(ToView(row));
         }
-        return result;
+        return ResolveAuditActorNames(result);
     }
 
     private static ValidatedAuditAppend? MergeIndependentAudit(SqliteConnection connection, DataFile data,

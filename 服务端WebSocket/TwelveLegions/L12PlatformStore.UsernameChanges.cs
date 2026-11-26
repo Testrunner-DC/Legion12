@@ -141,6 +141,8 @@ public sealed partial class L12PlatformStore
                     throw new ArgumentException("该用户名已被占用，请驳回或联系玩家另行申请");
                 var previous = PublicUsername(account);
                 account.Username = request.RequestedUsername;
+                // 展示用名字的副本一起跟随（用户 2026-11-26：各处显示的名字都要变）。
+                PropagateUsernameChangeLocked(account.Id, request.RequestedUsername);
                 AddAdminAudit(actor, "account", "username-request-approved", account.Id, previous,
                     request.RequestedUsername, note, context);
             }
@@ -151,6 +153,7 @@ public sealed partial class L12PlatformStore
             AddAdminAudit(actor, "username-change-request", approve ? "approve" : "reject", request.Id,
                 request.CurrentUsername, request.RequestedUsername, note, context);
             Save();
+            FlushUsernamePropagationLocked();
             return ToUsernameChangeRequestView(request);
         }
     }

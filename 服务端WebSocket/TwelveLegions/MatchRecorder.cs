@@ -60,6 +60,24 @@ public sealed partial class MatchRecorder : IAsyncDisposable
 
     internal Action<string>? StorageFailureInjector { get; set; }
 
+    /// <summary>玩家改名后同步对局记录里的展示名（matches.player_0/player_1 是按账号 id 存的副本）。</summary>
+    public void RenameAccountPlayers(string accountId, string username)
+    {
+        if (string.IsNullOrWhiteSpace(accountId) || string.IsNullOrWhiteSpace(username)) return;
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE matches
+               SET player_0 = CASE WHEN account_0 = $id THEN $name ELSE player_0 END,
+                   player_1 = CASE WHEN account_1 = $id THEN $name ELSE player_1 END
+             WHERE account_0 = $id OR account_1 = $id
+            """;
+        command.Parameters.AddWithValue("$id", accountId);
+        command.Parameters.AddWithValue("$name", username);
+        command.ExecuteNonQuery();
+    }
+
     public MatchRecorder(string path, Func<DateTimeOffset>? utcNow = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

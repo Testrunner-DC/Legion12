@@ -872,6 +872,8 @@ public sealed partial class L12PlatformStore
             var previousPublicName = PublicUsername(row);
             row.Username = newUsername;
             row.MustChangeUsername = false;
+            // 展示用名字的副本一起跟随（用户 2026-11-26：各处显示的名字都要变）。
+            PropagateUsernameChangeLocked(row.Id, newUsername);
             AddAdminAudit(ToView(row), "account", "username-changed", row.Id,
                 previousPublicName, newUsername, "玩家完成强制用户名更新");
             var now = DateTimeOffset.UtcNow;

@@ -77,6 +77,8 @@ if (bootstrapIndex >= 0)
 
 await using var recorder = new MatchRecorder(Path.Combine(runtimePath, "matches.db"));
 await recorder.InitializeAsync();
+// 改名后同步对局记录库里的展示名（用户 2026-11-26：各处显示的名字都要跟随）。
+platform.UsernameChanged += recorder.RenameAccountPlayers;
 
 var rooms = new L12RoomManager(catalog, recorder, platform);
 if (deploymentDrain is not null) rooms.AttachDeploymentDrain(deploymentDrain);
