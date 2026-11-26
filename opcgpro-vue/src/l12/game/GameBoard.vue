@@ -241,6 +241,12 @@ const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
 const responseTargetIds = ref<string[]>([])
 const hasBlockingPrompt = computed(() => Boolean((props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt))
+// 棋盘上的玩家名优先取房间状态里的实时名字（改名后房间广播会更新），
+// 没有房间信息时回落到对局状态里的开局快照（用户 2026-11-26：显示名跟随改名）。
+const boardPlayerNames = computed(() => props.game.players.map((player, index) => {
+  const live = l12State.room?.players?.find(entry => entry.playerIndex === index)?.name
+  return (live && live.trim()) || player.name
+}))
 const lastHiddenRevealSequence = ref(0)
 const lastPublicRevealSequence = ref(0)
 const lastDiceSequence = ref(0)
@@ -1791,7 +1797,7 @@ function statusTexts(card: Card) {
               <span class="board-midline-anchor" aria-hidden="true" />
             </div>
             <PhasePlayback :events="game.recentEvents ?? []" @phase-change="phasePlaybackPhase = $event" />
-            <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="game.players.map(player => player.name)"
+            <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="boardPlayerNames"
               :paused="passivePresentationPaused" />
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :players="game.players" :prompts="game.prompts ?? []" :revision="game.revision"
