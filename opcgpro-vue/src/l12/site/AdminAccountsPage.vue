@@ -1,6 +1,30 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { adminApi, hasPermission, platformState, type PlatformAccount } from '@/l12/platform'
+import { adminApi, hasPermission, platformState, tournamentEligibilityApi, type PlatformAccount } from '@/l12/platform'
+
+// 赛事资质（用户 2026-11-26）：管理员可在本页直接授予/撤销，无需走申请。
+const eligibilityBusy = ref('')
+async function grantTournamentEligibility(account: PlatformAccount) {
+  if (eligibilityBusy.value) return
+  eligibilityBusy.value = account.id
+  try {
+    const note = reasons[account.id]?.trim() || '管理员在账号页直接授予'
+    await tournamentEligibilityApi.grant(account.id, note)
+    notice.value = `已授予 ${account.username} 赛事资质`
+  } catch (error) { notice.value = error instanceof Error ? error.message : '授予赛事资质失败' }
+  finally { eligibilityBusy.value = '' }
+}
+async function revokeTournamentEligibility(account: PlatformAccount) {
+  if (eligibilityBusy.value) return
+  const reason = reasons[account.id]?.trim()
+  if (!reason) { notice.value = '撤销赛事资质需要先填写理由'; return }
+  eligibilityBusy.value = account.id
+  try {
+    await tournamentEligibilityApi.revoke(account.id, reason)
+    notice.value = `已撤销 ${account.username} 的赛事资质`
+  } catch (error) { notice.value = error instanceof Error ? error.message : '撤销赛事资质失败' }
+  finally { eligibilityBusy.value = '' }
+}
 import PagedCollection from './PagedCollection.vue'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 import { useAdminRiskAction, type AdminRiskAction } from './useAdminRiskAction'
@@ -156,7 +180,7 @@ onBeforeUnmount(() => { disposed = true; retireActor() })
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <p v-if="activeError" class="notice" role="alert">{{ activeError }}</p>
     <p v-else-if="loading" class="empty">正在读取账号列表…</p>
-    <PagedCollection :items="activeAccounts" :page-size="pageSize" :server-page="activePage" :server-total="activeResult?.total ?? 0" :busy="loading" @page="loadActive" v-slot="{ items }"><article v-for="account in items" :key="account.id" class="account-row"><span><router-link :to="`/admin/users/accounts/${encodeURIComponent(account.id)}`"><b>{{ account.username }}</b></router-link><small>{{ account.disabled ? '已禁用' : '正常' }}<template v-if="account.mustChangeUsername"> · 待修改用户名</template> · {{ account.permissions?.length ?? 0 }} 项权限</small><code>{{ account.id }}</code></span><label>长期身份<select v-model="account.role" :disabled="account.username === 'Admin' || !hasPermission('admin.accounts.roles.write')"><option value="player">玩家</option><option value="admin">管理员</option></select></label><div class="actions"><input v-if="hasPermission('admin.accounts.status.write')" v-model="reasons[account.id]" placeholder="状态 / 重置 / 删除理由"><button v-if="hasPermission('admin.accounts.roles.write')" :disabled="account.username === 'Admin'" @click="saveRole(account)">保存身份</button><button v-if="hasPermission('admin.accounts.status.write')" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="saveStatus(account)">{{ account.disabled ? '启用' : '禁用' }}</button><button v-if="hasPermission('admin.sessions.revoke')" @click="revokeSessions(account)">撤销会话</button><button v-if="hasPermission('admin.accounts.status.write')" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="resetPassword(account)">重置密码</button><button v-if="hasPermission('admin.accounts.status.write')" class="danger" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="deleteAccount(account)">删除与清理</button></div></article></PagedCollection>
+    <PagedCollection :items="activeAccounts" :page-size="pageSize" :server-page="activePage" :server-total="activeResult?.total ?? 0" :busy="loading" @page="loadActive" v-slot="{ items }"><article v-for="account in items" :key="account.id" class="account-row"><span><router-link :to="`/admin/users/accounts/${encodeURIComponent(account.id)}`"><b>{{ account.username }}</b></router-link><small>{{ account.disabled ? '已禁用' : '正常' }}<template v-if="account.mustChangeUsername"> · 待修改用户名</template> · {{ account.permissions?.length ?? 0 }} 项权限</small><code>{{ account.id }}</code></span><label>长期身份<select v-model="account.role" :disabled="account.username === 'Admin' || !hasPermission('admin.accounts.roles.write')"><option value="player">玩家</option><option value="admin">管理员</option></select></label><div class="actions"><input v-if="hasPermission('admin.accounts.status.write')" v-model="reasons[account.id]" placeholder="状态 / 重置 / 删除理由"><button v-if="hasPermission('admin.accounts.roles.write')" :disabled="account.username === 'Admin'" @click="saveRole(account)">保存身份</button><button v-if="hasPermission('admin.accounts.status.write')" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="saveStatus(account)">{{ account.disabled ? '启用' : '禁用' }}</button><button v-if="hasPermission('admin.sessions.revoke')" @click="revokeSessions(account)">撤销会话</button><button v-if="hasPermission('admin.accounts.status.write')" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="resetPassword(account)">重置密码</button><button v-if="hasPermission('admin.accounts.status.write')" class="danger" :disabled="account.username === 'Admin' || account.id === platformState.account?.id" @click="deleteAccount(account)">删除与清理</button><button v-if="hasPermission('tournaments.manage')" :disabled="eligibilityBusy === account.id" @click="grantTournamentEligibility(account)">授予赛事资质</button><button v-if="hasPermission('tournaments.manage')" :disabled="eligibilityBusy === account.id" @click="revokeTournamentEligibility(account)">撤销赛事资质</button></div></article></PagedCollection>
     <p v-if="activeResult && !activeAccounts.length && !loading" class="empty">没有符合条件的有效账号。</p>
     <Teleport to="body"><div v-if="showDeleted" class="overlay" @click.self="showDeleted = false"><section class="deleted-dialog ui-state-scope" role="dialog" aria-modal="true" aria-label="已删除账号"><header><h2>已删除账号</h2><button @click="showDeleted = false">×</button></header><p v-if="deletedError" class="notice" role="alert">{{ deletedError }}</p><p v-else-if="deletedLoading">正在读取已删除账号…</p><PagedCollection :items="deletedAccounts" :page-size="pageSize" :server-page="deletedPage" :server-total="deletedResult?.total ?? 0" :busy="deletedLoading" label="已删除账号" @page="loadDeleted" v-slot="{ items }"><article v-for="account in items" :key="account.id"><b>{{ account.username }}</b><code>{{ account.id }}</code><span>{{ account.deletedAt ? new Date(account.deletedAt).toLocaleString() : '未记录删除时间' }}</span></article></PagedCollection><p v-if="deletedResult && !deletedAccounts.length && !deletedLoading">没有符合条件的记录。</p></section></div></Teleport>
   </section>

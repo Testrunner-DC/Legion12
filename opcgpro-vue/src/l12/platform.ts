@@ -2013,6 +2013,44 @@ export const publicTournamentApi = {
   getByCode: (code: string) => platformRequest<PublicTournamentDetail>(`/api/public/tournaments/code/${encodeURIComponent(code)}`),
 }
 
+// 赛事资质（用户 2026-11-26）：普通账号申请→管理员审核；管理员也可在账号页直接授予。
+export interface TournamentEligibility {
+  accountId: string
+  username: string
+  status: 'none' | 'pending' | 'approved' | 'rejected'
+  reason?: string | null
+  appliedAt?: string | null
+  reviewedAt?: string | null
+  reviewedByAccountId?: string | null
+  reviewedByUsername?: string | null
+  reviewNote?: string | null
+  effective: boolean
+}
+export const tournamentEligibilityApi = {
+  self: () => platformRequest<TournamentEligibility>('/api/tournament-eligibility'),
+  apply: (reason: string) => platformRequest<TournamentEligibility>('/api/tournament-eligibility/applications', {
+    method: 'POST', body: JSON.stringify({ reason }),
+  }),
+  pending: () => platformRequest<TournamentEligibility[]>('/api/admin/tournament-eligibility'),
+  get: (accountId: string) => platformRequest<TournamentEligibility>(
+    `/api/admin/tournament-eligibility/${encodeURIComponent(accountId)}`),
+  review: (accountId: string, approve: boolean, note: string, version?: number) => platformRequest<TournamentEligibility>(
+    `/api/admin/tournament-eligibility/${encodeURIComponent(accountId)}/review`, {
+      method: 'POST', headers: version === undefined ? undefined : { 'If-Match': `"${version}"` },
+      body: JSON.stringify({ approve, note }),
+    }),
+  grant: (accountId: string, note: string, version?: number) => platformRequest<TournamentEligibility>(
+    `/api/admin/tournament-eligibility/${encodeURIComponent(accountId)}/grant`, {
+      method: 'POST', headers: version === undefined ? undefined : { 'If-Match': `"${version}"` },
+      body: JSON.stringify({ note }),
+    }),
+  revoke: (accountId: string, reason: string, version?: number) => platformRequest<TournamentEligibility>(
+    `/api/admin/tournament-eligibility/${encodeURIComponent(accountId)}/revoke`, {
+      method: 'POST', headers: version === undefined ? undefined : { 'If-Match': `"${version}"` },
+      body: JSON.stringify({ reason }),
+    }),
+}
+
 export const tournamentApi = {
   list: (query: { status?: string; search?: string; mine?: boolean } = {}) => {
     const params = new URLSearchParams()
@@ -2021,6 +2059,14 @@ export const tournamentApi = {
   },
   get: (id: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}`),
   getByCode: (code: string) => platformRequest<Tournament>(`/api/tournaments/code/${encodeURIComponent(code)}`),
+  scheduleSuggestion: (id: string) => platformRequest<{
+    registered: number; checkedIn: number; suggestedSwissRounds: number
+  }>(`/api/tournaments/${encodeURIComponent(id)}/schedule-suggestion`),
+  setSchedule: (id: string, expectedVersion: number, maxPlayers: number | null, swissRounds: number | null, reason: string) =>
+    platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/schedule`, {
+      method: 'PUT',
+      body: JSON.stringify(commandBody('tournament-schedule', { expectedVersion, maxPlayers, swissRounds, reason })),
+    }),
   setVisibility: (id: string, expectedVersion: number, visibility: Tournament['visibility'], registrationVisibility: Tournament['registrationVisibility'], reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/visibility`, {
     method: 'PUT', body: JSON.stringify(commandBody('tournament-visibility', { expectedVersion, visibility, registrationVisibility, reason })),
   }),

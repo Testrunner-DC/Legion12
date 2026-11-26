@@ -14,6 +14,52 @@ import { mergeTournamentSnapshot } from '@/l12/tournamentSnapshotMerge'
 import { canDirectlyRuleTournamentMatch, canManageParticipantRemovalWithoutSelfRuling, tournamentSelfRulingMessage } from '@/l12/tournamentRulingPolicy'
 import { tournamentTimeControlLabel, tournamentTimeControlMinutes, tournamentTimeControlSeconds } from '@/l12/tournamentTime'
 import { createTournamentWithCurrentContext } from '@/l12/tournamentCreateFlow'
+import { tournamentEligibilityApi, type TournamentEligibility } from '@/l12/platform'
+
+// 赛事资质（用户 2026-11-26）：创建赛事需要资质；普通账号自助申请，管理员在后台或账号页授予。
+const eligibility = ref<TournamentEligibility | null>(null)
+const eligibilityReason = ref('')
+const eligibilityBusy = ref(false)
+const pendingEligibility = ref<TournamentEligibility[]>([])
+const eligibilityLabel = computed(() => {
+  const status = eligibility.value?.status
+  if (eligibility.value?.effective) return '已具备'
+  if (status === 'pending') return '审核中'
+  if (status === 'rejected') return '已被驳回，可重新申请'
+  return '尚未申请'
+})
+const canApplyEligibility = computed(() => !!platformState.account
+  && !eligibility.value?.effective && eligibility.value?.status !== 'pending')
+async function refreshEligibility() {
+  if (!platformState.account || props.adminMode) return
+  try { eligibility.value = await tournamentEligibilityApi.self() } catch { eligibility.value = null }
+}
+async function submitEligibility() {
+  if (eligibilityBusy.value) return
+  eligibilityBusy.value = true
+  try {
+    eligibility.value = await tournamentEligibilityApi.apply(eligibilityReason.value.trim())
+    eligibilityReason.value = ''
+    notice.value = '赛事资质申请已提交，等待管理员审核'
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : '赛事资质申请提交失败'
+  } finally { eligibilityBusy.value = false }
+}
+async function refreshPendingEligibility() {
+  if (!props.adminMode) return
+  try { pendingEligibility.value = await tournamentEligibilityApi.pending() } catch { pendingEligibility.value = [] }
+}
+async function reviewEligibility(item: TournamentEligibility, approve: boolean) {
+  if (eligibilityBusy.value) return
+  eligibilityBusy.value = true
+  try {
+    await tournamentEligibilityApi.review(item.accountId, approve, approve ? '管理员审核通过' : '管理员驳回')
+    notice.value = approve ? `已批准 ${item.username} 的赛事资质` : `已驳回 ${item.username} 的赛事资质申请`
+    await refreshPendingEligibility()
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : '审核失败'
+  } finally { eligibilityBusy.value = false }
+}
 import {
   friendApi, getEffectiveOperationsPolicy, hasPermission, platformState, tournamentApi,
   type LegacyTournamentInput, type PlatformFriend,
@@ -510,6 +556,8 @@ onMounted(() => {
   window.addEventListener('l12-resource-tournaments', onTournamentResource)
   document.addEventListener('visibilitychange', onVisibility)
   visibleTournamentRead.request()
+  void refreshEligibility()
+  void refreshPendingEligibility()
 })
 onBeforeUnmount(() => {
   visibleTournamentRead.dispose()
@@ -523,7 +571,28 @@ onBeforeUnmount(() => {
   <div class="tournament-page" :class="{ embedded: props.embedded }" :aria-busy="actionBusy">
     <p v-if="!readModelCurrent" role="status">{{ notice || '正在重新核验赛事…' }}</p>
     <div v-show="readModelCurrent" :key="readModelOwner" :inert="!readModelCurrent" class="tournament-read-model">
-    <header class="page-head"><div><small>TOURNAMENT OPERATIONS</small><h1>{{ props.adminMode ? '赛事管理' : '赛事中心' }}</h1><p>{{ props.adminMode ? '查看并管理玩家创建的全部赛事；全局管理操作保留版本校验、理由与审计记录。' : '在这里报名、完成赛前签到、查看配对并进入比赛；参赛牌库会在赛前签到时锁定。' }}</p></div><button v-if="!props.adminMode && hasPermission('tournaments.create')" class="gold" @click="tab = 'create'">举办赛事</button></header>
+    <header class="page-head"><div><small>TOURNAMENT OPERATIONS</small><h1>{{ props.adminMode ? '赛事管理' : '赛事中心' }}</h1><p>{{ props.adminMode ? '查看并管理玩家创建的全部赛事；全局管理操作保留版本校验、理由与审计记录。' : '在这里报名、完成赛前签到、查看配对并进入比赛；参赛牌库会在赛前签到时锁定。' }}</p></div><button v-if="!props.adminMode && hasPermission('tournaments.create') && (eligibility?.effective ?? false)" class="gold" @click="tab = 'create'">举办赛事</button></header>
+    <section v-if="!props.adminMode" class="eligibility-panel" data-tournament-eligibility>
+      <div><small>TOURNAMENT ELIGIBILITY</small><b>赛事资质：{{ eligibilityLabel }}</b>
+        <p v-if="eligibility?.effective">已具备赛事资质，可以举办赛事。</p>
+        <p v-else-if="eligibility?.status === 'pending'">申请已提交，等待管理员审核。</p>
+        <p v-else>举办赛事需要赛事资质：说明你的办赛计划后提交，管理员审核通过即可举办。</p>
+      </div>
+      <template v-if="canApplyEligibility">
+        <textarea v-model="eligibilityReason" maxlength="500" placeholder="申请原因（不少于 10 字，例如赛制、场次与预计人数）"></textarea>
+        <button class="gold" :disabled="eligibilityBusy || eligibilityReason.trim().length < 10" @click="submitEligibility">申请赛事资格</button>
+      </template>
+    </section>
+    <section v-if="props.adminMode && pendingEligibility.length" class="eligibility-panel" data-tournament-eligibility-review>
+      <div><small>TOURNAMENT ELIGIBILITY</small><b>待审赛事资质（{{ pendingEligibility.length }}）</b></div>
+      <ul>
+        <li v-for="item in pendingEligibility" :key="item.accountId">
+          <span>{{ item.username }} · {{ item.reason }}</span>
+          <button :disabled="eligibilityBusy" @click="reviewEligibility(item, true)">通过</button>
+          <button :disabled="eligibilityBusy" @click="reviewEligibility(item, false)">驳回</button>
+        </li>
+      </ul>
+    </section>
     <section v-if="!props.adminMode && legacyCandidates.length" class="migration"><div><b>检测到 {{ legacyCandidates.length }} 个本机旧赛事</b><p>旧 localStorage 仅作为待导入来源，不再参与赛事展示或写入。必须先预览，再明确确认导入。</p></div><button v-if="canImportLegacy" :disabled="actionPending('tournament:legacy-import')" @click="previewLegacyImport">预览导入（dry-run）</button><button v-if="legacyPreview" class="gold" :disabled="actionPending('tournament:legacy-import')" @click="confirmLegacyImport">确认导入 {{ legacyPreview.tournaments.length }} 个赛事</button><span v-else-if="!canImportLegacy">当前账号没有旧赛事导入权限</span></section>
     <section v-if="!props.adminMode && legacyPreview" class="migration-preview"><b>导入预览未写入</b><span>摘要 {{ legacyPreview.previewHash }}</span><span v-for="item in legacyPreview.tournaments" :key="item.id">{{ item.code }} · {{ item.name }} · {{ item.participants.length }} 人</span></section>
     <nav class="tabs" :class="{ 'admin-tabs': props.adminMode }"><button :class="{active:tab==='current'}" @click="tab='current'">当前赛事</button><button :class="{active:tab==='completed'}" @click="tab='completed'">结束赛事</button><button v-if="!props.adminMode" :class="{active:tab==='mine'}" @click="tab='mine'">我的赛程</button><button v-if="!props.adminMode" :class="{active:tab==='create'}" @click="tab='create'">创建向导</button></nav>
