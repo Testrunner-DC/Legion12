@@ -37,6 +37,40 @@ const activeRegistration = computed(() => Boolean(me.value && !me.value.removed 
 watch(activeRegistration, active => {
   if (!active) { deckSelectorOpen.value = false; deckId.value = ''; selectedDeckMetadata.value = null; dropArmed.value = false }
 }, { flush: 'sync' })
+// 赛前调整（用户 2026-11-26）：主办者在开赛前可改人数上限与瑞士轮数，并可采纳建议值。
+const scheduleDraft = reactive({ maxPlayers: 0, swissRounds: 1 })
+const scheduleReason = ref('')
+const scheduleNotice = ref('')
+const scheduleBusy = ref(false)
+const scheduleSuggestion = ref<{ registered: number; checkedIn: number; suggestedSwissRounds: number } | null>(null)
+const canEditSchedule = computed(() => {
+  const value = tournament.value
+  return !!value && value.organizerAccountId === accountId.value
+    && value.status === 'registration' && (value.rounds?.length ?? 0) === 0
+})
+async function loadScheduleSuggestion() {
+  const value = tournament.value
+  if (!value || !canEditSchedule.value) { scheduleSuggestion.value = null; return }
+  scheduleDraft.maxPlayers = value.maxPlayers
+  scheduleDraft.swissRounds = value.swissRounds ?? 1
+  try { scheduleSuggestion.value = await tournamentApi.scheduleSuggestion(value.id) }
+  catch { scheduleSuggestion.value = null }
+}
+async function saveSchedule() {
+  const value = tournament.value
+  if (!value || scheduleBusy.value) return
+  if (!scheduleReason.value.trim()) { scheduleNotice.value = '调整理由必填'; return }
+  scheduleBusy.value = true; scheduleNotice.value = ''
+  try {
+    await tournamentApi.setSchedule(value.id, value.version, scheduleDraft.maxPlayers || null,
+      value.format === 'single' ? null : (scheduleDraft.swissRounds || null), scheduleReason.value.trim())
+    scheduleNotice.value = '赛前调整已保存'
+    scheduleReason.value = ''
+    await load()
+  } catch (error) { scheduleNotice.value = error instanceof Error ? error.message : '赛前调整保存失败' }
+  finally { scheduleBusy.value = false }
+}
+watch(tournament, () => { void loadScheduleSuggestion() })
 const canOrganize = computed(() => !!tournament.value && (tournament.value.organizerAccountId === accountId.value || hasPermission('tournaments.manage')))
 const canJudge = computed(() => !!tournament.value && (canOrganize.value || tournament.value.referees.some(item => item.accountId === accountId.value) || hasPermission('tournaments.rulings.write')))
 const canViewManage = computed(() => canOrganize.value || tournament.value?.pendingOrganizerTransfer?.toAccountId === accountId.value)
@@ -200,6 +234,16 @@ onBeforeUnmount(() => { visibleTournamentRead.dispose(); window.clearTimeout(reg
       </div><RulesCardSummary :cards="catalog" :disaster-card-ids="tournament.rules.disasterCardIds" :card-restrictions="tournament.rules.cardRestrictions" :disaster-mode="tournament.rules.disasterMode"/><p v-if="tournament.rules.banList">补充规则：{{ tournament.rules.banList }}</p></section>
       <section v-else-if="tab === 'judge'" class="panel"><TournamentJudgeDesk :tournament="tournament" :can-judge="canJudge" @updated="visibleTournamentRead.request()" @notice="value => notice = value" /></section>
       <section v-else-if="tab === 'manage'" class="panel"><TournamentManagementPanel :tournament="tournament" :account-id="accountId" :can-organize="canOrganize" @updated="visibleTournamentRead.request()" @notice="value => notice = value" /></section>
+    <section v-if="canEditSchedule" class="panel schedule-panel" data-tournament-schedule>
+      <div><small>PRE-START</small><h2>赛前调整</h2><p>人数上限与瑞士轮数在开赛前可调整；建议值按当前报到（否则报名）人数计算。</p></div>
+      <label>人数上限 <input v-model.number="scheduleDraft.maxPlayers" type="number" min="2" max="256"></label>
+      <label v-if="tournament.format !== 'single'">瑞士轮数 <input v-model.number="scheduleDraft.swissRounds" type="number" min="1" max="20"></label>
+      <span v-if="scheduleSuggestion">建议 {{ scheduleSuggestion.suggestedSwissRounds }} 轮（按 {{ scheduleSuggestion.checkedIn || scheduleSuggestion.registered }} 人）
+        <button type="button" @click="scheduleDraft.swissRounds = scheduleSuggestion.suggestedSwissRounds">采纳</button></span>
+      <input v-model="scheduleReason" placeholder="调整理由（必填）">
+      <button type="button" class="primary" :disabled="!scheduleReason.trim() || scheduleBusy" @click="saveSchedule">保存赛前调整</button>
+      <p v-if="scheduleNotice" role="status">{{ scheduleNotice }}</p>
+    </section>
     <TournamentReputationPanel v-if="tournament && tab === 'overview'" />
     <TournamentDisasterSummary v-if="tournament && tab === 'schedule'" :code="tournament.code" :rounds="tournament.rounds" />
     <SavedDeckSelector v-if="tournament && deckSelectorHost" :open="deckSelectorOpen" :teleport-target="deckSelectorHost" mode="tournament" :catalog="catalog"

@@ -34,7 +34,8 @@ await page.goto(BASE+'/battle/tournaments/'+code,{waitUntil:'domcontentloaded'})
 await page.waitForTimeout(7000)
 const snap=async label=>({ label, panel:await page.locator('[data-tournament-schedule]').count(),
   text:(await page.evaluate(()=>document.querySelector('[data-tournament-schedule]')?.innerText||'')).replace(/\s+/g,' ').slice(0,180) })
-const out={code, seq:[await snap('after-load')]}
+const blocked=async()=>page.evaluate(()=>document.querySelector('main.detail-page')?.getAttribute('data-schedule-blocked')||'no-attr')
+const out={code, seq:[Object.assign(await snap('after-load'),{blocked:await blocked()})]}
 const reason=page.locator('[data-tournament-schedule] input[placeholder*="理由"]')
 out.reasonCount=await reason.count()
 if(await reason.count()) await reason.fill('验收：按实际人数调整轮数')
