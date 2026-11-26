@@ -6,6 +6,10 @@ const run=(name)=>{ execFileSync(process.execPath,[here+name],{stdio:'inherit'})
 // 一次跑完：建赛事（含裁判）→ 转主办者 → 五种身份的受众矩阵
 run('b1-tournament-prep.mjs')
 run('b1-transfer-organizer.mjs')
+// 第一遍让两名选手把本场房间真正建起来（赛事桌的 room 只有双方进房后才 live），
+// 第二遍才是判定受众矩阵的那一遍。
+run('b1b-referee-audience.mjs')
+await new Promise(r => setTimeout(r, 8000))
 run('b1b-referee-audience.mjs')
 const report=JSON.parse(fs.readFileSync(OUT+'/b1b-report.json','utf8'))
 const tabOf=name=>(report.identities.find(i=>i.name===name)||{}).hasTableTab
