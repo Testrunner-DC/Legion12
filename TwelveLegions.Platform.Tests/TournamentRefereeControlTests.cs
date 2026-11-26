@@ -338,6 +338,10 @@ public sealed class TournamentRefereeControlTests
             // another platform fixture is finishing on the same test host.
             // Retry the owned temporary tree briefly instead of turning that
             // harmless close race into a false release-gate failure.
+            // 1 秒的重试窗口在整轮资格里偶发不够（2026-11-26 一次 3235 例运行里失败过一次）：
+            // 同一测试主机上并行的平台夹具释放连接是异步的。放宽到 6 秒，并在真的失败时
+            // 指出是哪个文件仍被占用——只加长等待，不吞掉失败。
+            const int attempts = 60, delayMs = 100;
             for (var attempt = 0; ; attempt++)
             {
                 try
@@ -345,17 +349,36 @@ public sealed class TournamentRefereeControlTests
                     Directory.Delete(_root, true);
                     break;
                 }
-                catch (IOException) when (attempt < 20)
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException && attempt < attempts)
                 {
                     SqliteConnection.ClearAllPools();
-                    await Task.Delay(50);
+                    await Task.Delay(delayMs);
                 }
-                catch (UnauthorizedAccessException) when (attempt < 20)
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                 {
-                    SqliteConnection.ClearAllPools();
-                    await Task.Delay(50);
+                    throw new IOException(
+                        $"临时目录在 {attempts * delayMs} ms 内仍无法删除：{_root}；占用文件={DescribeLockedFile(_root) ?? "未定位"}", error);
                 }
             }
+        }
+
+        private static string? DescribeLockedFile(string root)
+        {
+            try
+            {
+                foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        using var _ = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                    }
+                    catch (IOException) { return path; }
+                    catch (UnauthorizedAccessException) { return path; }
+                }
+            }
+            catch (IOException) { /* 目录已消失：没有可报告的占用者。 */ }
+            catch (UnauthorizedAccessException) { }
+            return null;
         }
     }
 }
