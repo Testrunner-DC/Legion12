@@ -741,14 +741,17 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    // 历史荣誉展示玩家**当前**名字（用户 2026-11-26）：改名后旧称号也跟着变。
+    // 只有账号已不存在时才回落到结算时的快照，删号则显示"已注销玩家"。
     private string HistoricalHonorUsernameLocked(RankedProfileHistoryRow row)
     {
         var account = _data.Accounts.FirstOrDefault(item => item.Id.Equals(row.AccountId,
             StringComparison.OrdinalIgnoreCase));
+        if (account is { Deleted: false }) return PublicUsername(account);
         if (account?.Deleted == true) return "已注销玩家";
         if (!string.IsNullOrWhiteSpace(row.UsernameSnapshot))
             return L12UsernamePolicy.PublicName(row.UsernameSnapshot);
-        return account is null ? "已注销玩家" : PublicUsername(account);
+        return "已注销玩家";
     }
 
     private string HistoricalHonorFactionNameLocked(RankedProfileHistoryRow row)
