@@ -199,6 +199,46 @@ public sealed class ChatProtocolFeatureTests
         Assert.Empty(conversations.Keys.Cast<object>());
     }
 
+    // 本桌广播的收件人是通配符 "*"：投递闸门必须按"发送者是本桌成员"放行，
+    // 而不是拿 "*" 去查账号对（那会把发送者自己的 chatAck 和历史一起静默丢掉，线上表现为"发送结果未确认"）。
+    [Fact]
+    public async Task TableBroadcastAckAndHistoryReachTheSenderThroughTheDeliveryGate()
+    {
+        await using var host = await FeatureHost.CreateAsync();
+        await using var a = await SocketPeer.ConnectAsync(host.Endpoint, host.A.Token);
+        await using var b = await SocketPeer.ConnectAsync(host.Endpoint, host.B.Token);
+        var matchId = await StartFriendlyGameAsync(a, b);
+
+        var requestId = RequestId(a.ServerNow());
+        await a.SendAsync(new
+        {
+            type = "chatSend", requestId, scope = "table",
+            peerAccountId = L12ChatRuntime.TableBroadcastPeer, matchId, text = "本桌频道",
+        });
+        var ack = await a.ReceiveAsync(frame => String(frame, "type") == "chatAck"
+            && String(frame, "requestId") == requestId, Deadline);
+        Assert.True(ack.Payload.GetProperty("success").GetBoolean(), $"ack={ack.Payload}");
+        Assert.Equal(1, ack.Payload.GetProperty("seq").GetInt64());
+
+        var message = await b.ReceiveTypeAsync("chatMessage", Deadline);
+        var entry = message.Payload.GetProperty("entry");
+        Assert.Equal("table", String(entry, "scope"));
+        Assert.Equal(L12ChatRuntime.TableBroadcastPeer, String(entry, "recipientId"));
+        Assert.Equal(host.A.Id, String(entry, "senderId"));
+
+        // 历史回执走同一个闸门：收件人拉到的第一条必须是这条广播。
+        var syncId = RequestId(b.ServerNow());
+        await b.SendAsync(new
+        {
+            type = "chatSync", requestId = syncId, scope = "table",
+            peerAccountId = L12ChatRuntime.TableBroadcastPeer, matchId,
+        });
+        var history = await b.ReceiveAsync(frame => String(frame, "type") == "chatHistory"
+            && String(frame, "requestId") == syncId, Deadline);
+        Assert.Contains(history.Payload.GetProperty("entries").EnumerateArray(),
+            item => String(item, "text") == "本桌频道");
+    }
+
     private static async Task<(JsonElement Ack, JsonElement Message)> SendChatAsync(SocketPeer sender,
         SocketPeer recipient, string requestId, string scope, string peerAccountId, string? matchId,
         string text)
