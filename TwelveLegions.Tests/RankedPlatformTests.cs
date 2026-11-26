@@ -295,7 +295,8 @@ public sealed class RankedPlatformTests
     }
 
     [Fact]
-    public void HistoricalHonorDisplayUsesFrozenNamesAndKeepsDisabledOrDeletedAwardsPrivate()
+    // 用户 2026-11-26：历史荣誉展示玩家当前名字（改名后跟随）；冻结昵称的旧口径已作废。
+    public void HistoricalHonorDisplayFollowsCurrentNameAndKeepsDeletedAwardsPrivate()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-season-honor-privacy",
             Guid.NewGuid().ToString("N"));
@@ -317,12 +318,12 @@ public sealed class RankedPlatformTests
         var renamed = store.SelfServiceChangeUsername(champion.Id, "Password123!", "thonornew03");
         Assert.True(renamed.Success, renamed.Message);
         var afterRename = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
-        Assert.Equal(champion.Username, Assert.Single(afterRename.Winners).Username);
+        Assert.Equal("thonornew03", Assert.Single(afterRename.Winners).Username);
 
         store.SetAccountDisabled(admin, champion.Id, true, "验证历史获奖事实不随禁用消失",
             new L12AdminAuditContext("honor-history-disable"), apply: true);
         var afterDisable = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
-        Assert.Equal(champion.Username, Assert.Single(afterDisable.Winners).Username);
+        Assert.Equal("thonornew03", Assert.Single(afterDisable.Winners).Username);
         var totalsBeforeDelete = Assert.Single(store.RankedSeasonHistory().FactionTotals);
 
         store.SetAccountDisabled(admin, champion.Id, false, "准备注销隐私回归账号",
