@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { platformState, publicTournamentApi, tournamentApi, type PublicTournamentDetail, type Tournament } from '@/l12/platform'
+import { platformState, publicTournamentApi, refreshCurrentAccount, tournamentApi, type PublicTournamentDetail, type Tournament } from '@/l12/platform'
 import { tournamentDisasterModeText, tournamentFormatText, tournamentMatchStatusText, tournamentPhaseText, tournamentResultText, tournamentRoundStatusText, tournamentStatusText } from '@/l12/tournamentLabels'
 import { tournamentTimeControlLabel } from '@/l12/tournamentTime'
 import TournamentDisasterSummary from './TournamentDisasterSummary.vue'
@@ -39,14 +39,28 @@ const scheduleReason = ref('')
 const scheduleNotice = ref('')
 const scheduleBusy = ref(false)
 const scheduleSuggestion = ref<{ registered: number; checkedIn: number; suggestedSwissRounds: number } | null>(null)
-const canEditSchedule = computed(() => {
+// 身份可能在首帧还没就绪（直接打开详情页时缓存账号尚未回填），所以不进 computed 直接读，
+// 而是先落到 viewerId，再据此判定；同时暴露被拦的原因，避免再靠猜。
+const viewerId = ref('')
+const scheduleBlocked = computed(() => {
   const value = organizerView.value
-  return !!value && value.organizerAccountId === platformState.account?.id
-    && value.status === 'registration' && (value.rounds?.length ?? 0) === 0
+  if (!value) return 'no-view'
+  if (!viewerId.value) return 'no-identity'
+  if (value.organizerAccountId !== viewerId.value) return 'not-organizer'
+  if (value.status !== 'registration') return 'not-registration'
+  if ((value.rounds?.length ?? 0) > 0) return 'has-rounds'
+  return ''
 })
+const canEditSchedule = computed(() => !!organizerView.value && scheduleBlocked.value === '')
 async function loadScheduleSuggestion() {
   const publicView = tournament.value
-  if (!publicView || !platformState.account) { organizerView.value = null; scheduleSuggestion.value = null; return }
+  if (!publicView) { organizerView.value = null; scheduleSuggestion.value = null; return }
+  // 直接打开详情页时缓存账号可能还没回填：先确保拿到当前身份，再谈主办者判定。
+  viewerId.value = platformState.account?.id ?? ''
+  if (!viewerId.value && platformState.token) {
+    try { viewerId.value = (await refreshCurrentAccount())?.id ?? '' } catch { viewerId.value = '' }
+  }
+  if (!viewerId.value) { organizerView.value = null; scheduleSuggestion.value = null; return }
   try { organizerView.value = await tournamentApi.getByCode(publicView.code) } catch { organizerView.value = null }
   const value = organizerView.value
   if (!value) { scheduleSuggestion.value = null; return }
@@ -98,14 +112,14 @@ onBeforeUnmount(() => { visibleTournamentRead.dispose(); window.clearTimeout(reg
 </script>
 
 <template>
-  <main class="public-detail detail-page">
+  <main class="public-detail detail-page" :data-schedule-blocked="scheduleBlocked || 'ready'">
     <button class="back" @click="router.push('/battle/tournaments')">← 返回赛事中心</button>
     <p v-if="loading" class="panel" role="status">正在加载赛事…</p>
     <section v-else-if="!tournament" class="panel"><p class="notice" role="alert">{{ notice }}</p><button class="primary" @click="login">登录后继续</button></section>
     <template v-else>
       <header class="page-head"><div><small>{{ tournament.code }} · {{ tournamentStatusText(tournament.status) }}</small><h1>{{ tournament.name }}</h1><p>{{ tournament.description || '暂无赛事简介' }}</p></div><div class="header-actions"><button @click="copyLink">复制链接</button><button class="primary" @click="login">{{ tournament.registrationOpen ? '登录并报名' : '登录查看我的赛事' }}</button></div></header>
       <section v-if="tournament.status === 'registration'" class="panel registration-callout" aria-label="赛事报名"><div><small>REGISTRATION</small><h2>{{ tournament.registrationOpen ? '报名开放中' : '本场报名已关闭' }}</h2><p>{{ tournament.registrationOpen ? '登录后可直接报名；获得正式席位后，再在赛前签到时选择并锁定本人牌库。' : '仍可查看本场赛事信息、规则、赛程和公开参赛状态。' }}</p></div><button class="primary" :disabled="!tournament.registrationOpen" @click="login">{{ tournament.registrationOpen ? '登录后报名' : '报名已关闭' }}</button></section>
-      <section v-if="canEditSchedule" class="panel schedule-panel" data-tournament-schedule>
+      <section v-if="canEditSchedule" class="panel schedule-panel" data-tournament-schedule :data-schedule-blocked="scheduleBlocked || 'ready'">
         <div><small>PRE-START</small><h2>赛前调整</h2><p>人数上限与瑞士轮数在开赛前可调整；建议值按当前报到（否则报名）人数计算。</p></div>
         <label>人数上限 <input v-model.number="scheduleDraft.maxPlayers" type="number" min="2" max="256"></label>
         <label v-if="tournament.format !== 'single'">瑞士轮数 <input v-model.number="scheduleDraft.swissRounds" type="number" min="1" max="20"></label>
