@@ -28,6 +28,25 @@ public sealed class RankReachedRuleBackfillTests
         Assert.Equal(players.Length, f.Reopen().AlternateArtGrants().Count);
     }
 
+    // 用户 2026-11-27 裁定：最强主宰奖励要能长期配置（每季不必手配），
+    // 且新主宰上线后仍可在后台补建对应规则。
+    [Fact]
+    public void MasterChampionRuleAllowsLongTermConfigurationWithoutSeason()
+    {
+        using var f = new Fixture();
+        var saved = f.Store.SaveAlternateArtAwardRule(f.Admin, f.Draft(kind: "master-champion-season-final", season: ""));
+        Assert.Equal("master-champion-season-final", saved.Kind);
+        Assert.Equal(string.Empty, saved.SeasonId);
+        Assert.True(saved.Active);
+        // 长期规则不参与保存时的补发，只在赛季归档结算时派发。
+        Assert.Empty(f.Store.AlternateArtGrants());
+        Assert.Equal(string.Empty, f.Reopen().AlternateArtAwardRules().Single().SeasonId);
+
+        // 段位与普通赛季结算规则仍必须绑定具体赛季。
+        Assert.Throws<ArgumentException>(() => f.Store.SaveAlternateArtAwardRule(f.Admin, f.Draft(kind: "rank-reached", season: "")));
+        Assert.Throws<ArgumentException>(() => f.Store.SaveAlternateArtAwardRule(f.Admin, f.Draft(kind: "season-final", season: "")));
+    }
+
     [Fact]
     public void FirstSettledGameQualifiesWithoutWaitingForPlacementCompletion()
     {

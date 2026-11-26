@@ -664,7 +664,9 @@ public sealed partial class L12PlatformStore
                 artId = art.Id;
             }
             if (!AlternateArtAwardKinds.Contains(kind)) throw new ArgumentException("发放规则类型无效");
-            if (kind is "rank-reached" or "season-final" or "master-champion-season-final" && string.IsNullOrWhiteSpace(seasonId))
+            // 最强主宰规则允许不填赛季＝长期生效（用户 2026-11-27：长期配置，且新主宰上线后
+            // 仍可在后台补建规则）；段位与普通赛季结算规则仍必须绑定具体赛季。
+            if (kind is "rank-reached" or "season-final" && string.IsNullOrWhiteSpace(seasonId))
                 throw new ArgumentException("段位和赛季结算规则必须填写赛季编号");
             if (kind == "event" && string.IsNullOrWhiteSpace(eventId)) throw new ArgumentException("活动规则必须填写活动编号");
             if (draft.MinimumTierIndex is < 0 or > 4) throw new ArgumentException("最低段位只能为 0 至 4");
@@ -804,10 +806,16 @@ public sealed partial class L12PlatformStore
         string seasonId, bool seasonFinal)
     {
         if (_sharedGallery is null) return null;
-        var hasRules = _data.AlternateArtAwardRules.Any(row => row.Active && SeasonIdsEqual(row.SeasonId, seasonId)
-            && (seasonFinal ? row.Kind is "season-final" or "master-champion-season-final" : row.Kind == "rank-reached"));
+        var hasRules = _data.AlternateArtAwardRules.Any(row => row.Active && (seasonFinal
+            ? row.Kind == "season-final" && SeasonIdsEqual(row.SeasonId, seasonId)
+              || row.Kind == "master-champion-season-final" && MasterChampionRuleAppliesToSeason(row, seasonId)
+            : row.Kind == "rank-reached" && SeasonIdsEqual(row.SeasonId, seasonId)));
         return hasRules ? SharedAlternateArtDefinitionsLocked(requireAvailable: true) : null;
     }
+
+    /// <summary>最强主宰发放规则的赛季匹配：赛季留空表示对每个赛季都生效（长期配置）。</summary>
+    private static bool MasterChampionRuleAppliesToSeason(AlternateArtAwardRuleRow rule, string seasonId)
+        => string.IsNullOrWhiteSpace(rule.SeasonId) || SeasonIdsEqual(rule.SeasonId, seasonId);
 
     private void ApplyRankReachedAlternateArtAwardsLocked(string accountId, string seasonId, int tierIndex,
         IReadOnlyDictionary<string, L12AlternateArtView>? definitions)
@@ -836,7 +844,7 @@ public sealed partial class L12PlatformStore
         IReadOnlyDictionary<string, L12AlternateArtView>? definitions)
     {
         var rules = _data.AlternateArtAwardRules.Where(row => row.Active && row.Kind == "master-champion-season-final"
-                     && SeasonIdsEqual(row.SeasonId, seasonId)).ToArray();
+                     && MasterChampionRuleAppliesToSeason(row, seasonId)).ToArray();
         foreach (var rule in rules)
         {
             if (!IsActiveGrantableAlternateArt(rule.AlternateArtId, definitions)) continue;
