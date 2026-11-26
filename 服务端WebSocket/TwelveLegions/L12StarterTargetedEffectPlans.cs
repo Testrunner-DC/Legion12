@@ -262,7 +262,7 @@ public sealed partial class L12GameEngine
 
         var player = State.Players[candidate.Controller];
         var source = FindAuthoritativeCard(candidate.SourceInstanceId) ?? candidate.SourceSnapshot
-            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         string? error = null;
         L12CardInstance? fieldCost = null;
         L12CardInstance? handCost = null;

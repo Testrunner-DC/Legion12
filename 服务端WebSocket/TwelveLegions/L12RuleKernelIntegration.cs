@@ -900,7 +900,7 @@ public sealed partial class L12GameEngine
         if (activation.Ability == "public-trigger-declaration")
         {
             var triggerSource = FindPromptCard(activation.Controller, activation.SourceInstanceId)
-                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+                ?? CreatePlayerCard(activation.SourceCardId, activation.SourceInstanceId, activation.Controller);
             var triggerCandidate = activation.TriggerCandidateId is null ? null
                 : State.PendingTriggerStackCandidates.FirstOrDefault(candidate => candidate.CandidateId == activation.TriggerCandidateId);
             if (step.Kind == "option")
@@ -932,7 +932,7 @@ public sealed partial class L12GameEngine
         if (activation.Ability == CompositeSegmentDeclarationAbility)
         {
             var segmentSource = FindPromptCard(activation.Controller, activation.SourceInstanceId)
-                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+                ?? CreatePlayerCard(activation.SourceCardId, activation.SourceInstanceId, activation.Controller);
             promptData["sourceInstanceId"] = segmentSource.InstanceId;
             promptData["sourceCardId"] = segmentSource.CardId;
             promptData["sourceName"] = segmentSource.Name;
@@ -992,7 +992,7 @@ public sealed partial class L12GameEngine
         var sourceName = promptData.GetValueOrDefault("sourceName");
         if (string.IsNullOrWhiteSpace(sourceName))
             sourceName = (FindPromptCard(activation.Controller, activation.SourceInstanceId)
-                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId)).Name;
+                ?? CreatePlayerCard(activation.SourceCardId, activation.SourceInstanceId, activation.Controller)).Name;
         var currentCost = step.IsCostSelection
             || step.Kind is "resource-payment" or "composite-ordinary-payment";
         var earlierCost = Enumerable.Range(0, activation.CurrentStep).Reverse()
@@ -2363,7 +2363,7 @@ public sealed partial class L12GameEngine
         if (State.IsResolvingStack) State.DeferredEffectStack.Add(item);
         else State.EffectStack.Add(item);
         RevealSetReactionSourceWhenStacked(candidate);
-        var source = FindSource(item) ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+        var source = FindSource(item) ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         ApplyFictitiousChaliceRelicEffectDamage(candidate.Controller, source, candidate.Trigger);
         AddPresentationEventById("effect-trigger", candidate.Controller, triggerEffectText,
             candidate.Data.GetValueOrDefault("presentationSceneId"), source);
@@ -2395,7 +2395,7 @@ public sealed partial class L12GameEngine
         var player = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
-            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         if (TryBeginPublicTriggerDeclaration(candidate, source)) return true;
         var steps = new List<L12ActivationSelectionStep>();
         if (candidate.SourceCardId == "S02-0516" && candidate.Trigger == "attack")
@@ -2529,7 +2529,7 @@ public sealed partial class L12GameEngine
             return;
         }
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
-            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         // A completed public declaration may use a short internal stack label for routing.
         // Response presentation must use the card's resolved trigger segment instead.
         candidate.Data["responseUsesTriggerEffectText"] = "true";

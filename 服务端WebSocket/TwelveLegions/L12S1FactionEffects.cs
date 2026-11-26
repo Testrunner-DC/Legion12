@@ -1288,7 +1288,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var settlementSource = source ?? item.SourceSnapshot
-            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+            ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
         if (TryResolveDrawDiscardSegment(item, settlementSource)) return true;
         switch (ability)
         {

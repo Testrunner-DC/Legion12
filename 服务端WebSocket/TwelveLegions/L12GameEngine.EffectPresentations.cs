@@ -118,7 +118,7 @@ public sealed partial class L12GameEngine
             && string.IsNullOrEmpty(item.SourceInstanceId)
             && item.SourceSnapshot is null) return;
         var source = FindSource(item) ?? item.SourceSnapshot
-            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+            ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
         var sceneId = item.Data.GetValueOrDefault("presentationSceneId");
         if (string.IsNullOrWhiteSpace(sceneId))
         {

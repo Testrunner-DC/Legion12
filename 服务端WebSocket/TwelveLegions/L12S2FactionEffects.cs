@@ -190,7 +190,7 @@ public sealed partial class L12GameEngine
             return;
         }
         var xiaotian = ReusableDerivedSpecialCard(player, item.SourceCardId)
-            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+            ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
         ApplyAlternateArt(item.Controller, xiaotian);
         var originZone = player.Graveyard.Contains(xiaotian) ? "graveyard"
             : player.Removed.Contains(xiaotian) ? "removed" : "generated";

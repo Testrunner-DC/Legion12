@@ -248,7 +248,7 @@ public sealed partial class L12GameEngine
         if (spec is null) return false;
         var player = State.Players[candidate.Controller];
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
-            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         if (spec.Optional && mode == "mode:none")
         {
@@ -334,7 +334,7 @@ public sealed partial class L12GameEngine
         if (candidate.Data.GetValueOrDefault("verifiedAtomicConditionLocked") == "true") return true;
 
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
-            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         var controller = State.Players[candidate.Controller];
         var opponent = State.Players[1 - candidate.Controller];
         foreach (var atom in program.Atoms.TakeWhile(atom => atom.Kind != L12AtomKinds.Optional)
@@ -1243,7 +1243,7 @@ public sealed partial class L12GameEngine
 
         var player = State.Players[candidate.Controller];
         var declaredSource = FindAuthoritativeCard(candidate.SourceInstanceId)
-            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         var entryCard = activation.DeclaredValues.GetValueOrDefault("entryCard", []).SingleOrDefault();
         var declaredNone = activation.DeclaredValues.Values.Any(values =>

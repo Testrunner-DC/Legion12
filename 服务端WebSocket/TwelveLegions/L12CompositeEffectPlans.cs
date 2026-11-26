@@ -1901,13 +1901,13 @@ public sealed partial class L12GameEngine
             return CreateCard(activation.SourceCardId, activation.SourceInstanceId);
         if (context?.PlanId.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase) == true)
             return FindAuthoritativeCard(activation.SourceInstanceId)
-                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+                ?? CreatePlayerCard(activation.SourceCardId, activation.SourceInstanceId, activation.Controller);
         // 主动效果已经合法发动并完成首段后，后续段不应因为来源不是一张位于
         // Resolving 区的手牌（主宰、场上军团与圣物均如此）而被误判中断。
         // 优先继续使用权威区域实例；若来源已经离区，则使用其印刷身份作为结算快照。
         if (context?.PlanId.StartsWith("active:", StringComparison.OrdinalIgnoreCase) == true)
             return FindAuthoritativeCard(activation.SourceInstanceId)
-                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+                ?? CreatePlayerCard(activation.SourceCardId, activation.SourceInstanceId, activation.Controller);
         return State.Players[activation.Controller].Resolving.FirstOrDefault(card =>
             card.InstanceId == activation.SourceInstanceId && card.CardId == activation.SourceCardId);
     }
@@ -1918,7 +1918,7 @@ public sealed partial class L12GameEngine
         var hasContext = TryReadCompositeSegmentDeclarationContext(activation, out var context);
         var player = State.Players[activation.Controller];
         var source = CompositeSegmentDeclarationSource(activation, hasContext ? context : null)
-            ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+            ?? CreatePlayerCard(activation.SourceCardId, activation.SourceInstanceId, activation.Controller);
         if (hasContext)
         {
             var segments = L12CompositeEffectPlans.Segments(context.PlanId);
@@ -2045,9 +2045,9 @@ public sealed partial class L12GameEngine
     {
         var planId = item.Data.GetValueOrDefault("compositePlan");
         if (source is null && planId?.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase) == true)
-            source = item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+            source = item.SourceSnapshot ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
         if (source is null && item.Data.GetValueOrDefault("skipCompositeSettlement") == "true")
-            source = item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+            source = item.SourceSnapshot ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
         if (source is null || string.IsNullOrWhiteSpace(planId)
             || !int.TryParse(item.Data.GetValueOrDefault("compositeSegment"), out var current)) return false;
         var singleResponseEffect = CompositeUsesSingleSettlementWindow(item, planId);

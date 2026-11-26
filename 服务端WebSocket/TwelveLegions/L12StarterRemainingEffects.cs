@@ -807,7 +807,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[candidate.Controller];
         var source = FindAuthoritativeCard(candidate.SourceInstanceId) ?? candidate.SourceSnapshot
-            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         var optionalDeclined = plan is "zhaoyun-enter-charge" or "zhaoyun-kill-piercing" or "crossbow-ready"
                 or "wangzhaojun-draw" or "kane-enter-mill" or "hidden-pass-summon"

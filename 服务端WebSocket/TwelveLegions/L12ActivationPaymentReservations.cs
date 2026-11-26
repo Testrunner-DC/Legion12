@@ -49,7 +49,7 @@ public sealed partial class L12GameEngine
     {
         candidate.Data.Remove(PrideMasterSurchargeCommitBarrier);
         var source = FindAuthoritativeCard(candidate.SourceInstanceId) ?? candidate.SourceSnapshot
-            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         if (!RequiresPrideMasterSurcharge(candidate.Controller, source)
             || candidate.Data.GetValueOrDefault("prideMasterSurchargePrepaid") == "true"
             || activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault()
@@ -124,7 +124,7 @@ public sealed partial class L12GameEngine
         candidate.Data.Remove(PrideMasterSurchargeCommitBarrier);
         candidate.Data["prideMasterSurchargePrepaid"] = "true";
         var source = FindAuthoritativeCard(candidate.SourceInstanceId) ?? candidate.SourceSnapshot
-            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         AddEvent("cost", candidate.Controller, "〈傲慢之罪〉使主宰效果额外消耗1士气", source);
         return true;
     }

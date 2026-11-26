@@ -150,7 +150,7 @@ public sealed partial class L12GameEngine
         {
             candidate.Data["presentationFlow"] = $"trial-advance:{plan}";
             RefreshDeclaredPresentationSceneId(candidate, source
-                ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId));
+                ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller));
         }
         if (plan is "galahad-entry" or "finn-entry" or "angus" or "avalon"
             || plan == "constance-entry" && mode == "mode:trial"

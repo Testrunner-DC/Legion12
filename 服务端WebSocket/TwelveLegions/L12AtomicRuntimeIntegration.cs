@@ -17,7 +17,7 @@ public sealed partial class L12GameEngine
                 item.Data["effectResultStatus"] = "failed";
                 AddEvent("effect-failed", item.Controller,
                     $"〈{simpleSelfBuff.Name}〉已离开战场；兵力增加未生效",
-                    item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId));
+                    item.SourceSnapshot ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller));
             }
             FinishStackItem(item);
             return true;

@@ -217,7 +217,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var source = FindSource(item) ?? item.SourceSnapshot
-            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+            ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
         var plan = item.Data.GetValueOrDefault("trialCompletionPlan");
         var segment = int.TryParse(item.Data.GetValueOrDefault("trialSegment"), out var parsed) ? parsed : 0;
 
@@ -378,7 +378,7 @@ public sealed partial class L12GameEngine
             var player = State.Players[item.Controller];
             if (player.SpecialZones.Runes <= 0 || !PublicLegions(State.Players[1 - item.Controller]).Any()) return;
             var fenianSource = FindSource(item) ?? item.SourceSnapshot
-                ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+                ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
             QueueTriggerCandidates([CreateTriggerCandidate(item.Controller, fenianSource, "trial-complete",
                 "芬尼亚传奇可重复发动",
                 new Dictionary<string, string>
@@ -399,7 +399,7 @@ public sealed partial class L12GameEngine
         };
         if (next < 0) return;
         var source = FindSource(item) ?? item.SourceSnapshot
-            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+            ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
         var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
         {
             ["trialSegment"] = next.ToString(),

@@ -213,7 +213,7 @@ public sealed partial class L12GameEngine
     {
         if (!_triggerPaidCostSnapshots.TryGetValue(candidate.CandidateId, out var before)) return;
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
-            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         // 触发声明完成器只允许在入栈前执行 Cost；若来源在这段边界内转为休整，该变化必为已支付费用。
         AddPaidCostPresentationFromSnapshot(before, source, candidate.Data, sourceRestIsCost: true);
     }

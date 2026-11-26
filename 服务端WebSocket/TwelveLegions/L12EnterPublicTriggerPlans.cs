@@ -49,12 +49,12 @@ public sealed partial class L12GameEngine
         if (plan is null) return true;
         candidate.Data["batch6JAConditionLocked"] = "true";
         if (plan == "zhuge" && !RequiresPrideMasterSurcharge(candidate.Controller,
-                candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId)))
+                candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller)))
         {
             foreach (var pair in CompositeFirstSegmentData("trigger:S01-0111:enter", new Dictionary<string, List<string>>()))
                 candidate.Data[pair.Key] = pair.Value;
             RefreshDeclaredPresentationSceneId(candidate,
-                candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId));
+                candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller));
             candidate.Data["declaration-complete"] = "true";
         }
         if (plan is "canopic-one" or "canopic-four"
@@ -369,7 +369,7 @@ public sealed partial class L12GameEngine
         if (plan is null) return false;
         var player = State.Players[candidate.Controller];
         var source = FindAuthoritativeCard(candidate.SourceInstanceId) ?? candidate.SourceSnapshot
-            ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         var preserve = plan is "zhuge" or "richard";
         if (mode == "mode:none" && !preserve)

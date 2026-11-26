@@ -1195,7 +1195,16 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             var configuredGuards = startingGraveyardCounts.GetValueOrDefault("S01-0212");
             var guardCount = configuredGuards == 0 ? 3 : Math.Min(3, configuredGuards);
             for (var i = configuredGuards; i < guardCount; i++)
-                player.Graveyard.Add(CreateCard("S01-0212", $"p{index}-guard-{i + 1}"));
+            {
+                var guard = CreateCard("S01-0212", $"p{index}-guard-{i + 1}");
+                // 补建的陵墓守卫与牌库里的同型卡一致，必须落玩家异画而不是目录原画
+                // （2026-11-26 清单P5：异画同型残差）。
+                var guardAppearance = cardAppearanceIndexes.GetValueOrDefault("S01-0212") + 1;
+                cardAppearanceIndexes["S01-0212"] = guardAppearance;
+                guard.ImageUrl = ResolveAlternateArtUrl($"S01-0212#{guardAppearance}",
+                    ResolveAlternateArtUrl(guard.CardId, guard.ImageUrl, alternateArtUrls), alternateArtUrls);
+                player.Graveyard.Add(guard);
+            }
         }
         if (player.MasterId == "S01-02M1" && _catalog.Cards.ContainsKey("S01-02M2"))
         {

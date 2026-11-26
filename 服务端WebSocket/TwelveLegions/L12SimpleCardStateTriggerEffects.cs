@@ -163,7 +163,7 @@ public sealed partial class L12GameEngine
         if (spec is null) return false;
         var player = State.Players[candidate.Controller];
         var source = FindAuthoritativeCard(candidate.SourceInstanceId)
-            ?? candidate.SourceSnapshot ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId);
+            ?? candidate.SourceSnapshot ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller);
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         if (spec.Optional && mode == "mode:none")
         {
@@ -234,7 +234,7 @@ public sealed partial class L12GameEngine
             ? State.Players[1 - item.Controller] : State.Players[item.Controller];
         var target = LegalSimpleCardStateTargets(item.Controller, spec, item.SourceInstanceId)
             .FirstOrDefault(card => card.InstanceId == targetId);
-        var source = FindSource(item) ?? item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+        var source = FindSource(item) ?? item.SourceSnapshot ?? CreatePlayerCard(item.SourceCardId, item.SourceInstanceId, item.Controller);
         if (target is null)
         {
             RecordTargetSettlementFailure(item, targetId,

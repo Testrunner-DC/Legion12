@@ -352,7 +352,7 @@ public sealed partial class L12GameEngine
         else if (AttackPublicTriggerPlans.GetValueOrDefault(candidate.SourceCardId) is { } plan)
         {
             if (!CanDeclareAttackPlan(candidate, plan, source ?? candidate.SourceSnapshot
-                    ?? CreateCard(candidate.SourceCardId, candidate.SourceInstanceId)))
+                    ?? CreatePlayerCard(candidate.SourceCardId, candidate.SourceInstanceId, candidate.Controller)))
                 error = $"{candidate.SourceName}的公开费用、条件或目标已失效；未支付费用且效果未入栈";
 
             if (error is null)
