@@ -2,7 +2,7 @@
 import { vHorizontalScrollArrows } from '../horizontalScrollArrows'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { authState, platformState, publicTournamentApi, tournamentApi, type TournamentCareer, type TournamentSummaryPage, type TournamentSummary, type PublicTournamentSummary } from '@/l12/platform'
+import { authState, platformState, publicTournamentApi, tournamentApi, tournamentEligibilityApi, type TournamentEligibility, type TournamentCareer, type TournamentSummaryPage, type TournamentSummary, type PublicTournamentSummary } from '@/l12/platform'
 import { tournamentFormatText, tournamentStatusText } from '@/l12/tournamentLabels'
 import TournamentCreateWizard from './TournamentCreateWizard.vue'
 import TournamentSummaryList from './TournamentSummaryList.vue'
@@ -82,14 +82,56 @@ onMounted(async () => {
   visibleCareerRead.request()
 })
 onBeforeUnmount(() => { visibleTournamentRead.dispose(); visibleCareerRead.dispose(); disposed = true; ++generation; ++careerGeneration; window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility); window.clearTimeout(searchTimer) })
+
+// 赛事资质（用户 2026-11-26）：创建赛事需要资质；普通账号在赛事中心自助申请，管理员审核或直接授予。
+const eligibility = ref<TournamentEligibility | null>(null)
+const eligibilityReason = ref('')
+const eligibilityBusy = ref(false)
+const eligibilityLabel = computed(() => {
+  if (eligibility.value?.effective) return '已具备'
+  const status = eligibility.value?.status
+  if (status === 'pending') return '审核中'
+  if (status === 'rejected') return '已被驳回，可重新申请'
+  return '尚未申请'
+})
+const canApplyEligibility = computed(() => !!identity.value && !eligibility.value?.effective
+  && eligibility.value?.status !== 'pending')
+async function refreshEligibility() {
+  if (!identity.value) { eligibility.value = null; return }
+  try { eligibility.value = await tournamentEligibilityApi.self() } catch { eligibility.value = null }
+}
+async function submitEligibility() {
+  if (eligibilityBusy.value) return
+  eligibilityBusy.value = true
+  try {
+    eligibility.value = await tournamentEligibilityApi.apply(eligibilityReason.value.trim())
+    eligibilityReason.value = ''
+  } catch (error) { eligibility.value = eligibility.value; console.warn('eligibility apply failed', error) }
+  finally { eligibilityBusy.value = false }
+}
+function openCreateOrEligibility() {
+  if (eligibility.value?.effective || !identity.value) switchSection('create')
+  else document.querySelector('[data-tournament-eligibility]')?.scrollIntoView({ block: 'center' })
+}
+onMounted(() => { void refreshEligibility() })
 </script>
 
 <template>
   <main class="hub-page">
     <header class="page-head">
       <div><small>TOURNAMENT CENTER</small><h1>赛事中心</h1><p>发现赛事、跟进自己的下一步，或创建并运营一场赛事。</p></div>
-      <button class="primary create-button" type="button" @click="switchSection('create')">{{ identity ? '创建赛事' : '登录举办赛事' }}</button>
+      <button class="primary create-button" type="button" @click="openCreateOrEligibility">{{ !identity ? '登录举办赛事' : (eligibility?.effective ? '创建赛事' : '申请赛事资格') }}</button>
     </header>
+    <section v-if="identity" class="panel eligibility-panel" data-tournament-eligibility>
+      <b>赛事资质：{{ eligibilityLabel }}</b>
+      <p v-if="eligibility?.effective">已具备赛事资质，可以创建赛事。</p>
+      <p v-else-if="eligibility?.status === 'pending'">申请已提交，等待管理员审核。</p>
+      <p v-else>创建赛事需要赛事资质：说明办赛计划后提交，管理员审核通过即可举办。</p>
+      <template v-if="canApplyEligibility">
+        <textarea v-model="eligibilityReason" maxlength="500" aria-label="申请原因" placeholder="申请原因（不少于 10 字，例如赛制、场次与预计人数）"></textarea>
+        <button class="primary" type="button" :disabled="eligibilityBusy || eligibilityReason.trim().length < 10" @click="submitEligibility">提交申请</button>
+      </template>
+    </section>
     <nav class="section-tabs" :class="{ 'public-tabs': !identity }" aria-label="赛事分类"><button v-for="item in sectionOptions" :key="item[0]" :class="{active: section === item[0]}" :aria-current="section === item[0] ? 'page' : undefined" @click="switchSection(item[0])">{{ item[1] }}</button></nav>
     <section v-if="section === 'create' && identity" class="panel create-panel"><TournamentCreateWizard @created="value => open(value.code)" /></section>
     <template v-else>
