@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-26-username-follows-rename",
+  "date": "2026-11-26",
+  "audience": "players",
+  "title": "改名后各处显示的名字都会跟随",
+  "changes": [
+    {
+      "category": "accounts",
+      "text": "改名后，历史荣誉、对局记录与回放、聊天记录、举报与反馈、以及对局棋盘上显示的玩家名都会跟随新名字；已注销账号仍显示为「已注销玩家」。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.UsernameChanges.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.UsernamePropagation.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    }
+  ]
+}

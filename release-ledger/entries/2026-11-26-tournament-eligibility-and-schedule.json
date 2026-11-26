@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-26-tournament-eligibility-and-schedule",
+  "date": "2026-11-26",
+  "audience": "players",
+  "title": "赛事中心：赛事资质与赛前调整",
+  "changes": [
+    {
+      "category": "tournaments",
+      "text": "赛事中心新增「赛事资质」：玩家可在创建赛事前自助申请，审核通过或由管理员授予后即可创建赛事；主办者可在开赛前调整参赛人数上限与瑞士轮数，面板会给出建议值。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentEligibility.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "服务端WebSocket/TwelveLegions/L12HttpContracts.cs",
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/TournamentHubPage.vue",
+        "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue",
+        "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue"
+      ]
+    }
+  ]
+}

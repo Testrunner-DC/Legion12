@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-27-master-champion-long-term-award",
+  "date": "2026-11-27",
+  "audience": "players",
+  "title": "最强主宰异画奖励改为长期生效",
+  "changes": [
+    {
+      "category": "ranking",
+      "text": "赛季结算时按「最强主宰」自动派发的异画奖励改为长期配置：配置一次后每个赛季都会自动生效，后续新增的主宰也会按规则一并派发。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs"
+      ]
+    }
+  ]
+}

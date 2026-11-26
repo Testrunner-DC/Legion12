@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-27-alternate-art-consistency",
+  "date": "2026-11-27",
+  "audience": "players",
+  "title": "异画在补建与重建的卡牌上也会保持",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "太阳城阵营自动补建的陵墓守卫，以及经卡牌效果重新生成的卡牌，都会保持玩家选用的异画，不再回落为默认卡面。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12ActivationPaymentReservations.cs",
+        "服务端WebSocket/TwelveLegions/L12AtomicRuntimeIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12AttackPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs",
+        "服务端WebSocket/TwelveLegions/L12PaidCostPresentation.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12SimpleCardStateTriggerEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterTargetedEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12TrialAdvanceEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12TrialCompletionTriggerPlans.cs"
+      ]
+    }
+  ]
+}

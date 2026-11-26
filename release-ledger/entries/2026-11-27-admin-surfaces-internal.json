@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-27-admin-surfaces-internal",
+  "date": "2026-11-27",
+  "audience": "internal",
+  "reason": "只影响后台管理界面与后台审计列表（赛事资质审核、账号页授予/撤销、异画派发规则表单、审计操作者显示名），玩家侧不可见。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/AdminAccountsPage.vue",
+    "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue",
+    "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs"
+  ]
+}
