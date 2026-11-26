@@ -269,6 +269,8 @@ public sealed record L12TournamentPostponePayload(DateTimeOffset NewStartAt, str
 public sealed record L12TournamentCancelPayload(string Reason);
 public sealed record L12TournamentMatchPausePayload(bool Paused, string Reason);
 public sealed record L12TournamentAuthorityConclusionPayload(string Decision, string Reason);
+// 赛前调整：只带要改的两项，null 表示保持原值。
+public sealed record L12TournamentSchedulePayload(int? MaxPlayers, int? SwissRounds);
 public sealed record L12TournamentJudgeCaseCreatePayload(string MatchId, string Category, string Urgency,
     string Message);
 public sealed record L12TournamentJudgeCaseAssignPayload(string CaseId, string AssigneeAccountId, string Reason);
@@ -707,6 +709,53 @@ public sealed partial class L12PlatformStore
                 working.RegistrationVisibility = registrationVisibility;
             });
         }
+    }
+
+    // 赛前调整人数上限与瑞士轮数（用户 2026-11-26 反馈：报名人数不达预期时要能改轮数）。
+    // 只在"还没有任何一轮"的赛前阶段开放：轮数参与「何时停止生成新轮」与自动化收尾
+    // （TournamentAutomation / Tournaments 的 1326、2127），开赛后再改会让已公布赛程与积分前后不一致。
+    public L12TournamentView SetTournamentSchedule(L12AccountView actor, string tournamentId,
+        L12TournamentSchedulePayload payload, long expectedVersion, L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            RequireActiveTournamentAccount(actor);
+            if (row.OrganizerAccountId != actor.Id
+                && !L12Authorization.HasPermission(actor, L12Permission.TournamentsManage))
+                throw new L12TournamentScopeException("仅赛事主办者或全局赛事管理员可调整赛程");
+            if (row.Status != "registration" || row.Rounds.Count != 0)
+                throw new L12TournamentVersionConflictException("赛事已开始，人数与轮数不可再调整");
+            var registered = row.Participants.Count(item => !item.Removed && !item.Dropped);
+            var maxPlayers = payload.MaxPlayers ?? row.MaxPlayers;
+            if (maxPlayers is < 2 or > 256) throw new ArgumentException("赛事人数必须为 2–256");
+            if (maxPlayers < registered)
+                throw new ArgumentException($"人数上限不能小于已报名人数（{registered}）");
+            var swissRounds = payload.SwissRounds ?? row.SwissRounds;
+            if (row.Format == "single")
+            {
+                if (payload.SwissRounds is not null) throw new ArgumentException("单败淘汰赛制没有瑞士轮数");
+            }
+            else if (swissRounds is < 1 or > 20) throw new ArgumentException("瑞士轮数必须为 1–20");
+            if (row.CutSize is { } cut && cut > maxPlayers)
+                throw new ArgumentException("cut 人数不能超过人数上限");
+            if (row.MaxPlayers == maxPlayers && row.SwissRounds == swissRounds) return ToView(row, actor);
+            return Mutate(actor, row, "schedule-set", tournamentId, context, apply, working =>
+            {
+                working.MaxPlayers = maxPlayers;
+                if (working.Format != "single") working.SwissRounds = swissRounds;
+            });
+        }
+    }
+
+    // 开赛前按实际报到人数给出的瑞士轮建议值：⌈log2(n)⌉（8 人 3 轮、16 人 4 轮、32 人 5 轮），下限 1。
+    public static int SuggestedSwissRounds(int participants)
+    {
+        if (participants < 2) return 1;
+        var rounds = 1;
+        var capacity = 2;
+        while (capacity < participants && rounds < 20) { capacity *= 2; rounds++; }
+        return rounds;
     }
 
     public L12TournamentView CreateTournament(L12AccountView actor, L12TournamentCreatePayload payload,

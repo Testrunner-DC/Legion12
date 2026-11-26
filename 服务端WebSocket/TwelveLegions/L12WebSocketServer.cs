@@ -2156,6 +2156,39 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
+        _app.MapGet("/api/tournaments/{id}/schedule-suggestion", (HttpRequest request, string id) =>
+        {
+            if (!TryAuthorize(request, L12Permission.TournamentsRead, out var viewer, out var denied))
+                return denied;
+            var view = _platform.Tournament(viewer.Account, id);
+            if (view is null) return ApiError(request, "tournament_not_found", "赛事不存在",
+                StatusCodes.Status404NotFound);
+            // 报到人数优先：签到截止后按实际到场算，否则按报名人数。
+            var checkedIn = view.Participants.Count(item => item.TournamentCheckedInAt is not null && !item.Removed);
+            var registration = view.Participants.Count(item => !item.Removed);
+            return Results.Ok(new
+            {
+                registered = registration,
+                checkedIn,
+                suggestedSwissRounds = L12PlatformStore.SuggestedSwissRounds(checkedIn > 0 ? checkedIn : registration),
+            });
+        });
+        _app.MapPut("/api/tournaments/{id}/schedule", (HttpRequest request, string id,
+            TournamentScheduleRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentSchedulePayload(body.MaxPlayers, body.SwissRounds);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "tournament.schedule.set", $"tournament:{id}/schedule", payload, key, expected,
+                body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.SetTournamentSchedule(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
         _app.MapPut("/api/tournaments/{id}/visibility", (HttpRequest request, string id,
             TournamentVisibilityRequest body) =>
         {

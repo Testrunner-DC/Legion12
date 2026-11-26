@@ -158,6 +158,8 @@ public sealed record TournamentActionRequest(string? IdempotencyKey = null, long
     bool DryRun = false, string? Reason = null);
 public sealed record TournamentStaffRequest(IReadOnlyList<string>? RefereeAccountIds,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record TournamentScheduleRequest(int? MaxPlayers, int? SwissRounds,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record TournamentVisibilityRequest(string? Visibility, string? RegistrationVisibility,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record TournamentCheckInRequest(string? AccountId, bool Ready,
