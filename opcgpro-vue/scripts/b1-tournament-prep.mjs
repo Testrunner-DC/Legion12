@@ -59,6 +59,7 @@ const created = await api('POST', '/api/tournaments', { token: admin, key: 'b1-'
 out.created = { status: created.status, fails: out.steps.filter(s => s.fail).slice(-1) }
 const id = (created.json?.tournament || created.json)?.id
 out.tournamentId = id
+out.code = (await api('GET', '/api/tournaments/' + id, { token: admin })).json?.code ?? ''
 const versionOf = async () => (await api('GET', '/api/tournaments/' + id, { token: admin })).json?.version
 let seq = 0
 for (const [name, token, deckName] of [['彩排01', t01, name01], ['彩排02', t02, name02]]) {

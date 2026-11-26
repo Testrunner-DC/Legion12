@@ -3,7 +3,10 @@ import { chromium } from 'playwright'
 const BASE='https://legion-12.com/testrun'
 const OUT='D:/GPT/Legion12/artifacts/a3-clear-20261126'
 const pw=fs.readFileSync('D:/GPT/Legion12/artifacts/rehearsal-secret.txt','utf8').trim()
-const CODE='JEZT6G'
+// 赛事码由准备脚本产出，不能写死（写死会指向上一轮已收掉的赛事）。
+const prep = JSON.parse(fs.readFileSync(OUT + '/b1-prep.json', 'utf8'))
+const CODE = prep.code
+
 const report={startedAt:new Date().toISOString(),code:CODE,identities:[],messages:{}}
 const browser=await chromium.launch()
 const click=async(page,name,exact=false)=>{const b=page.getByRole('button',{name,exact});if(!(await b.count()))return false;try{await b.first().click({force:true});return true}catch{return false}}
@@ -22,8 +25,14 @@ async function session(name){
   if(await row.count()){await row.first().click({force:true});await page.waitForTimeout(3500)}
   await click(page,'查看赛事');await page.waitForTimeout(3500)
   await click(page,'赛程');await page.waitForTimeout(2500)
-  const entered = await click(page,'进入对局') || await click(page,'进入我的对局') || await click(page,'观战') || await click(page,'工作人员观战')
-  await page.waitForTimeout(8000)
+  // 工作人员入口文案在不同阶段不同（进入我的对局／观战／工作人员观战），各试几轮。
+  let entered = false
+  for (let attempt = 0; attempt < 4 && !entered; attempt++) {
+    entered = await click(page,'进入对局') || await click(page,'进入我的对局')
+      || await click(page,'工作人员观战') || await click(page,'观战')
+    await page.waitForTimeout(entered ? 8000 : 2500)
+    if (!entered) { await click(page,'赛程'); await page.waitForTimeout(2000) }
+  }
   return {ctx,page,name,entered,url:page.url()}
 }
 async function openTable(page){
