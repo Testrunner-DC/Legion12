@@ -18,21 +18,29 @@ async function session(name){
   await page.fill('form input[type=password]',pw)
   await page.click('form button[type=submit]')
   await page.waitForFunction(()=>!document.querySelector('form input[type=password]'),{timeout:30000})
+  // 先退出遗留对局：否则会停在上一场的房间里，进不了本场赛事桌
   await page.goto(BASE+'/game',{waitUntil:'domcontentloaded'});await page.waitForTimeout(5000)
-  for(const l of ['返回大厅','返回赛事/大厅','投降']){if(await click(page,l)){await page.waitForTimeout(2000);break}}
+  for(let i=0;i<3;i++){
+    let left=false
+    for(const l of ['返回大厅','返回赛事/大厅','投降']){ if(await click(page,l)){ left=true; break } }
+    await page.waitForTimeout(2500)
+    if(!left) break
+    await page.goto(BASE+'/game',{waitUntil:'domcontentloaded'}); await page.waitForTimeout(2500)
+  }
   await page.goto(BASE+'/battle/tournaments',{waitUntil:'domcontentloaded'});await page.waitForTimeout(4000)
   const row=page.getByRole('button',{name:new RegExp(CODE)})
   if(await row.count()){await row.first().click({force:true});await page.waitForTimeout(3500)}
   await click(page,'查看赛事');await page.waitForTimeout(3500)
   await click(page,'赛程');await page.waitForTimeout(2500)
-  // 工作人员入口文案在不同阶段不同（进入我的对局／观战／工作人员观战），各试几轮。
+  // 工作人员入口：赛程行的「观战」。点完必须真的跳到 /game，否则继续重试。
   let entered = false
-  for (let attempt = 0; attempt < 4 && !entered; attempt++) {
-    entered = await click(page,'进入对局') || await click(page,'进入我的对局')
-      || await click(page,'工作人员观战') || await click(page,'观战')
-    await page.waitForTimeout(entered ? 8000 : 2500)
-    if (!entered) { await click(page,'赛程'); await page.waitForTimeout(2000) }
+  for (let attempt = 0; attempt < 5 && !entered; attempt++) {
+    await click(page,'观战') || await click(page,'进入对局') || await click(page,'进入我的对局')
+    await page.waitForTimeout(3000)
+    entered = page.url().includes('/game')
+    if (!entered) { await click(page,'赛程'); await page.waitForTimeout(1500) }
   }
+  if (entered) await page.waitForTimeout(6000)
   return {ctx,page,name,entered,url:page.url()}
 }
 async function openTable(page){
