@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { publicTournamentApi, type PublicTournamentDetail } from '@/l12/platform'
+import { platformState, publicTournamentApi, tournamentApi, type PublicTournamentDetail, type Tournament } from '@/l12/platform'
 import { tournamentDisasterModeText, tournamentFormatText, tournamentMatchStatusText, tournamentPhaseText, tournamentResultText, tournamentRoundStatusText, tournamentStatusText } from '@/l12/tournamentLabels'
 import { tournamentTimeControlLabel } from '@/l12/tournamentTime'
 import TournamentDisasterSummary from './TournamentDisasterSummary.vue'
@@ -31,6 +31,47 @@ function invalidateTournamentRead() { ++generation; tournament.value = null; loa
 const visibleTournamentRead = createVisibleResourceRead({
   visible: () => document.visibilityState === 'visible', invalidate: invalidateTournamentRead, load,
 })
+// 赛前调整（用户 2026-11-26）：主办者在开赛前可改人数上限与瑞士轮数，并可采纳按实际人数算出的建议值。
+// 公开详情是只读投影（没有 id/version/organizer），主办者身份与版本改由带权限的 code 视图取得。
+const organizerView = ref<Tournament | null>(null)
+const scheduleDraft = reactive({ maxPlayers: 0, swissRounds: 1 })
+const scheduleReason = ref('')
+const scheduleNotice = ref('')
+const scheduleBusy = ref(false)
+const scheduleSuggestion = ref<{ registered: number; checkedIn: number; suggestedSwissRounds: number } | null>(null)
+const canEditSchedule = computed(() => {
+  const value = organizerView.value
+  return !!value && value.organizerAccountId === platformState.account?.id
+    && value.status === 'registration' && (value.rounds?.length ?? 0) === 0
+})
+async function loadScheduleSuggestion() {
+  const publicView = tournament.value
+  if (!publicView || !platformState.account) { organizerView.value = null; scheduleSuggestion.value = null; return }
+  try { organizerView.value = await tournamentApi.getByCode(publicView.code) } catch { organizerView.value = null }
+  const value = organizerView.value
+  if (!value) { scheduleSuggestion.value = null; return }
+  scheduleDraft.maxPlayers = value.maxPlayers
+  scheduleDraft.swissRounds = value.swissRounds ?? 1
+  if (!canEditSchedule.value) { scheduleSuggestion.value = null; return }
+  try { scheduleSuggestion.value = await tournamentApi.scheduleSuggestion(value.id) }
+  catch { scheduleSuggestion.value = null }
+}
+async function saveSchedule() {
+  const value = organizerView.value
+  if (!value || scheduleBusy.value) return
+  if (!scheduleReason.value.trim()) { scheduleNotice.value = '调整理由必填'; return }
+  scheduleBusy.value = true; scheduleNotice.value = ''
+  try {
+    await tournamentApi.setSchedule(value.id, value.version, scheduleDraft.maxPlayers || null,
+      value.format === 'single' ? null : (scheduleDraft.swissRounds || null), scheduleReason.value.trim())
+    scheduleNotice.value = '赛前调整已保存'
+    scheduleReason.value = ''
+    await load()
+    await loadScheduleSuggestion()
+  } catch (error) { scheduleNotice.value = error instanceof Error ? error.message : '赛前调整保存失败' }
+  finally { scheduleBusy.value = false }
+}
+watch(tournament, () => { void loadScheduleSuggestion() })
 function login() { void router.push({ name: 'me', query: { redirect: route.fullPath } }) }
 async function copyLink() {
   try { await navigator.clipboard.writeText(location.href); notice.value = '赛事链接已复制' }
@@ -64,6 +105,16 @@ onBeforeUnmount(() => { visibleTournamentRead.dispose(); window.clearTimeout(reg
     <template v-else>
       <header class="page-head"><div><small>{{ tournament.code }} · {{ tournamentStatusText(tournament.status) }}</small><h1>{{ tournament.name }}</h1><p>{{ tournament.description || '暂无赛事简介' }}</p></div><div class="header-actions"><button @click="copyLink">复制链接</button><button class="primary" @click="login">{{ tournament.registrationOpen ? '登录并报名' : '登录查看我的赛事' }}</button></div></header>
       <section v-if="tournament.status === 'registration'" class="panel registration-callout" aria-label="赛事报名"><div><small>REGISTRATION</small><h2>{{ tournament.registrationOpen ? '报名开放中' : '本场报名已关闭' }}</h2><p>{{ tournament.registrationOpen ? '登录后可直接报名；获得正式席位后，再在赛前签到时选择并锁定本人牌库。' : '仍可查看本场赛事信息、规则、赛程和公开参赛状态。' }}</p></div><button class="primary" :disabled="!tournament.registrationOpen" @click="login">{{ tournament.registrationOpen ? '登录后报名' : '报名已关闭' }}</button></section>
+      <section v-if="canEditSchedule" class="panel schedule-panel" data-tournament-schedule>
+        <div><small>PRE-START</small><h2>赛前调整</h2><p>人数上限与瑞士轮数在开赛前可调整；建议值按当前报到（否则报名）人数计算。</p></div>
+        <label>人数上限 <input v-model.number="scheduleDraft.maxPlayers" type="number" min="2" max="256"></label>
+        <label v-if="tournament.format !== 'single'">瑞士轮数 <input v-model.number="scheduleDraft.swissRounds" type="number" min="1" max="20"></label>
+        <span v-if="scheduleSuggestion">建议 {{ scheduleSuggestion.suggestedSwissRounds }} 轮（按 {{ scheduleSuggestion.checkedIn || scheduleSuggestion.registered }} 人）
+          <button type="button" @click="scheduleDraft.swissRounds = scheduleSuggestion.suggestedSwissRounds">采纳</button></span>
+        <input v-model="scheduleReason" placeholder="调整理由（必填）">
+        <button type="button" class="primary" :disabled="!scheduleReason.trim() || scheduleBusy" @click="saveSchedule">保存赛前调整</button>
+        <p v-if="scheduleNotice" role="status">{{ scheduleNotice }}</p>
+      </section>
       <TournamentAnnouncement :tournament-id="tournament.code" :version="0" :announcement="tournament.announcement" :can-edit="false" :busy="false" />
       <nav class="tabs" aria-label="赛事详情"><button v-for="item in tabs" :key="item[0]" :class="{ active: tab === item[0] }" :aria-current="tab === item[0] ? 'page' : undefined" @click="tab = item[0]">{{ item[1] }}</button></nav>
       <p v-if="notice" class="notice" role="status">{{ notice }}</p>
@@ -81,7 +132,7 @@ onBeforeUnmount(() => { visibleTournamentRead.dispose(); window.clearTimeout(reg
 </template>
 
 <style scoped>
-.public-detail{box-sizing:border-box;max-width:1320px;margin:auto;padding:30px clamp(18px,3vw,42px) 64px;display:grid;gap:18px;color:var(--l12-ui-text);font-family:'Microsoft YaHei','微软雅黑',sans-serif}.public-detail *{box-sizing:border-box;min-width:0}.public-detail button{min-height:40px;padding:10px 16px;border:1px solid var(--l12-ui-line-strong);border-radius:var(--l12-ui-radius-sm);background:var(--l12-ui-control);color:var(--l12-ui-text-soft);font:800 14px 'Microsoft YaHei',sans-serif;cursor:pointer}.back{justify-self:start}.page-head{display:flex;align-items:start;justify-content:space-between;gap:20px}.page-head>div:first-child{flex:1}.page-head h1{margin:8px 0;font-size:clamp(26px,3vw,38px);overflow-wrap:anywhere}.page-head small{color:var(--l12-ui-info)}.page-head p{margin:0;color:var(--l12-ui-text-muted);white-space:pre-wrap;overflow-wrap:anywhere}.header-actions{display:flex;flex-wrap:wrap;gap:8px}.tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}.public-detail button.active{background:#302713;border-color:var(--l12-ui-accent-line);color:var(--l12-ui-accent)}.panel{padding:18px;border:1px solid var(--l12-ui-line);border-radius:var(--l12-ui-radius-md);background:var(--l12-ui-panel)}.panel h2{margin:0 0 16px;font-size:19px}.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.facts p{display:grid;gap:5px;margin:0;overflow-wrap:anywhere}.facts small,.rules small{color:var(--l12-ui-text-muted);font-size:12px}.rounds{display:grid;gap:14px}.round>header{display:flex;align-items:start;justify-content:space-between;gap:12px}.round>header>span{color:var(--l12-ui-text-muted);font-size:13px}.match{display:grid;grid-template-columns:100px minmax(0,1fr) 130px;gap:12px;padding:14px 0;border-top:1px solid var(--l12-ui-line);overflow-wrap:anywhere}.match i{font-style:normal;color:var(--l12-ui-text-muted);padding:0 8px}.standings .thead,.standings article{display:grid;grid-template-columns:70px minmax(0,1fr) 110px 110px;gap:10px;padding:14px 0;border-top:1px solid var(--l12-ui-line)}.thead{color:var(--l12-ui-text-muted);font-size:12px}.standings article{overflow-wrap:anywhere}.participants{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.participants article{display:flex;justify-content:space-between;gap:10px;padding:14px;border:1px solid var(--l12-ui-line);overflow-wrap:anywhere}.participants span{color:var(--l12-ui-text-muted);font-size:12px}.rules p{display:grid;grid-template-columns:100px minmax(0,1fr);gap:12px;overflow-wrap:anywhere;white-space:pre-wrap}.empty{margin:0;padding:20px 0;color:var(--l12-ui-text-muted);text-align:center}.notice{margin:0;color:var(--l12-ui-accent);overflow-wrap:anywhere}
+.public-detail{box-sizing:border-box;max-width:1320px;margin:auto;padding:30px clamp(18px,3vw,42px) 64px;display:grid;gap:18px;color:var(--l12-ui-text);font-family:'Microsoft YaHei','微软雅黑',sans-serif}.public-detail *{box-sizing:border-box;min-width:0}.public-detail button{min-height:40px;padding:10px 16px;border:1px solid var(--l12-ui-line-strong);border-radius:var(--l12-ui-radius-sm);background:var(--l12-ui-control);color:var(--l12-ui-text-soft);font:800 14px 'Microsoft YaHei',sans-serif;cursor:pointer}.back{justify-self:start}.page-head{display:flex;align-items:start;justify-content:space-between;gap:20px}.page-head>div:first-child{flex:1}.page-head h1{margin:8px 0;font-size:clamp(26px,3vw,38px);overflow-wrap:anywhere}.page-head small{color:var(--l12-ui-info)}.page-head p{margin:0;color:var(--l12-ui-text-muted);white-space:pre-wrap;overflow-wrap:anywhere}.header-actions{display:flex;flex-wrap:wrap;gap:8px}.tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}.public-detail button.active{background:#302713;border-color:var(--l12-ui-accent-line);color:var(--l12-ui-accent)}.panel{padding:18px;border:1px solid var(--l12-ui-line);border-radius:var(--l12-ui-radius-md);background:var(--l12-ui-panel)}.panel h2{margin:0 0 16px;font-size:19px}.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.facts p{display:grid;gap:5px;margin:0;overflow-wrap:anywhere}.facts small,.rules small{color:var(--l12-ui-text-muted);font-size:12px}.rounds{display:grid;gap:14px}.round>header{display:flex;align-items:start;justify-content:space-between;gap:12px}.round>header>span{color:var(--l12-ui-text-muted);font-size:13px}.match{display:grid;grid-template-columns:100px minmax(0,1fr) 130px;gap:12px;padding:14px 0;border-top:1px solid var(--l12-ui-line);overflow-wrap:anywhere}.match i{font-style:normal;color:var(--l12-ui-text-muted);padding:0 8px}.standings .thead,.standings article{display:grid;grid-template-columns:70px minmax(0,1fr) 110px 110px;gap:10px... (line truncated to 2000 chars)
 .registration-callout{display:flex;align-items:center;justify-content:space-between;gap:20px;border-left:3px solid var(--l12-ui-accent);background:linear-gradient(90deg,#25200f,var(--l12-ui-panel))}.registration-callout small{color:var(--l12-ui-accent);font-size:11px;font-weight:900;letter-spacing:.12em}.registration-callout h2{margin:4px 0}.registration-callout p{margin:0;color:var(--l12-ui-text-soft);font-size:13px}.registration-callout button{flex:0 0 auto}
 @media(max-width:700px){.public-detail{padding:18px 10px calc(42px + env(safe-area-inset-bottom));gap:12px}.public-detail button{min-height:44px}.page-head{flex-direction:column}.header-actions{display:grid;width:100%;grid-template-columns:1fr 1fr}.registration-callout{align-items:stretch;flex-direction:column}.tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.tabs>button:last-child{grid-column:1/-1}.panel{padding:14px}.facts,.participants{grid-template-columns:1fr 1fr}.round>header{flex-direction:column;gap:0}.match{grid-template-columns:1fr}.standings .thead{display:none}.standings article{grid-template-columns:1fr 1fr;gap:12px}.standings article>*::before{content:attr(data-label);display:block;margin-bottom:4px;font-size:11px;color:var(--l12-ui-text-muted)}.rules p{grid-template-columns:1fr;gap:4px}}
 @media(max-width:390px){.facts,.participants{grid-template-columns:1fr}.header-actions{grid-template-columns:1fr}}
