@@ -49,6 +49,34 @@ async function refreshPendingEligibility() {
   if (!props.adminMode) return
   try { pendingEligibility.value = await tournamentEligibilityApi.pending() } catch { pendingEligibility.value = [] }
 }
+// 赛前调整（用户 2026-11-26）：开赛前可改人数上限与瑞士轮数，并按实际人数采纳建议值。
+const scheduleDraft = reactive({ maxPlayers: 0, swissRounds: 1 })
+const scheduleReason = ref('')
+const scheduleSuggestion = ref<{ registered: number; checkedIn: number; suggestedSwissRounds: number } | null>(null)
+function canEditSchedule(tournament: { status: string; rounds?: unknown[] }): boolean {
+  return tournament.status === 'registration' && (tournament.rounds?.length ?? 0) === 0
+}
+async function loadScheduleSuggestion(tournamentId: string | null) {
+  if (!tournamentId) { scheduleSuggestion.value = null; return }
+  try { scheduleSuggestion.value = await tournamentApi.scheduleSuggestion(tournamentId) }
+  catch { scheduleSuggestion.value = null }
+}
+function adoptScheduleSuggestion() {
+  if (scheduleSuggestion.value) scheduleDraft.swissRounds = scheduleSuggestion.value.suggestedSwissRounds
+}
+async function saveSchedule(tournament: { id: string; version: number; format: string }) {
+  if (!scheduleReason.value.trim()) { notice.value = '调整赛程需要填写理由'; return }
+  try {
+    await tournamentApi.setSchedule(tournament.id, tournament.version, scheduleDraft.maxPlayers || null,
+      tournament.format === 'single' ? null : (scheduleDraft.swissRounds || null), scheduleReason.value.trim())
+    notice.value = '赛前调整已保存'
+    scheduleReason.value = ''
+    await refreshTournaments()
+    await loadScheduleSuggestion(tournament.id)
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : '赛前调整保存失败'
+  }
+}
 async function reviewEligibility(item: TournamentEligibility, approve: boolean) {
   if (eligibilityBusy.value) return
   eligibilityBusy.value = true
@@ -124,6 +152,13 @@ const timeControlMinutes = reactive(tournamentTimeControlMinutes(form.timeContro
 const accountId = computed(() => platformState.account?.id ?? '')
 const deckPageCount = computed(() => Math.max(1, Math.ceil((deckDirectory.value?.total ?? 0) / 30)))
 const detail = computed(() => tournaments.value.find(item => item.id === detailId.value) ?? null)
+// 赛前调整草稿随打开的赛事同步（这里在 detailId 声明之后，避免 TDZ）。
+watch(detailId, id => {
+  scheduleSuggestion.value = null
+  const target = tournaments.value.find(item => item.id === id)
+  if (target) { scheduleDraft.maxPlayers = target.maxPlayers; scheduleDraft.swissRounds = target.swissRounds ?? 1 }
+  void loadScheduleSuggestion(id)
+})
 const currentRound = computed(() => detail.value?.rounds.at(-1) ?? null)
 const canImportLegacy = computed(() => hasPermission('tournaments.import-legacy'))
 const canGloballyManage = computed(() => props.adminMode && hasPermission('tournaments.manage'))
@@ -613,7 +648,17 @@ onBeforeUnmount(() => {
     </section>
 
     <div v-if="detail" class="mask" @click.self="detailId=null"><section class="detail">
-      <header><div><small>{{ detail.code }} · v{{ detail.version }}</small><h2>{{ detail.name }}</h2></div><button @click="detailId=null">×</button></header><div class="summary"><span>{{ statusText(detail.status) }}</span><span>{{ formatText(detail.format) }}</span><span v-if="detail.swissRounds">计划 {{ detail.swissRounds }} 轮瑞士</span><span v-if="detail.cutSize">Cut {{ detail.cutSize }}</span><span>{{ disasterText(detail.rules.disasterMode) }}</span><span>{{ deckVisibilityText(detail.rules.deckVisibility) }}</span><span>{{ detail.registrationVisibility==='public'?'报名公开':'报名名单限定' }}</span><TournamentParticipantCounts :counts="detail.counts" :max-players="detail.maxPlayers"/><span>已移除 {{ detail.counts.removed }}</span><span>{{ tournamentTimeControlLabel(detail.timeControl) }}</span><span>每轮签到 {{ detail.checkInMinutes }} 分钟 · 迟到宽限 {{ detail.lateGraceMinutes }} 分钟</span><span v-if="detail.usesLegacyRoundClock">旧赛事沿用原桌次截止时间</span><span v-if="detail.legacyImported">已导入旧赛事</span></div><p>{{ detail.description || '赛事方尚未发布说明。' }}</p><section class="rules"><b>规则快照：{{ detail.rules.ruleset }}</b><RulesCardSummary :disaster-card-ids="detail.rules.disasterCardIds" :card-restrictions="detail.rules.cardRestrictions" :disaster-mode="detail.rules.disasterMode"/><span>补充说明：{{ detail.rules.banList || '无' }}</span><span>快照 {{ detail.rules.hash.slice(0,12) }}</span><span>计划开始：{{ detail.startAt ? new Date(detail.startAt).toLocaleString() : '由主办者通知' }}</span></section>
+      <header><div><small>{{ detail.code }} · v{{ detail.version }}</small><h2>{{ detail.name }}</h2></div><button @click="detailId=null">×</button></header>
+      <section v-if="canEditSchedule(detail)" class="schedule-panel" data-tournament-schedule>
+        <b>赛前调整</b>
+        <p>人数上限与瑞士轮数在开赛前可调整；建议值按当前报到（否则报名）人数计算。</p>
+        <label>人数上限 <input v-model.number="scheduleDraft.maxPlayers" type="number" min="2" max="256"></label>
+        <label v-if="detail.format !== 'single'">瑞士轮数 <input v-model.number="scheduleDraft.swissRounds" type="number" min="1" max="20"></label>
+        <span v-if="scheduleSuggestion">建议 {{ scheduleSuggestion.suggestedSwissRounds }} 轮（按 {{ scheduleSuggestion.checkedIn || scheduleSuggestion.registered }} 人）
+          <button @click="adoptScheduleSuggestion">采纳</button></span>
+        <input v-model="scheduleReason" placeholder="调整理由（必填）">
+        <button class="gold" :disabled="busy || !scheduleReason.trim()" @click="saveSchedule(detail)">保存赛前调整</button>
+      </section><div class="summary"><span>{{ statusText(detail.status) }}</span><span>{{ formatText(detail.format) }}</span><span v-if="detail.swissRounds">计划 {{ detail.swissRounds }} 轮瑞士</span><span v-if="detail.cutSize">Cut {{ detail.cutSize }}</span><span>{{ disasterText(detail.rules.disasterMode) }}</span><span>{{ deckVisibilityText(detail.rules.deckVisibility) }}</span><span>{{ detail.registrationVisibility==='public'?'报名公开':'报名名单限定' }}</span><TournamentParticipantCounts :counts="detail.counts" :max-players="detail.maxPlayers"/><span>已移除 {{ detail.counts.removed }}</span><span>{{ tournamentTimeControlLabel(detail.timeControl) }}</span><span>每轮签到 {{ detail.checkInMinutes }} 分钟 · 迟到宽限 {{ detail.lateGraceMinutes }} 分钟</span><span v-if="detail.usesLegacyRoundClock">旧赛事沿用原桌次截止时间</span><span v-if="detail.legacyImported">已导入旧赛事</span></div><p>{{ detail.description || '赛事方尚未发布说明。' }}</p><section class="rules"><b>规则快照：{{ detail.rules.ruleset }}</b><RulesCardSummary :disaster-card-ids="detail.rules.disasterCardIds" :card-restrictions="detail.rules.cardRestrictions" :disaster-mode="detail.rules.disasterMode"/><span>补充说明：{{ detail.rules.banList || '无' }}</span><span>快照 {{ detail.rules.hash.slice(0,12) }}</span><span>计划开始：{{ detail.startAt ? new Date(detail.startAt).toLocaleString() : '由主办者通知' }}</span></section>
       <h3>本场工作人员</h3><div class="chips"><span>主办者 · {{ detail.organizerName }}</span><span v-for="person in detail.referees" :key="person.accountId">裁判 · {{ person.username }}</span></div><section v-if="detail.status !== 'completed' && isOrganizer(detail)" class="staff-editor"><button v-for="friend in friends" :key="friend.accountId" type="button" :class="{selected:staffDraft.includes(friend.accountId)}" @click="toggleStaffDraft(friend)">{{ friend.username }}</button><input v-model="staffReason" placeholder="本场裁判变更理由（写入审计）"/><button :disabled="actionPending(tournamentActionKey(detail))" @click="saveStaff(detail)">保存本场裁判</button><select v-model="transferAccountId"><option value="">选择接任主办者</option><option v-for="candidate in transferCandidates" :key="candidate.accountId" :value="candidate.accountId">{{ candidate.username }}</option></select><input v-model="transferReason" placeholder="主办交接说明"/><button :disabled="busy" @click="requestOrganizerTransfer(detail)">发起主办交接</button></section><section v-if="detail.pendingOrganizerTransfer" class="pending"><b>主办交接：{{ detail.pendingOrganizerTransfer.fromUsername }} → {{ detail.pendingOrganizerTransfer.toUsername }}</b><p>{{ detail.pendingOrganizerTransfer.reason }} · {{ new Date(detail.pendingOrganizerTransfer.expiresAt).toLocaleString() }} 前有效</p><footer v-if="detail.pendingOrganizerTransfer.toAccountId===accountId"><button class="gold" :disabled="busy" @click="decideOrganizerTransfer(detail,true)">确认接任</button><button :disabled="busy" @click="decideOrganizerTransfer(detail,false)">拒绝</button></footer></section>
       <h3>参赛人员与牌库快照</h3><div class="participants"><div v-for="person in detail.participants" :key="person.accountId"><b>#{{ person.seed || '—' }} · {{ person.username }}<em v-if="person.removed"> · 已移除</em><em v-else-if="person.dropped"> · 已退赛</em><em v-else-if="person.eliminated"> · 已淘汰</em></b><span>{{ person.tournamentCheckedInAt ? '赛前已签到锁牌' : '待赛前签到' }}</span><template v-if="!props.adminMode&&person.accountId===accountId&&detail.status==='registration'&&!person.tournamentCheckedInAt&&deckDrafts[detail.id]"><div class="deck-picker"><form @submit.prevent="applyDeckSearch"><input v-model="deckSearchInput" aria-label="搜索账号牌库" placeholder="按牌库名称搜索" :disabled="deckLoading || actionPending(tournamentActionKey(detail))"><button type="submit" :disabled="deckLoading || actionPending(tournamentActionKey(detail))">搜索</button></form><select v-model="deckDrafts[detail.id].id" aria-label="选择账号牌库" :disabled="deckLoading || actionPending(tournamentActionKey(detail))" @change="selectDeckDraft(detail.id)"><option disabled value="">选择账号牌库</option><option v-if="selectedDeckFor(detail.id) && !savedDeckIds.has(selectedDeckFor(detail.id)?.id || '')" :value="selectedDeckFor(detail.id)?.id">{{ selectedDeckFor(detail.id)?.name }}（当前选择）</option><option v-for="deck in savedDecks" :key="deck.id" :value="deck.id">{{ deck.name }}</option></select><div class="deck-pages"><button type="button" :disabled="deckLoading || deckPage <= 1" @click="changeDeckPage(-1)">上一页</button><span>第 {{ deckPage }} / {{ deckPageCount }} 页 · 共 {{ deckDirectory?.total ?? 0 }} 副</span><button type="button" :disabled="deckLoading || deckPage >= deckPageCount" @click="changeDeckPage(1)">下一页</button></div><em v-if="deckLoading">正在读取牌库目录…</em><em v-else-if="deckError" class="deck-error" role="alert">{{ deckError }}</em><em v-else-if="deckDirectory && !deckDirectory.total">没有找到牌库，请调整搜索词或先到牌库保存。</em></div><button class="gold" :disabled="deckLoading||actionPending(tournamentActionKey(detail))||!selectedDeckFor(detail.id)?.id" @click="saveDeck(detail,person)">签到并锁定牌库</button></template><template v-else-if="person.deck"><span>{{ person.deck.name }}</span><code>{{ person.deck.masterId }} · {{ person.deck.hash.slice(0,12) }}</code></template><em v-else>尚未签到锁牌或牌库不可见</em><template v-if="(isOrganizer(detail)||canGloballyManage)&&detail.status!=='completed'&&person.accountId!==detail.organizerAccountId"><span v-if="!canManageParticipantRemovalWithoutSelfRuling(detail,accountId,person.accountId)">{{ tournamentSelfRulingMessage }}</span><input v-model="participantReasons[person.accountId]" placeholder="移除或解除限制理由"/><button v-if="!person.removed" class="danger" :disabled="busy||!canManageParticipantRemovalWithoutSelfRuling(detail,accountId,person.accountId)" @click="removeParticipant(detail,person,false)">移出赛事</button><button v-if="!person.removed" class="danger" :disabled="busy||!canManageParticipantRemovalWithoutSelfRuling(detail,accountId,person.accountId)" @click="removeParticipant(detail,person,true)">移出并禁报名</button><button v-if="person.registrationBanned" :disabled="busy" @click="unbanParticipant(detail,person)">解除禁报名</button></template></div></div>
       <template v-if="standingSnapshots.length"><h3>瑞士排名快照</h3><details v-for="snapshotRound in standingSnapshots" :key="snapshotRound.id" class="standing-snapshot" :open="snapshotRound.number===standingSnapshots.at(-1)?.number"><summary>第 {{ snapshotRound.number }} 轮排名 · {{ snapshotRound.standingsCapturedAt ? new Date(snapshotRound.standingsCapturedAt).toLocaleString() : '已存档' }}<b v-if="detail.finalSwissStandings.length&&snapshotRound.number===standingSnapshots.at(-1)?.number"> · 最终瑞士排名</b></summary><div class="standings"><div class="standing-head"><b>名次</b><b>玩家</b><b>胜-负-和</b><b>对手分</b><b>对手的对手分</b><b>种子</b></div><div v-for="entry in snapshotRound.standings" :key="entry.accountId"><b>#{{ entry.rank }}</b><span>{{ entry.username }}</span><span>{{ entry.wins }}-{{ entry.losses }}-{{ entry.draws }}<small v-if="entry.byes"> · 轮空 {{ entry.byes }}</small></span><span>{{ entry.opponentScore }}</span><span>{{ entry.opponentsOpponentScore }}</span><span>{{ entry.seed }}</span></div></div></details></template>
