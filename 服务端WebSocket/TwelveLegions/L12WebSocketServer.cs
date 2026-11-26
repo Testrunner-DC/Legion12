@@ -2050,6 +2050,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.TournamentsCreate;
             if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            // 赛事资质（用户 2026-11-26）：普通账号须先申请并通过审核；管理员角色自带。
+            if (!_platform.HasTournamentEligibility(authenticated.Account))
+                return ApiError(request, "tournament_eligibility_required",
+                    "账号尚未获得赛事资质，请先在赛事中心申请", StatusCodes.Status403Forbidden);
             if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.create",
@@ -2172,6 +2176,87 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 checkedIn,
                 suggestedSwissRounds = L12PlatformStore.SuggestedSwissRounds(checkedIn > 0 ? checkedIn : registration),
             });
+        });
+        _app.MapGet("/api/tournament-eligibility", (HttpRequest request) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.TournamentsRead, out var self, out var denied))
+                return denied;
+            return Results.Ok(_platform.ReadTournamentEligibility(self.Account.Id));
+        });
+        _app.MapPost("/api/tournament-eligibility/applications", (HttpRequest request,
+            L12TournamentEligibilityApplyPayload body) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.TournamentsRead, out var self, out var denied))
+                return denied;
+            try
+            {
+                return Results.Ok(_platform.ApplyTournamentEligibility(self.Account, body,
+                    new L12AdminAuditContext(Guid.NewGuid().ToString("N"), "tournaments.eligibility.apply",
+                        RequestMethod: "POST", RequestPath: request.Path)));
+            }
+            catch (L12TournamentScopeException error) { return ApiError(request, "scope_denied", error.Message, StatusCodes.Status403Forbidden); }
+            catch (L12TournamentVersionConflictException error) { return ApiError(request, "conflict", error.Message, StatusCodes.Status409Conflict); }
+            catch (ArgumentException error) { return ApiError(request, "invalid_request", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapGet("/api/admin/tournament-eligibility", (HttpRequest request) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.TournamentsManage, out _, out var denied)) return denied;
+            return Results.Ok(_platform.PendingTournamentEligibility());
+        });
+        _app.MapGet("/api/admin/tournament-eligibility/{accountId}", (HttpRequest request, string accountId) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.TournamentsManage, out _, out var denied)) return denied;
+            try { return Results.Ok(_platform.ReadTournamentEligibility(accountId)); }
+            catch (KeyNotFoundException error) { return ApiError(request, "account_not_found", error.Message, StatusCodes.Status404NotFound); }
+        });
+        _app.MapPost("/api/admin/tournament-eligibility/{accountId}/review", (HttpRequest request,
+            string accountId, L12TournamentEligibilityReviewPayload body) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.TournamentsManage, out var staff, out var denied)) return denied;
+            long? expected = request.Headers.TryGetValue("If-Match", out var match)
+                && long.TryParse(match.ToString().Trim('"'), out var parsed) ? parsed : null;
+            try
+            {
+                return Results.Ok(_platform.ReviewTournamentEligibility(staff.Account, accountId, body, expected,
+                    new L12AdminAuditContext(Guid.NewGuid().ToString("N"), "tournaments.eligibility.review",
+                        RequestMethod: "POST", RequestPath: request.Path)));
+            }
+            catch (KeyNotFoundException error) { return ApiError(request, "account_not_found", error.Message, StatusCodes.Status404NotFound); }
+            catch (L12TournamentScopeException error) { return ApiError(request, "scope_denied", error.Message, StatusCodes.Status403Forbidden); }
+            catch (L12TournamentVersionConflictException error) { return ApiError(request, "conflict", error.Message, StatusCodes.Status409Conflict); }
+        });
+        _app.MapPost("/api/admin/tournament-eligibility/{accountId}/grant", (HttpRequest request,
+            string accountId, L12TournamentEligibilityGrantPayload body) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.TournamentsManage, out var staff, out var denied)) return denied;
+            long? expected = request.Headers.TryGetValue("If-Match", out var match)
+                && long.TryParse(match.ToString().Trim('"'), out var parsed) ? parsed : null;
+            try
+            {
+                return Results.Ok(_platform.GrantTournamentEligibility(staff.Account, accountId, body, expected,
+                    new L12AdminAuditContext(Guid.NewGuid().ToString("N"), "tournaments.eligibility.grant",
+                        RequestMethod: "POST", RequestPath: request.Path)));
+            }
+            catch (KeyNotFoundException error) { return ApiError(request, "account_not_found", error.Message, StatusCodes.Status404NotFound); }
+            catch (L12TournamentScopeException error) { return ApiError(request, "scope_denied", error.Message, StatusCodes.Status403Forbidden); }
+            catch (L12TournamentVersionConflictException error) { return ApiError(request, "conflict", error.Message, StatusCodes.Status409Conflict); }
+        });
+        _app.MapPost("/api/admin/tournament-eligibility/{accountId}/revoke", (HttpRequest request,
+            string accountId, L12TournamentEligibilityRevokePayload body) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.TournamentsManage, out var staff, out var denied)) return denied;
+            long? expected = request.Headers.TryGetValue("If-Match", out var match)
+                && long.TryParse(match.ToString().Trim('"'), out var parsed) ? parsed : null;
+            try
+            {
+                return Results.Ok(_platform.RevokeTournamentEligibility(staff.Account, accountId, body, expected,
+                    new L12AdminAuditContext(Guid.NewGuid().ToString("N"), "tournaments.eligibility.revoke",
+                        RequestMethod: "POST", RequestPath: request.Path)));
+            }
+            catch (KeyNotFoundException error) { return ApiError(request, "account_not_found", error.Message, StatusCodes.Status404NotFound); }
+            catch (L12TournamentScopeException error) { return ApiError(request, "scope_denied", error.Message, StatusCodes.Status403Forbidden); }
+            catch (L12TournamentVersionConflictException error) { return ApiError(request, "conflict", error.Message, StatusCodes.Status409Conflict); }
+            catch (ArgumentException error) { return ApiError(request, "invalid_request", error.Message, StatusCodes.Status400BadRequest); }
         });
         _app.MapPut("/api/tournaments/{id}/schedule", (HttpRequest request, string id,
             TournamentScheduleRequest body) =>

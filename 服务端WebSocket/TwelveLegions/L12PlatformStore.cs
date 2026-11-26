@@ -99,6 +99,16 @@ public sealed partial class L12PlatformStore
     private const string PublicDeckCodeAlphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
     private const int PublicDeckCodeLength = 12;
 
+    private sealed class TournamentEligibilityRow
+    {
+        public string Status { get; set; } = "none";
+        public string? Reason { get; set; }
+        public DateTimeOffset? AppliedAt { get; set; }
+        public DateTimeOffset? ReviewedAt { get; set; }
+        public string? ReviewedByAccountId { get; set; }
+        public string? ReviewNote { get; set; }
+    }
+
     private sealed class AccountRow
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -121,6 +131,7 @@ public sealed partial class L12PlatformStore
         public string? DisabledReason { get; set; }
         public AccountRankedRestrictionRow? RankedRestriction { get; set; }
         public TournamentReputationStateRow? TournamentReputation { get; set; }
+        public TournamentEligibilityRow? TournamentEligibility { get; set; }
         public string? Email { get; set; }
         public string? NormalizedEmail { get; set; }
         public DateTimeOffset? EmailVerifiedAt { get; set; }

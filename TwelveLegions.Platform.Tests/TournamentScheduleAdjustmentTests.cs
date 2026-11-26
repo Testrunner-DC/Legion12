@@ -28,7 +28,7 @@ public sealed class TournamentScheduleAdjustmentTests
         DeckVisibility: "after", DisasterMode: "none", BanList: "", RoundMinutes: 50, CheckInMinutes: 5,
         SwissRounds: swissRounds);
 
-    [Fact(Skip = "夹具阻塞：新建 store 内注册的 player 账号在 CreateTournament 的 EnsurePermission 抛 ScopeException（同一账号的 L12Authorization.HasPermission 为 true），待定位后恢复")]
+    [Fact(Skip = "夹具阻塞：新建 store 的 Register 本身抛 L12TournamentScopeException（账号缺少赛事权限），与用例逻辑无关，待定位")]
     public void OrganizerCanAdjustPlayersAndRoundsBeforeTheFirstRound()
     {
         var (store, host, context, root) = Create();
@@ -52,7 +52,7 @@ public sealed class TournamentScheduleAdjustmentTests
         finally { Directory.Delete(root, true); }
     }
 
-    [Fact(Skip = "夹具阻塞：新建 store 内注册的 player 账号在 CreateTournament 的 EnsurePermission 抛 ScopeException（同一账号的 L12Authorization.HasPermission 为 true），待定位后恢复")]
+    [Fact(Skip = "夹具阻塞：新建 store 的 Register 本身抛 L12TournamentScopeException（账号缺少赛事权限），与用例逻辑无关，待定位")]
     public void PlayerCapCannotDropBelowRegistrationsOrOutsideRange()
     {
         var (store, host, context, root) = Create();
@@ -73,7 +73,7 @@ public sealed class TournamentScheduleAdjustmentTests
         finally { Directory.Delete(root, true); }
     }
 
-    [Fact(Skip = "夹具阻塞：新建 store 内注册的 player 账号在 CreateTournament 的 EnsurePermission 抛 ScopeException（同一账号的 L12Authorization.HasPermission 为 true），待定位后恢复")]
+    [Fact(Skip = "夹具阻塞：新建 store 的 Register 本身抛 L12TournamentScopeException（账号缺少赛事权限），与用例逻辑无关，待定位")]
     public void SingleEliminationRejectsRoundAdjustmentsAndOnlyThePreStartWindowIsOpen()
     {
         var (store, host, context, root) = Create();
