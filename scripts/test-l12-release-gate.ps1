@@ -441,6 +441,7 @@ try {
     Copy-Item -LiteralPath $performanceExceptions -Destination (Join-Path $fixtureRepo "ops\performance-exceptions.json") -Force
     Copy-Item -LiteralPath $changeGateScript -Destination (Join-Path $fixtureRepo "scripts\verify-l12-change.ps1") -Force
     Copy-Item -LiteralPath $releaseLedgerScript -Destination (Join-Path $fixtureRepo "scripts\release-ledger.mjs") -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/check-l12-card-face-contract.mjs') -Destination (Join-Path $fixtureRepo "scripts\check-l12-card-face-contract.mjs") -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/release-status.mjs') -Destination (Join-Path $fixtureRepo "scripts\release-status.mjs") -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/test-release-status.mjs') -Destination (Join-Path $fixtureRepo "scripts\test-release-status.mjs") -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot 'opcgpro-vue/scripts/audit-l12-card-cdn.mjs') -Destination (Join-Path $fixtureRepo "opcgpro-vue\scripts\audit-l12-card-cdn.mjs") -Force
