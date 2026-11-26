@@ -38,7 +38,7 @@ await p.screenshot({path:OUT+'/a3-2-player-applied.png'})
 
 // 2) 管理员：待审列表 + 通过
 const a=await login('Admin',adminPw)
-await a.goto(BASE+'/admin/tournaments',{waitUntil:'domcontentloaded'});await a.waitForTimeout(6000)
+await a.goto(BASE+'/admin/matches/tournaments',{waitUntil:'domcontentloaded'});await a.waitForTimeout(7000)
 body=await text(a)
 report.checks.push({step:'admin-pending-list', hasSection:body.includes('待审赛事资质'),
   passButtons:await a.getByRole('button',{name:'通过'}).count()})
@@ -57,7 +57,7 @@ report.checks.push({step:'admin-accounts-grant', grantButtons:await a.getByRole(
 await a.screenshot({path:OUT+'/a3-5-admin-accounts.png'})
 // 5) 赛前调整面板（用彩排01 已建赛事）
 await p.goto(BASE+'/battle/tournaments',{waitUntil:'domcontentloaded'});await p.waitForTimeout(5000)
-const row=p.getByRole('button',{name:/\[ACC\] 资质建赛/})
+const row=p.getByRole('button',{name:/\[ACC\] 资质建赛/});
 report.checks.push({step:'schedule-panel', rowFound:await row.count()})
 if(await row.count()){ await row.first().click({force:true}); await p.waitForTimeout(3000)
   await click(p,'查看赛事'); await p.waitForTimeout(3500)

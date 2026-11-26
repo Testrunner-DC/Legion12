@@ -3,9 +3,9 @@ const BASE='https://legion-12.com/testrun'
 const adminPw=fs.readFileSync('D:/GPT/Legion12/artifacts/testrun-admin-secret.txt','utf8').trim()
 const lr=await fetch(BASE+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'Admin',password:adminPw})})
 const admin=(await lr.json()).token
-const listR=await fetch(BASE+'/api/tournaments/summaries?section=host&page=1&pageSize=20',{headers:{Accept:'application/json',Authorization:'Bearer '+admin}})
+const listR=await fetch(BASE+'/api/tournaments/summaries?section=discover&page=1&pageSize=50',{headers:{Accept:'application/json',Authorization:'Bearer '+admin}})
 const rows=(await listR.json()).items ?? []
-const todo=rows.filter(r=>/\[B1\]|\[A3\]|\[A2b\]/.test(r.name||'') && !['canceled','completed'].includes(r.status))
+const todo=rows.filter(r=>/\[B1\]|\[A3\]|\[A2b\]|\[ACC\]|\[彩排\]/.test(r.name||'') && !['canceled','completed'].includes(r.status))
 const done=[]
 for(const r of todo){
   const tid=r.id||r.tournamentId
