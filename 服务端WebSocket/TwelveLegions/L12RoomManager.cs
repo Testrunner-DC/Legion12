@@ -1437,7 +1437,7 @@ public sealed partial class L12RoomManager
             {
                 type = "gameState",
                 spectating = true,
-                state = L12KernelProjection.ForSpectator(room.Game),
+                state = L12KernelProjection.ForSpectator(ProjectionGame(room)),
             }, IsGameState: true, ForceFullGameState: true)];
             }
             finally { room.Gate.Release(); }
@@ -1629,7 +1629,7 @@ public sealed partial class L12RoomManager
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId,
                 state = access.CanRefereeView
-                    ? L12KernelProjection.ForReferee(room.Game)
+                    ? L12KernelProjection.ForReferee(ProjectionGame(room))
                     : L12KernelProjection.ForSpectator(room.Game),
             }, IsGameState: true, ForceFullGameState: true)];
         }
@@ -2448,6 +2448,39 @@ public sealed partial class L12RoomManager
     private IReadOnlyList<OutgoingMessage> BroadcastRoom(Room room)
         => room.Sessions.Select(id => RoomStateForViewer(room, _sessions[id])).ToArray();
 
+    /// <summary>账号改名后把新名同步进房间会话；下一次投影即用新名（用户 2026-11-26：显示名跟随改名）。</summary>
+    public void SyncAccountName(string accountId, string username)
+    {
+        foreach (var room in _rooms.Values)
+        {
+            foreach (var id in room.Sessions.Concat(room.Spectators).ToArray())
+            {
+                if (_sessions.TryGetValue(id, out var session)
+                    && string.Equals(session.AccountId, accountId, StringComparison.Ordinal))
+                    session.Name = username;
+            }
+        }
+    }
+
+    /// <summary>投影前同步房间里的实时展示名；改名后不必等下一次入房快照。</summary>
+    private L12GameEngine ProjectionGame(Room room)
+    {
+        room.Game!.SetDisplayNameOverrides(PlayerDisplayNames(room));
+        return room.Game!;
+    }
+
+    private string?[] PlayerDisplayNames(Room room)
+    {
+        var names = new string?[2];
+        foreach (var id in room.Sessions)
+        {
+            if (_sessions.TryGetValue(id, out var session) && session.PlayerIndex is { } index
+                && index is >= 0 and < 2)
+                names[index] = session.Name;
+        }
+        return names;
+    }
+
     private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room, bool forceCritical = false,
         Guid? requestSessionId = null, string? requestId = null, Guid? forceFullSessionId = null,
         bool allowCriticalDelta = false)
@@ -2471,7 +2504,7 @@ public sealed partial class L12RoomManager
         var messages = room.Sessions.Select(id =>
         {
             var viewer = _sessions[id];
-            var snapshot = L12KernelProjection.ForPlayer(room.Game!, _sessions[id].PlayerIndex!.Value,
+            var snapshot = L12KernelProjection.ForPlayer(ProjectionGame(room), _sessions[id].PlayerIndex!.Value,
                 revealAllForGm: CanControlSandbox(room, viewer));
             var matchGovernance = MatchGovernanceForClient(room, viewer, platformView);
             var immediateInteraction = SnapshotRequiresCriticalDelivery(snapshot)
@@ -2535,7 +2568,7 @@ public sealed partial class L12RoomManager
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId, playerBadges, rankedClock,
                 spectators = spectatorViews,
-                state = referee ? L12KernelProjection.ForReferee(room.Game!)
+                state = referee ? L12KernelProjection.ForReferee(ProjectionGame(room))
                     : L12KernelProjection.ForSpectator(room.Game!),
             };
             foreach (var id in spectators)

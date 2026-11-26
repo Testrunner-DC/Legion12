@@ -66,6 +66,8 @@ public sealed partial class L12PlatformStore
             var previous = PublicUsername(row);
             row.Username = newUsername;
             row.SelfServiceUsernameChangeCount++;
+            // 展示用名字的副本一起跟随（用户 2026-11-26：各处显示的名字都要变）。
+            PropagateUsernameChangeLocked(row.Id, newUsername);
             changed = ToView(row);
             AddAdminAudit(changed, "account", "username-self-change", row.Id, previous, newUsername,
                 "玩家使用一次自助改名机会");
@@ -76,6 +78,7 @@ public sealed partial class L12PlatformStore
             foreach (var session in sessions) session.RevokedAt = now;
             revokedSessionIds = sessions.Select(session => session.Id).ToArray();
             Save();
+            FlushUsernamePropagationLocked();
         }
         NotifySessionsRevoked(revokedSessionIds);
         return (true, revokedSessionIds.Length == 0 ? "用户名已修改，已使用一次自助改名机会"

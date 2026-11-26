@@ -884,6 +884,7 @@ public sealed partial class L12PlatformStore
             revokedSessionIds = sessionsToRevoke.Select(session => session.Id).ToArray();
             changedAccount = ToView(row);
             Save();
+            FlushUsernamePropagationLocked();
         }
         NotifySessionsRevoked(revokedSessionIds);
         return (true, revokedSessionIds.Length == 0 ? "用户名已修改"

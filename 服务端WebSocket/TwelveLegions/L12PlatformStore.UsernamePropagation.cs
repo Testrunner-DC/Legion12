@@ -76,8 +76,10 @@ public sealed partial class L12PlatformStore
         if (string.IsNullOrWhiteSpace(_databasePath) || !File.Exists(_databasePath)) return;
         try
         {
+            // 改名是一次性动作，不参与连接池：否则池里的句柄会一直占着 platform.db，
+            // 调用方（含测试与备份/迁移工具）无法移动或删除该库。
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = _databasePath, Mode = SqliteOpenMode.ReadWrite }.ToString());
+            { DataSource = _databasePath, Mode = SqliteOpenMode.ReadWrite, Pooling = false }.ToString());
             connection.Open();
             using var command = connection.CreateCommand();
             command.CommandText = "UPDATE chat_messages SET sender_name = $name WHERE sender_id = $id AND sender_name <> $name";

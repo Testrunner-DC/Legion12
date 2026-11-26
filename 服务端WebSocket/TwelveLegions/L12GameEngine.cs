@@ -57,6 +57,20 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     public L12GameState State { get; }
 
+    // 展示名覆盖：房间投影前用账号当前名覆盖开局快照名；对局历史、日志与结算仍保留开局名。
+    private string?[]? displayNameOverrides;
+
+    /// <summary>房间投影前同步账号当前名；传 null 恢复开局快照名。仅投影用，不进内核公开面。</summary>
+    internal void SetDisplayNameOverrides(string?[]? names) => displayNameOverrides = names;
+
+    private string ProjectedName(L12PlayerState player)
+    {
+        var names = displayNameOverrides;
+        if (names is null || player.PlayerIndex < 0 || player.PlayerIndex >= names.Length) return player.Name;
+        var overridden = names[player.PlayerIndex];
+        return string.IsNullOrWhiteSpace(overridden) ? player.Name : overridden!;
+    }
+
     public L12GameEngine(
         L12Catalog catalog,
         string matchId,
@@ -387,7 +401,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var players = State.Players.Select((player, index) => !spectator && (index == viewer || visibility.DeckOrder)
             ? (object)new
             {
-                player.PlayerIndex, player.Name, player.DeckName, player.Faction,
+                player.PlayerIndex, Name = ProjectedName(player), player.DeckName, player.Faction,
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
                 libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
@@ -398,7 +412,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             }
             : visibility.BothHands ? (object)new
             {
-                player.PlayerIndex, player.Name, player.DeckName, player.Faction,
+                player.PlayerIndex, Name = ProjectedName(player), player.DeckName, player.Faction,
                 master = MasterSnapshotCore(player, includeActions: false), factionEffect = FactionEffectSnapshotCore(player, includeActions: false),
                 libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) && player.Library.FirstOrDefault() is { } visibleTop ? SnapshotDisplayOnlyCard(visibleTop) : null,
                 hand = SnapshotObserverHand(index), handCount = player.Hand.Count,
@@ -414,7 +428,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             }
             : new
             {
-                player.PlayerIndex, player.Name, player.DeckName, player.Faction,
+                player.PlayerIndex, Name = ProjectedName(player), player.DeckName, player.Faction,
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
                 libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,

@@ -81,6 +81,8 @@ await recorder.InitializeAsync();
 platform.UsernameChanged += recorder.RenameAccountPlayers;
 
 var rooms = new L12RoomManager(catalog, recorder, platform);
+// 改名后把新名同步进房间会话，下一帧房间/对局投影即用新名（用户 2026-11-26：显示名跟随改名）。
+platform.UsernameChanged += rooms.SyncAccountName;
 if (deploymentDrain is not null) rooms.AttachDeploymentDrain(deploymentDrain);
 var rankedRecovery = await rooms.RestoreRankedRoomsAsync();
 Console.WriteLine($"Ranked recovery: settlements={rankedRecovery.SettlementsApplied}, "
