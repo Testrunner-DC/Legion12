@@ -43,7 +43,7 @@ function tapChatFrames(side, page) {
       const text = String(frame.payload)
       if (!text.includes('chat')) return
       evidence.wsFrames[side].push({ dir, at: new Date().toISOString(), text: text.slice(0, 320) })
-      if (evidence.wsFrames[side].length > 12) evidence.wsFrames[side].shift()
+      if (evidence.wsFrames[side].length > 40) evidence.wsFrames[side].shift()
     }
     ws.on('framesent', keep('out'))
     ws.on('framereceived', keep('in'))
@@ -270,6 +270,14 @@ try {
     .waitForFunction((value) => document.body.innerText.includes(value), token, { timeout: 25000 })
     .then(() => true).catch(() => false)
   note('received-by-b', { deliveredToB })
+  // 区分「服务端没送到」与「送到了但界面没刷新」：B 点一次刷新再看。
+  if (!deliveredToB) {
+    const refresh = b.page.locator('[data-l12-social-popover]').getByRole('button', { name: '刷新', exact: true })
+    if (await refresh.count()) { try { await refresh.first().click({ force: true }) } catch { } ; await b.page.waitForTimeout(3000) }
+    const afterRefresh = await b.page.waitForFunction((value) => document.body.innerText.includes(value), token, { timeout: 8000 })
+      .then(() => true).catch(() => false)
+    note('received-by-b-after-refresh', { afterRefresh, panel: (await b.page.locator('[data-l12-social-popover]').innerText()).replace(/\s+/g, ' ').slice(0, 160) })
+  }
   await b.page.screenshot({ path: OUT + '/21-received-b.png' })
   await a.page.screenshot({ path: OUT + '/21-sent-a.png' })
 

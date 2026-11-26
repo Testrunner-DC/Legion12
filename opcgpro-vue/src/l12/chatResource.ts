@@ -155,7 +155,10 @@ export function createChatResource() {
       || typeof e.senderName !== 'string' || e.senderName.length > 128
       || typeof e.createdAt !== 'string' || !Number.isFinite(Date.parse(e.createdAt))
       || typeof e.policyVersion !== 'string' || e.policyVersion.length > 64
-      || (e.senderId !== state.accountId && e.recipientId !== state.accountId)) return null
+      // 本桌是广播作用域：服务端在载荷里保留通配收件人 "*"，收件人身份靠作用域成员关系判定，
+      // 不能按「recipientId 必须是我」拒收——否则对手永远收不到本桌消息。
+      || (e.senderId !== state.accountId && e.recipientId !== state.accountId
+        && !(e.scope === 'table' && e.recipientId === TABLE_BROADCAST_PEER))) return null
     return { id: e.id, seq: e.seq, scope: e.scope, matchId: e.matchId, senderId: e.senderId, senderName: e.senderName, recipientId: e.recipientId, text: e.text, createdAt: e.createdAt, moderated: e.moderated === true, policyVersion: e.policyVersion }
   }
   function entryConversation(entry: ChatEntry): ChatConversation {

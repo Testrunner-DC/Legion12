@@ -98,6 +98,18 @@ try {
   assert.equal(sent.length, beforeLength); checks++
   resource.thread(friend).draft = '正常卡牌讨论：管理员、GM、雷神之锤'; resource.send(friend)
   assert.equal(sent.length, beforeLength + 1); checks++
+  // 本桌广播（2026-11-26）：服务端在载荷里保留通配收件人 "*"，收件人靠作用域成员关系判定。
+  // 收到时必须落进以 "*" 开的本桌线程，而不是被当成「不是发给我的」丢掉。
+  resource.reset('alice'); connect()
+  const table = { scope: 'table', peerAccountId: '*', matchId: 'match-table' }
+  resource.receive({ type: 'chatMessage', entry: entry(1, { scope: 'table', matchId: 'match-table', senderId: 'bob', recipientId: '*' }) })
+  assert.equal(resource.thread(table).entries.length, 1); checks++
+  assert.equal(resource.thread(table).entries[0].text, '你好'); checks++
+  // 别的作用域仍不接受通配收件人：放行只属于本桌广播。
+  resource.receive({ type: 'chatMessage', entry: entry(2, { scope: 'friend', senderId: 'bob', recipientId: '*' }) })
+  assert.equal(resource.thread(table).entries.length, 1); checks++
+  resource.thread(table).draft = '全桌通知'; resource.send(table)
+  assert.equal(last('chatSend').scope, 'table'); assert.equal(last('chatSend').peerAccountId, '*'); checks += 2
   resource.reset('alice'); connect()
   const unknownRemove = resource.suspend('bob', false); unknownRemove('unknown'); resource.acceptFriend('bob')
   assert.equal(resource.thread(friend), null, 'an ordinary overview cannot clear an unresolved remove tombstone'); checks++
