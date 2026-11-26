@@ -241,8 +241,9 @@ const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
 const responseTargetIds = ref<string[]>([])
 const hasBlockingPrompt = computed(() => Boolean((props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt))
-// 棋盘上的玩家名优先取房间状态里的实时名字（改名后房间广播会更新），
-// 没有房间信息时回落到对局状态里的开局快照（用户 2026-11-26：显示名跟随改名）。
+// 仅兜底（用户 2026-11-27 裁定）：服务端投影已把账号当前名写进 game.players[].name，
+// 改名后下一帧就生效；这里只在房间状态比快照更新时优先取房间名，没有房间信息就回落快照。
+// 不要把这里当成名字的唯一真相源。
 const boardPlayerNames = computed(() => props.game.players.map((player, index) => {
   const live = l12State.room?.players?.find(entry => entry.playerIndex === index)?.name
   return (live && live.trim()) || player.name
