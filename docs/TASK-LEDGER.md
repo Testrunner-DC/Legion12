@@ -7,6 +7,7 @@
 - 清单P10（`BUG-20261124-d5ca2036`，只读复核）：反馈正确且已由 `b9506cec` 修复（试炼溢出结转下一张），回归 `AngusSecondTrialTests`（Trait `bug:BUG-20261124-d5ca2036`）与 `SimpleDeathTrialAdvanceTriggerConsistencyTests`。测试服 `3b2cebef` 已含、正式服 `d7bfa9d4` 不含；已写正式服队列备注（CAS 74024 + 读回），状态按合同保持 `new`。
 - 清单P8（最强主宰奖励长期配置）：派发链路本就存在（`L12PlatformStore.Ranked.cs:1664` → `ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked`，引用键 `{seasonId}:{masterId}` 天然幂等）；缺的是规则必须逐季手配。按用户 2026-11-27 裁定改为**长期配置**：`master-champion-season-final` 规则允许不填赛季（空＝每季生效），匹配与共享异画定义闸门都走新增的 `MasterChampionRuleAppliesToSeason`；后台规则表单放开该类型的赛季必填并改文案（新主宰上线后补建一条即可）。回归 `MasterChampionRuleAllowsLongTermConfigurationWithoutSeason`（另断言段位/普通赛季规则仍必须填赛季）。
 - 验证：Batch exit 0（平台 3,256 通过 / 0 失败 / 0 跳过；规则套件同轮未阻断；前端构建与 UI 契约链同轮执行）。
+- 部署与实测（2026-11-27）：Release exit 0 → 测试服切到 `88e23ed3`（health/匿名 WS 通过、保留上一版可回滚）；改名跟随实测**通过** —— 双人对局中把 `彩排02` 自助改名，对方棋盘在下一次广播后出现新名，收尾走审批改回原名并登录 200（脚本 `opcgpro-vue/scripts/c1-rename-follow-acceptance.mjs`，证据 `artifacts/c1-rename-follow/`）。正式服未动。
 - 未做（如实）：① 最强主宰「赛季归档 → 实际派发」的端到端用例仍缺——测试面没有公开的赛季归档入口，现有断言只覆盖规则契约与匹配函数；② P2 预检回执修复需单独一轮（改该脚本会作废在建候选包）；③ 仓外台账的日期倒序未改（属文档整理，不在本次授权范围）；④ 三个环境项均未部署（正式服需另行授权）。
 
 

@@ -40,6 +40,17 @@ async function login(name, tapFrames = false) {
   return page
 }
 
+// 大厅改版后页签的可访问名与可见文案不一致（"ROOM好友房"），按 DOM 文本点击最稳。
+async function clickByText(page, needle) {
+  return page.evaluate((text) => {
+    const button = Array.from(document.querySelectorAll('button'))
+      .find((item) => (item.textContent || '').includes(text))
+    if (!button) return false
+    button.click()
+    return true
+  }, needle)
+}
+
 async function clickIf(page, name) {
   const button = page.getByRole('button', { name, exact: true })
   if (!(await button.count())) return false
@@ -130,6 +141,9 @@ async function ensureLobby(page) {
   for (let attempt = 0; attempt < 8; attempt++) {
     await page.waitForTimeout(1300)
     if (await hasCreateRoom(page)) return
+    // 先切到「好友房」职业页签，建房按钮只在该页签下存在。
+    if (await clickByText(page, '好友房')) await page.waitForTimeout(1800)
+    if (await hasCreateRoom(page)) return
     await advance(page)
     if (await clickIf(page, '投降')) {
       await page.waitForTimeout(1200)
@@ -140,7 +154,7 @@ async function ensureLobby(page) {
       if (await clickIf(page, leaving)) break
     }
     if (await clickIf(page, '返回大厅')) await page.waitForTimeout(2000)
-    await clickIf(page, 'ROOM好友房')
+    await clickByText(page, '好友房')
   }
   throw new Error('could not return to lobby')
 }
