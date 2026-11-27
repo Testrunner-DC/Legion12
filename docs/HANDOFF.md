@@ -1,5 +1,18 @@
 # 十二军团简短交接
 
+## 2026-11-27 存储收口 + 冷存纳管 + 赛季切换阻塞修复（代码已推 `5df898a3`，未部署）
+
+- **提交/部署状态**：`f064d9bd`（AGENTS 冷存规则）→ `8dd658d2`（冷存保留策略可管历史批次 + PS7 时间解析修复）→ `5df898a3`（排位恢复对局自动废置）。三者都在 `origin/main`，**线上仍是 `0d9c45b0`**，本批未部署。
+- **E 盘冷存已退役却被复活（已纠错）**：`E:\Legion12-ColdStorage` 于 2026-11-10 带用户授权退役（`artifacts/nas-storage/active-policy.json` 的 `e-coldstorage` 条目），但 11-27 清根盘时照旧回执的 `coldRoot` 把两批快照又写回 E 盘，且服务器原件已删——E 盘一度是唯一副本。处置：robocopy 搬到 `Z:\Legion12-ColdStorage`（NAS），逐份校验（两 tar 的 SHA256 与服务器 `.sha256` 三方一致、`l12-db-vacuum` 解包 `platform.before.db` 与随包校验一致、release tgz 526 项、文件表 parity=0）后才删 E 盘，回执 `cold-archive-repath-20261127.json`；台账与服务器两份退役回执已改指 NAS（原 E 值留在 `*_originalE`，原件 `.pre-repath.bak`）。
+- **顺手修掉的历史缺陷**：`runtime-backups/retired-20261127T0400Z-cold-archive.json` 尾部有 3 行泄漏的 shell 文本，**该回执此前不是合法 JSON**；已清除并记入 `trailingGarbageRemoved`。
+- **冷存保留策略此前是装饰**：PS 7.6 的 `ConvertFrom-Json` 把 ISO 时间转成 `[datetime]`，旧判据 `-isnot [string]` 让所有组被判无效，`groupCount` 恒 0。修好后扩展为同时管 `groups\*` 与带清单的历史批次目录（`ops/windows/New-L12NasLegacyGroupManifest.ps1` 就地生成 `nas-group.json`）。**纳管终态：46 组、`kept` 2 组、今日候选 0**；最早可删 `legacy-c-entry-20261016` @ 2026-12-29；`pinned`：`forensics`、`probes-20261127`、`prod-runtime-backups-20261127`、`prod-retired-misc-20261127`、`server-offload-20261127-runtime-retired`。自测三向通过（Plan groupCount 0→2→3、Apply 只删合成组、坏 sha 抛 `L12_NAS_RETENTION_PROOF_SHA` 且不删）。
+- **服务器 runtime 回收**：3×`platform.db.pre-*-split`（各 273 MiB）+ 陈旧 `platform.json`（127 MiB）= 992,082,143 B 打包转存 NAS（`server-offload-20261127-runtime-retired`，`pinned`）后删；`metrics/process` 按 30 天剪枝；另把服务器唯一无冷存副本的 `/var/backups/.../probes`（4.7G / 39 文件）转存 `groups\probes-20261127` 后删。**根盘可用 15G → 21G（66%）**，`/var/backups` 4.9G → 246M。
+- **回放载荷追平已排定时（未执行完）**：`matches.db` 9.38 GiB、`freelist_count=0`，7 天回放策略事实上自 2026-09-19 停摆（`player_replay_cleanup_schedule` 停更、新每日维护 11-26 才上线且 `budget-exhausted`）；已过期仅 1,963 场，待过期 6,257 场、其下 8.21M action events（占 86%）≈ 4.6 GB。`/opt/l12-replay-catchup.sh` + `-final.sh` 已部署并在**合成库**验证（7 天内不动、超期清载荷、`integrity_check=ok`）；定时 **2026-11-27 20:58:43Z（11-28 04:58+08）** 追平并 `VACUUM` 两库；随后 `l12-replay-catchup-verify.timer`（21:20:00Z）独立复核 12 项并写 `replay-catchup-verify-<utc>.json`。基线：expiries 1,963 / backlog 6,264 / matches.db 10,076,971,008 B。**这两个定时器仍未执行完，下次会话第一件事就是取回执核对。**
+- **赛季切换：功能好、线上卡死**。回归全绿（Platform 172/172、Game 35/35 赛季族）；但线上 `T02` 的 `EndsAt=2026-11-30T15:00Z`、`NextSeasonId=null`、无草稿，且 readiness 实测 `quarantined=3`（11-13/11-20 三局「排位命令重放校验失败」）。`Readiness.Ready` 要求四项全 0，而 `ranked_recovery_quarantine` 在产品里**只有 INSERT**、无裁决入口 → 切季与自动结算永远过不了；`EndsAt` 一到排位即被 fence（`Seasons.cs:1120-1123`）。建草稿本身没问题（`Seasons.cs:503-504` 会自动回写 `NextSeasonId`），切换时间取**草稿的 `StartsAt`**；预约后改任何赛季字段或运行配置都会让计划 `failed`（需重来）。
+- **已实现自动废置（本批唯一代码改动）**：新表 `ranked_recovery_adjudications`（审计+可逆），在 `FinalizeIncompatibleRankedAsync` 同一事务写 `decision='voided'/source='auto'`；切季 readiness 与部署就绪的 `quarantined_recovery` 都改为排除已裁决行；熔断仅在 24h 内自动废置 ≥10 局时打 `CRITICAL` 日志（**不阻断、不需人工点**）。回填脚本 `ops/server/backfill-ranked-recovery-adjudications.sh`（幂等、带守卫与反转 SQL）。验证：新增用例 + Game 77/77 + Platform 397/397 + Batch 规则 8,823/8,823；平台门 trx 3,211/3,211 但进程尾部 abort（`PrivateDeckObjectPersistenceTests` 单独重跑 21/21 通过，同类 flake 历史 181 次）。
+- **下一步（严格按序）**：① 部署 `5df898a3`（需单独授权）；② 部署后跑回填脚本把现存 3 条补成已裁决，验证 readiness 归零；③ 再建 `T03` 草稿 + 设 `StartsAt` + 预约；④ 取回两个定时器回执（追平结果与 12 项自检）。**在 ② 完成前不要预约切季**：旧二进制未含本改动，预约会进 `waiting` 无限重试（约每秒一次）并重写 109 MB 快照，同时排位被 fence。
+- 旁注：工作区未跟踪文件 `TwelveLegions.Platform.Tests/MasterChampionSeasonFinalizationEndToEndTests.cs` 非本批产物，保持原样未动。
+
 ## 2026-11-22 B-2 步骤1 完成（本地已验，未部署；storage schema 13）
 
 - 会话/令牌已从核心快照拆到 `account_sessions`，迁移前自动落 `platform.db.pre-session-split`；核心快照不再含 `Sessions`，镜像仍含。
