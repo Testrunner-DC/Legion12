@@ -76,7 +76,9 @@ public sealed class TriggerResourceOrderingRegressionTests
     {
         var game = Create(controller);
         var player = game.State.Players[controller];
-        var moved = Card("S02-0401", "moved", controller);
+        // 用〈冲田总司〉而不是〈武田信玄〉做被位移军团：武田在场会合法阻止「主宰效果把士气转为活跃」，
+        // 会让本文件想测的顺序与资源语义全部变成「被阻止」。
+        var moved = Card("S02-0403", "moved", controller);
         player.Field[0][0] = moved;
         game.State.Players[targetController].Field[0][2] = Card("S02-0402", "target", targetController);
         player.Morale.Add(new L12MoraleCard { CardId = "S02-04C1", InstanceId = "last-resource" });

@@ -238,7 +238,11 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
             && entry.Cards.Any(card => card.CardId == "S02-04M1"));
         PassResponses(game);
-        Assert.False(morale.Tapped);
+        // 裁定（用户 2026-11-27）：士气转活跃走 effect-ready 管线，〈武田信玄〉(S02-0401) 对主宰效果的
+        // 限制也管月读；本夹具场上有 S02-0401（它同时是被位移的军团），所以本次转活跃被阻止。
+        Assert.True(morale.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-prevented"
+            && entry.Text.Contains("武田信玄", StringComparison.Ordinal));
         var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
             && entry.Cards.Any(card => card.CardId == "S02-04M1"));
         Assert.NotNull(declaration.EffectSceneId);

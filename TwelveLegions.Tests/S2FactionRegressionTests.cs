@@ -5672,7 +5672,8 @@ public sealed class S2FactionRegressionTests
     {
         var game = CreateWithFirstMaster("S02-04M1", 63373);
         var player = game.State.Players[0];
-        var moved = Card("S02-0401", "tsukuyomi-repeat-moved");
+        // 不用〈武田信玄〉做被位移军团：它在场会合法阻止主宰效果把士气转为活跃。
+        var moved = Card("S02-0403", "tsukuyomi-repeat-moved");
         var movedAgain = Card("S02-0402", "tsukuyomi-repeat-moved-again");
         moved.SummonRound = 0;
         movedAgain.SummonRound = 0;

@@ -61,6 +61,17 @@ public sealed partial class L12GameEngine
         }
         if (publicSource) FreezeAndRecordPublicResponseTargets(item, source);
 
+        // 裁定（用户 2026-11-27，顺序选项 A）：效果把休整士气转为活跃时，这条权威项必须排在
+        // 「同一时点的其它候选声明」之前结算，否则会退化成「先付费位移、再转活跃」。
+        // 直接压入效果堆叠，响应窗由堆叠推进统一打开（此刻没有开着的窗才这样走）。
+        if (item.Data.GetValueOrDefault("readyAheadOfDeclarations") == "true"
+            && State.IsResolvingStack && State.ResponseWindow is null)
+        {
+            State.EffectStack.Add(item);
+            if (publicSource) AddEvent("authority-event", actorPlayer, $"{text}进入响应时点", source);
+            return item;
+        }
+
         // An authority event must not replace a response window whose parent is still pending.
         // Reuse the existing deferred queue and let its normal continuation open the next window.
         if (State.IsResolvingStack || State.ResponseWindow is not null)
@@ -422,7 +433,23 @@ public sealed partial class L12GameEngine
         return readyItem;
     }
 
+    private string MoraleDisplayName(L12MoraleCard card)
+        => _catalog.Cards.TryGetValue(card.CardId, out var definition)
+            && !string.IsNullOrWhiteSpace(definition.NameZh)
+                ? "〈" + definition.NameZh + "〉"
+                : "〈" + card.CardId + "〉";
+
+    // 该效果后面还挂着同一时点的其它候选声明时（如《月读》的付费位移段），转活跃必须先结算，
+    // 否则会退化成「先付费位移、再转活跃」（用户 2026-11-27 顺序选项 A）。
+    private void ReadyMoraleByEffectAheadOfDeclarations(int playerIndex, L12CardInstance source,
+        L12MoraleCard target, string reason)
+        => QueueMoraleReadyByEffect(playerIndex, source, target, reason, aheadOfPendingDeclarations: true);
+
     private void ReadyMoraleByEffect(int playerIndex, L12CardInstance source, L12MoraleCard target, string reason)
+        => QueueMoraleReadyByEffect(playerIndex, source, target, reason, aheadOfPendingDeclarations: false);
+
+    private void QueueMoraleReadyByEffect(int playerIndex, L12CardInstance source, L12MoraleCard target,
+        string reason, bool aheadOfPendingDeclarations)
     {
         if (!target.Tapped) return;
         if (source.CardType == "master" && PublicLegions(State.Players[playerIndex]).Any(card => card.CardId == "S02-0401"))
@@ -431,7 +458,17 @@ public sealed partial class L12GameEngine
             return;
         }
         QueueAuthorityEvent("effect-ready", playerIndex, source, reason, subjectPlayer: playerIndex,
-            targetInstanceId: target.InstanceId, originZone: "morale", causedByEffect: true);
+            targetInstanceId: target.InstanceId, originZone: "morale", causedByEffect: true,
+            // 响应提示要写明「把哪张士气转活跃」：提示侧不做权威查询，这里把展示串一起带过去。
+            data: aheadOfPendingDeclarations
+                // 响应提示要写明「把哪张士气转活跃」：提示侧不做权威查询，这里把展示串一起带过去。
+                // readyAheadOfDeclarations 让这条权威项抢在同一时点其它候选声明之前结算。
+                ? new Dictionary<string, string>
+                {
+                    ["responseTargetSummary"] = MoraleDisplayName(target),
+                    ["readyAheadOfDeclarations"] = "true",
+                }
+                : new Dictionary<string, string> { ["responseTargetSummary"] = MoraleDisplayName(target) });
     }
 
     private void NotifyCardAddedToHandByEffect(L12PlayerState player, L12CardInstance card, string originZone, string reason)

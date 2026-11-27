@@ -558,13 +558,25 @@ public sealed partial class L12GameEngine
             case "tsukuyomiReadyMorale" when item.SourceCardId == "S02-04M1":
             {
                 var morale = player.Morale.FirstOrDefault(card => card.InstanceId == PublicTriggerDeclared(item, "morale") && card.Tapped);
-                if (morale is not null)
+                if (morale is null)
+                {
+                    AddEvent("effect-cancelled", item.Controller, "月读选择的休整士气已失效；该士气无法转为活跃");
+                    FinishStackItem(item);
+                    return true;
+                }
+                // 裁定（用户 2026-11-27）：士气本质也是卡牌，「由效果把休整士气转为活跃」走
+                // effect-ready 权威事件管线，对手可康这一次转活跃（如〈毒药发作〉）；该权威项按顺序
+                // 选项 A 排在付费位移段声明之前结算。规则重置（GameEngine.Untap）不触发；〈武田信玄〉
+                // 对主宰效果的限制由该管线统一处理。康掉只取消本次转活跃，付费位移段照常可发动。
+                var readinessSource = FindSource(item) ?? item.SourceSnapshot;
+                if (readinessSource is not null)
+                    ReadyMoraleByEffectAheadOfDeclarations(item.Controller, readinessSource, morale,
+                        "月读使选择的休整士气转为活跃");
+                else
                 {
                     morale.Tapped = false;
                     AddEvent("morale", item.Controller, "月读使选择的休整士气转为活跃");
                 }
-                else
-                    AddEvent("effect-cancelled", item.Controller, "月读选择的休整士气已失效；该士气无法转为活跃");
                 FinishStackItem(item);
                 return true;
             }

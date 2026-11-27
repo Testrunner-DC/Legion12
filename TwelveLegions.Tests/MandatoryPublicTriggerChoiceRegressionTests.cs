@@ -147,7 +147,8 @@ public sealed class MandatoryPublicTriggerChoiceRegressionTests
     {
         var game = Create(2026102201 + controller + (includeReadyMorale ? 0 : 10), controller, 1, "S02-04M1");
         var player = game.State.Players[controller];
-        var moved = Card("S02-0401", $"mandatory-tsukuyomi-moved-{controller}", controller);
+        // 换成〈冲田总司〉：〈武田信玄〉在场会合法阻止主宰效果把士气转为活跃，干扰本用例的目标结算语义。
+        var moved = Card("S02-0403", $"mandatory-tsukuyomi-moved-{controller}", controller);
         var other = Card("S02-0402", $"mandatory-tsukuyomi-other-{controller}", controller);
         player.Field[0][0] = moved;
         player.Field[0][2] = other;

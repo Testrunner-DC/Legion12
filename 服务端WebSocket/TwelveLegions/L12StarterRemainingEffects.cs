@@ -529,9 +529,16 @@ public sealed partial class L12GameEngine
                 ResolveStarterAthenaFrontBuff(item, source, values.Skip(2));
                 break;
             case "nuadaReadyMorale":
+                // 裁定（用户 2026-11-27）：效果把休整士气转为活跃走 effect-ready 管线，对手可响应。
                 foreach (var id in values)
                     if (player.Morale.FirstOrDefault(card => card.InstanceId == id) is { Tapped: true } target)
-                        target.Tapped = false;
+                    {
+                        var nuadaSource = source ?? FindSource(item) ?? item.SourceSnapshot;
+                        if (nuadaSource is not null)
+                            ReadyMoraleByEffect(item.Controller, nuadaSource, target, "银臂努阿达使士气转为活跃");
+                        else
+                            target.Tapped = false;
+                    }
                 AddEvent("effect", item.Controller, $"银臂努阿达将{values.Length}张士气转为活跃", source is null ? [] : [source]);
                 _ = AdvanceTrial(item.Controller, 2, source);
                 break;
@@ -1290,7 +1297,11 @@ public sealed partial class L12GameEngine
                     {
                         var target = player.Morale.FirstOrDefault(card => card.InstanceId == id && card.Tapped);
                         if (target is null) continue;
-                        target.Tapped = false;
+                        var readinessSource = FindSource(item) ?? item.SourceSnapshot;
+                        if (readinessSource is not null)
+                            ReadyMoraleByEffect(item.Controller, readinessSource, target, "银臂努阿达使士气转为活跃");
+                        else
+                            target.Tapped = false;
                         readied.Add(target);
                     }
                     if (readied.Count == 0)
