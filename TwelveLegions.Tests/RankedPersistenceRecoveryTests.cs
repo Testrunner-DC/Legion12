@@ -1297,6 +1297,70 @@ public sealed class RankedPersistenceRecoveryTests
         throw new InvalidOperationException($"Missing runtime room {roomCode}");
     }
 
+    [Fact]
+    public async Task AutoAdjudicationVoidsAnUnreplayableRankedRecoveryAndUnblocksCutover()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"l12-recovery-adjudication-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var database = Path.Combine(directory, "matches.db");
+        await using var recorder = new MatchRecorder(database);
+        try
+        {
+            await recorder.InitializeAsync();
+            var ended = DateTimeOffset.UtcNow;
+            await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                $"Data Source={database};Pooling=False"))
+            {
+                await connection.OpenAsync();
+                var seed = connection.CreateCommand();
+                seed.CommandText = """
+                    INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
+                        started_utc,ended_utc,winner,mode_id,season_id)
+                    VALUES('voided-ranked','VOID01',1,'a','b','a','b',$started,$ended,NULL,'ranked','S01');
+                    INSERT INTO ranked_recovery_quarantine(match_id,reason,created_utc)
+                    VALUES('voided-ranked','排位恢复不兼容：排位命令重放校验失败：7',$ended);
+                    """;
+                seed.Parameters.AddWithValue("$started", ended.AddMinutes(-30).ToString("O"));
+                seed.Parameters.AddWithValue("$ended", ended.ToString("O"));
+                Assert.Equal(2, await seed.ExecuteNonQueryAsync());
+            }
+
+            var blocked = await recorder.RankedSeasonCutoverReadinessAsync("S01");
+            Assert.Equal(1, blocked.QuarantinedSettlements);
+            Assert.False(blocked.Ready);
+
+            await recorder.ApplyRecoveryAutoAdjudicationForTestsAsync("voided-ranked",
+                "排位恢复不兼容：排位命令重放校验失败：7", ended);
+            // Idempotent: a repeated attempt must not create a second adjudication row.
+            await recorder.ApplyRecoveryAutoAdjudicationForTestsAsync("voided-ranked",
+                "排位恢复不兼容：排位命令重放校验失败：7", ended);
+
+            var unblocked = await recorder.RankedSeasonCutoverReadinessAsync("S01");
+            Assert.Equal(0, unblocked.QuarantinedSettlements);
+            Assert.True(unblocked.Ready);
+
+            await using var verify = new Microsoft.Data.Sqlite.SqliteConnection(
+                $"Data Source={database};Pooling=False");
+            await verify.OpenAsync();
+            var rows = verify.CreateCommand();
+            rows.CommandText = """
+                SELECT decision,source,policy_version,COUNT(*) FROM ranked_recovery_adjudications
+                WHERE match_id='voided-ranked' GROUP BY decision,source,policy_version;
+                """;
+            await using var reader = await rows.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("voided", reader.GetString(0));
+            Assert.Equal("auto", reader.GetString(1));
+            Assert.Equal(1, reader.GetInt32(2));
+            Assert.Equal(1, reader.GetInt32(3));
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            await DeleteTestDirectoryAsync(directory);
+        }
+    }
+
     private static async Task DeleteTestDirectoryAsync(string directory)
     {
         for (var attempt = 0; attempt < 10; attempt++)

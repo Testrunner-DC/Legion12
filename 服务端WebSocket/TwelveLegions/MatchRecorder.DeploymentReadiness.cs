@@ -83,7 +83,11 @@ public sealed partial class MatchRecorder
                     OR julianday(o.applied_utc) IS NULL OR m.match_id IS NULL
                     OR m.mode_id<>'ranked' OR m.ended_utc IS NULL OR trim(m.ended_utc)='');
                 """,
-            ["quarantined_recovery"] = "SELECT COUNT(*) FROM ranked_recovery_quarantine;",
+            ["quarantined_recovery"] = """
+                SELECT COUNT(*) FROM ranked_recovery_quarantine q
+                WHERE NOT EXISTS(SELECT 1 FROM ranked_recovery_adjudications a
+                                 WHERE a.match_id=q.match_id);
+                """,
             ["tournament_settlement_unresolved"] = """
                 SELECT COUNT(*) FROM tournament_result_outbox o LEFT JOIN matches m ON m.match_id=o.match_id
                 WHERE o.status IS NULL OR o.status<>'applied'

@@ -85,6 +85,17 @@ public sealed partial class MatchRecorder
                 created_utc TEXT NOT NULL,
                 FOREIGN KEY(match_id) REFERENCES matches(match_id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS ranked_recovery_adjudications (
+                match_id TEXT PRIMARY KEY,
+                decision TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                source TEXT NOT NULL,
+                policy_version INTEGER NOT NULL,
+                decided_utc TEXT NOT NULL,
+                FOREIGN KEY(match_id) REFERENCES matches(match_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS ix_ranked_recovery_adjudications_decided
+                ON ranked_recovery_adjudications(source, decided_utc);
             """;
         await command.ExecuteNonQueryAsync();
         await EnsureColumnAsync(connection, "ranked_match_runtime", "checkpoint_generation",
@@ -491,7 +502,9 @@ public sealed partial class MatchRecorder
         var quarantined = await CountAsync("""
             SELECT
                 (SELECT COUNT(*) FROM ranked_settlement_outbox WHERE status='quarantined')
-              + (SELECT COUNT(*) FROM ranked_recovery_quarantine);
+              + (SELECT COUNT(*) FROM ranked_recovery_quarantine q
+                 WHERE NOT EXISTS(SELECT 1 FROM ranked_recovery_adjudications a
+                                  WHERE a.match_id=q.match_id));
             """);
         return new L12RankedSeasonCutoverReadiness(seasonId, active, pending, reconciliation, quarantined);
     }
@@ -992,6 +1005,8 @@ public sealed partial class MatchRecorder
         quarantine.Parameters.AddWithValue("$reason", SafePersistenceError(reason));
         quarantine.Parameters.AddWithValue("$utc", settlement.EndedAt.ToString("O"));
         await quarantine.ExecuteNonQueryAsync();
+        await ApplyRecoveryAutoAdjudicationAsync(connection, transaction, source.MatchId, reason,
+            settlement.EndedAt);
         var auditableIdentity = !string.IsNullOrWhiteSpace(settlement.FirstAccountId)
             && !string.IsNullOrWhiteSpace(settlement.SecondAccountId)
             && !string.Equals(settlement.FirstAccountId, settlement.SecondAccountId,
@@ -1005,6 +1020,52 @@ public sealed partial class MatchRecorder
             // 缺少合法双席身份时只能本地隔离，不能制造永远无法投递的平台 outbox。
         }
         StorageFailureInjector?.Invoke("before-ranked-incompatible-commit");
+        await transaction.CommitAsync();
+    }
+
+    // Voided-on-arrival policy: a match whose recorded journal cannot be replayed is already
+    // settled as an invalidation (Winner=NULL), so it must not keep the season cutover or a
+    // deployment blocked forever. The adjudication row is the auditable record of that decision:
+    // readiness ignores an adjudicated quarantine row, and deleting the row restores blocking.
+    internal const int RecoveryAutoAdjudicationBurstLimit = 10;
+    internal static readonly TimeSpan RecoveryAutoAdjudicationBurstWindow = TimeSpan.FromHours(24);
+
+    private static async Task ApplyRecoveryAutoAdjudicationAsync(SqliteConnection connection,
+        SqliteTransaction transaction, string matchId, string reason, DateTimeOffset decidedAt)
+    {
+        var since = decidedAt.ToUniversalTime().Subtract(RecoveryAutoAdjudicationBurstWindow);
+        var burst = connection.CreateCommand();
+        burst.Transaction = transaction;
+        burst.CommandText = """
+            SELECT COUNT(*) FROM ranked_recovery_adjudications
+            WHERE source='auto' AND julianday(decided_utc)>=julianday($since);
+            """;
+        burst.Parameters.AddWithValue("$since", since.ToString("O"));
+        var recent = Convert.ToInt32(await burst.ExecuteScalarAsync());
+        var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO ranked_recovery_adjudications
+                (match_id,decision,reason,source,policy_version,decided_utc)
+            VALUES($match,'voided',$reason,'auto',1,$utc)
+            ON CONFLICT(match_id) DO NOTHING;
+            """;
+        insert.Parameters.AddWithValue("$match", matchId);
+        insert.Parameters.AddWithValue("$reason", SafePersistenceError(reason));
+        insert.Parameters.AddWithValue("$utc", decidedAt.ToUniversalTime().ToString("O"));
+        await insert.ExecuteNonQueryAsync();
+        if (recent >= RecoveryAutoAdjudicationBurstLimit)
+            Console.Error.WriteLine(
+                $"CRITICAL 排位恢复自动废置密度异常：24 小时内已自动废置 {recent} 局（本局 {matchId}）。"
+                + "请排查引擎重放一致性；不要只依赖自动废置。");
+    }
+
+    internal async Task ApplyRecoveryAutoAdjudicationForTestsAsync(string matchId, string reason,
+        DateTimeOffset decidedAt)
+    {
+        await using var connection = await OpenWriteConnectionAsync();
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+        await ApplyRecoveryAutoAdjudicationAsync(connection, transaction, matchId, reason, decidedAt);
         await transaction.CommitAsync();
     }
 
