@@ -151,7 +151,13 @@ for (const file of fs.readdirSync(root).filter(file => file.endsWith('.cs'))) {
 assert(inventory.length > 100, 'Full producer inventory must include the shared engine and card families')
 const consumers = ['PromptOverlay.vue', 'GameBoard.vue', 'GameActions.vue']
 for (const file of consumers) assert(fs.readFileSync(`src/l12/game/${file}`, 'utf8').includes("'./promptPlayerCopy'"), `${file} bypasses shared copy`)
-assert(fs.readFileSync('src/l12/game/GameBoard.vue','utf8').includes('prompt.presentation?.title?.trim() || prompt.text.trim()'), 'Legacy inline prompts must retain their task title after instruction deduplication')
+// B5：内联提示的标题去重实现已下沉到 board/promptCopy.ts；断言改为覆盖「宿主 + 下沉模块」，
+// 保证这条行为在两者任一处都不可丢失。
+const inlinePromptSource = ['src/l12/game/GameBoard.vue', 'src/l12/game/board/promptCopy.ts']
+  .filter(file => fs.existsSync(file))
+  .map(file => fs.readFileSync(file, 'utf8'))
+  .join('\n')
+assert(inlinePromptSource.includes('prompt.presentation?.title?.trim() || prompt.text.trim()'), 'Legacy inline prompts must retain their task title after instruction deduplication')
 const otherSurfaces = ['BattleUtilityDock.vue', 'DefenseDecisionExplanation.vue', 'MasterOverlay.vue', 'PlayerMat.vue', 'GraveyardOverlay.vue', '../GamePage.vue']
 const utility = fs.readFileSync('src/l12/game/BattleUtilityDock.vue', 'utf8')
 assert(!utility.includes('权威') && !utility.includes('独立进入“对局治理”'), 'Match confirmation copy must not expose processing internals')

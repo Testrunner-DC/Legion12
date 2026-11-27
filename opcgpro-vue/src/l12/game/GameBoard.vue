@@ -10,6 +10,7 @@ import type { ActionEvent, Card, DisasterCardView, GameState, Phase, Prompt } fr
 import { promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
 import { canReplaceOwnCoveredCounter, isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
 import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
+import { inlinePromptInstruction, inlinePromptPayment, inlinePromptTitle, promptActionText, promptChoiceText } from './board/promptCopy'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
@@ -628,20 +629,6 @@ const resourceSelectionPrompt = computed(() => presentationPrompts.value.find(pr
   || prompt.data?.choiceMode === 'resource-selection' || prompt.data?.choiceMode === 'board-selection'
   || prompt.kind === 'target-morale',
 ) ?? null)
-function promptActionText(prompt: Prompt) {
-  return promptInstructionCopy(prompt, prompt.text)
-}
-function promptChoiceText(prompt: Prompt, choice: string, fallback: string) {
-  return prompt.choiceLabels?.[choice]?.trim()
-    || fallback
-}
-function inlinePromptTitle(prompt: Prompt) {
-  return prompt.presentation?.title?.trim() || prompt.text.trim()
-}
-function inlinePromptInstruction(prompt: Prompt) {
-  const instruction = promptActionText(prompt)
-  return instruction === inlinePromptTitle(prompt) ? '' : instruction
-}
 function inlinePromptRange(prompt: Prompt) {
   return battleActionSelectionRange(prompt.minChoose, prompt.maxChoose)
 }
@@ -650,9 +637,6 @@ function inlinePromptActor(prompt: Prompt) {
 }
 function inlinePromptActorState(prompt: Prompt) {
   return battleActionActorPresentation(prompt.playerIndex, controlledPlayerIndex.value).state
-}
-function inlinePromptPayment(prompt: Prompt) {
-  return promptPaymentCopy(prompt)
 }
 function inlinePromptSelectedLabel(prompt: Prompt, id: string) {
   const battlefield = battlefieldTargetLabel(props.game, controlledPlayerIndex.value, id, prompt.choiceLabels?.[id])
