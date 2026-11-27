@@ -12,6 +12,7 @@
 - 根盘容量收口（2026-11-27，用户授权）：正式部署后 `/` 仅剩 5.4 GB（91%）。按「当前 + 最近两组」规则把两份最旧停服快照（4.33 GB + 5.37 GB）、一份 `platform.before.db` 真空前副本（279 MB）、一份超出保留面的旧版本目录（136 MB）**先转存 E:\Legion12-ColdStorage 并逐字节校验后**删除；服务器保留 `.sha256`/`.proof.json` 与清理回执。结果：`/` 可用 5.4 GB → **15 GB（75%）**。`/opt/legion12-runtime`、静态池与系统日志有意保留。
 - 队列关单与资格可见性（2026-11-27）：正式服 `0d9c45b0` 上按合同关掉 `c780d4b8`/`fb70de2b`/`d5ca2036`（逐条 CAS + 读回，deployedVersion 均为 `0d9c45b0`）；`L12AccountView` 补上 `TournamentEligibilityStatus` 并在账号列表显示「赛事资质：…」、按钮按状态禁用（回归 `TournamentEligibilityDecisionTests.AccountViewExposesTheStoredTournamentEligibilityStatus`）；赛事中心把资质申请改成弹框、原长期占位面板删除、已获得只在「创建赛事」左侧标一行；清单P2 在部署成功收尾时退役容量预检回执。Batch exit 0；改动尚未部署。
 - 清单P8/P9 收口（2026-11-27）：P8 补上端到端用例（`MasterChampionSeasonFinalAwardTests`：冠军事实按真实门槛构造，长期规则逐季派发、幂等、停用即停；Batch exit 0）；P9 赛事房内选手↔选手聊天**实测通过**（`p9-tournament-chat.mjs`：双方「本桌」页签 `hasTab:1`，A 发送 `P9-mwylxcgr`、B 收到 `deliveredToB:true`；注意先后攻提示层会盖住顶栏，必须先回答）。
+- 冷存根纠正（2026-11-27）：当日两批冷存回执误写已退役的 `E:\Legion12-ColdStorage`，实体实际在 NAS `\\SmartStorage\我的文档-2405002358\Legion12-ColdStorage`（`Z:`）；两份 5 GB 级快照按记录 SHA256 复核一致（`a4dec4d5…`、`3e4232d6…`），已在服务器与 NAS 各补一份 `cold-root-correction-20261127.json`。今后冷存一律写 NAS 冷根。
 - 未做（如实）：① 最强主宰「赛季归档 → 实际派发」的完整链路（含存储事务/租约）仍未在单测里跑通，只覆盖到派发那一段；——测试面没有公开的赛季归档入口，现有断言只覆盖规则契约与匹配函数；② P2 预检回执修复需单独一轮（改该脚本会作废在建候选包）；③ 仓外台账的日期倒序未改（属文档整理，不在本次授权范围）；④ 三个环境项均未部署（正式服需另行授权）。
 
 
