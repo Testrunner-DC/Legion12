@@ -66,11 +66,13 @@ $regencyEnd = $triggers.IndexOf('case ("S01-0213", "reaction", _):', [StringComp
 if ($regencyStart -lt 0 -or $regencyEnd -le $regencyStart) { throw 'Regency declaration plan could not be isolated.' }
 $regencyPlan = $triggers.Substring($regencyStart, $regencyEnd - $regencyStart)
 Assert-Contains $regencyPlan 'PublicTriggerStep("hand-card", "entryCard"' 'Regency must privately declare exactly one legal hand legion.'
-Assert-Contains $regencyPlan 'allowCancel: false' 'Mandatory Regency choices must not expose cancellation.'
-if ($regencyPlan.IndexOf('mode:none', [StringComparison]::Ordinal) -ge 0 -or
-    $regencyPlan.IndexOf('optional-card', [StringComparison]::Ordinal) -ge 0) {
-    throw 'Regency is mandatory when a legal hand legion and position exist; mode:none/optional-card must not return.'
-}
+Assert-Contains $regencyPlan 'allowCancel: false' 'Declared Regency targets must not expose cancellation.'
+# 裁定变更（用户 2026-11-27）：〈摄政皇权〉是**反击战术的可选发动**，必须先问「是否发动」；
+# 旧口径（2026-10 前）要求「有合法目标时必须发动」，该口径已被新裁定覆盖。
+# 具体目标（手牌军团 / 战场 / 位置）在声明发动后仍不可取消，由上面的 allowCancel: false 保证。
+Assert-Contains $regencyPlan 'PublicTriggerStep("option", "mode"' 'Regency must ask whether to activate the counter tactic.'
+Assert-Contains $regencyPlan 'mode:none' 'Regency must offer an explicit decline choice.'
+Assert-Contains $regencyPlan 'requiredChoice: "mode:use"' 'Regency targets may only be declared after choosing to activate.'
 
 foreach ($flow in @('battle-until-dawn-draw', 'empty-city-draw')) {
     $caseCount = [regex]::Matches($extended, 'case "' + [regex]::Escape($flow) + '":').Count

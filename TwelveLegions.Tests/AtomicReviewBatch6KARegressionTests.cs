@@ -263,6 +263,12 @@ public sealed class AtomicReviewBatch6KARegressionTests
                 : null;
             if (pending?.SourceCardId == "S01-0021")
             {
+                // 裁定（用户 2026-11-27）：〈摄政皇权〉是反击战术的**可选发动**，第一步先问「是否发动」。
+                if (prompt.ValidChoices.Contains("mode:use"))
+                {
+                    Resolve(game, "mode:use");
+                    continue;
+                }
                 declaration = prompt;
                 break;
             }
@@ -668,5 +674,50 @@ public sealed class AtomicReviewBatch6KARegressionTests
 
         Invoke(game, "Untap", opponent);
         Assert.False(target.Tapped);
+    }
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0021")]
+    [Trait("L12Evidence", "entry:counter-tactic-declinable")]
+    public void RegencyCanDeclineItsOptionalActivationWithoutConsumingAnything()
+    {
+        var game = Create(8110, secondMaster: "S01-01M1");
+        var defender = game.State.Players[0];
+        var attackerOwner = game.State.Players[1];
+        var counter = Card("S01-0021", "batch6ka-regency-decline");
+        counter.Hidden = true;
+        counter.SetRound = 0;
+        var summon = Card("S01-0208", "batch6ka-regency-decline-ayi");
+        defender.Field[1][0] = counter;
+        defender.Hand.Add(summon);
+        game.State.ActivePlayer = 1;
+        AddReadyMorale(attackerOwner, 4);
+
+        Assert.True(game.Handle(1, new L12Command("activateAbility", "master-1", Ability: "nonLethal")).Accepted);
+        PassResponses(game);
+
+        // 裁定（用户 2026-11-27）：〈摄政皇权〉是反击战术的**可选发动**；选 mode:none 即整段不结算，
+        // 手牌军团不登场、反击战术仍留在场上。
+        var declined = false;
+        for (var safety = 0; safety < 20 && !declined; safety++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            var pending = prompt.Data.TryGetValue("activationId", out var activationId)
+                ? game.State.PendingActivations.FirstOrDefault(item => item.ActivationId == activationId)
+                : null;
+            if (pending?.SourceCardId == "S01-0021" && prompt.ValidChoices.Contains("mode:none"))
+            {
+                Resolve(game, "mode:none");
+                declined = true;
+                break;
+            }
+            if (prompt.Kind == "response") Resolve(game, "pass");
+            else if (prompt.ValidChoices.Contains("mode:none")) Resolve(game, "mode:none");
+            else Resolve(game, "skip");
+        }
+
+        Assert.True(declined, "摄政皇权必须先给出「不发动」的出口");
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == counter.InstanceId);
+        Assert.Contains(summon, defender.Hand);
+        Assert.Same(counter, defender.Field[1][0]);
     }
 }

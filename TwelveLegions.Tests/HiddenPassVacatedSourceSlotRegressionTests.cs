@@ -188,7 +188,8 @@ public sealed class HiddenPassVacatedSourceSlotRegressionTests
             0, counter, "reaction", "真实盖伏反击战术", null, null));
         Invoke(game, "QueueTriggerCandidates", (object)new[] { candidate });
 
-        if (counterCardId == "S01-0223")
+        // 裁定（用户 2026-11-27）：〈摄政皇权〉S01-0021 与 S01-0223 一样先问「是否发动」。
+        if (counterCardId is "S01-0223" or "S01-0021")
             Send(game, OnlyPrompt(game), "mode:use");
         Send(game, OnlyPrompt(game), entrant.InstanceId);
         var slot = OnlyPrompt(game);

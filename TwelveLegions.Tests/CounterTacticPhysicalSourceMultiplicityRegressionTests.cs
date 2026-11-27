@@ -602,6 +602,12 @@ public sealed class CounterTacticPhysicalSourceMultiplicityRegressionTests
                 || item.ActivationId == prompt.Data.GetValueOrDefault("activationId"));
             if (activation?.SourceCardId == "S01-0021")
             {
+                // 裁定（用户 2026-11-27）：可选发动 —— 先声明 mode:use 才进入目标声明。
+                if (prompt.ValidChoices.Contains("mode:use"))
+                {
+                    Submit(choice: "mode:use");
+                    continue;
+                }
                 declaredSources.Add(activation.SourceInstanceId);
                 var entrant = entrantIds.FirstOrDefault(id =>
                     prompt.ValidChoices.Contains(id) && declaredEntrants.Add(id));

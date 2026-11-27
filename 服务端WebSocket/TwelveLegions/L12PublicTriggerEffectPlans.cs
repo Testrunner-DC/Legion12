@@ -967,17 +967,22 @@ public sealed partial class L12GameEngine
                         && EffectEntryBattlefieldChoices(candidate.Controller, card,
                             sourceSlot is null ? null : candidate).Any())
                     .Select(card => card.InstanceId).ToList();
+                // 裁定（用户 2026-11-27）：〈摄政皇权〉是**反击战术的可选发动**，不是触发式登场——
+                // 玩家必须能选择「不发动」。此前三步全为 allowCancel:false 且没有 option 步，
+                // 触发即强制声明（玩家报「联锁3 变成强制发动」）。
                 steps =
                 [
+                    PublicTriggerStep("option", "mode", "摄政皇权：是否发动这次反击战术",
+                        legions.Count > 0 ? ["mode:none", "mode:use"] : ["mode:none"]),
                     PublicTriggerStep("hand-card", "entryCard", "摄政皇权：预先选择手牌1张费用不高于3的军团", legions,
-                        allowCancel: false),
+                        allowCancel: false, requiredChoice: "mode:use"),
                     PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "摄政皇权：预先选择登场战场",
                         ["dynamic"], referenceKey: "entryCard", allowCancel: false,
-                        includeSourceSlotAfterCost: sourceSlot is not null),
+                        includeSourceSlotAfterCost: sourceSlot is not null, requiredChoice: "mode:use"),
                     PublicTriggerStep(sourceSlot is null ? "effect-entry-slot" : "prospective-entry-slot",
                         "entrySlot", "摄政皇权：预先选择活跃登场位置",
                         ["dynamic"], referenceKey: "entryCard", allowCancel: false,
-                        includeSourceSlotAfterCost: sourceSlot is not null),
+                        includeSourceSlotAfterCost: sourceSlot is not null, requiredChoice: "mode:use"),
                 ];
                 break;
             }

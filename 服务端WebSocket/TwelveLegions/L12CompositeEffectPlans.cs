@@ -518,8 +518,10 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["trigger:S01-0021:reaction"] =
             [
+                // 裁定（用户 2026-11-27）：反击战术可选发动 —— 声明 mode:none 时该段整体不结算。
                 new("regency-entry", "从我方手牌中将已声明的1张费用不高于3的军团活跃登场",
-                    PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"]),
+                    PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"],
+                    DeclinedMode: "mode:none", DeclinedDeclarationKey: "mode"),
             ],
             ["trigger:S01-0223:reaction"] =
             [
