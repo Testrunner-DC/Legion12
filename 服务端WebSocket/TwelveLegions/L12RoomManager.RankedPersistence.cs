@@ -238,7 +238,7 @@ public sealed partial class L12RoomManager
             catch (Exception error) when (error is InvalidDataException or InvalidOperationException
                                                  or JsonException or KeyNotFoundException)
             {
-                Console.Error.WriteLine($"Ranked restore incompatible ({source.MatchId}): {error.Message}");
+                L12Log.Error("roommanager-rankedpersistence", $"Ranked restore incompatible ({source.MatchId}): {error.Message}");
                 if (room is not null) RemoveRestoredRankedRoom(room);
                 try
                 {
@@ -252,7 +252,7 @@ public sealed partial class L12RoomManager
                 catch (Exception finalizeError)
                 {
                     failed++;
-                    Console.Error.WriteLine($"Ranked restore invalidation ({source.MatchId}): {finalizeError.Message}");
+                    L12Log.Error("roommanager-rankedpersistence", $"Ranked restore invalidation ({source.MatchId}): {finalizeError.Message}");
                 }
             }
         }
@@ -517,7 +517,7 @@ public sealed partial class L12RoomManager
                 }
                 catch (Exception quarantineError)
                 {
-                    Console.Error.WriteLine($"Ranked outbox quarantine ({item.MatchId}): {quarantineError.Message}");
+                    L12Log.Error("roommanager-rankedpersistence", $"Ranked outbox quarantine ({item.MatchId}): {quarantineError.Message}");
                 }
                 continue;
             }
@@ -575,9 +575,9 @@ public sealed partial class L12RoomManager
                 try { await _recorder.RecordRankedSettlementFailureAsync(item.MatchId, error.Message); }
                 catch (Exception recordError)
                 {
-                    Console.Error.WriteLine($"Ranked outbox failure record ({item.MatchId}): {recordError.Message}");
+                    L12Log.Error("roommanager-rankedpersistence", $"Ranked outbox failure record ({item.MatchId}): {recordError.Message}");
                 }
-                Console.Error.WriteLine($"Ranked outbox replay ({item.MatchId}): {error.Message}");
+                L12Log.Error("roommanager-rankedpersistence", $"Ranked outbox replay ({item.MatchId}): {error.Message}");
             }
         }
         return (applied, failed);

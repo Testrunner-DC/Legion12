@@ -175,7 +175,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception error)
             {
-                Console.Error.WriteLine($"Tutorial unavailable stage={initializationStage} exception={error.GetType().Name} detail={error.Message}");
+                L12Log.Error("roommanager-tutorial", $"Tutorial unavailable stage={initializationStage} exception={error.GetType().Name} detail={error.Message}");
                 ((ICollection<KeyValuePair<string, Room>>)_rooms).Remove(new(room.Code, room));
                 return Error(sessionId, "教学配方或记录暂时不可用，未进入关卡", "tutorialUnavailable", requestId);
             }
@@ -896,7 +896,7 @@ public sealed partial class L12RoomManager
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine($"Tutorial frozen stage=opponent-command exception={error.GetType().Name}");
+            L12Log.Error("roommanager-tutorial", $"Tutorial frozen stage=opponent-command exception={error.GetType().Name}");
             // A committed human action is never replayed to compensate for a failed opponent.
             lesson.Frozen = true;
             await TryRestoreTutorialJournalAsync(room);

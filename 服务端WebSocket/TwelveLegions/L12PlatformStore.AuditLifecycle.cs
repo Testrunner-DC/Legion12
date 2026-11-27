@@ -133,7 +133,7 @@ public sealed partial class L12PlatformStore
                 // A crash before this point is fenced by exact migration IDs on load and INSERT.
                 if (archived > 0) Save(false);
             }
-            Console.WriteLine($"Audit lifecycle: scanned={scannedCount};archived={archived};expiredSegments={expired}");
+            L12Log.Info("platformstore-auditlifecycle", $"Audit lifecycle: scanned={scannedCount};archived={archived};expiredSegments={expired}");
             return new(archived, expired, scannedCount);
         }
         finally { Monitor.Exit(_gate); }

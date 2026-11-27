@@ -339,7 +339,7 @@ public sealed partial class L12RoomManager
                                 try { rollbackRestored = await ReloadRankedRoomFromRecorderAsync(recoveredRoom); }
                                 catch (Exception rollbackError)
                                 {
-                                    Console.Error.WriteLine($"Ranked claim rollback ({recoveredRoom.Code}): "
+                                    L12Log.Error("roommanager", $"Ranked claim rollback ({recoveredRoom.Code}): "
                                                             + rollbackError.Message);
                                 }
                                 recoveredRoom.Closed = reopeningClosedRoom || !rollbackRestored;
@@ -1361,7 +1361,7 @@ public sealed partial class L12RoomManager
             _rooms.TryRemove(room.Code, out _);
             _sessions.TryRemove(opponentId, out _);
             ClearRoomMembership(session);
-            Console.Error.WriteLine($"Sandbox recording start ({room.Code}): {persistenceError.Message}");
+            L12Log.Error("roommanager", $"Sandbox recording start ({room.Code}): {persistenceError.Message}");
             return Error(sessionId, "沙盒录像暂时不可用，未建立未记录的沙盒", "sandboxRejected");
         }
         RecordRoomGameplayActivity(room);
@@ -2085,7 +2085,7 @@ public sealed partial class L12RoomManager
             {
                 var restored = await ReloadJournalRoomFromRecorderAsync(room);
                 if (!restored) room.Closed = true;
-                Console.Error.WriteLine($"Sandbox GM recording ({room.Code}): {persistenceError.Message}");
+                L12Log.Error("roommanager", $"Sandbox GM recording ({room.Code}): {persistenceError.Message}");
                 return Error(sessionId, restored
                     ? "沙盒命令未能持久化，已恢复到最后确认状态，请重试"
                     : "沙盒命令未能持久化，房间已安全冻结", "actionRejected", requestId);
@@ -2166,7 +2166,7 @@ public sealed partial class L12RoomManager
             {
                 var restored = await ReloadJournalRoomFromRecorderAsync(room);
                 if (!restored) room.Closed = true;
-                Console.Error.WriteLine($"Sandbox action recording ({room.Code}): {persistenceError.Message}");
+                L12Log.Error("roommanager", $"Sandbox action recording ({room.Code}): {persistenceError.Message}");
                 return Error(sessionId, restored
                     ? "沙盒命令未能持久化，已恢复到最后确认状态，请重试"
                     : "沙盒命令未能持久化，房间已安全冻结", "actionRejected", requestId);
@@ -2243,7 +2243,7 @@ public sealed partial class L12RoomManager
                         // The transport is already gone; retain fail-closed room persistence semantics.
                         room.Closed = true;
                         WithdrawOpponentChatScopeLocked(room);
-                        Console.Error.WriteLine($"Ranked disconnect persistence ({room.Code}): {persistenceError.Message}");
+                        L12Log.Error("roommanager", $"Ranked disconnect persistence ({room.Code}): {persistenceError.Message}");
                         return Error(sessionId, "排位断线状态无法持久化，房间已安全冻结");
                     }
                 }
@@ -2327,7 +2327,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception persistenceError)
             {
-                Console.Error.WriteLine($"Sandbox recording close ({room.Code}): {persistenceError.Message}");
+                L12Log.Error("roommanager", $"Sandbox recording close ({room.Code}): {persistenceError.Message}");
                 return Error(sessionId, "沙盒录像结束状态未能持久化，请稍后重试");
             }
         }
@@ -2713,7 +2713,7 @@ public sealed partial class L12RoomManager
             {
                 // Governance is an auxiliary ledger. Its retryable storage failure must never
                 // prevent the authoritative game result from completing.
-                Console.Error.WriteLine($"Match draw cancellation ({room.Code}): {error.Message}");
+                L12Log.Error("roommanager", $"Match draw cancellation ({room.Code}): {error.Message}");
             }
         }
         if (room.IsTraining && !room.CompletionRecorded)

@@ -60,10 +60,10 @@ public sealed partial class L12RoomManager
                     }
                     catch (Exception persistenceError)
                     {
-                        Console.Error.WriteLine($"Tournament room command failure persistence ({command.Id}): "
+                        L12Log.Error("roommanager-tournamentcommands", $"Tournament room command failure persistence ({command.Id}): "
                                                 + persistenceError.Message);
                     }
-                    Console.Error.WriteLine($"Tournament room command ({command.Id}): {error.Message}");
+                    L12Log.Error("roommanager-tournamentcommands", $"Tournament room command ({command.Id}): {error.Message}");
                 }
             }
             return new L12TournamentRoomCommandDrainResult(applied, failed,

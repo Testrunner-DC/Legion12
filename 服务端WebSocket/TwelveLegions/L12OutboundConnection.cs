@@ -312,7 +312,7 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
                 try { _onFault?.Invoke(error); }
                 catch (Exception callbackError)
                 {
-                    Console.Error.WriteLine($"WebSocket 发送隔离回调失败：{callbackError.Message}");
+                    L12Log.Error("outboundconnection", $"WebSocket 发送隔离回调失败：{callbackError.Message}");
                 }
                 return;
             }
@@ -624,7 +624,7 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
             try { _onFault?.Invoke(error); }
             catch (Exception callbackError)
             {
-                Console.Error.WriteLine($"WebSocket 发送隔离回调失败：{callbackError.Message}");
+                L12Log.Error("outboundconnection", $"WebSocket 发送隔离回调失败：{callbackError.Message}");
             }
             return false;
         }

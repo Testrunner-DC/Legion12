@@ -207,7 +207,7 @@ internal sealed class L12PresenceRefreshCoalescer : IAsyncDisposable
         try { _onEmitFailure(error); }
         catch (Exception callbackError)
         {
-            Console.Error.WriteLine($"在线状态刷新异常回调失败：{callbackError.GetType().Name}");
+            L12Log.Error("presencerefreshcoalescer", $"在线状态刷新异常回调失败：{callbackError.GetType().Name}");
         }
     }
 

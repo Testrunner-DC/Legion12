@@ -337,7 +337,7 @@ public sealed partial class MatchRecorder
             LastCardFactMaintenance = new(now, compacted, pruned, batches, oldestPending, budgetReached);
             Volatile.Write(ref _nextCardFactMaintenanceUtcTicks,
                 NextStorageCleanupUtc(now).UtcDateTime.Ticks);
-            Console.WriteLine($"Card fact maintenance: compacted={compacted};pruned={pruned};batches={batches};"
+            L12Log.Info("matchrecorder-cardanalyticsstorage", $"Card fact maintenance: compacted={compacted};pruned={pruned};batches={batches};"
                 + $"oldestPendingEndedUtc={oldestPending?.ToString("O") ?? "none"};budgetReached={budgetReached}");
             return (compacted, pruned);
         }

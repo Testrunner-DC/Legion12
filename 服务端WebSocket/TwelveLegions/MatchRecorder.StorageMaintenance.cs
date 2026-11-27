@@ -53,7 +53,7 @@ public sealed partial class MatchRecorder
             slice.CancelAfter(TimeSpan.FromSeconds(3));
             try { await item.Run(slice.Token); }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception error) { Console.Error.WriteLine($"{item.Name} deferred to next daily window: {error.Message}"); }
+            catch (Exception error) { L12Log.Error("matchrecorder-storagemaintenance", $"{item.Name} deferred to next daily window: {error.Message}"); }
         }
     }
 
@@ -125,7 +125,7 @@ public sealed partial class MatchRecorder
                 finish.Parameters.AddWithValue("$outcome", outcome);
                 finish.Parameters.AddWithValue("$window", start.ToString("O"));
                 await finish.ExecuteNonQueryAsync(CancellationToken.None);
-                Console.WriteLine($"Daily storage cleanup: windowUtc={start:O};outcome={outcome};nextUtc={start.AddDays(1):O}");
+                L12Log.Info("matchrecorder-storagemaintenance", $"Daily storage cleanup: windowUtc={start:O};outcome={outcome};nextUtc={start.AddDays(1):O}");
             }
             return true;
         }

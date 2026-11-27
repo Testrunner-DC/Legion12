@@ -59,7 +59,7 @@ public sealed partial class L12RoomManager
                 catch (Exception error)
                 {
                     // 持久化失败时保留内存房间和 active 元数据，不先删房再丢录像。
-                    Console.Error.WriteLine($"Sandbox disconnect retirement ({room.Code}): {error.Message}");
+                    L12Log.Error("roommanager-sandboxrecording", $"Sandbox disconnect retirement ({room.Code}): {error.Message}");
                 }
                 finally
                 {

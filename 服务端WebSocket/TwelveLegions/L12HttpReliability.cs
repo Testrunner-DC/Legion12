@@ -448,7 +448,7 @@ internal static class L12HttpExceptionBoundary
             var correlationId = CorrelationId(context);
             var path = context.Items.TryGetValue(L12CorrelationIds.OriginalPathItemName, out var original)
                 ? original?.ToString() : context.Request.Path.Value;
-            Console.Error.WriteLine($"[{correlationId}] HTTP request failed: method={context.Request.Method}, path={path}, "
+            L12Log.Error("httpreliability", $"[{correlationId}] HTTP request failed: method={context.Request.Method}, path={path}, "
                 + $"errorType={error.GetType().FullName}\n{error.StackTrace}");
             if (context.Response.HasStarted) throw;
             await WriteErrorAsync(context, "internal_error", "服务器暂时无法处理该请求", StatusCodes.Status500InternalServerError);
@@ -463,7 +463,7 @@ internal static class L12HttpExceptionBoundary
         for (Exception? cause = error; cause is not null; cause = cause.InnerException)
             if (cause is Microsoft.Data.Sqlite.SqliteException found) { sqlite = found; break; }
         var read = error.Data[nameof(L12ReadAuditDiagnostic)] as L12ReadAuditDiagnostic;
-        Console.Error.WriteLine($"[{CorrelationId(context)}] HTTP storage failure: code={code}; "
+        L12Log.Error("httpreliability", $"[{CorrelationId(context)}] HTTP storage failure: code={code}; "
             + $"phase={read?.Phase ?? "platform"}; type={error.GetType().Name}; "
             + $"sqliteCode={sqlite?.SqliteErrorCode.ToString() ?? "none"}; "
             + $"sqliteExtendedCode={sqlite?.SqliteExtendedErrorCode.ToString() ?? "none"}; "

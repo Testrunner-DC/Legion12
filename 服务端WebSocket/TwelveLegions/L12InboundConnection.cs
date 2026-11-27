@@ -259,7 +259,7 @@ internal sealed class L12InboundConnection : IAsyncDisposable
                 try { _onFault?.Invoke(error); }
                 catch (Exception callbackError)
                 {
-                    Console.Error.WriteLine($"WebSocket 入站隔离回调失败：{callbackError.Message}");
+                    L12Log.Error("inboundconnection", $"WebSocket 入站隔离回调失败：{callbackError.Message}");
                 }
                 return;
             }

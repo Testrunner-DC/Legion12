@@ -387,6 +387,9 @@ public sealed class ReplayReadAuditRecoveryTests
         var manager = new L12RoomManager(replay.Catalog, replay.Recorder, stale);
         await using var server = new L12WebSocketServer(manager, replay.Recorder, stale, replay.Catalog);
         await server.StartAsync(0);
+        // C4b：服务端日志统一走 L12Log 门面；本用例断言的是「控制台可见的诊断行」，
+        // 因此显式关掉结构化 sink，走门面的 Console 回落路径（与迁移前行为一致）。
+        TwelveLegions.Server.L12Log.Initialize(null);
         using var client = AdminClient(server, token);
         var path = $"/api/admin/matches/{replay.Engine.State.MatchId}/replay?limit=1";
         using var captured = new StringWriter();

@@ -389,7 +389,7 @@ public sealed partial class MatchRecorder
 
             var hasMore = await HasPlayerReplayCleanupCandidateAsync(connection, now, cancellationToken);
             var nextRun = NextStorageCleanupUtc(now);
-            Console.WriteLine($"Player replay cleanup: pruned={purgedMatches};backlog={hasMore};nextUtc={nextRun:O}");
+            L12Log.Info("matchrecorder-playerreplayretention", $"Player replay cleanup: pruned={purgedMatches};backlog={hasMore};nextUtc={nextRun:O}");
             using (var finish = connection.BeginTransaction(deferred: false))
             {
                 var updateSchedule = connection.CreateCommand();
@@ -432,7 +432,7 @@ public sealed partial class MatchRecorder
                 }
                 catch (Exception releaseError)
                 {
-                    Console.Error.WriteLine(
+                    L12Log.Error("matchrecorder-playerreplayretention",
                         $"Player replay cleanup lease release: {releaseError.Message}");
                 }
             }

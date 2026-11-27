@@ -572,7 +572,7 @@ public sealed partial class MatchRecorder
             catch (Exception error) when (error is InvalidDataException or JsonException
                                                or KeyNotFoundException or FormatException)
             {
-                Console.Error.WriteLine($"Ranked master title fact skipped: {SafePersistenceError(error.Message)}");
+                L12Log.Error("matchrecorder-rankedpersistence", $"Ranked master title fact skipped: {SafePersistenceError(error.Message)}");
             }
         }
         return result.Where(item => item.EndedAt.ToUniversalTime() >= cutoff
@@ -1055,7 +1055,7 @@ public sealed partial class MatchRecorder
         insert.Parameters.AddWithValue("$utc", decidedAt.ToUniversalTime().ToString("O"));
         await insert.ExecuteNonQueryAsync();
         if (recent >= RecoveryAutoAdjudicationBurstLimit)
-            Console.Error.WriteLine(
+            L12Log.Error("matchrecorder-rankedpersistence",
                 $"CRITICAL 排位恢复自动废置密度异常：24 小时内已自动废置 {recent} 局（本局 {matchId}）。"
                 + "请排查引擎重放一致性；不要只依赖自动废置。");
     }

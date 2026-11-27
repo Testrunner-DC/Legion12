@@ -79,12 +79,12 @@ public sealed partial class L12RoomManager
                             // fenced for authoritative recovery rather than replay an uncertain write.
                             if (commit.Attempted) { room.Closed = true; room.InactivityRecoveryPending = true; }
                             if (cancellationToken.IsCancellationRequested) throw;
-                            Console.Error.WriteLine($"Inactive room persistence ({room.Code}): {error.GetType().Name}");
+                            L12Log.Error("roommanager-inactivity", $"Inactive room persistence ({room.Code}): {error.GetType().Name}");
                             continue;
                         }
                         // Once commit returned successfully the terminal candidate cannot be discarded,
                         // even if later connection disposal or housekeeping reported an error.
-                        Console.Error.WriteLine($"Inactive room post-commit ({room.Code}): {error.GetType().Name}");
+                        L12Log.Error("roommanager-inactivity", $"Inactive room post-commit ({room.Code}): {error.GetType().Name}");
                     }
                     room.Game = candidate;
                     room.CommandSequence = sequence;
@@ -94,12 +94,12 @@ public sealed partial class L12RoomManager
                     // The recorded result is already durable and is never rolled back on its warning.
                     try { await CompleteTournamentRoomGameAsync(room); }
                     catch (Exception error)
-                    { Console.Error.WriteLine($"Inactive room auxiliary completion ({room.Code}): {error.GetType().Name}"); }
+                    { L12Log.Error("roommanager-inactivity", $"Inactive room auxiliary completion ({room.Code}): {error.GetType().Name}"); }
                     messages.AddRange(BroadcastGame(room, forceCritical: true));
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception error)
-                { Console.Error.WriteLine($"Inactive room preparation ({room.Code}): {error.GetType().Name}"); }
+                { L12Log.Error("roommanager-inactivity", $"Inactive room preparation ({room.Code}): {error.GetType().Name}"); }
                 finally { room.Gate.Release(); }
             }
             return messages;

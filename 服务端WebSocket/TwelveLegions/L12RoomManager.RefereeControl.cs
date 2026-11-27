@@ -75,7 +75,7 @@ public sealed partial class L12RoomManager
             catch (Exception persistenceError)
             {
                 if (!await ReloadRankedRoomFromRecorderAsync(room)) room.Closed = true;
-                Console.Error.WriteLine($"Referee command persistence: {persistenceError.GetType().Name}");
+                L12Log.Error("roommanager-refereecontrol", $"Referee command persistence: {persistenceError.GetType().Name}");
                 return Error(sessionId, room.Closed ? "裁判调整未能持久化，本桌已安全冻结"
                     : "裁判调整未能持久化，已恢复最后确认状态", "actionRejected", requestId);
             }

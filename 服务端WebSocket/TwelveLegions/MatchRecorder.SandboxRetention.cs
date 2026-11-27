@@ -319,7 +319,7 @@ public sealed partial class MatchRecorder
             anomalies.Parameters.AddWithValue("$cutoff", cutoff);
             var anomalyCount = Convert.ToInt64(await anomalies.ExecuteScalarAsync(cancellationToken));
             if (anomalyCount > 0)
-                Console.Error.WriteLine($"Sandbox replay cleanup preserved {anomalyCount} row(s) with ranked persistence references.");
+                L12Log.Error("matchrecorder-sandboxretention", $"Sandbox replay cleanup preserved {anomalyCount} row(s) with ranked persistence references.");
 
             var deleted = 0;
             foreach (var matchId in expired)
@@ -435,7 +435,7 @@ public sealed partial class MatchRecorder
                 }
                 catch (Exception releaseError)
                 {
-                    Console.Error.WriteLine($"Sandbox replay cleanup lease release: {releaseError.Message}");
+                    L12Log.Error("matchrecorder-sandboxretention", $"Sandbox replay cleanup lease release: {releaseError.Message}");
                 }
             }
             throw;

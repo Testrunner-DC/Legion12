@@ -57,7 +57,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception error)
             {
-                Console.Error.WriteLine($"Match draw request ({room.Code}): {error.Message}");
+                L12Log.Error("roommanager-matchgovernance", $"Match draw request ({room.Code}): {error.Message}");
                 return MatchGovernanceFailure(sessionId, "request-draw", clientRequestId,
                     "平局申请暂时无法保存，请稍后重试", "governance_storage_failed");
             }
@@ -97,7 +97,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception error)
             {
-                Console.Error.WriteLine($"Match draw validation ({room.Code}): {error.Message}");
+                L12Log.Error("roommanager-matchgovernance", $"Match draw validation ({room.Code}): {error.Message}");
                 return MatchGovernanceFailure(sessionId, "resolve-draw", clientRequestId,
                     "平局申请记录暂时不可用，请稍后重试", "governance_storage_failed");
             }
@@ -144,7 +144,7 @@ public sealed partial class L12RoomManager
                 }
                 catch (Exception error)
                 {
-                    Console.Error.WriteLine($"Match draw rejection ({room.Code}): {error.Message}");
+                    L12Log.Error("roommanager-matchgovernance", $"Match draw rejection ({room.Code}): {error.Message}");
                     return MatchGovernanceFailure(sessionId, "resolve-draw", clientRequestId,
                         "平局申请处理结果暂时无法保存，请稍后重试", "governance_storage_failed");
                 }
@@ -181,7 +181,7 @@ public sealed partial class L12RoomManager
                 }
                 catch (Exception finalizeError)
                 {
-                    Console.Error.WriteLine($"Match draw governance finalize ({room.Code}): "
+                    L12Log.Error("roommanager-matchgovernance", $"Match draw governance finalize ({room.Code}): "
                                             + finalizeError.Message);
                     completionWarning ??= "平局已权威结束，治理记录正在重试同步";
                 }
@@ -204,7 +204,7 @@ public sealed partial class L12RoomManager
                     }
                     catch (Exception abortError)
                     {
-                        Console.Error.WriteLine($"Match draw acceptance rollback ({room.Code}): "
+                        L12Log.Error("roommanager-matchgovernance", $"Match draw acceptance rollback ({room.Code}): "
                                                 + abortError.Message);
                     }
                     if (room.RankedClock is null)
@@ -215,7 +215,7 @@ public sealed partial class L12RoomManager
                 }
                 else
                 {
-                    Console.Error.WriteLine($"Match draw post-persistence completion ({room.Code}): "
+                    L12Log.Error("roommanager-matchgovernance", $"Match draw post-persistence completion ({room.Code}): "
                                             + error.Message);
                     var messages = BroadcastGame(room).ToList();
                     messages.Add(MatchGovernanceResult(sessionId, "resolve-draw", clientRequestId,
@@ -271,7 +271,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception error)
             {
-                Console.Error.WriteLine($"Match opponent report ({room.Code}): {error.Message}");
+                L12Log.Error("roommanager-matchgovernance", $"Match opponent report ({room.Code}): {error.Message}");
                 return MatchGovernanceFailure(sessionId, "report-opponent", clientRequestId,
                     "举报暂时无法保存，请稍后重试", "governance_storage_failed");
             }

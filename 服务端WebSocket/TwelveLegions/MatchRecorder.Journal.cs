@@ -234,7 +234,7 @@ public sealed partial class MatchRecorder
     {
         if (string.Equals(stateJson, "{}", StringComparison.Ordinal)) return;
         L12PerformanceMetrics.Value("persistence.v2-state-json-anomaly", 1);
-        Console.Error.WriteLine("[L12存储异常] v2 普通命令 state_json 非空对象，已拒绝持久化。");
+        L12Log.Error("matchrecorder-journal", "[L12存储异常] v2 普通命令 state_json 非空对象，已拒绝持久化。");
         throw new InvalidDataException("v2 普通命令 state_json 必须保持为 '{}'");
     }
 

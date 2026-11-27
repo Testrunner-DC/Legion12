@@ -66,7 +66,7 @@ public sealed partial class L12WebSocketServer
             }
             catch (Exception error)
             {
-                Console.Error.WriteLine($"赛季生命周期协调器失败，稍后重试: {error.Message}");
+                L12Log.Error("season-activation", $"赛季生命周期协调器失败，稍后重试: {error.Message}");
             }
             if (!progressed)
                 await _seasonActivationSignal.WaitAsync(SeasonActivationRetryDelay, cancellationToken);
@@ -85,7 +85,7 @@ public sealed partial class L12WebSocketServer
         }
         catch (L12PlatformStorageUnavailableException error)
         {
-            Console.Error.WriteLine($"赛季结算租约持久化失败，稍后重试: {error.Message}");
+            L12Log.Error("season-activation", $"赛季结算租约持久化失败，稍后重试: {error.Message}");
             return false;
         }
         if (claim is null) return false;
@@ -119,13 +119,13 @@ public sealed partial class L12WebSocketServer
             }
             catch (Exception notificationError)
             {
-                Console.Error.WriteLine($"赛季结算已提交，但总结通知失败: {notificationError.Message}");
+                L12Log.Error("season-activation", $"赛季结算已提交，但总结通知失败: {notificationError.Message}");
             }
             return true;
         }
         catch (L12PlatformStorageUnavailableException error)
         {
-            Console.Error.WriteLine($"赛季结算持久化失败，租约到期后重试: {error.Message}");
+            L12Log.Error("season-activation", $"赛季结算持久化失败，租约到期后重试: {error.Message}");
             return false;
         }
         catch (Exception error)
@@ -139,7 +139,7 @@ public sealed partial class L12WebSocketServer
             }
             catch (Exception diagnosticError)
             {
-                Console.Error.WriteLine($"赛季结算失败且诊断状态写入失败: {diagnosticError.Message}");
+                L12Log.Error("season-activation", $"赛季结算失败且诊断状态写入失败: {diagnosticError.Message}");
             }
             return false;
         }
@@ -157,7 +157,7 @@ public sealed partial class L12WebSocketServer
         }
         catch (L12PlatformStorageUnavailableException error)
         {
-            Console.Error.WriteLine($"自动切季租约持久化失败，稍后重试: {error.Message}");
+            L12Log.Error("season-activation", $"自动切季租约持久化失败，稍后重试: {error.Message}");
             return false;
         }
         if (claim is null) return false;
@@ -191,13 +191,13 @@ public sealed partial class L12WebSocketServer
             }
             catch (Exception notificationError)
             {
-                Console.Error.WriteLine($"自动切季已提交，但资源通知失败: {notificationError.Message}");
+                L12Log.Error("season-activation", $"自动切季已提交，但资源通知失败: {notificationError.Message}");
             }
             return true;
         }
         catch (L12PlatformStorageUnavailableException error)
         {
-            Console.Error.WriteLine($"自动切季持久化失败，租约到期后重试: {error.Message}");
+            L12Log.Error("season-activation", $"自动切季持久化失败，租约到期后重试: {error.Message}");
             return false;
         }
         catch (Exception error)
@@ -211,7 +211,7 @@ public sealed partial class L12WebSocketServer
             }
             catch (Exception diagnosticError)
             {
-                Console.Error.WriteLine($"自动切季失败且诊断状态写入失败: {diagnosticError.Message}");
+                L12Log.Error("season-activation", $"自动切季失败且诊断状态写入失败: {diagnosticError.Message}");
             }
             return false;
         }

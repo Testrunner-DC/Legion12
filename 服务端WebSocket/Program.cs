@@ -32,7 +32,7 @@ var ephemeralTestMatches = L12TestRunStorageProfile.Prepare(runtimePath,
 using var transportDiagnostics = L12SyntheticTransportDiagnostics.Create(ephemeralTestMatches,
     Environment.GetEnvironmentVariable(L12SyntheticTransportDiagnostics.EnvironmentKey));
 if (ephemeralTestMatches)
-    Console.WriteLine("Test-run match storage: ephemeral; previous match, replay and analytics data cleared.");
+    L12Log.Info("program", "Test-run match storage: ephemeral; previous match, replay and analytics data cleared.");
 
 var catalog = L12Catalog.Load(dataPath);
 await using var sharedGallery = L12SharedGalleryCatalog.Create(sharedGalleryEnabled, ephemeralTestMatches);
@@ -47,8 +47,8 @@ if (L12TestRunStorageProfile.AcceptanceDataEnabled(ephemeralTestMatches,
     var fixtures = platform.EnsureTestRunAcceptanceFixtures();
     var rehearsalCreated = platform.EnsureTournamentRehearsalAccounts();
     if (rehearsalCreated > 0)
-        Console.WriteLine($"Tournament rehearsal accounts seeded: {rehearsalCreated}");
-    Console.WriteLine($"Test-run acceptance data: owner={fixtures.Owner}; "
+        L12Log.Info("program", $"Tournament rehearsal accounts seeded: {rehearsalCreated}");
+    L12Log.Info("program", $"Test-run acceptance data: owner={fixtures.Owner}; "
                       + $"decks={fixtures.Decks}; publicDecks={fixtures.PublicDecks}; "
                       + $"guidedDecks={fixtures.GuidedDecks}; rankedPlayers={fixtures.RankedPlayers}; "
                       + $"rankedMatches={fixtures.RankedMatches}; activeMasters={fixtures.ActiveMasters}; "
@@ -61,16 +61,16 @@ if (bootstrapIndex >= 0)
 {
     if (bootstrapIndex + 1 >= args.Length || string.IsNullOrWhiteSpace(args[bootstrapIndex + 1]))
     {
-        Console.Error.WriteLine("bootstrap_target_required: 请提供目标账号 ID");
+        L12Log.Error("program", "bootstrap_target_required: 请提供目标账号 ID");
         Environment.ExitCode = 2;
         return;
     }
     var credential = Environment.GetEnvironmentVariable("L12_SECOND_APPROVER_BOOTSTRAP_TOKEN") ?? string.Empty;
     var outcome = platform.BootstrapSecondApprover(args[bootstrapIndex + 1], credential);
     if (outcome.Success && outcome.Value is { } value)
-        Console.WriteLine($"{outcome.Code}: {outcome.Message}; account={value.AccountId}; role={value.Role}; replayed={outcome.Replayed}");
+        L12Log.Info("program", $"{outcome.Code}: {outcome.Message}; account={value.AccountId}; role={value.Role}; replayed={outcome.Replayed}");
     else
-        Console.Error.WriteLine($"{outcome.Code}: {outcome.Message}");
+        L12Log.Error("program", $"{outcome.Code}: {outcome.Message}");
     Environment.ExitCode = outcome.Success ? 0 : 3;
     return;
 }
@@ -85,26 +85,26 @@ var rooms = new L12RoomManager(catalog, recorder, platform);
 platform.UsernameChanged += rooms.SyncAccountName;
 if (deploymentDrain is not null) rooms.AttachDeploymentDrain(deploymentDrain);
 var rankedRecovery = await rooms.RestoreRankedRoomsAsync();
-Console.WriteLine($"Ranked recovery: settlements={rankedRecovery.SettlementsApplied}, "
+L12Log.Info("program", $"Ranked recovery: settlements={rankedRecovery.SettlementsApplied}, "
                   + $"rooms={rankedRecovery.Restored}, invalid={rankedRecovery.Invalidated}, "
                   + $"failed={rankedRecovery.Failed}");
 var rankedMasterTitleFacts = await recorder.ListRankedMasterTitleFactsAsync(DateTimeOffset.UtcNow);
 var importedRankedMasterTitleFacts = platform.ImportRankedMasterTitleFacts(rankedMasterTitleFacts);
-Console.WriteLine($"Ranked master title facts: authoritative={rankedMasterTitleFacts.Count}, "
+L12Log.Info("program", $"Ranked master title facts: authoritative={rankedMasterTitleFacts.Count}, "
                   + $"imported={importedRankedMasterTitleFacts}");
 platform.ImportRankedMasterHistory(await recorder.ListRankingMatchesAsync(2000));
 await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog,
     null, null, null, null, null, null, null, transportDiagnostics, chatEnabled);
 
-Console.WriteLine("Twelve Legions online battle server");
-Console.WriteLine($"Loaded {catalog.Cards.Count} S1-S2 cards and {catalog.PresetDecks.Count} preset decks.");
+L12Log.Info("program", "Twelve Legions online battle server");
+L12Log.Info("program", $"Loaded {catalog.Cards.Count} S1-S2 cards and {catalog.PresetDecks.Count} preset decks.");
 await server.StartAsync(port);
 var processMetricStart = L12ProcessMetricArchiveStartup.TryStart(runtimePath,
     runtimeBuild.ServerRelease, processMetricInstance,
-    reason => Console.Error.WriteLine($"Process metrics degraded: {reason}."));
+    reason => L12Log.Error("program", $"Process metrics degraded: {reason}."));
 var processMetricRuntime = processMetricStart.Runtime;
 if (!processMetricStart.Started)
-    Console.Error.WriteLine($"Process metrics unavailable: {processMetricStart.Reason}.");
+    L12Log.Error("program", $"Process metrics unavailable: {processMetricStart.Reason}.");
 
 var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 Console.CancelKeyPress += (_, eventArgs) =>
@@ -114,11 +114,11 @@ Console.CancelKeyPress += (_, eventArgs) =>
 };
 
 await stopped.Task;
-Console.WriteLine("Stopping server...");
+L12Log.Info("program", "Stopping server...");
 var processMetricStop = processMetricRuntime?.StopAsync(TimeSpan.FromSeconds(2));
 try { await server.StopAsync(); }
 finally
 {
     if (processMetricStop is not null && !await processMetricStop)
-        Console.Error.WriteLine($"Process metrics stopped: {L12ProcessMetricStartupReason.ShutdownIncomplete}.");
+        L12Log.Error("program", $"Process metrics stopped: {L12ProcessMetricStartupReason.ShutdownIncomplete}.");
 }

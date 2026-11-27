@@ -152,7 +152,8 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
         if (effectiveDeadline <= TimeSpan.Zero || effectiveQuietPeriod <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(deadline),
                 "Synthetic transport diagnostic timers must be positive.");
-        return new L12SyntheticTransportDiagnostics(expected, parts[2], sink ?? Console.Error.WriteLine,
+        return new L12SyntheticTransportDiagnostics(expected, parts[2],
+            sink ?? (message => L12Log.Error("transport-diagnostics", message)),
             effectiveDeadline, effectiveQuietPeriod, boundsMode, recorderMode, recipientsMode);
     }
 

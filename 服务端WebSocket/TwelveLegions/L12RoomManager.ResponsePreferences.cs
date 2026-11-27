@@ -222,7 +222,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine($"Response window watchdog ({room.Code}): {exception.Message}");
+                L12Log.Error("roommanager-responsepreferences", $"Response window watchdog ({room.Code}): {exception.Message}");
             }
             finally { room.Gate.Release(); }
         }

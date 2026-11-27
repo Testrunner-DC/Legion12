@@ -116,7 +116,7 @@ public sealed partial class MatchRecorder
                     visited++;
                 }
             }
-            Console.WriteLine($"Test replay retention: visited={visited};pruned={purged};scanRemaining={more};budgetReached={elapsed.Elapsed >= limit}");
+            L12Log.Info("matchrecorder-testrunretention", $"Test replay retention: visited={visited};pruned={purged};scanRemaining={more};budgetReached={elapsed.Elapsed >= limit}");
             // Conservative metadata backlog, not a claim all unvisited matches are eligible.
             return new(true, purged, commands, bytes, more, now, next);
         }

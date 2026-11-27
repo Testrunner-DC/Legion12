@@ -129,6 +129,7 @@ try {
 
     Invoke-Checked "P0-P4 architecture exit lock" "node" @((Join-Path $repoRoot "scripts\check-l12-architecture-lock.mjs"))
     Invoke-Checked "Card face projection contract" "node" @((Join-Path $repoRoot "scripts\check-l12-card-face-contract.mjs"))
+    Invoke-Checked "Structured logging facade (C4b)" "node" @((Join-Path $repoRoot "scripts\check-l12-console-facade.mjs"))
     Invoke-CheckedPowerShellScript "P1 kernel dependency boundary" `
         (Join-Path $repoRoot "scripts\test-l12-core-architecture-boundaries.ps1")
 

@@ -129,7 +129,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _transportDiagnostics = transportDiagnostics;
         _presenceRefreshCoalescer = new L12PresenceRefreshCoalescer(
             FlushPresenceRefreshAsync,
-            onEmitFailure: error => Console.Error.WriteLine($"在线状态合并刷新失败：{error.GetType().Name}"));
+            onEmitFailure: error => L12Log.Error("websocket", $"在线状态合并刷新失败：{error.GetType().Name}"));
         _catalog = catalog;
         _cardCount = catalog.Cards.Count;
         _platform.SessionsRevoked += HandlePlatformSessionsRevoked;
@@ -341,7 +341,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
             {
                 _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
-                Console.Error.WriteLine($"Replay reconstruction rejected (player-detail; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                L12Log.Error("websocket", $"Replay reconstruction rejected (player-detail; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
                 return ApiError(request, "replay_incompatible",
                     "这场回放暂时无法还原，仍可查看对局结果。",
                     StatusCodes.Status409Conflict);
@@ -440,7 +440,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
             {
                 _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
-                Console.Error.WriteLine($"Replay reconstruction rejected (admin-detail; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                L12Log.Error("websocket", $"Replay reconstruction rejected (admin-detail; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
                 return ApiError(request, "replay_incompatible",
                     "这场回放暂时无法还原，对局档案仍可查看。",
                     StatusCodes.Status409Conflict);
@@ -492,7 +492,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
             {
                 _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
-                Console.Error.WriteLine($"Replay reconstruction rejected (admin-page; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                L12Log.Error("websocket", $"Replay reconstruction rejected (admin-page; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
                 return ApiError(request, "replay_incompatible",
                     "这场回放暂时无法还原，对局档案仍可查看。",
                     StatusCodes.Status409Conflict);
@@ -4365,7 +4365,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         StartSeasonActivationCoordinator();
         ScheduleNextOperationsTransition();
         ScheduleNextRulesContentTransition();
-        Console.WriteLine($"HTTP: http://{host}:{port}  WebSocket: /ws");
+        L12Log.Info("websocket", $"HTTP: http://{host}:{port}  WebSocket: /ws");
     }
 
     private async Task<L12PublicDeckDetailsView?> PublicDeckDetailsWithStatisticsAsync(string id)
@@ -4426,7 +4426,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 _presenceSnapshotCodecs[sessionId] = presenceSnapshotCodec;
                 void OutboundFault(Exception error)
                 {
-                    Console.Error.WriteLine($"WebSocket {sessionId} 发送隔离：{error.Message}");
+                    L12Log.Error("websocket", $"WebSocket {sessionId} 发送隔离：{error.Message}");
                     acceptedSocket.Abort();
                 }
                 var outbound = _transportDiagnostics is null
@@ -4443,7 +4443,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 var deploymentDrain = _rooms.DeploymentDrain;
                 void InboundFault(Exception error)
                 {
-                    Console.Error.WriteLine($"WebSocket {sessionId} 入站隔离：{error.Message}");
+                    L12Log.Error("websocket", $"WebSocket {sessionId} 入站隔离：{error.Message}");
                     acceptedSocket.Abort();
                 }
                 Func<string, L12DeploymentDrainLease?>? leaseAcquirer = deploymentDrain is null
@@ -4526,7 +4526,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
         }
         catch (OperationCanceledException) { }
-        catch (WebSocketException exception) { Console.WriteLine($"WebSocket {sessionId}: {exception.Message}"); }
+        catch (WebSocketException exception) { L12Log.Info("websocket", $"WebSocket {sessionId}: {exception.Message}"); }
         finally
         {
             CloseChatStartsForTransport(sessionId);
@@ -4672,7 +4672,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 var commandType = root.TryGetProperty("command", out var failedCommand)
                     && failedCommand.TryGetProperty("type", out var failedCommandType)
                     ? failedCommandType.GetString() : null;
-                Console.Error.WriteLine($"[{correlationId}] WebSocket command failed: session={sessionId}, message={messageType}, command={commandType ?? "-"}\n{error}");
+                L12Log.Error("websocket", $"[{correlationId}] WebSocket command failed: session={sessionId}, message={messageType}, command={commandType ?? "-"}\n{error}");
                 await SendAsync(sessionId, new
                 {
                     type = "error",
@@ -4687,7 +4687,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 }
                 catch (Exception recoveryError) when (recoveryError is not OperationCanceledException)
                 {
-                    Console.Error.WriteLine($"[{correlationId}] WebSocket recovery snapshot failed: {recoveryError}");
+                    L12Log.Error("websocket", $"[{correlationId}] WebSocket recovery snapshot failed: {recoveryError}");
                 }
             }
         }
@@ -4813,7 +4813,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         catch (Exception error)
         {
             socket?.Abort();
-            Console.Error.WriteLine($"WebSocket {sessionId} 失效连接收尾隔离：{error.Message}");
+            L12Log.Error("websocket", $"WebSocket {sessionId} 失效连接收尾隔离：{error.Message}");
         }
         finally
         {
@@ -4829,7 +4829,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 catch (Exception error)
                 {
                     socket?.Abort();
-                    Console.Error.WriteLine($"WebSocket {sessionId} 终止发送队列释放失败：{error.Message}");
+                    L12Log.Error("websocket", $"WebSocket {sessionId} 终止发送队列释放失败：{error.Message}");
                 }
             }
         }
@@ -5336,7 +5336,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 }
                 catch (Exception error)
                 {
-                    Console.Error.WriteLine($"Ranked clock watchdog: {error.Message}");
+                    L12Log.Error("websocket", $"Ranked clock watchdog: {error.Message}");
                 }
             }
         }
@@ -5387,7 +5387,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 catch (Exception error)
                 {
                     // 租约会在失败后释放，下一个独立维护周期重试；不占用排位时钟循环。
-                    Console.Error.WriteLine($"Sandbox replay maintenance: {error.Message}");
+                    L12Log.Error("websocket", $"Sandbox replay maintenance: {error.Message}");
                 }
                 if (!await timer.WaitForNextTickAsync(cancellationToken)) break;
             }
@@ -5686,7 +5686,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     }
 
     private static void LogAdminReadFailure(HttpRequest request, string component, Exception error)
-        => Console.Error.WriteLine($"[{CorrelationId(request)}] admin read failed: component={component}, "
+        => L12Log.Error("websocket", $"[{CorrelationId(request)}] admin read failed: component={component}, "
             + $"errorType={error.GetType().FullName}");
 
     private static async Task<IResult> OwnedSessionRevocationResponse(HttpRequest request,
@@ -6038,7 +6038,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine($"Tournament notice delivery failed: {error.GetType().Name}");
+            L12Log.Error("websocket", $"Tournament notice delivery failed: {error.GetType().Name}");
         }
     }
 

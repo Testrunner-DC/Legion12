@@ -1707,7 +1707,7 @@ public sealed partial class L12PlatformStore
 
     private static void ReportStorageFailure(string stage, Exception error)
     {
-        try { Console.Error.WriteLine(StorageFailureSummary(stage, error)); }
+        try { L12Log.Error("platformstore-transactionalstorage", StorageFailureSummary(stage, error)); }
         catch { /* 诊断失败不能替换原异常，也不能改变失败关闭状态。 */ }
     }
 

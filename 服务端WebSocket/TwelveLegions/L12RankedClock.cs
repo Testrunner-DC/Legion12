@@ -359,7 +359,7 @@ public sealed partial class L12RoomManager
                 // 命令事件、最终 matches 行、runtime 与 outbox 是同一事务。失败后必须
                 // 从最后提交边界重建，绝不继续广播未落盘的 GameOver。
                 if (!await ReloadRankedRoomFromRecorderAsync(room)) room.Closed = true;
-                Console.Error.WriteLine($"Ranked authority event persistence ({room.Code}): {error.Message}");
+                L12Log.Error("rankedclock", $"Ranked authority event persistence ({room.Code}): {error.Message}");
                 throw new InvalidOperationException("排位权威结论持久化失败，房间已回退到最后提交状态", error);
             }
         }
@@ -411,7 +411,7 @@ public sealed partial class L12RoomManager
             {
                 checkpointBatchComplete = false;
                 // 一个房间的暂时性存储故障不能阻止其他排位房间的权威计时。
-                Console.Error.WriteLine($"Ranked clock room ({room.Code}): {error.Message}");
+                L12Log.Error("rankedclock", $"Ranked clock room ({room.Code}): {error.Message}");
             }
             finally { room.Gate.Release(); }
         }
@@ -426,7 +426,7 @@ public sealed partial class L12RoomManager
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine($"Ranked clock checkpoint batch: {error.Message}");
+            L12Log.Error("rankedclock", $"Ranked clock checkpoint batch: {error.Message}");
         }
         await TickMaintenanceLockedRoomsAsync(now, messages);
         await TickSettlementRoomsAsync(now, messages);
@@ -494,11 +494,11 @@ public sealed partial class L12RoomManager
                             }
                             var completionError = await CompleteTournamentRoomGameAsync(room);
                             if (completionError is not null)
-                                Console.Error.WriteLine($"Maintenance completion ({room.Code}): {completionError}");
+                                L12Log.Error("rankedclock", $"Maintenance completion ({room.Code}): {completionError}");
                         }
                         catch (Exception error) when (room.Tutorial is not null)
                         {
-                            Console.Error.WriteLine($"Tutorial frozen stage=maintenance-authority exception={error.GetType().Name}");
+                            L12Log.Error("rankedclock", $"Tutorial frozen stage=maintenance-authority exception={error.GetType().Name}");
                             room.Tutorial.Frozen = true;
                             await TryRestoreTutorialJournalAsync(room);
                             // Neither a failed write nor a failed reload may publish/finalize the
