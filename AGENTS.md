@@ -31,6 +31,12 @@ These rules apply to every change in this repository.
 3. Add a regression guard with every fix: a server test, frontend contract/build check, catalog invariant, or a combination. Review `git diff` after the change and do not replace unrelated local edits.
 4. For reported Bugs, present the evidence and proposed fix and obtain explicit user approval before implementation. Existing approval remains valid; do not ask again for routine implementation choices within its scope. Directly requested non-Bug work may proceed within the user's authorization. Record Bug results in `docs/BUGFIX-REGISTRY.md`.
 
+## Cold storage root
+
+- Cold archives belong only to the NAS cold root `\\SmartStorage\我的文档-2405002358\Legion12-ColdStorage` (mapped `Z:`), governed by `artifacts/nas-storage/active-policy.json` (keep the two latest groups; 90 days for unpinned ones).
+- The `E:` cold roots are retired (2026-11-10: entry `e-coldstorage`, `enabled: false`, "NAS verified; source retired per user authorization"). Never recreate `E:\Legion12-ColdStorage`; older receipts that still name it are stale.
+- Before writing a cold copy, read the active policy and target the NAS root; a historical receipt's `coldRoot` is not evidence of the current cold root.
+
 ## Required bug-fix workflow
 
 1. Search the registry and card-effect status documents.
