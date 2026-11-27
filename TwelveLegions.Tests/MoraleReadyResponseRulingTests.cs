@@ -39,6 +39,28 @@ public sealed class MoraleReadyResponseRulingTests
     }
 
     [Fact]
+    public void EffectDrivenMoraleReadyQueuesTheResponseAuthorityEvent()
+    {
+        var game = Create(20261129);
+        var player = game.State.Players[0];
+        var morale = new L12MoraleCard { CardId = "S02-04C1", InstanceId = "ruling-ready-morale", Tapped = true };
+        player.Morale.Add(morale);
+        var source = player.Library.First();
+        player.Library.Remove(source);
+        player.Field[0][0] = source;
+
+        Invoke(game, "ReadyMoraleByEffect", 0, source, morale, "合成士气转活跃");
+
+        // 场上没有〈武田信玄〉时：士气（本质是卡牌）转活跃排队 effect-ready 权威事件，
+        // 对手因此可以响应（如〈毒药发作〉S02-0018）。
+        var ready = Assert.Single(game.State.DeferredEffectStack.Concat(game.State.EffectStack),
+            item => item.Trigger == "authority-event"
+                && item.Data.GetValueOrDefault("eventType") == "effect-ready");
+        Assert.Equal("morale", ready.Data.GetValueOrDefault("originZone"));
+        Assert.Equal(morale.InstanceId, ready.Data.GetValueOrDefault("targetInstanceId"));
+    }
+
+    [Fact]
     public void ResponsePromptNamesTheDeclaredTarget()
     {
         var game = Create(20261128);
