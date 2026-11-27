@@ -53,6 +53,8 @@ function tapChatFrames(side, page) {
 async function login(name, side) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   const page = await context.newPage()
+  // 投降走原生 window.confirm：不接收的话 Playwright 会默认 dismiss，看起来就是「点了没反应」。
+  page.on('dialog', dialog => dialog.accept())
   if (side) tapChatFrames(side, page)
   await page.goto(BASE + '/me', { waitUntil: 'domcontentloaded' })
   await page.fill('form input[autocomplete=username]', name)
