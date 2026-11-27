@@ -339,7 +339,9 @@ try {
             Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--", "xUnit.ParallelizeTestCollections=false")
         }
         if ($frontendChanged) {
-            Invoke-Checked "Frontend UI contracts" "npm.cmd" @("run", "check:ui-contracts") (Join-Path $repoRoot "opcgpro-vue")
+            # 走包装脚本：它先 dot-source Initialize-L12BuildEnvironment 再执行 npm 链，
+    # 否则 test-tutorial-contract.mjs 找不到生成目录（L12_ARTIFACT_ROOT / L12_WORK_CACHE）而失败。
+    Invoke-CheckedPowerShellScript "Frontend UI contracts" (Join-Path $repoRoot "scripts\check-l12-ui-contracts.ps1") @{ CacheRoot = $CacheRoot }
         }
         return
     }
