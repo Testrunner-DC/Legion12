@@ -26,6 +26,7 @@
 - 冷存根纠正（2026-11-27）：当日两批冷存回执误写已退役的 `E:\Legion12-ColdStorage`，实体实际在 NAS `\\SmartStorage\我的文档-2405002358\Legion12-ColdStorage`（`Z:`）；两份 5 GB 级快照按记录 SHA256 复核一致（`a4dec4d5…`、`3e4232d6…`），已在服务器与 NAS 各补一份 `cold-root-correction-20261127.json`。今后冷存一律写 NAS 冷根。
 - 「弹框阶段点投降无响应」定性（2026-11-27）：**不是缺陷** —— 客户端用原生 `window.confirm`，自动化默认 dismiss 导致假象；服务端 `Surrender` 无阶段门槛。验收脚本已统一加 `page.on('dialog', accept)`。原生 confirm 与站点深色主题不一致，是否改站内弹层留作产品判断。
 - 清单P8 第二段（2026-11-27）：完整赛季归档链路已自动化 —— `MasterChampionSeasonFinalizationEndToEndTests` 走 `RunSeasonFinalizationOnceAsync(due)`，验证存储事务/租约/就绪 + 归档 + 长期规则派发整链（冠军事实须落在真实 `UtcNow` 窗口内，否则投影为空）。Batch exit 0。
+- 队列处置（2026-11-27）：`8a59f223`（响应提示不含目标）**已修**——声明阶段写 `responseTargetSummary`、提示侧只读追加「（目标：〈X〉）」（提示文件禁止 `FindAuthoritativeCard`，门禁拦下过第一版），回归 `MoraleReadyResponseRulingTests`；`db7eda79`（士气转活跃可响应）裁定已记录，读码定位到《月读》`tsukuyomiReadyMorale` 绕过 `ReadyMoraleByEffect`，本轮试改后因既有回归断言写在结算之后而回退，下一步改为在 `PassResponses` 之前断言延迟项；`c8ae4edb`（房间机器人）按裁定 `closed / rejected`。Batch exit 0（平台 3,260）。
 - 未做（如实）：① ——测试面没有公开的赛季归档入口，现有断言只覆盖规则契约与匹配函数；② P2 预检回执修复需单独一轮（改该脚本会作废在建候选包）；③ 仓外台账的日期倒序未改（属文档整理，不在本次授权范围）；④ 三个环境项均未部署（正式服需另行授权）。
 
 

@@ -660,8 +660,15 @@ public sealed partial class L12GameEngine
         };
         if (!string.IsNullOrWhiteSpace(target)) data["target"] = target;
         if (L12StructuredCardSemantics.IsMedjed(source.CardId) && ability == "medjedDebuff")
+        {
             DeclarePresentationBranch(data, "medjed-debuff", "mode",
                 (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault());
+            // 用户 2026-11-27：响应提示要写出「扣兵力打的是谁」。声明阶段就在权威侧解析出卡名，
+            // 提示侧只读该展示串（提示构建不允许做权威查询）。
+            var declaredMedjed = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            if (declaredMedjed.Length >= 2 && DeclaredEnemyTarget(playerIndex, declaredMedjed[1]) is { } medjedTarget)
+                data["responseTargetSummary"] = "〈" + medjedTarget.Name + "〉";
+        }
         var (compositePlan, declared) = FaithZealotCompositeDeclaration(source.CardId, ability, target);
         string[]? publicTargets = null;
         if (compositePlan is not null)

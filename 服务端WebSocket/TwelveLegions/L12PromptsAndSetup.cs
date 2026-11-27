@@ -2150,6 +2150,20 @@ public sealed partial class L12GameEngine
             && IsResponseEffectStackItem(item))).ToList();
     }
 
+    /// <summary>
+    /// 响应提示要写出「打的是谁」：声明阶段写进 Data["target"] 的目标实例，在这里补成卡名
+    /// （用户 2026-11-27 反馈：梅杰德的主宰效果只显示「使对方1张军团兵力-3000」，看不出目标是谁）。
+    /// 只取实例 id 段，跳过 mode:/option:/card: 这类控制段。
+    /// </summary>
+    private static string AppendDeclaredTargetSummary(L12StackItem item, string text)
+    {
+        // 声明阶段已把目标写成展示串（responseTargetSummary）；这里只读它，不做权威查询
+        // ——客户端提示构建不得暴露内部权威源（scripts/test-l12-public-trigger-declarations.ps1）。
+        var summary = item.Data.GetValueOrDefault("responseTargetSummary");
+        if (string.IsNullOrWhiteSpace(summary)) return text;
+        return text.Contains("目标：", StringComparison.Ordinal) ? text : text + "（目标：" + summary + "）";
+    }
+
     private string BuildResponsePromptText(L12StackItem top)
     {
         var source = FindSource(top) ?? top.SourceSnapshot;
@@ -2161,6 +2175,7 @@ public sealed partial class L12GameEngine
             effect = ResolveResponseEffectDisplayText(source, effect);
         effect = ResolveCompositeResponseEffectText(top, effect);
         effect = ResolvePaidResponseEffectText(top, effect);
+        effect = AppendDeclaredTargetSummary(top, effect);
         var timing = top.Trigger switch
         {
             "promotion-enter" => "晋升登场",
