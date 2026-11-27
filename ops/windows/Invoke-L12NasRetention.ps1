@@ -45,12 +45,27 @@ try{
     $p=Write-Receipt $r ('nas-retention-'+$runId+'.paused.json');return [pscustomobject]@{status=$r.status;receiptPath=$p;deleted=0}
   }
   $groupsRoot=Join-Path $root 'groups'
-  $groups=@(Get-ChildItem -LiteralPath $groupsRoot -Directory -Force -ErrorAction SilentlyContinue|ForEach-Object{
+  $groupDirs=[Collections.Generic.List[object]]::new()
+  foreach($d in @(Get-ChildItem -LiteralPath $groupsRoot -Directory -Force -ErrorAction SilentlyContinue)){ $groupDirs.Add($d) }
+  # Legacy in-place batches: any directory outside groups\ that carries its own immutable manifest is governed by the same rule.
+  foreach($d in @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue)){
+    if($d.Name -ieq 'groups'){continue}
+    if(Test-Path -LiteralPath (Join-Path $d.FullName 'nas-group.json') -PathType Leaf){ $groupDirs.Add($d) }
+    foreach($s in @(Get-ChildItem -LiteralPath $d.FullName -Directory -Force -ErrorAction SilentlyContinue)){
+      if(Test-Path -LiteralPath (Join-Path $s.FullName 'nas-group.json') -PathType Leaf){ $groupDirs.Add($s) }
+    }
+  }
+  $groups=@($groupDirs|ForEach-Object{
     $meta=Join-Path $_.FullName 'nas-group.json'
     if(-not(Test-Path -LiteralPath $meta -PathType Leaf)){return}
     try{$m=Get-Content -LiteralPath $meta -Raw|ConvertFrom-Json}catch{return}
-    if($m.status -cne 'verified' -or $m.cleanupEligible -eq $false -or $m.completedUtc -isnot [string] -or @($m.files).Length -lt 1){return}
-    [pscustomobject]@{name=$_.Name;path=$_.FullName;completedUtc=[DateTimeOffset]::Parse($m.completedUtc);pinned=([bool]$m.pinned);manifest=$m}
+    if($m.status -cne 'verified' -or $m.cleanupEligible -eq $false -or @($m.files).Length -lt 1){return}
+    # PowerShell 7.5+ ConvertFrom-Json materialises ISO-8601 strings as [datetime]; accept either shape.
+    $completed=$null
+    if($m.completedUtc -is [datetime]){ $completed=[DateTimeOffset]$m.completedUtc }
+    elseif(($m.completedUtc -is [string]) -and $m.completedUtc.Length -gt 0){ try{ $completed=[DateTimeOffset]::Parse($m.completedUtc) }catch{ return } }
+    if($null -eq $completed){ return }
+    [pscustomobject]@{name=$_.Name;path=$_.FullName;completedUtc=$completed;pinned=([bool]$m.pinned);manifest=$m}
   })|Sort-Object completedUtc -Descending
   $keep=@($groups|Select-Object -First $keepLatest)
   $cutoff=[DateTimeOffset]::UtcNow.AddDays(-$maxAge)
