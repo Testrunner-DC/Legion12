@@ -13,7 +13,8 @@ public sealed record L12AccountView(string Id, string Username, string Role, Dat
     DateTimeOffset? DisabledAt = null, string? DisabledReason = null, bool MustChangePassword = false,
     bool MustChangeUsername = false,
     bool Deleted = false, DateTimeOffset? DeletedAt = null, string? EmailMasked = null,
-    bool EmailVerified = false, L12AudioPreferencesView? AudioPreferences = null)
+    bool EmailVerified = false, L12AudioPreferencesView? AudioPreferences = null,
+    string TournamentEligibilityStatus = "")
 {
     public IReadOnlyList<string> Permissions => L12Authorization.PermissionsForRole(Role);
 }
@@ -2129,7 +2130,10 @@ public sealed partial class L12PlatformStore
         row.PublicHistory, row.PermissionVersion, row.Disabled, row.DisabledAt, row.DisabledReason,
         row.MustChangePassword, row.MustChangeUsername, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null,
         new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
-            row.CardSize, row.Animation, row.MobileLayout, NormalizeFontSize(row.FontSize)));
+            row.CardSize, row.Animation, row.MobileLayout, NormalizeFontSize(row.FontSize)),
+        // 账号列表/详情都要能看出赛事资质状态（用户 2026-11-27：批准之后在
+        // 「账号、权限与会话」看不出这个用户到底有没有资质）。
+        row.TournamentEligibility?.Status ?? "none");
     private L12FriendView ToFriendView(string viewerId, AccountRow row)
     {
         var blocked = _data.BlockedAccounts.Any(item => item.AccountId == viewerId && item.BlockedAccountId == row.Id);

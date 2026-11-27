@@ -1968,4 +1968,15 @@ if ! rm -f -- "$release_archive"; then log "发布已完成，但 incoming 运�
 if [[ "$card_assets_archive" != "-" ]] && ! rm -f -- "$card_assets_archive"; then
   log "发布已完成，但 incoming 卡图包清理失败，保守保留"
 fi
+# 容量预检回执只在一次部署事务内有意义：成功收尾后作废它，否则下一次部署的第一个包
+# 必被「预检回执已绑定其他运行包」拒绝（清单P2；2026-11-25 记录，2026-11-27 再次踩到）。
+# 保留退役副本以便审计，下一次 prepare-storage 会重新生成新回执。
+if [[ -f "$preflight_receipt" && ! -L "$preflight_receipt" ]]; then
+  retired_preflight_receipt="${preflight_receipt}.retired-$(date -u +%Y%m%dT%H%M%SZ)"
+  if mv -f -- "$preflight_receipt" "$retired_preflight_receipt"; then
+    log "部署成功后作废本次容量预检回执：${retired_preflight_receipt}"
+  else
+    log "部署成功但无法作废容量预检回执；下一次部署可能被旧回执拒绝，需人工归档"
+  fi
+fi
 log "快速${mode}完成：${commit}"

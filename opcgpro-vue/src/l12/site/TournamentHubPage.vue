@@ -87,15 +87,14 @@ onBeforeUnmount(() => { visibleTournamentRead.dispose(); visibleCareerRead.dispo
 const eligibility = ref<TournamentEligibility | null>(null)
 const eligibilityReason = ref('')
 const eligibilityBusy = ref(false)
-const eligibilityLabel = computed(() => {
-  if (eligibility.value?.effective) return '已具备'
-  const status = eligibility.value?.status
-  if (status === 'pending') return '审核中'
-  if (status === 'rejected') return '已被驳回，可重新申请'
-  return '尚未申请'
-})
-const canApplyEligibility = computed(() => !!identity.value && !eligibility.value?.effective
-  && eligibility.value?.status !== 'pending')
+// 用户 2026-11-27：申请改成弹框内填写，不再长期占一栏；已获得后只在创建赛事按钮左侧标一行。
+const eligibilityDialogOpen = ref(false)
+function openEligibilityDialog() {
+  if (!identity.value || eligibility.value?.status === 'pending') return
+  eligibilityReason.value = ''
+  eligibilityDialogOpen.value = true
+}
+function closeEligibilityDialog() { eligibilityDialogOpen.value = false }
 async function refreshEligibility() {
   if (!identity.value) { eligibility.value = null; return }
   try { eligibility.value = await tournamentEligibilityApi.self() } catch { eligibility.value = null }
@@ -106,12 +105,14 @@ async function submitEligibility() {
   try {
     eligibility.value = await tournamentEligibilityApi.apply(eligibilityReason.value.trim())
     eligibilityReason.value = ''
+    eligibilityDialogOpen.value = false
   } catch (error) { eligibility.value = eligibility.value; console.warn('eligibility apply failed', error) }
   finally { eligibilityBusy.value = false }
 }
 function openCreateOrEligibility() {
-  if (eligibility.value?.effective || !identity.value) switchSection('create')
-  else document.querySelector('[data-tournament-eligibility]')?.scrollIntoView({ block: 'center' })
+  if (!identity.value) { switchSection('create'); return }
+  if (eligibility.value?.effective) { switchSection('create'); return }
+  openEligibilityDialog()
 }
 onMounted(() => { void refreshEligibility() })
 </script>
@@ -120,18 +121,13 @@ onMounted(() => { void refreshEligibility() })
   <main class="hub-page">
     <header class="page-head">
       <div><small>TOURNAMENT CENTER</small><h1>赛事中心</h1><p>发现赛事、跟进自己的下一步，或创建并运营一场赛事。</p></div>
-      <button class="primary create-button" type="button" @click="openCreateOrEligibility">{{ !identity ? '登录举办赛事' : (eligibility?.effective ? '创建赛事' : '申请赛事资格') }}</button>
+      <div class="page-head-actions">
+        <b v-if="identity && eligibility?.effective" class="eligibility-badge">已获得赛事资质</b>
+        <b v-else-if="identity && eligibility?.status === 'pending'" class="eligibility-badge pending">赛事资质待审核</b>
+        <b v-else-if="identity && eligibility?.status === 'rejected'" class="eligibility-badge rejected">资质申请已驳回</b>
+        <button class="primary create-button" type="button" @click="openCreateOrEligibility">{{ !identity ? '登录举办赛事' : (eligibility?.effective ? '创建赛事' : (eligibility?.status === 'pending' ? '等待资质审核' : '申请赛事资格')) }}</button>
+      </div>
     </header>
-    <section v-if="identity" class="panel eligibility-panel" data-tournament-eligibility>
-      <b>赛事资质：{{ eligibilityLabel }}</b>
-      <p v-if="eligibility?.effective">已具备赛事资质，可以创建赛事。</p>
-      <p v-else-if="eligibility?.status === 'pending'">申请已提交，等待管理员审核。</p>
-      <p v-else>创建赛事需要赛事资质：说明办赛计划后提交，管理员审核通过即可举办。</p>
-      <template v-if="canApplyEligibility">
-        <textarea v-model="eligibilityReason" maxlength="500" aria-label="申请原因" placeholder="申请原因（不少于 10 字，例如赛制、场次与预计人数）"></textarea>
-        <button class="primary" type="button" :disabled="eligibilityBusy || eligibilityReason.trim().length < 10" @click="submitEligibility">提交申请</button>
-      </template>
-    </section>
     <nav class="section-tabs" :class="{ 'public-tabs': !identity }" aria-label="赛事分类"><button v-for="item in sectionOptions" :key="item[0]" :class="{active: section === item[0]}" :aria-current="section === item[0] ? 'page' : undefined" @click="switchSection(item[0])">{{ item[1] }}</button></nav>
     <section v-if="section === 'create' && identity" class="panel create-panel"><TournamentCreateWizard @created="value => open(value.code)" /></section>
     <template v-else>
@@ -144,6 +140,16 @@ onMounted(() => { void refreshEligibility() })
       <TournamentSummaryList :items="result.items" :loading="loading" @open="open" />
       <footer v-if="result.totalPages > 1" class="pager"><button :disabled="page <= 1" @click="page--">上一页</button><span>第 {{ page }} / {{ result.totalPages }} 页</span><button :disabled="page >= result.totalPages" @click="page++">下一页</button></footer>
     </template>
+    <Teleport to="body">
+      <div v-if="eligibilityDialogOpen" class="eligibility-overlay" @click.self="closeEligibilityDialog">
+        <section class="eligibility-dialog" role="dialog" aria-modal="true" aria-label="申请赛事资质">
+          <header><h2>申请赛事资质</h2><button type="button" aria-label="关闭" @click="closeEligibilityDialog">×</button></header>
+          <p>创建赛事需要赛事资质。请说明办赛计划（赛制、场次与预计人数），管理员审核通过后即可创建赛事。</p>
+          <textarea v-model="eligibilityReason" maxlength="500" aria-label="申请原因" placeholder="申请原因（不少于 10 字，例如赛制、场次与预计人数）"></textarea>
+          <footer><button type="button" @click="closeEligibilityDialog">取消</button><button class="primary" type="button" :disabled="eligibilityBusy || eligibilityReason.trim().length < 10" @click="submitEligibility">提交申请</button></footer>
+        </section>
+      </div>
+    </Teleport>
   </main>
 </template>
 
@@ -152,5 +158,23 @@ onMounted(() => { void refreshEligibility() })
 @media(max-width:900px){.career{grid-template-columns:1fr 1fr}.career-history>button{grid-template-columns:1fr 1fr}.career-open{display:none}}
 @media(max-width:700px){.hub-page{padding:18px 10px calc(42px + env(safe-area-inset-bottom));gap:12px}.page-head{align-items:flex-start;flex-direction:column;padding-bottom:14px}.page-head h1{font-size:28px}.create-button{width:100%;min-height:44px}.section-tabs{grid-template-columns:1fr 1fr}.section-tabs button,.hub-page button{min-height:44px}.toolbar input{min-height:48px}.toolbar select{height:48px;min-height:48px!important}.panel{padding:14px;box-shadow:none}.career{display:flex;gap:7px;overflow-x:auto;scroll-snap-type:x proximity}.career article{min-width:122px;min-height:82px;scroll-snap-align:start}.career-history>header,.filter-heading{align-items:flex-start}.career-history>button{grid-template-columns:1fr;padding:12px}.career-history>button>span{min-width:0}.career-name{grid-template-columns:1fr auto!important}.toolbar{grid-template-columns:1fr 1fr}.search-field{grid-column:1/-1}.pager{justify-content:space-between}.pager button{min-width:88px}}
 @media(max-width:390px){.toolbar{grid-template-columns:1fr}.search-field{grid-column:auto}.career-history>header>span{display:none}}
+</style>
+
+<style scoped>
+.page-head-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.eligibility-badge{padding:6px 10px;border:1px solid var(--l12-ui-accent-line);border-radius:var(--l12-ui-radius-sm);background:#302713;color:#f2d779;font:800 13px 'Microsoft YaHei','微软雅黑',sans-serif;white-space:nowrap}
+.eligibility-badge.pending{border-color:var(--l12-ui-line-strong);background:var(--l12-ui-panel-raised);color:var(--l12-ui-text-soft)}
+.eligibility-badge.rejected{border-color:#7a3b32;background:#33201d;color:#f0b3a8}
+.eligibility-overlay{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(4,7,12,.72)}
+.eligibility-dialog{box-sizing:border-box;width:min(560px,100%);display:grid;gap:14px;padding:20px;border:1px solid var(--l12-ui-line-strong);border-radius:var(--l12-ui-radius-md);background:linear-gradient(145deg,var(--l12-ui-panel-raised),var(--l12-ui-panel));box-shadow:var(--l12-ui-shadow-panel);font-family:'Microsoft YaHei','微软雅黑',sans-serif;color:var(--l12-ui-text)}
+.eligibility-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.eligibility-dialog h2{margin:0;font-size:20px}
+.eligibility-dialog p{margin:0;font-size:14px;color:var(--l12-ui-text-muted)}
+.eligibility-dialog textarea{min-height:120px;padding:10px;border:1px solid var(--l12-ui-line-strong);border-radius:var(--l12-ui-radius-sm);background:var(--l12-ui-control);color:var(--l12-ui-text);font:inherit;resize:vertical}
+.eligibility-dialog footer{display:flex;justify-content:flex-end;gap:10px}
+.eligibility-dialog button{min-height:40px;padding:0 16px;border:1px solid var(--l12-ui-line-strong);border-radius:var(--l12-ui-radius-sm);background:var(--l12-ui-control);color:var(--l12-ui-text-soft);font:800 14px inherit;cursor:pointer}
+.eligibility-dialog button.primary{border-color:var(--l12-ui-accent-line);background:#302713;color:#f2d779}
+.eligibility-dialog button:disabled{cursor:not-allowed;opacity:.45}
+@media(max-width:700px){.page-head-actions{width:100%}.eligibility-badge{order:2}}
 </style>
 <style scoped>.section-tabs.public-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}</style>

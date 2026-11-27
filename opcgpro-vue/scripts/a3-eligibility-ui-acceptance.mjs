@@ -23,15 +23,20 @@ const click=async(page,name,exact=false)=>{const b=page.getByRole('button',{name
 const p=await login('彩排03',playerPw)
 await p.goto(BASE+'/battle/tournaments',{waitUntil:'domcontentloaded'});await p.waitForTimeout(5000)
 let body=await text(p)
-report.checks.push({step:'player-eligibility-panel',
-  hasPanel:body.includes('赛事资质'), label:body.includes('尚未申请')?'尚未申请':(body.includes('审核中')?'审核中':(body.includes('已具备')?'已具备':'未知')),
+// 用户 2026-11-27：申请改成弹框，页面上不再有长期占位的资质面板。
+report.checks.push({step:'player-eligibility-entry',
+  hasBadge:body.includes('赛事资质'),
   applyButton:await p.getByRole('button',{name:'申请赛事资格'}).count(),
-  hostButton:await p.getByRole('button',{name:'举办赛事'}).count()})
+  createButton:await p.getByRole('button',{name:'创建赛事'}).count()})
 await p.screenshot({path:OUT+'/a3-1-player-eligibility.png'})
-// 提交申请
-const ta=p.locator('textarea').first()
+// 提交申请：先打开弹框，再在弹框内填写
+report.checks.push({step:'player-apply-open', clicked: await click(p,'申请赛事资格')})
+await p.waitForTimeout(1200)
+const dialog=p.locator('[role=dialog]').first()
+const ta=dialog.locator('textarea').first()
+report.checks.push({step:'player-apply-dialog', dialog:await dialog.count(), textarea:await ta.count()})
 if(await ta.count()){ await ta.fill('验收：计划每月办一场瑞士轮赛事，预计 8 人参加。') }
-report.checks.push({step:'player-apply', clicked: await click(p,'申请赛事资格')})
+await click(p,'提交申请')
 await p.waitForTimeout(3500)
 report.checks[report.checks.length-1].after = (await text(p)).includes('审核中')
 await p.screenshot({path:OUT+'/a3-2-player-applied.png'})

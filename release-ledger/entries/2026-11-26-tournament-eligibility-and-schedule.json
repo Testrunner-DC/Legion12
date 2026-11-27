@@ -7,7 +7,7 @@
   "changes": [
     {
       "category": "tournaments",
-      "text": "赛事中心新增「赛事资质」：玩家可在创建赛事前自助申请，审核通过或由管理员授予后即可创建赛事；主办者可在开赛前调整参赛人数上限与瑞士轮数，面板会给出建议值。",
+      "text": "赛事中心新增「赛事资质」：玩家在弹框里填写办赛计划提交申请，审核通过或由管理员授予后即可创建赛事，页面只在「创建赛事」左侧标出「已获得赛事资质」；主办者可在开赛前调整参赛人数上限与瑞士轮数，面板会给出建议值。",
       "paths": [
         "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentEligibility.cs",
         "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",

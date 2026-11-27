@@ -27,7 +27,7 @@ await a.screenshot({path:OUT+'/a3-7-admin-approved.png'})
 const p=await login('彩排03',pw)
 await p.goto(BASE+'/battle/tournaments',{waitUntil:'domcontentloaded'});await p.waitForTimeout(5000)
 let text=await body(p)
-report.checks.push({step:'player-approved', label:(text.match(/赛事资质：(\S+)/)||[])[1]??null,
+report.checks.push({step:'player-approved', label:text.includes('已获得赛事资质')?'已获得赛事资质':null,
   hostButton:await p.getByRole('button',{name:'创建赛事'}).count()})
 await p.screenshot({path:OUT+'/a3-8-player-approved.png'})
 // 赛前调整面板

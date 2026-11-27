@@ -17,6 +17,8 @@ export interface PlatformAccount {
   permissionVersion?: number; disabled?: boolean; disabledAt?: string; disabledReason?: string
   mustChangePassword?: boolean; mustChangeUsername?: boolean; deleted?: boolean; deletedAt?: string; emailMasked?: string; emailVerified?: boolean
   audioPreferences?: { musicEnabled: boolean; musicVolume: number; sfxEnabled: boolean; sfxVolume: number; cardSize: 'auto'|'small'|'medium'|'large'; animation: 'off'|'fast'|'standard'; mobileLayout: 'auto'|'on'|'off'; fontSize?: 'standard'|'large'|'extra-large' }
+  // 赛事资质状态：none / pending / approved / rejected；管理员角色自带，不看该字段。
+  tournamentEligibilityStatus?: string
 }
 export interface RoleCommandResult { accountId: string; role: 'player' | 'admin'; changed: boolean }
 export interface AdminAccountPage { items: PlatformAccount[]; page: number; pageSize: number; total: number; activeCount: number; deletedCount: number }
