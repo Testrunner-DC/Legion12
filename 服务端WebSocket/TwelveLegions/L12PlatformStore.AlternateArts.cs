@@ -855,6 +855,21 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    /// <summary>
+    /// 测试接缝：直接按当前「最强主宰」事实派发一次赛季结算异画。
+    /// 完整赛季归档要走存储事务、租约与就绪编排，单测无法稳定驱动（用户 2026-11-27 要求补这条端到端用例）。
+    /// </summary>
+    internal IReadOnlyList<L12AlternateArtGrantView> ApplyMasterChampionSeasonFinalAwardsForTests(string seasonId)
+    {
+        lock (_gate)
+        {
+            var definitions = SharedAlternateArtDefinitionsLocked(requireAvailable: false);
+            ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(CurrentMasterChampions(), seasonId, definitions);
+            Save();
+            return AlternateArtGrants();
+        }
+    }
+
     private bool IsActiveGrantableAlternateArt(string alternateArtId,
         IReadOnlyDictionary<string, L12AlternateArtView>? definitions = null)
         => FindActiveAlternateArtLocked(alternateArtId, definitions) is { } art && IsGrantableAlternateArtDefinition(art);
