@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-11-27-counter-tactic-optional-and-response-copy",
+  "date": "2026-11-27",
+  "audience": "players",
+  "title": "反击战术可选发动、响应提示写明目标、士气转活跃可被康",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "〈摄政皇权〉改为反击战术的可选发动：触发时会先问「是否发动这次反击战术」，选择不发动则手牌军团不登场、反击战术仍留在场上；选择发动后才进入选手牌军团、战场与登场位置的声明，声明后不可取消。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "士气「转为活跃」现在可以被响应：当〈月读〉等效果把休整士气转为活跃时，对手会收到响应窗口，可以用〈毒药发作〉等反击战术康掉这一次转活跃；被康掉后付费位移段仍可正常发动。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "响应提示现在写明「打的是谁」：例如〈梅杰德〉降低对方军团兵力时，提示会注明目标军团名称，不再只显示效果文字。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs"
+      ]
+    }
+  ]
+}
