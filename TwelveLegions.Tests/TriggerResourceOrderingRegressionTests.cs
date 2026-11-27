@@ -95,6 +95,22 @@ public sealed class TriggerResourceOrderingRegressionTests
         return game;
     }
 
+    // 同质资源自动代付（既有用例覆盖），异质资源必须问：这条锁住自动代付的边界。
+    [Fact]
+    public void HeterogeneousResourcePoolStillAsksWhichResourcePaysTheFollow()
+    {
+        var game = MoveLastResource(0, 1);
+        var player = game.State.Players[0];
+        player.Morale.Add(new L12MoraleCard
+        {
+            CardId = "S02-03C1", InstanceId = "other-face-resource", IsGodPower = true,
+        });
+        Order(game, readyFirst: true);
+        Choose(game, "last-resource");
+        PassResponses(game);
+        Choose(game, "mode:use");
+        Assert.Equal("resource-payment", Assert.Single(game.State.PendingPrompts).Kind);
+    }
     private static void Order(L12GameEngine game, bool readyFirst)
     {
         var prompt = Assert.Single(game.State.PendingPrompts);
