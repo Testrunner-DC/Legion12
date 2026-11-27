@@ -1,5 +1,5 @@
 // B5 阶段 1：从 GameBoard.vue 下沉的提示文案工具（纯函数，只依赖 Prompt 与文案助手）。
-import type { Prompt } from '../types'
+import type { Prompt } from '../../types'
 import { promptInstructionCopy, promptPaymentCopy } from '../promptPlayerCopy'
 
 export function promptActionText(prompt: Prompt) {
