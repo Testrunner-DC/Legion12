@@ -4,6 +4,17 @@ public sealed partial class L12GameEngine
 {
     private bool CanUseS2CounterAtStack(string cardId, int playerIndex, L12StackItem top)
     {
+        // 权威事件（如「休整卡牌因效果转为活跃」）的响应资格由事件类型决定，
+        // 与「是否是卡牌效果激活」无关。以前这里先走特殊响应计划分支，导致
+        // 带特殊计划的战术（如〈毒药发作〉S02-0018）根本响应不到 effect-ready —— 玩家报的缺口就是它。
+        if (top.Trigger == "authority-event")
+        {
+            var authorityTiming = ResponseTimingContext(top);
+            if (authorityTiming.Trigger != "authority-event" || authorityTiming.Controller == playerIndex)
+                return false;
+            return AuthorityCounterEventMatches(cardId, authorityTiming.Data.GetValueOrDefault("eventType"),
+                authorityTiming.Data);
+        }
         if (L12StructuredCardSemantics.UsesSpecialResponsePlan(cardId, "s2-counter"))
             return top.Controller != playerIndex
                 && (top.Trigger == "opponent-attack"
@@ -11,16 +22,19 @@ public sealed partial class L12GameEngine
                     : IsRespondableCardEffectActivation(top));
         var timing = ResponseTimingContext(top);
         if (timing.Trigger != "authority-event" || timing.Controller == playerIndex) return false;
-        var eventType = timing.Data.GetValueOrDefault("eventType");
-        return cardId switch
+        return AuthorityCounterEventMatches(cardId, timing.Data.GetValueOrDefault("eventType"), timing.Data);
+    }
+
+    private static bool AuthorityCounterEventMatches(string cardId, string? eventType,
+        IReadOnlyDictionary<string, string> data)
+        => cardId switch
         {
-            "S02-0015" => eventType == "defense" && timing.Data.GetValueOrDefault("action") is "block" or "support",
+            "S02-0015" => eventType == "defense" && data.GetValueOrDefault("action") is "block" or "support",
             "S02-0016" => eventType == "non-hand-entry",
             "S02-0017" => eventType == "effect-hand-add",
             "S02-0018" => eventType == "effect-ready",
             _ => false,
         };
-    }
 
     private void CommitS2CounterResponse(int playerIndex, L12CardInstance response, string targetStackId,
         IReadOnlyDictionary<string, string>? data = null)

@@ -68,6 +68,10 @@ public sealed partial class L12GameEngine
             && State.IsResolvingStack && State.ResponseWindow is null)
         {
             State.EffectStack.Add(item);
+            // 这一项要作为新的堆叠项被“开始”，才会开响应窗（Progress 用 IsResolvingStack 区分
+            // “继续结算当前项”和“开始下一项”）；不清这个标记就会走 ResolveTopStack 直接结算，
+            // 响应窗永远不出现——玩家因此康不到士气转活跃。
+            State.IsResolvingStack = false;
             if (publicSource) AddEvent("authority-event", actorPlayer, $"{text}进入响应时点", source);
             return item;
         }

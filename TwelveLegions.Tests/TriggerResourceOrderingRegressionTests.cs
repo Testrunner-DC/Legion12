@@ -111,6 +111,48 @@ public sealed class TriggerResourceOrderingRegressionTests
         Choose(game, "mode:use");
         Assert.Equal("resource-payment", Assert.Single(game.State.PendingPrompts).Kind);
     }
+    // 裁定（用户 2026-11-27）：士气本质也是卡牌，效果把它转为活跃可以康（〈毒药发作〉S02-0018）；
+    // 康掉的只是这次转活跃，付费位移段照常可以发动。
+    [Fact]
+    public void PoisonMayCounterTheMoraleReadyAndThePaidFollowStaysAvailable()
+    {
+        // 响应可用性在触发那一刻就被冻结，所以〈毒药发作〉必须在位移之前就在场。
+        var game = Create(0);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var moved = Card("S02-0403", "moved", 0);
+        player.Field[0][0] = moved;
+        opponent.Field[0][2] = Card("S02-0402", "target", 1);
+        player.Morale.Add(new L12MoraleCard { CardId = "S02-04C1", InstanceId = "last-resource" });
+        var poison = Card("S02-0018", "tsukuyomi-poison", 1);
+        poison.Hidden = true;
+        poison.SetRound = 0;
+        opponent.Field[1][0] = poison;
+        Assert.True(game.Handle(0, new L12Command("move", moved.InstanceId, Row: 1, Slot: 0)).Accepted);
+
+        Order(game, readyFirst: true);
+        Choose(game, "last-resource");
+        for (var guard = 0; guard < 6; guard++)
+        {
+            var pending = game.State.PendingPrompts.FirstOrDefault();
+            if (pending is null || pending.Kind != "response") break;
+            if (pending.ValidChoices.Contains(poison.InstanceId)) break;
+            Choose(game, "pass");
+        }
+        var window = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", window.Kind);
+        // 玩家报的缺口：这里以前既没有响应窗，也没有〈毒药发作〉。
+        Assert.Contains(poison.InstanceId, window.ValidChoices);
+        Assert.True(game.Handle(window.PlayerIndex, new L12Command("resolvePrompt",
+            PromptId: window.PromptId, Choice: poison.InstanceId)).Accepted);
+        PassResponses(game);
+        Assert.True(player.Morale.Single(card => card.InstanceId == "last-resource").Tapped);
+
+        // 康掉的只是这次转活跃：付费位移段仍可发动（没有资源时只剩「不发动」并被自动选择）。
+        if (game.State.PendingPrompts.Any(prompt => prompt.Kind == "option"))
+            Choose(game, "mode:none");
+        Assert.DoesNotContain("active:master-0:tsukuyomiFollowMove", player.UsedAbilities);
+    }
     private static void Order(L12GameEngine game, bool readyFirst)
     {
         var prompt = Assert.Single(game.State.PendingPrompts);
