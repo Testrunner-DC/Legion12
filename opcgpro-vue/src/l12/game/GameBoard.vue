@@ -15,6 +15,7 @@ import { battleRank, battleTierLabel, identityLabel, type BattleIdentityBadge } 
 import { disasterSlotState, isCurrentTrial, isVisibleDisasterCard } from './board/disasterState'
 import { adaptiveBoardToken, useInspectorFloat } from './board/useInspectorFloat'
 import { useDisasterActions } from './board/useDisasterActions'
+import { buildStatusTexts } from './board/statusTexts'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
@@ -1591,28 +1592,9 @@ function activateFactionAbility(ability: string) {
   freeCommand('activateAbility', { cardInstanceId: `faction-${me.value.playerIndex}`, ability })
 }
 function statusTexts(card: Card) {
-  const statuses: string[] = []
-  if (card.hasStrongAttack) statuses.push('强攻：进攻主宰时额外造成 1 点伤害。')
-  if (card.hasSureHit) statuses.push('必中：进攻不可被抵挡或支援。')
-  if (card.hasShock) statuses.push('震击：进攻目标左右相邻的军团本回合兵力-2000。')
-  if ((card.immortalUses ?? 0) > 0) statuses.push(`免死：剩余 ${card.immortalUses} 次。`)
-  if (card.hasCharge) statuses.push('冲锋：登场回合可以进攻。')
-  if (card.cannotAttack) statuses.push('当前不能进攻。')
-  if (card.cannotSupport) statuses.push('当前不能支援。')
-  for (const modifier of card.timedModifiers ?? []) {
-    if (modifier.troopsDelta) statuses.push(`${modifier.source}：兵力${modifier.troopsDelta > 0 ? '+' : ''}${modifier.troopsDelta}。`)
-    if (modifier.costDelta) statuses.push(`${modifier.source}：费用${modifier.costDelta > 0 ? '+' : ''}${modifier.costDelta}。`)
-  }
-  const current = props.game.players.flatMap(player => player.field.flat())
-    .find(candidate => candidate?.instanceId === card.instanceId)
-  if (current && !current.hidden) for (const effect of current.statusEffects ?? []) {
-    if (effect.kind !== 'conditional-attack' || !effect.label?.trim()) continue
-    const source = effect.source?.trim()
-    statuses.push(`${effect.label.trim()}${source ? `（来源：${source}）` : ''}。`)
-  }
-  return statuses
-}
-</script>
+  return buildStatusTexts(card, instanceId => props.game.players.flatMap(player => player.field.flat())
+    .find(candidate => candidate?.instanceId === instanceId))
+}</script>
 
 <template>
   <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'referee-both-hands': readOnly && refereeLiveView && showBothHands, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt), 'board-control-expanded': !boardControlMinimized && Boolean(gmPlacement || boardTargetPrompt || boardSlotPrompt), 'board-unavailable': boardInteractionSuspended }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined" :data-l12-board-unavailable="boardInteractionSuspended ? 'true' : undefined">

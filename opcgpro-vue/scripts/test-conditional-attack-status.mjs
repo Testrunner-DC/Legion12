@@ -7,17 +7,21 @@ import { execFileSync } from 'node:child_process'
 import ts from 'typescript'
 
 const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const board = fs.readFileSync(path.join(frontend, 'src/l12/game/GameBoard.vue'), 'utf8')
-const match = board.match(/function statusTexts\(card: Card\) \{[\s\S]*?\n\}\s*<\/script>/)
-assert.ok(match, 'the actual shared desktop/mobile status formatter must be present')
-const formatter = ts.transpileModule(match[0].replace(/\s*<\/script>$/, ''), {
+// B5：状态文案已下沉到 board/statusTexts.ts；这里直接对其模块源码执行，
+// 并按宿主同样的口径注入「按实例找当前场上卡」，保持既有断言不变。
+const statusModulePath = path.join(frontend, 'src/l12/game/board/statusTexts.ts')
+assert.ok(fs.existsSync(statusModulePath), 'the shared status formatter module must be present')
+const statusModule = fs.readFileSync(statusModulePath, 'utf8')
+  .replace(/^import .*$/m, '')
+  .replace(/^export /gm, '')
+const formatter = ts.transpileModule(statusModule, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText
 const oldCard = { instanceId: 'moon-unit', troops: 3000, baseTroops: 3000,
   statusEffects: [{ kind: 'conditional-attack', label: '本回合每次进攻兵力＋1000', source: '月读' }] }
 const liveCard = { ...oldCard, statusEffects: [{ kind: 'conditional-attack', label: '本回合每次进攻兵力＋2000', source: '月读' }] }
 const props = { game: { players: [{ field: [[liveCard]] }, { field: [[null]] }] } }
-const statusTexts = new Function('props', `${formatter}\nreturn statusTexts`)(props)
+const statusTexts = new Function('props', `${formatter}\nreturn card => buildStatusTexts(card,\n  instanceId => props.game.players.flatMap(player => player.field.flat())\n    .find(candidate => candidate?.instanceId === instanceId))`)(props)
 const before = JSON.stringify(props)
 assert.deepEqual(statusTexts(oldCard), ['本回合每次进攻兵力＋2000（来源：月读）。'],
   'an already-open inspector must read the latest authority instance, not its captured old card')
