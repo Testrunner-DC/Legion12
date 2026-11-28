@@ -14,6 +14,7 @@ import { inlinePromptInstruction, inlinePromptPayment, inlinePromptTitle, prompt
 import { battleRank, battleTierLabel, identityLabel, type BattleIdentityBadge } from './board/battleIdentity'
 import { disasterSlotState, isCurrentTrial, isVisibleDisasterCard } from './board/disasterState'
 import { adaptiveBoardToken, useInspectorFloat } from './board/useInspectorFloat'
+import { useDisasterActions } from './board/useDisasterActions'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
