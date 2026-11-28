@@ -16,6 +16,7 @@ import { disasterSlotState, isCurrentTrial, isVisibleDisasterCard } from './boar
 import { adaptiveBoardToken, useInspectorFloat } from './board/useInspectorFloat'
 import { useDisasterActions } from './board/useDisasterActions'
 import { buildStatusTexts } from './board/statusTexts'
+import { diceValuesFromEventText } from './board/diceValues'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
@@ -1040,10 +1041,7 @@ function presentationCards(event: ActionEvent) {
   return cardEffectPresentationCards(event)
 }
 function diceValuesFromEvent(event: ActionEvent) {
-  const result = event.text.match(/结果为\s*([1-6])/)?.[1]
-  if (result) return [Number(result)]
-  const rollText = event.text.split('掷骰：')[1] ?? ''
-  return [...rollText.matchAll(/(?:^|\s)([1-6])(?=，|,|。|$)/g)].map(match => Number(match[1])).slice(-2)
+  return diceValuesFromEventText(event.text)
 }
 function showNextDiceReveal() {
   dicePresentationPending.value = Boolean(diceReveal.value || diceRevealQueue.length)
