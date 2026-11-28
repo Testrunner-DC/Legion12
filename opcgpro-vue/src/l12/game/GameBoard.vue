@@ -13,6 +13,7 @@ import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLo
 import { inlinePromptInstruction, inlinePromptPayment, inlinePromptTitle, promptActionText, promptChoiceText } from './board/promptCopy'
 import { battleRank, battleTierLabel, identityLabel, type BattleIdentityBadge } from './board/battleIdentity'
 import { disasterSlotState, isCurrentTrial, isVisibleDisasterCard } from './board/disasterState'
+import { adaptiveBoardToken, useInspectorFloat } from './board/useInspectorFloat'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
