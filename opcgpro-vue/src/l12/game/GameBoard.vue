@@ -18,6 +18,8 @@ import { useDisasterActions } from './board/useDisasterActions'
 import { buildStatusTexts } from './board/statusTexts'
 import { diceValuesFromEventText } from './board/diceValues'
 import { promptExitSummary } from './board/promptExitSummary'
+import { promptSelectedLabel } from './board/promptSelectedLabel'
+import { isDisasterRevealEvent as isDisasterReveal } from './board/disasterEvents'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
@@ -625,13 +627,11 @@ function inlinePromptActorState(prompt: Prompt) {
   return battleActionActorPresentation(prompt.playerIndex, controlledPlayerIndex.value).state
 }
 function inlinePromptSelectedLabel(prompt: Prompt, id: string) {
-  const battlefield = battlefieldTargetLabel(props.game, controlledPlayerIndex.value, id, prompt.choiceLabels?.[id])
-  if (battlefield) return battlefield
-  const label = prompt.choiceLabels?.[id]?.trim() || prompt.data?.[id]?.trim()
-  if (label) return label
-  if (/^rune:\d+$/.test(id)) return `彼界符文 ${Number(id.split(':')[1])}`
-  const resource = mobileMoraleChoices.value.find(choice => choice.id === id)
-  return resource ? `${resource.label}（${resource.detail}）` : ''
+  return promptSelectedLabel(prompt, id, {
+    controlledPlayerIndex: controlledPlayerIndex.value,
+    game: props.game,
+    moraleChoices: mobileMoraleChoices.value,
+  })
 }
 function inlinePromptSelectionSummary(prompt: Prompt, selectedIds: string[]) {
   const count = `已选择 ${selectedIds.length}/${prompt.maxChoose}`
@@ -1035,7 +1035,7 @@ function publicRevealText(event: ActionEvent) {
 // Disaster reveals have their own authoritative back-to-face movement.  Keep
 // them out of the secondary public-card overlay so the two animations cannot
 // cover or cancel each other.
-function isDisasterRevealEvent(event: ActionEvent) { return event.type === 'disaster-reveal' }
+function isDisasterRevealEvent(event: ActionEvent) { return isDisasterReveal(event) }
 function presentationCards(event: ActionEvent) {
   return cardEffectPresentationCards(event)
 }

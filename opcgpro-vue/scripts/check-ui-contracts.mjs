@@ -75,7 +75,11 @@ const BOARD_SECTION_ORDER = ['left-disaster', 'left-detail-layout', 'selected-ca
 const boardDisasterHelpers = existsSync(new URL('../src/l12/game/board/disasterState.ts', import.meta.url))
   ? read('../src/l12/game/board/disasterState.ts')
   : ''
-const boardExtractedSources = boardDisasterHelpers
+const boardExtractedSources = [boardDisasterHelpers,
+  existsSync(new URL('../src/l12/game/board/disasterEvents.ts', import.meta.url)) ? read('../src/l12/game/board/disasterEvents.ts') : '',
+  existsSync(new URL('../src/l12/game/board/promptSelectedLabel.ts', import.meta.url)) ? read('../src/l12/game/board/promptSelectedLabel.ts') : '',
+  existsSync(new URL('../src/l12/game/board/statusTexts.ts', import.meta.url)) ? read('../src/l12/game/board/statusTexts.ts') : '',
+  existsSync(new URL('../src/l12/game/board/useInspectorFloat.ts', import.meta.url)) ? read('../src/l12/game/board/useInspectorFloat.ts') : ''].join('\n')
 const boardSearchSpace = `${board}\n${boardExtractedSources}`
 const boardSectionIndex = key => {
   const index = BOARD_SECTION_ORDER.indexOf(key)
@@ -978,7 +982,7 @@ const contracts = [
     && board.includes('const logicalWidth = inspectorAnchor.value.offsetWidth') && board.includes('transform: `scale(${floatScale})`')
     && board.includes('const adaptiveBoardToken = (base: number, currentScale: number)')
     && board.includes("'--l12-board-copy': `${adaptiveBoardToken(13, floatScale)}px`") && board.includes("'--l12-board-meta': `${adaptiveBoardToken(11, floatScale)}px`") && board.includes("'--l12-effect-copy': `${adaptiveBoardToken(13, floatScale)}px`") && board.includes('inspector-style-scope') && board.includes('overflow:auto!important'), '弹框期间原选中详情必须固定侧置并保持原容器的大小和位置，继承连续缩放的语义字号层级，为核心弹框保留安全区，在窄屏与缩放下也不得互相遮挡'],
-  [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null")
+  [boardSearchSpace.includes("event.type === 'disaster-reveal'") && boardSearchSpace.includes("event.playerIndex === null")
     && battleLogViewModel.includes("case 'disaster':") && battleLogViewModel.includes("case 'disaster-active':")
     && battleLogViewModel.includes("case 'effect':"), '天灾必须向双方播放，已发动效果必须进入玩家白名单日志；内部响应阶段不得直接暴露'],
   [(board + boardDisasterHelpers).includes('resolvedDisasterIds') && (board + boardDisasterHelpers).includes("return 'active'") && (board + boardDisasterHelpers).includes("return 'resolved'")
