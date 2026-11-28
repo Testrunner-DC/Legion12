@@ -146,6 +146,29 @@ PowerShell验收脚本以其异常/完成结果判断成败；`LASTEXITCODE`只�
 
 发布流程采用“开发电脑或 CI 完整验证一次、服务器只校验并切换预构建产物”的模型。服务器不再保存源码、`node_modules` 或执行第二轮完整测试；账号、牌库、Bug、官网内容和对局记录独立保存在共享运行目录。
 
+## 停服红线（2026-11-27 事故后新增，用户明确要求）
+
+**任何部署都不得以「正式服处于停服状态」结束。**
+
+2026-11-27 的实际事故：正式服部署在停服后的 runtime 备份校验阶段超时
+（`failureStage=verify-stopped-runtime-backup`、`runtimeProofFailureCode=TIME_BUDGET_EXCEEDED`、
+`disposition=pre-launch recovery could not be verified; manual recovery required`），
+版本未切换（`activeTarget` 仍是旧提交），但**服务没有被重新拉起**，站点 502 直到人工执行
+`systemctl daemon-reload && systemctl start legion12-test.service` 才恢复。
+
+因此固定以下要求：
+
+1. **停服前先备好恢复钩子**：任何会停服的长耗时阶段（runtime 打包、备份校验、容量证明）
+   必须先设硬超时，并把「恢复上一版本并启动」注册为超时/异常的处理动作。
+2. **失败即恢复**：脚本失败退出前必须启动上一版本服务；如果启动也失败，必须把
+   「服务未启动」当作最高级失败继续上报，而不是只写一条回执。
+3. **失败回执必须可执行**：写明服务单元名、可直接粘贴的恢复命令、当前服务状态和验证方式。
+   只写 `manual recovery required` 不算交付。
+4. **中断也要恢复**：人工中断（Ctrl-C、终端断开、SSH 超时）同样适用——恢复动作要么已经由脚本
+   的 trap 完成，要么在中断后第一时间手工执行并在记录里留证。
+5. **结束前必须验证**：`/health` 必须返回 `status=ok` 且版本符合预期（成功=新版本，失败=旧版本），
+   验证不通过不得结束本次操作。
+
 ## 目录模型
 
 ```text
@@ -239,103 +262,3 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 `
-  -ServerArtifactRoot "/opt" `
-  -DryRun
-```
-
-干运行上传并验证预构建产物和权限，但不停止服务、不迁移数据、不切换版本。因为完整测试只在产物生成时执行，重复干运行通常只需要上传小型运行包并完成服务器校验。
-
-## GitHub Actions
-
-`.github/workflows/verify-release.yml` 在 main、Pull Request、手动及 v* 标签运行完整前端构建、两套完整后端测试与架构/发布状态检查；低成本前端拒绝先于耗时后端测试，不过滤测试。
-
-2026-10-21 已撤下旧 schema-1 手拼包出口：它依赖已不存在的 public/cards Git 子树，且缺少当前双前端、共享清单、排空能力及优化卡图绑定，不能再将其 Artifact 当成可部署包。唯一可部署包入口保持 `ops/windows/verify-l12.ps1`，沿既有完整校验、schema-3/运行兼容证明、卡图内容寻址及150 MiB上限执行，不新增重复发布链。
-
-2026-10-24 已补可信输入层：`ops/ci/l12-card-assets-input.lock.json` 从已验 schema-3 卡图归档固定实际1842个文件的字节／SHA，含1830张当前图、10张旧前端兼容图及2份原始清单；清单正文随锁保存，图片不进入Git。`ops/ci/l12-card-assets-input.py prepare` 可从原验收归档或固定公开卡图源还原全新目录供原入口的 `-CardAssetDirectory` 使用；它不是第二打包器。不覆盖已有目录，不跟随HTTP重定向，缺文件／SHA变化／路径逃逸／链接／预算超界即拒绝；所有输出仍经同一物理D/E守卫。更新锁须从新的已验归档重新生成并审查，不追随线上可变清单自动更新。
-
-本地完整1842文件还原与原324＋42卡池审计已验证；公开源只做了当前／兼容／天灾3张文件校验，不能冒全远端来源验收。CI只接合成边界和锁检查，尚未执行整套远端取图／标准出包；唯一 `verify-l12.ps1` 的Windows主机入口仍需独立完成可移植资格，不能凭输入层完成就宣称CI出包。`scripts/test-ci-release-entry.mjs` 与既有工作流验收器防止旧出口复活，并保留标准入口的能力/资源要求。
-
-## 回滚与排查
-
-部署元数据：
-
-```text
-/opt/legion12-deployment/deployment-info.txt
-```
-
-使用当前 `/opt` 制品根时，切换前运行数据快照保存在 `/opt/legion12-deployment/runtime-backups`；显式使用外置根时才保存在 `/www/legion12/runtime-backups`。快照用于取证和经核验的恢复，不表示可以覆盖新写入。新服务一旦尝试启动，就可能修改 schema 或产生新数据；此后脚本停止并保留现场，不自动恢复旧快照。必须先证明当前运行数据与旧程序兼容，才可以按本批授权只回滚程序并核验；不兼容时保持维护、保留新数据并报告阻断原因。详见《伙伴提交与正式服发布指南》。部署前应关闭新局入口，等待已有对局自然结束且无待恢复运行局，再执行切换。
-
-### 存储 schema 变更前的强制演练与两条硬规则（2026-11-23，B-2 步骤1 实测）
-
-数据库 schema 变更（例如 12→13）是**单向**的：新版本一旦启动并提交迁移，旧二进制在构造阶段即拒绝该库（实测报错原文：`不支持的平台存储版本：13 > 12`）。因此该类变更必须先在测试服对**生产库副本**演练一次迁移与回滚，演练证据与候选提交绑定；候选提交一旦变化，证据失效，必须重跑。
-
-**硬规则 1：演练目录里不得存在 `platform.json`。** 存储打不开时应用会**静默回落到该 JSON 镜像并照常监听**，此时 `/health` 也会返回 200。因此「服务起来了」「`StartAsync` 成功」「`/health` 200」都不能证明数据库被成功打开；只有把镜像从目录里排除，失败才会直接抛错。
-
-**硬规则 2：不要用发布目录名或字符串搜索推断二进制版本。** `grep` 找不到 `account_sessions` 之类标记并不能证明代码缺失（.NET 字符串为 UTF-16）。判据只能是行为：迁移是否真的生成 `platform.db.pre-<变更名>`、`platform.db` 的 sha256 是否改变、旧二进制是否开始拒绝该库。
-
-最小演练步骤（约 10 分钟，全部落在 `/tmp` 或测试服自有目录）：
-
-1. 从最新一份 `runtime-before-*.tar.gz` 解出 `platform.db`/`platform.db-wal`/`platform.db-shm`（**不要**解出 `platform.json`），先 `sha256sum` 记录基线并核对归档的 `.sha256`。
-2. 把候选发布包的 `publish/` 复制到演练目录，`runtime/` 内只放上一步的 DB 三件套。
-3. 用轻量入口触发一次真实打开：`env L12_LISTEN_HOST=127.0.0.1 dotnet GrandUMIServer.dll --bootstrap-second-approver <任一账号ID>`。该路径构造完平台存储即退出，不绑端口、不产生常驻进程（stdout 出现 `bootstrap_disabled` 即表示已越过存储构造）。
-4. 断言 `runtime/platform.db.pre-<变更名>` 出现并记录其 sha256；记录 `platform.db` 的新 sha256。
-5. 用**旧版本**二进制在另一个不含镜像的目录里打开迁移后的库：必须失败并给出 `不支持的平台存储版本：<新> > <旧>`。
-6. 用第 4 步的备份覆盖 `platform.db`（并清除同目录的 `-wal`/`-shm`），再用旧版本二进制打开：必须成功。至此才可认定「回滚路径可兑现」。
-7. 需要验证登录会话语义时，再各起一次完整服务（`L12_LISTEN_HOST=127.0.0.1` + 非标准端口），用迁移前签发的同一 token 请求 `/api/auth/me`，迁移后仍应为 200。
-8. 收尾：`rm -rf` 演练目录并确认没有残留实例（`grep -l GrandUMIServer /proc/*/cmdline` 只应命中生产进程）。
-
-**备份保留核对（演练的前置条件）**：服务器上 `/opt/legion12-deployment/runtime-backups/` 必须至少存在两组完整可校验的 `runtime-before-*.tar.gz`。2026-11-23 实测该目录只剩 **1 组 tar 包却有 18 个 `.sha256`**——其余 17 组只剩校验文件，冷存回取尚未验证。只有一组时，下一次部署轮转即会失去服务器侧回滚通道，演练也必须先补回取。
-
-### `platform.db.pre-*` 的保留与退休规则（2026-11-23 定，B-2 步骤1 遗留项）
-
-`runtime/` 目录里存在两类 `platform.db.pre-*`，含义和处置完全不同，不得混谈：
-
-| 类别 | 例子 | 体量 | 能力 |
-|---|---|---|---|
-| 旧式 JSON 前像 | `platform.db.pre-deck-domain-v1.json.gz`、`platform.db.pre-deck-identity-v1.json.gz`/`.full.json.gz`、`platform.json.pre-sqlite.bak` | KB～MB 级 | **只有取证价值**，不能用来恢复库 |
-| 新式全库前像 | `platform.db.pre-<变更名>`（如 `pre-session-split`） | 与库等大（生产 285 MB、测试 44 MB） | 原地回退到该迁移**之前**状态的唯一镜像 |
-
-保留规则：
-
-1. **当前运行 schema 对应的最新一份 `pre-*` 必须保留**——它就是「本版本可原地回退的那一格」，任何清理都不得删除它。
-2. 更旧的 `pre-*` 只有在**同时**满足两条时才可退休：① `runtime-backups/` 里存在覆盖同一时点、`sha256sum -c` 通过的 `runtime-before-*.tar.gz`；② 该归档的 sha256 已写进部署回执。缺一条即保留。
-3. 退休动作只能发生在一次已授权的部署或数据动作里，并把「删了哪一份、依据哪份归档」写进回执；**不允许脚本自动删除**（现行代码也不删）。
-4. 与 `pre-*` 同目录的 `platform.db.pre-*-wal` / `-shm` 是残留校验产物，**不是恢复件**；恢复只拷 `pre-*` 本体，并在覆盖前清掉目标目录的 `-wal`/`-shm`（见上节演练第 6 步）。这些残留随同一次退休动作清理。
-5. 容量口径：每份新式 `pre-*` 在根盘上等于一份整库，而部署预检地板是 `10 GiB + 256 MiB reserve`；因此**同时存在的 `pre-*` 不应超过两份**（现行一份 + 迁移瞬间的第二份）。超限时按第 2 条退休旧的，**不得**用「删最新一份」换空间。
-
-现状（2026-11-23 实测，供对照）：生产 `/opt/legion12-runtime` 尚无 `pre-session-split`（B-2 迁移未跑），只有三份历史 `.json.gz` 与 `platform.json.pre-sqlite.bak`；测试服 `/opt/legion12-testrun-runtime` 有 `platform.db.pre-session-split`（44,384,256 B）以及 `-wal`/`-shm` 残留。
-
-发布脚本只切换程序并执行健康核验，不代表获得解除维护的授权。只有用户在当批任务中明确要求，才可另行结束维护；否则保持健康接口中的 `maintenance: true`。
-
-查看状态：
-
-```powershell
-ssh -o HostKeyAlias=154.201.80.91 root@legion-12.com "systemctl status legion12-test.service --no-pager"
-ssh -o HostKeyAlias=154.201.80.91 root@legion-12.com "journalctl -u legion12-test.service -n 200 --no-pager"
-```
-
-禁止直接覆盖 `/opt/legion12-test`、删除 `/opt/legion12-runtime`，或在服务器源码目录执行 `git pull`。旧 release 暂不自动删除，以便人工审计和回滚。
-
-域名下线不切换应用 release，也不移动运行数据。2026-08-28 的新域上线前备份位于 `/root/legion12-nginx-backups/20260828T113923Z`；新主域与 `www` 分别由 `/etc/nginx/sites-enabled/legion12-new-domain`、`legion12-www-domain` 启用。旧域下线前必须另建带时间戳的 Nginx 备份，先将旧入口收敛为到新域的精确 308，再删除旧 DNS 并停用旧虚拟主机及证书续期。任何配置变更都必须先执行 `nginx -t`，成功后才 `systemctl reload nginx`；不得停止后端或修改 `/opt/legion12-runtime`。DNS 回滚由 Cloudflare 控制台单独执行，仓库脚本不持有其凭据。
-
-## Windows 构建缓存位置
-
-Windows 完整验证和部署入口会自动初始化本次进程使用的构建缓存。开发电脑存在统一项目目录时，默认使用：
-
-~~~text
-D:\GPT\Legion12\cache\primary\temp
-D:\GPT\Legion12\cache\primary\dotnet-home
-D:\GPT\Legion12\cache\primary\nuget
-D:\GPT\Legion12\cache\primary\npm
-D:\GPT\Legion12\cache\primary\corepack
-D:\GPT\Legion12\artifacts\deploy
-~~~
-
-这只影响当前验证/部署进程及其子进程，不会修改 Windows 全局 TEMP，也不会删除 C 盘旧缓存。需要临时改用其他磁盘时可传入：
-
-~~~powershell
-powershell -ExecutionPolicy Bypass -File .\ops\windows\verify-l12.ps1 -CacheRoot E:\L12-cache
-powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -CacheRoot E:\L12-cache
-~~~
-
-也可以预先设置进程环境变量 L12_WORK_CACHE；显式 -CacheRoot 的优先级最高。发布产物目录仍由 L12_DEPLOY_CACHE 或 -OutputDirectory 独立控制。

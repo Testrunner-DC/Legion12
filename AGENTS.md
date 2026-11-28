@@ -72,6 +72,22 @@ Human reaffirmation (2026-10-31): after being asked explicitly about publishing 
 - Use one release-session summary referencing the standard logs/raw proofs; do not create separate approval tasks or duplicate checklists for every intermediate receipt. Once a collaborator has completed the deployment, reconcile their receipt and do not deploy or change maintenance again merely to finish Main's old plan.
 - Documentation-only updates use proportional mapped/document validation. They do not trigger application Release, rebuilding an already accepted package, deployment, maintenance changes, online Bug closure or new project goals.
 
+## 正式服停服红线（用户 2026-11-27 明确要求）
+
+**任何时候都不允许把正式服留在「停服／未运行」状态结束一次操作。**
+
+- 部署、维护、发布、回滚、手工排障，只要动过正式服的服务状态，就必须在结束前把服务拉回并验证
+  `/health` 返回 `status=ok`；验证不通过不得结束，更不得只在总结里写「需要人工恢复」。
+- 部署脚本的失败路径必须做到「停服 → 失败 → 自动回到上一版本并启动」。出现
+  `failureStage=*`、`disposition=manual recovery required`、`serviceState=unknown` 一类回执时，
+  视为**流程缺陷**，必须当轮修复，不允许下次部署再复现。
+- 停服后的长耗时阶段（runtime 打包／备份校验／容量证明）必须先设定硬超时与恢复钩子；
+  超时后**优先恢复服务**，再讨论重试，不允许让超时把服务留在停着的状态。
+- 任何失败回执必须写明：受影响的服务单元名、可直接执行的恢复命令、当前服务状态与验证方式；
+  只写「需要人工恢复」不算交付。
+- 恢复动作本身也要留证：执行了什么命令、服务是否 active、`/health` 的版本与状态。
+
+
 ## Single-primary execution and optional delegation
 
 The user approved this operating model on 2026-09-09 for immediate use, without a pilot. Detailed procedures live only in `docs/WORKSTREAM-COORDINATION.md`.
