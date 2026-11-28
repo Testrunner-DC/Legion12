@@ -91,8 +91,15 @@ readonly web_asset_retention_minutes="${L12_WEB_ASSET_RETENTION_MINUTES:-2880}"
 # checks, and a bounded old-process restart/cancel attempt before the outer cutoff.
 readonly deployment_recovery_reserve_seconds=900
 readonly runtime_proof_timeout_seconds="${L12_RUNTIME_PROOF_TIMEOUT_SECONDS:-900}"
+# 校验器自身的预算必须略小于外层超时，否则恢复钩子没有执行余量（2026-11-27 事故）。
+readonly runtime_proof_limit_seconds="${L12_RUNTIME_PROOF_LIMIT_SECONDS:-840}"
+readonly runtime_proof_limit_ms="$((runtime_proof_limit_seconds * 1000))"
+export L12_RUNTIME_PROOF_LIMIT_SECONDS="$runtime_proof_limit_seconds"
 [[ "$runtime_proof_timeout_seconds" =~ ^[0-9]+$ ]] && (( runtime_proof_timeout_seconds >= 310 && runtime_proof_timeout_seconds <= 900 )) \
   || { fail "runtime 停服证明超时必须在 310—900 秒范围内"; exit 2; }
+[[ "$runtime_proof_limit_seconds" =~ ^[0-9]+$ ]] \
+  && (( runtime_proof_limit_seconds >= 300 && runtime_proof_limit_seconds < runtime_proof_timeout_seconds )) \
+  || { fail "runtime 停服证明预算必须小于外层超时且不低于 300 秒"; exit 2; }
 [[ "$web_asset_retention_minutes" =~ ^[0-9]+$ ]] \
   && (( web_asset_retention_minutes >= 1440 && web_asset_retention_minutes <= 2880 )) \
   || { fail "前端哈希资源保留窗口只允许 1440—2880 分钟"; exit 2; }
@@ -1436,6 +1443,9 @@ write_failure_record() {
     printf 'drainStateBindingSha256=%s\n' "$drain_state_sha256"
     printf 'disposition=%s\n' "$disposition"
     printf 'serviceState=%s\n' "$(if [[ "$service_stopped" -eq 1 ]]; then printf stopped; else printf unknown; fi)"
+    # 停服红线（2026-11-27 用户要求）：回执必须能直接照着执行恢复，而不是只写 manual recovery。
+    printf 'serviceUnit=%s\n' "$service_name"
+    printf 'recoveryCommand=%s\n' "systemctl daemon-reload && systemctl start ${service_name} && curl -fsS https://${public_host}/health"
     printf 'activeTarget=%s\n' "$active_target"
     printf 'previousTarget=%s\n' "$previous_target"
     printf 'previousCommit=%s\n' "$previous_commit"
@@ -1535,7 +1545,14 @@ rollback_on_error() {
       restore_previous || rollback_ok=0
     fi
     if [[ "$rollback_ok" -eq 1 ]] && assert_before_recovery_deadline; then
-      systemctl start "$service_name" || rollback_ok=0
+      # 2026-11-27 事故：单元文件在本轮已被重写，但 systemd 仍持有旧定义
+      # （systemctl 会提示 unit changed on disk），直接 start 会失败并把正式服留在停服状态。
+      # 恢复前必须先 daemon-reload；start 失败时再 reload 重试一次。
+      systemctl daemon-reload >/dev/null 2>&1 || true
+      if ! systemctl start "$service_name"; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl start "$service_name" || rollback_ok=0
+      fi
     else
       rollback_ok=0
     fi
@@ -1823,10 +1840,10 @@ let body="";process.stdin.on("data",chunk=>body+=chunk);process.stdin.on("end",(
       ||proof.backupSha256!==process.argv[1]
       ||!/^[a-f0-9]{64}$/.test(proof.databaseWalFingerprintSha256||"")
       ||!Number.isInteger(proof.emptyWalPresenceTransitions)||proof.emptyWalPresenceTransitions<0||proof.emptyWalPresenceTransitions>2
-      ||!Number.isFinite(proof.elapsedMilliseconds)||proof.elapsedMilliseconds<0||proof.elapsedMilliseconds>300000
+      ||!Number.isFinite(proof.elapsedMilliseconds)||proof.elapsedMilliseconds<0||proof.elapsedMilliseconds>runtime_proof_limit_ms
       ||!Array.isArray(proof.stageTimings)||proof.stageTimings.length!==stages.length
       ||proof.stageTimings.some((item,index)=>item.stage!==stages[index]
-        ||!Number.isFinite(item.elapsedMilliseconds)||item.elapsedMilliseconds<0||item.elapsedMilliseconds>300000)) process.exit(2);
+        ||!Number.isFinite(item.elapsedMilliseconds)||item.elapsedMilliseconds<0||item.elapsedMilliseconds>runtime_proof_limit_ms)) process.exit(2);
   } catch { process.exit(2); }
 });' "$runtime_backup_sha256"; then
   runtime_proof_failure_code=""

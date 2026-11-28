@@ -18,7 +18,19 @@ SCHEMA_ANCHORS = {
     "matches.db": {"match_id", "room_code", "mode_id", "started_utc", "ended_utc", "storage_version", "hash_version"},
 }
 PERSISTENT_NAMES = tuple(name + suffix for name in DATABASES for suffix in ("", "-wal"))
-LIMIT_SECONDS = 300
+# 2026-11-27：正式服 runtime 13 GB（matches.db 9.5 GB + site-media 2.8 GB），
+# 原来固定 300 s 会在正常校验中触发 TIME_BUDGET_EXCEEDED，进而让部署在停服后失败。
+# 允许环境变量覆盖，默认 840 s，给外层 900 s 超时留出恢复余量。
+def _limit_seconds():
+    raw = os.environ.get("L12_RUNTIME_PROOF_LIMIT_SECONDS", "840")
+    try:
+        value = int(raw)
+    except ValueError:
+        return 840
+    return value if 310 <= value <= 1800 else 840
+
+
+LIMIT_SECONDS = _limit_seconds()
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
 
