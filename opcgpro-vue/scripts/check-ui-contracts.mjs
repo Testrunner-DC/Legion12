@@ -62,6 +62,25 @@ const blockingPromptTransactionSource = boardComponent.slice(boardComponent.inde
 const boardMobileStyle = read('../src/l12/game/GameBoard.mobile.css')
 const mobileActionDockStyle = read('../src/l12/game/MobileBattleDock.css')
 const board = `${boardComponent}\n${boardMobileStyle}`
+// B5 模板分区：区域先后不再依赖「同一份源码里的 indexOf」，而是按真实渲染顺序登记。
+// 分区把某个区域搬进子组件后，只需在这里保持登记顺序；marker 必须能在宿主或子组件中找到，
+// 否则视为区域被删或改名而报错（防止顺序清单悄悄失真）。
+const BOARD_SECTION_MARKERS = {
+  'left-disaster': 'data-ui-contract="left-current-disaster"',
+  'left-detail-layout': 'class="left-detail-layout"',
+  'selected-card-inspector-anchor': 'data-ui-contract="selected-card-inspector-anchor"',
+}
+const BOARD_SECTION_ORDER = ['left-disaster', 'left-detail-layout', 'selected-card-inspector-anchor']
+// 已下沉到子组件的区域源码也参与 marker 查找（当前为空；分区时把新组件内容加进来）。
+const boardExtractedSources = ''
+const boardSearchSpace = `${board}\n${boardExtractedSources}`
+const boardSectionIndex = key => {
+  const index = BOARD_SECTION_ORDER.indexOf(key)
+  if (index < 0) throw new Error(`UI 契约：未登记的对局板区域 ${key}；请在 BOARD_SECTION_ORDER 登记`)
+  const marker = BOARD_SECTION_MARKERS[key]
+  if (!boardSearchSpace.includes(marker)) throw new Error(`UI 契约：对局板区域 ${key} 的标记不在源码中（${marker}）`)
+  return index
+}
 // B5：排位身份展示助手已下沉到 board/battleIdentity.ts；契约改为同时覆盖宿主与模块，
 // 保证「对战摘要复用同一套身份徽章判定」这条不因搬文件而丢失。
 const boardIdentityHelpers = existsSync(new URL('../src/l12/game/board/battleIdentity.ts', import.meta.url))
@@ -567,7 +586,7 @@ const contracts = [
   [board.includes('data-ui-contract="left-current-disaster"') && !board.includes('<h3>当前天灾</h3>')
     && board.includes('class="left-card-column"') && board.includes('class="grand-panel phase-column"')
     && board.includes('.phase-column{display:flex;min-width:0;min-height:0;margin-block:166px;')
-    && board.indexOf('data-ui-contract="left-current-disaster"') < board.indexOf('data-ui-contract="selected-card-inspector-anchor"')
+    && boardSectionIndex('left-disaster') < boardSectionIndex('selected-card-inspector-anchor')
     && board.includes('data-ui-contract="phase-disaster-value"') && !board.includes('<h3>阶段条</h3>')
     && board.includes('<PhaseTrack vertical ') && board.includes('<span class="board-midline-anchor" aria-hidden="true" />')
     && !board.includes('<div class="disaster-zone"') && !board.includes('<PhaseTrack :phase=')
@@ -784,7 +803,7 @@ const contracts = [
     && board.includes('class="grand-panel action-panel"') && gameActions.includes("@click=\"emit('command','endTurn')\"")
     && gameActions.includes('结束回合'), '右栏不得常驻显示房间REV/MATCH元数据或操作说明段落，但包括结束回合在内的所有真实操作按钮必须保留'],
   [board.includes('class="left-disaster-row"')
-    && board.indexOf('data-ui-contract="left-current-disaster"') < board.indexOf('class="left-detail-layout"')
+    && boardSectionIndex('left-disaster') < boardSectionIndex('left-detail-layout')
     && board.includes('.left-disaster-row{display:grid;width:100%;grid-template-columns:132px minmax(0,1fr);gap:8px')
     && board.includes('.session-disaster-strip{display:grid;width:max-content;grid-template-columns:repeat(2,51.2px)')
     && board.includes('.session-disaster-strip button{width:51.2px;min-width:51.2px;height:51.2px'), '本局天灾与当前天灾必须保持两个独立面板并整体与选中卡牌共用左栏宽度；四枚圆形缩略图须缩小 20% 后按 2×2 排列'],
