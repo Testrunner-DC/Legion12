@@ -81,6 +81,12 @@ const boardSectionIndex = key => {
   if (!boardSearchSpace.includes(marker)) throw new Error(`UI 契约：对局板区域 ${key} 的标记不在源码中（${marker}）`)
   return index
 }
+// 清单自检：顺序清单与标记表必须一一对应，且每一项都要真的能被找到，
+// 避免分区搬迁后清单悄悄留下死条目（那会让顺序断言变成永远通过的假守护）。
+if (Object.keys(BOARD_SECTION_MARKERS).sort().join('|') !== [...BOARD_SECTION_ORDER].sort().join('|')) {
+  throw new Error('UI 契约：BOARD_SECTION_ORDER 与 BOARD_SECTION_MARKERS 的键不一致')
+}
+for (const key of BOARD_SECTION_ORDER) boardSectionIndex(key)
 // B5：排位身份展示助手已下沉到 board/battleIdentity.ts；契约改为同时覆盖宿主与模块，
 // 保证「对战摘要复用同一套身份徽章判定」这条不因搬文件而丢失。
 const boardIdentityHelpers = existsSync(new URL('../src/l12/game/board/battleIdentity.ts', import.meta.url))
