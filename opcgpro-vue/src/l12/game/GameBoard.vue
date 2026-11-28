@@ -12,6 +12,7 @@ import { canReplaceOwnCoveredCounter, isCounterTacticCard, isHorizontalCardType 
 import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import { inlinePromptInstruction, inlinePromptPayment, inlinePromptTitle, promptActionText, promptChoiceText } from './board/promptCopy'
 import { battleRank, battleTierLabel, identityLabel, type BattleIdentityBadge } from './board/battleIdentity'
+import { disasterSlotState, isCurrentTrial, isVisibleDisasterCard } from './board/disasterState'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
@@ -866,17 +867,7 @@ const sessionDisasterSlots = computed<(DisasterCardView | null)[]>(() =>
 )
 const resolvedDisasterIds = computed(() => new Set((props.game.removedDisasters ?? []).map(card => card.instanceId)))
 function sessionDisasterState(card: DisasterCardView | null) {
-  if (!card || card.hidden) return 'unrevealed'
-  if (card.instanceId === props.game.activeDisaster?.instanceId) return 'active'
-  if (resolvedDisasterIds.value.has(card.instanceId)) return 'resolved'
-  return 'revealed'
-}
-function isVisibleDisasterCard(card: DisasterCardView): card is Card {
-  return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
-}
-function isCurrentTrial(trials: Array<{ instanceId: string; trialCompleted?: boolean; trialProgress?: number }> | undefined, trial: { instanceId: string }) {
-  return trials?.find(candidate => !candidate.trialCompleted
-    && (candidate.trialProgress ?? 0) < 8)?.instanceId === trial.instanceId
+  return disasterSlotState(card, props.game.activeDisaster?.instanceId, resolvedDisasterIds.value)
 }
 function focusSessionDisaster(card: DisasterCardView, index?: number) {
   if (isVisibleDisasterCard(card)) focusCard.value = card

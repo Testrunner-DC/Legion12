@@ -72,7 +72,10 @@ const BOARD_SECTION_MARKERS = {
 }
 const BOARD_SECTION_ORDER = ['left-disaster', 'left-detail-layout', 'selected-card-inspector-anchor']
 // 已下沉到子组件的区域源码也参与 marker 查找（当前为空；分区时把新组件内容加进来）。
-const boardExtractedSources = ''
+const boardDisasterHelpers = existsSync(new URL('../src/l12/game/board/disasterState.ts', import.meta.url))
+  ? read('../src/l12/game/board/disasterState.ts')
+  : ''
+const boardExtractedSources = boardDisasterHelpers
 const boardSearchSpace = `${board}\n${boardExtractedSources}`
 const boardSectionIndex = key => {
   const index = BOARD_SECTION_ORDER.indexOf(key)
@@ -978,7 +981,7 @@ const contracts = [
   [board.includes("event.type === 'disaster-reveal'") && board.includes("event.playerIndex === null")
     && battleLogViewModel.includes("case 'disaster':") && battleLogViewModel.includes("case 'disaster-active':")
     && battleLogViewModel.includes("case 'effect':"), '天灾必须向双方播放，已发动效果必须进入玩家白名单日志；内部响应阶段不得直接暴露'],
-  [board.includes('resolvedDisasterIds') && board.includes("return 'active'") && board.includes("return 'resolved'")
+  [(board + boardDisasterHelpers).includes('resolvedDisasterIds') && (board + boardDisasterHelpers).includes("return 'active'") && (board + boardDisasterHelpers).includes("return 'resolved'")
     && board.includes('.session-disaster-strip button.unrevealed')
     && board.includes('.session-disaster-strip button.resolved{border-color:#76508f')
     && board.includes('.session-disaster-strip button.active{border-color:#bc6cff'), '本局天灾圆形图必须区分未发动灰色、已发动暗紫色与当前生效亮紫色，并由权威天灾实例状态驱动'],
@@ -1102,7 +1105,7 @@ const contracts = [
     && roundCardImage.includes('overflow:hidden;border-radius:50%'), '圆形叠放卡图不得被全局卡图定位规则覆盖，通用裁切必须取真实卡面中上部'],
   [playerMat.includes("entry.id === 'trialAdvance'") && playerMat.includes('function canTrial') && playerMat.includes("'trialAdvance')"), '试炼军团必须拥有与进攻、移动并列的直接试炼按钮'],
   [playerMat.includes("!card.trialCompleted && (card.trialProgress ?? 0) < 8")
-    && board.includes("!candidate.trialCompleted") && board.includes("(candidate.trialProgress ?? 0) < 8"), '当前可推进试炼的按钮与进度标记必须跳过已达8但尚未翻面的试炼，继续指向后续仍可推进的试炼'],
+    && (board + boardDisasterHelpers).includes("!candidate.trialCompleted") && (board + boardDisasterHelpers).includes("(candidate.trialProgress ?? 0) < 8"), '当前可推进试炼的按钮与进度标记必须跳过已达8但尚未翻面的试炼，继续指向后续仍可推进的试炼'],
   [playerMat.includes("@click.stop=\"(!trial.hidden || side === 'my') && selectZoneCard(trial)\""), '试炼卡必须复用公开区域卡牌能力入口；己方未完成试炼仍可查看详情，对方未知试炼保持不可见'],
   [playerMat.includes('aspect-ratio:1752/1255') && playerMat.includes('<img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png"')
     && !playerMat.includes('<img v-if="trial.hidden && side === \'opponent\'" class="trial-card-back"')
