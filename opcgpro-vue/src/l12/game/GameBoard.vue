@@ -17,6 +17,7 @@ import { adaptiveBoardToken, useInspectorFloat } from './board/useInspectorFloat
 import { useDisasterActions } from './board/useDisasterActions'
 import { buildStatusTexts } from './board/statusTexts'
 import { diceValuesFromEventText } from './board/diceValues'
+import { promptExitSummary } from './board/promptExitSummary'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
@@ -669,9 +670,7 @@ function inlinePromptBrief(prompt: Prompt) {
   return `${inlinePromptActor(prompt)} · ${inlinePromptTitle(prompt)} · ${status}`
 }
 function inlinePromptExitSummary(prompt: Prompt, choice: string) {
-  const label = prompt.choiceLabels?.[choice]?.trim() || (choice === 'skip' ? '不发动' : '取消')
-  const consequence = promptConsequenceCopy(prompt, choice, label)
-  return consequence && consequence !== label ? `${label}：${consequence}` : label
+  return promptExitSummary(prompt, choice)
 }
 function inlinePromptConsequenceLead(prompt: Prompt) {
   return prompt.promptId === boardSlotPrompt.value?.promptId ? '选中后' : '确认后'
