@@ -62,6 +62,11 @@ const blockingPromptTransactionSource = boardComponent.slice(boardComponent.inde
 const boardMobileStyle = read('../src/l12/game/GameBoard.mobile.css')
 const mobileActionDockStyle = read('../src/l12/game/MobileBattleDock.css')
 const board = `${boardComponent}\n${boardMobileStyle}`
+// B5：排位身份展示助手已下沉到 board/battleIdentity.ts；契约改为同时覆盖宿主与模块，
+// 保证「对战摘要复用同一套身份徽章判定」这条不因搬文件而丢失。
+const boardIdentityHelpers = existsSync(new URL('../src/l12/game/board/battleIdentity.ts', import.meta.url))
+  ? read('../src/l12/game/board/battleIdentity.ts')
+  : ''
 const mobileViewportStyle = read('../src/l12/mobileViewport.css')
 const mobileViewportCheck = read('./test-mobile-viewport.mjs')
 const phaseTrack = read('../src/l12/game/PhaseTrack.vue')
@@ -497,11 +502,11 @@ const contracts = [
     && board.includes(':rank="battleRank(enemyBadge)"') && board.includes(':tier-label="battleTierLabel(enemyBadge)"') && board.includes(':placement-title="identityLabel(enemyBadge?.placementTitle)"') && board.includes(':master-title="identityLabel(enemyBadge?.masterTitle)"')
     && board.includes(':rank="battleRank(myBadge)"') && board.includes(':tier-label="battleTierLabel(myBadge)"') && board.includes(':placement-title="identityLabel(myBadge?.placementTitle)"') && board.includes(':master-title="identityLabel(myBadge?.masterTitle)"')
     && l12Types.includes('highestTier?: boolean')
-    && board.includes('return badge?.highestTier === true ? badge?.rank ?? null : null')
-    && board.includes("if (identityLabel(badge?.placementTitle)) return ''")
-    && board.includes('return label') && !board.includes("label === '冠冕'")
+    && (board + boardIdentityHelpers).includes('return badge?.highestTier === true ? badge?.rank ?? null : null')
+    && (board + boardIdentityHelpers).includes("if (identityLabel(badge?.placementTitle)) return ''")
+    && (board + boardIdentityHelpers).includes('return label') && !board.includes("label === '冠冕'")
     && battlePlayerIdentity.includes('<dd>{{ rank }}名</dd>') && !battlePlayerIdentity.includes('第 {{ rank }} 名')
-    && board.includes("absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])")
+    && (board + boardIdentityHelpers).includes("absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])")
     && !board.includes("|| '未定级'") && !board.includes("|| '暂无称号'")
     && board.includes('connectionLabel(viewEnemy.playerIndex)') && board.includes('connectionLabel(viewMe.playerIndex)')
     && battlePlayerIdentity.includes('<dt>主宰</dt>') && battlePlayerIdentity.includes('{{ player.master.hp }}/{{ player.master.maxHp }}')

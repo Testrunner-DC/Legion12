@@ -11,6 +11,7 @@ import { promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, prompt
 import { canReplaceOwnCoveredCounter, isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
 import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import { inlinePromptInstruction, inlinePromptPayment, inlinePromptTitle, promptActionText, promptChoiceText } from './board/promptCopy'
+import { battleRank, battleTierLabel, identityLabel, type BattleIdentityBadge } from './board/battleIdentity'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
 import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
@@ -438,27 +439,6 @@ const mobilePrimaryHandPlayerIndex = computed(() => !props.readOnly && l12State.
 const showBothHands = computed(() => props.readOnly && (props.revealBothHands || props.refereeLiveView))
 const myBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewMe.value.playerIndex))
 const enemyBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewEnemy.value.playerIndex))
-const absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])
-function identityLabel(value: string | null | undefined) {
-  const label = value?.trim() ?? ''
-  return absentIdentityLabels.has(label) ? '' : label
-}
-type BattleIdentityBadge = {
-  rank?: number | null
-  tier?: string | null
-  placementTitle?: string | null
-  highestTier?: boolean | null
-}
-function battleRank(badge: BattleIdentityBadge | null | undefined) {
-  return badge?.highestTier === true ? badge?.rank ?? null : null
-}
-function battleTierLabel(badge: BattleIdentityBadge | null | undefined) {
-  const label = identityLabel(badge?.tier)
-  // A placement title is the more specific player-facing identity. Players
-  // without one keep their faction-specific tier name on its own row.
-  if (identityLabel(badge?.placementTitle)) return ''
-  return label
-}
 const playerConnection = (playerIndex: number) => {
   const timed = l12State.rankedClock?.players.find(player => player.playerIndex === playerIndex)
   if (timed) return timed.connected
